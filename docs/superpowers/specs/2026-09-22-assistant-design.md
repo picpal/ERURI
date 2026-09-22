@@ -19,7 +19,7 @@
 
 ### 범위 밖
 
-Outlook(인터페이스만 남김), Android, Mac 허브, 카카오톡 개인 대화 수집, App Store 공개 출시.
+Outlook, Android, Mac 허브, 카카오톡 개인 대화 수집, App Store 공개 출시.
 
 ## 2. 확정 결정
 
@@ -29,7 +29,7 @@ Outlook(인터페이스만 남김), Android, Mac 허브, 카카오톡 개인 대
 | 사용자 | 본인 → TestFlight로 지인 확대. Sign in with Apple | Supabase Auth `signInWithIdToken(provider: .apple)` 검증됨 |
 | 백엔드 | Supabase 무료 티어 (Postgres+pgvector, Auth, Edge Functions, Storage, pg_cron) | 서버리스 선호, RLS 기본 제공 |
 | 지능 위치 | 서버 중심. 기기는 필터·수집·EventKit·푸시 수신 | 앱 재배포 없이 파이프라인 수정, API 키 서버 보관 |
-| 메일 | Gmail만. 초기 백필 3개월. `-category:promotions` 제외 | 사용자 확정 |
+| 메일 | Gmail만. 초기 백필 3개월. `-category:promotions` 제외. Outlook은 만들지 않음 | 사용자 확정, Codex 리뷰 반영 |
 | 문자 | Shortcuts **Message 트리거** → App Intent. 무확인 자동 실행 검증됨 | Apple 문서 "run automatically" 목록에 Message 포함 |
 | 앱 알림 | Shortcuts **Notification 트리거** → App Intent. 카카오톡·Instagram·쇼핑/금융 앱 | **확인 배너 탭 필요 가능성 높음** (§3) |
 | 공유 | Share Extension: 텍스트·URL·이미지·PDF | 사용자 확정 |
