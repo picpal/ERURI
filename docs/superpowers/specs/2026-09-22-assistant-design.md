@@ -53,7 +53,7 @@ Outlook, Android, Mac 허브, 카카오톡 개인 대화 수집, App Store 공�
 | Foundation Models를 App Intents extension에서 쓸 수 있다 | **미확인.** 문서 없음. 확장 메모리 "현저히 낮음" | Capture 인텐트를 **메인 앱 타깃**에 두고 `supportedModes = .background`로 실행. 확장 사용 안 함 |
 | Foundation Models 한국어 | 검증됨. 컨텍스트 4,096토큰, 한국어 1자=1토큰 | 알림 텍스트 분류에 충분 |
 | App Intent 잠금 상태 실행 | 검증됨. `authenticationPolicy` 기본 `.alwaysAllowed` | 잠금 중 수집 가능. 단 로컬 DB는 `.completeUntilFirstUserAuthentication` 보호 등급 |
-| 알림 액션 → 앱 백그라운드 실행 | 검증됨 | 액션에 `authenticationRequired` 지정 후 EventKit 쓰기. EventKit 백그라운드 쓰기 자체는 문서 없음 → PoC-3 |
+| 알림 액션 → 앱 백그라운드 실행 | 검증됨 | 액션에 `authenticationRequired` 지정 후 EventKit 쓰기. EventKit 백그라운드 쓰기 자체는 문서 없음 → PoC-5 |
 | Gmail 테스트 모드 | 검증됨. 테스트 사용자 100명, **동의 7일 후 만료** | 본인 사용 중엔 7일마다 재연결. 지인 확대 전 앱 검증 + CASA(추정 $500~4,500, 2~6주) 결정 |
 | Gmail 쿼터 | 검증됨. **분당** 사용자 6,000 유닛 (`messages.get` 20) | 백필 배치 분당 250건 이하 |
 | Gmail watch | 검증됨. 7일 내 갱신, historyId 404 시 전체 재동기화 | pg_cron 일 1회 watch 갱신. 404 시 마지막 성공 커서 시각부터 `messages.list(after:)`로 재동기화 (§7) |
