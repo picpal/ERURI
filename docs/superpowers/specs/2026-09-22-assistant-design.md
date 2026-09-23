@@ -147,7 +147,9 @@ Share Extension은 1단계만 적용하고 큐에 넣는다. 이미지·PDF는 *
 ```text
 /ingest  (JWT 필수)
   → idempotency_key(user_id + source + external_id | sha256(content + occurred_at 분 단위)) 중복 검사
-  → 서버 규칙 필터 재적용 (OTP·카드·계좌). 통과 못 하면 저장 없이 204
+  → 서버 규칙 필터 재적용 (§6과 같은 OTP·카드(Luhn)·계좌 규칙 + 프로모션: `(광고)` 표기·Gmail 프로모션 라벨).
+      연락처 발신자 규칙은 연락처가 기기에만 있어 기기에서만 적용. 통과 못 하면 저장 없이 204
+  → 본문·OCR을 사용자 데이터 키로 암호화(§12 통제 1)
   → items INSERT (status = queued) + jobs INSERT (kind = process, item_id)
   → 202 반환
 
@@ -165,7 +167,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
       본문 추출 실패(HTML 파싱 오류·JS 전용) → "스크린샷 공유 요청" 푸시. 짧은 정상 문서는 그대로 저장
   → 연결: purchases는 (merchant, order_no) 복합 키. 없으면 (merchant, amount, ordered_at ±1일)로 후보 제시
       취소·변경 문구 → 기존 fact status = cancelled/superseded, 새 fact에 supersedes_id
-  → 청크(512자) + Voyage 임베딩 → item_chunks
+  → 청크(512자) → item_chunks. Voyage 임베딩은 약관 확인(§12 통제 3) 전까지 생성하지 않고 embedding = null로 둔다
   → proposals INSERT (event/task). uncertain 비어 있을 때만 잠금화면 "추가" 버튼 노출,
       아니면 REVIEW 카테고리로 앱에서 확인 유도
   → 백필(occurred_at이 수집 시각보다 3일 이상 과거)에서 나온 제안은 푸시하지 않고 보관함에만 표시
@@ -181,7 +183,11 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 - 증분: `users.watch` → Pub/Sub push → jobs INSERT(kind = gmail-sync) → `history.list(startHistoryId)` 페이지 전부 처리 후 커서 갱신. 404 시 `sync_states.last_success_at - 1일`부터 `messages.list(after:)`로 재동기화.
 - 푸시 유실 대비: pg_cron 6시간마다 연결별 gmail-sync 잡을 무조건 넣는다 (커서 기반이라 중복 비용 없음).
 - 웹훅 인증: Pub/Sub push 구독에 OIDC 토큰을 붙이고 Edge에서 Google 발급 JWT의 `aud`·`email`(서비스 계정)을 검증한다. 본문의 `emailAddress`를 `connections.account_ref`로 조회해 user_id를 결정한다. 검증 실패는 저장 없이 401. 이 함수는 `verify_jwt = false`이며 service role로 동작하므로 **모든 쿼리에 user_id를 명시**한다.
-- pg_cron: 매일 watch 갱신, 만료 7일 전 재인증 푸시. refresh 실패 시 `connections.status = reauth_required`로 두고 잡 중단.
+- Gmail 수집 본문도 `/ingest`와 같은 서버 규칙 필터를 거친 뒤 암호화해 저장한다(프로모션 라벨 메일은 폐기).
+- 만료 두 가지를 분리한다.
+  - **Gmail watch 만료** `sync_states.watch_expires_at`: `users.watch` 응답의 expiration(7일). pg_cron이 매일 watch를 갱신해 이 값을 밀어낸다.
+  - **OAuth refresh token 만료** `connections.expires_at`: 테스트 모드에서 발급 후 7일. 앱 게시(Production) 후에는 null.
+- 재인증 푸시: `connections.expires_at` 24시간 전, 또는 토큰 갱신에서 `invalid_grant`가 발생했을 때 보낸다. refresh 실패 시 `connections.status = reauth_required`로 두고 해당 연결의 잡을 중단한다.
 
 ## 8. 데이터 모델
 
@@ -189,8 +195,8 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 
 | 테이블 | 핵심 컬럼 | 비고 |
 |---|---|---|
-| `connections` | provider, account_ref, status, expires_at | 토큰은 `vault` |
-| `sync_states` | connection_id, cursor(historyId), last_success_at | |
+| `connections` | provider, account_ref, status(active/reauth_required/disconnected), expires_at | 토큰은 `vault`. `expires_at` = OAuth refresh token 만료(테스트 모드 7일, 게시 후 null) |
+| `sync_states` | connection_id, cursor(historyId), last_success_at, watch_expires_at | `watch_expires_at` = Gmail watch 만료(7일, 매일 갱신) |
 | `items` | source(GMAIL/MESSAGES/NOTIFICATION/SHARE/CHAT), app_name, sender, title, content_enc bytea, ocr_text_enc bytea, occurred_at, captured_at, device_filter, idempotency_key, status, storage_key, expires_at | 원문. `content_enc`·`ocr_text_enc`는 Edge Function이 사용자 데이터 키로 AES-256-GCM 암호화해 저장(§12). 90일 후 삭제, 행은 유지 |
 | `user_keys` | user_id, wrapped_key bytea, created_at | 사용자별 데이터 키를 마스터 키로 감싼 값(봉투 암호화). 마스터 키는 Edge Function 시크릿에만 있고 DB에 없다 |
 | `utterances` / `memories` | (아래) | 평문. 사용자 삭제 시 연쇄 |
@@ -375,10 +381,10 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 - 잃는 것: 폰이 꺼진 동안의 처리, 기기 간 공유, 서버 측 검색 품질 튜닝. 전환 비용: §7 파이프라인 대부분을 Swift로 재작성.
 
 - **알림 트리거 배너 탭**: 사용자가 알림마다 탭해야 하면 편의성이 크게 떨어진다. PoC-1 결과에 따라 2단계 범위를 재조정한다.
-- **Voyage 데이터 정책**: 학습 미사용·보관 기간 미확인. 확인 전 임베딩 대상은 마스킹 텍스트만.
+- **Voyage 데이터 정책**: 학습 미사용·보관 기간 미확인. §12 통제 3에 따라 **확인 전에는 임베딩을 생성하지 않는다**(키워드 검색만). 마스킹은 전송 근거가 아니다. PoC-7은 합성 코퍼스로만 평가한다.
 - **Edge 복호화 비용**: 워커가 건마다 AES-GCM 복호화하므로 CPU 2초 제한 안에서 배치 크기를 정해야 한다. PoC-10에 항목 추가.
-- **Gmail 7일 재인증**: 본인 사용 기간엔 감수. 지인 확대 시점에 앱 검증 비용을 결정한다.
+- **Gmail 7일 재인증**: 테스트 모드 refresh token 만료(`connections.expires_at`) 24시간 전 푸시로 완화. 본인 사용 기간엔 감수. 지인 확대 시점에 앱 검증 비용을 결정한다.
 - **APNs from Deno**: 미확인. PoC-4.
-- **Voyage 가격·한국어 품질**: 공식 가격 페이지 미확인. PoC-7에서 품질 판정.
+- **Voyage 가격·한국어 품질**: 공식 가격 페이지 미확인. PoC-7(합성 코퍼스)에서 품질 판정.
 - **Supabase 무료 티어 500MB**: 1인 1년 원문이면 충분하나 이미지 포함 시 Storage 1GB 상한 감시.
 - **Foundation Models 가용성**: Apple Intelligence 꺼진 기기는 규칙 필터만. 지인 확대 시 안내 필요.
