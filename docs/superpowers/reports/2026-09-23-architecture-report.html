@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iOS 개인 비서 · 아키텍처 리포트</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper: #f5f5f5; --color-paper-2: #ececec; --color-ink: #2d3142; --color-muted: #4f5d75;
+      --color-soft: #7a8399; --color-rule: rgba(45,49,66,0.12); --color-accent: #0f766e;
+      --color-accent-tint: rgba(15,118,110,0.08); --color-link: #4c1d95;
+      --font-sans: 'Pretendard', 'Noto Sans KR', system-ui, sans-serif;
+      --font-mono: 'Geist Mono', 'Noto Sans Mono CJK KR', ui-monospace, Menlo, monospace;
+    }
+    body { font-family: var(--font-sans); background: var(--color-paper); color: var(--color-ink); min-height: 100vh; padding: 3rem 2rem; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2.5rem; }
+    .header-eyebrow, .section-eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted); margin-bottom: 0.75rem; }
+    h1 { font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem); font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 0.25rem; }
+    .subtitle, .section-sub { font-size: 1rem; line-height: 1.55; color: var(--color-muted); max-width: 64ch; }
+    .section { margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid var(--color-rule); }
+    .diagram-container { background: transparent; border: none; padding: 0; overflow-x: auto; margin-top: 1.25rem; }
+    svg { width: 100%; min-width: 860px; display: block; }
+    .cards { display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 1rem; margin-top: 1.5rem; }
+    .card { background: #ffffff; border-radius: 6px; border: 1px solid var(--color-rule); padding: 1.25rem; }
+    .card-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.875rem; padding-bottom: 0.875rem; border-bottom: 1px solid rgba(45,49,66,0.08); }
+    .card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .card-dot.ink { background: var(--color-ink); } .card-dot.muted { background: var(--color-muted); }
+    .card-dot.accent { background: var(--color-accent); } .card-dot.link { background: var(--color-link); }
+    .card h3 { font-size: 0.875rem; font-weight: 600; }
+    .card ul { list-style: none; color: var(--color-muted); font-size: 0.8125rem; line-height: 1.55; }
+    .card li { margin-bottom: 0.3rem; padding-left: 0.875rem; position: relative; }
+    .card li::before { content: '—'; position: absolute; left: 0; color: rgba(45,49,66,0.25); font-size: 0.75rem; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1.25rem; font-size: 0.8125rem; background: #fff; border: 1px solid var(--color-rule); border-radius: 6px; overflow: hidden; }
+    th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid rgba(45,49,66,0.08); vertical-align: top; line-height: 1.5; }
+    th { font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-muted); font-weight: 500; background: var(--color-paper-2); }
+    td.phase { font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-accent); white-space: nowrap; }
+    td.src { font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-soft); white-space: nowrap; }
+    .tag { display: inline-block; font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.08em; padding: 0.1rem 0.4rem; border: 1px solid rgba(45,49,66,0.25); border-radius: 2px; color: var(--color-muted); margin-right: 0.25rem; }
+    .tag.poc { border-color: rgba(15,118,110,0.5); color: var(--color-accent); }
+    .footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid rgba(45,49,66,0.10); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; color: var(--color-soft); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <p class="header-eyebrow">Architecture Report · 2026-09-23</p>
+    <h1>iOS 개인 비서</h1>
+    <p class="subtitle">메일·문자·앱 알림·공유 항목을 하나의 개인 컨텍스트로 모아 일정을 제안하고, 출처와 함께 답하는 앱. 스펙 v3(Codex 2차 리뷰 반영) 기준의 구조·흐름·기능 목록.</p>
+  </div>
+
+  <!-- ============================================================ D1 아키텍처 -->
+  <div class="section">
+    <p class="section-eyebrow">01 · System Architecture</p>
+    <h2>시스템 아키텍처</h2>
+    <p class="section-sub">iPhone은 iOS만 할 수 있는 일(수집·필터·EventKit·푸시 수신)을 맡고, 나머지 처리는 Supabase Edge Function이 담당한다. 두 액센트가 이 설계의 핵심 지점이다.</p>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arch-title arch-desc">
+        <title id="arch-title">iOS 개인 비서 시스템 아키텍처</title>
+        <desc id="arch-desc">iPhone의 App Intent와 공유 입력이 기기 필터·큐를 거쳐 Supabase Edge 워커로 전송되고, Gmail Pub/Sub도 같은 워커로 들어온다. 워커는 Postgres에 저장하고 APNs로 제안을 푸시하며, 앱은 알림 액션으로 EventKit에 쓰고 채팅은 chat 함수의 하이브리드 검색을 호출한다.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#0f766e"/></marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4c1d95"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- Zones -->
+        <rect x="40" y="88" width="400" height="316" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="52" y="92" width="52" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="78" y="101" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">IPHONE</text>
+        <rect x="500" y="140" width="460" height="264" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="512" y="144" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="544" y="153" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">SUPABASE</text>
+
+        <!-- Arrows (before nodes) -->
+        <path d="M 224,152 H 240 Q 248,152 248,160 V 184 Q 248,192 256,192 H 264" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M 224,256 H 232 Q 240,256 240,248 V 224 Q 240,216 248,216 H 264" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="416" y1="204" x2="540" y2="204" stroke="#4c1d95" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <line x1="700" y1="204" x2="760" y2="204" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M 760,72 H 628 Q 620,72 620,80 V 172" fill="none" stroke="#4c1d95" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <line x1="620" y1="236" x2="620" y2="320" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="540" y1="352" x2="416" y2="352" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <line x1="844" y1="236" x2="844" y2="320" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <path d="M 844,384 V 412 Q 844,420 836,420 H 240 Q 232,420 232,412 V 280 Q 232,272 224,272" fill="none" stroke="#4c1d95" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+
+        <!-- Arrow labels -->
+        <rect x="442" y="184" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="478" y="193" fill="#4c1d95" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTPS · JWT</text>
+        <rect x="708" y="184" width="44" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="730" y="193" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">WRITE</text>
+        <rect x="664" y="52" width="52" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="690" y="61" fill="#4c1d95" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PUB/SUB</text>
+        <rect x="632" y="272" width="52" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="658" y="281" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PROPOSE</text>
+        <rect x="456" y="332" width="44" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="478" y="341" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PUSH</text>
+        <rect x="856" y="272" width="48" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="880" y="281" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SEARCH</text>
+        <rect x="508" y="428" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="540" y="437" fill="#4c1d95" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CHAT · RAG</text>
+
+        <!-- N2 App Intent (input) -->
+        <rect x="64" y="120" width="160" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="64" y="120" width="160" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <rect x="72" y="128" width="40" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.40)" stroke-width="0.8"/>
+        <text x="92" y="137" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">INTENT</text>
+        <text x="144" y="156" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">App Intent 수집</text>
+        <text x="144" y="172" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">Shortcuts 메시지·알림 트리거</text>
+
+        <!-- N1 공유·채팅·Siri (input) -->
+        <rect x="64" y="224" width="160" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="64" y="224" width="160" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <rect x="72" y="232" width="36" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.40)" stroke-width="0.8"/>
+        <text x="90" y="241" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">INPUT</text>
+        <text x="144" y="260" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">공유 · 채팅 · Siri</text>
+        <text x="144" y="276" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">Share Ext · 빠른 기억</text>
+
+        <!-- N3 기기 필터 + 큐 (focal) -->
+        <rect x="264" y="172" width="152" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="264" y="172" width="152" height="64" rx="6" fill="rgba(15,118,110,0.08)" stroke="#0f766e" stroke-width="1"/>
+        <rect x="272" y="180" width="40" height="12" rx="2" fill="transparent" stroke="rgba(15,118,110,0.50)" stroke-width="0.8"/>
+        <text x="292" y="189" fill="#0f766e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">FILTER</text>
+        <text x="340" y="208" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">기기 필터 + 큐</text>
+        <text x="340" y="224" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">규칙 · FM 분류 · SQLite</text>
+
+        <!-- N4 EventKit (backend) -->
+        <rect x="264" y="320" width="152" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="264" y="320" width="152" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="272" y="328" width="24" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="284" y="337" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EK</text>
+        <text x="340" y="356" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">EventKit 실행</text>
+        <text x="340" y="372" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">알림 액션 · 멱등 executions</text>
+
+        <!-- N5 Edge worker (focal) -->
+        <rect x="540" y="172" width="160" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="540" y="172" width="160" height="64" rx="6" fill="rgba(15,118,110,0.08)" stroke="#0f766e" stroke-width="1"/>
+        <rect x="548" y="180" width="36" height="12" rx="2" fill="transparent" stroke="rgba(15,118,110,0.50)" stroke-width="0.8"/>
+        <text x="566" y="189" fill="#0f766e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EDGE</text>
+        <text x="620" y="208" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">ingest · worker</text>
+        <text x="620" y="224" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">암호화 · Haiku 추출 · jobs</text>
+
+        <!-- N6 Postgres (store) -->
+        <rect x="760" y="172" width="168" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="760" y="172" width="168" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="768" y="180" width="24" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+        <text x="780" y="189" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
+        <text x="844" y="208" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">Postgres</text>
+        <text x="844" y="224" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">items · facts · pgvector</text>
+
+        <!-- N8 APNs (external) -->
+        <rect x="540" y="320" width="160" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="540" y="320" width="160" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="548" y="328" width="36" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="566" y="337" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APNS</text>
+        <text x="620" y="356" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">제안 푸시</text>
+        <text x="620" y="372" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">ADD_EVENT · REVIEW</text>
+
+        <!-- N7 Edge chat (backend) -->
+        <rect x="760" y="320" width="168" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="760" y="320" width="168" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="768" y="328" width="36" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="786" y="337" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EDGE</text>
+        <text x="844" y="356" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">chat</text>
+        <text x="844" y="372" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">하이브리드 검색 · Sonnet</text>
+
+        <!-- N9 Gmail (external) -->
+        <rect x="760" y="40" width="168" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="760" y="40" width="168" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="768" y="48" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="782" y="57" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+        <text x="844" y="76" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">Gmail</text>
+        <text x="844" y="92" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">OAuth · watch · history</text>
+
+        <!-- Legend -->
+        <line x1="40" y1="452" x2="960" y2="452" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="40" y="468" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <rect x="112" y="460" width="14" height="10" rx="2" fill="rgba(15,118,110,0.08)" stroke="#0f766e" stroke-width="1"/>
+        <text x="132" y="469" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">핵심 지점</text>
+        <rect x="212" y="460" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="232" y="469" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">처리 구성요소</text>
+        <rect x="332" y="460" width="14" height="10" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text x="352" y="469" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">저장소</text>
+        <rect x="420" y="460" width="14" height="10" rx="2" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="440" y="469" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">외부 서비스</text>
+        <rect x="524" y="460" width="14" height="10" rx="2" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <text x="544" y="469" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">사용자 입력</text>
+        <line x1="640" y1="465" x2="656" y2="465" stroke="#4c1d95" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <text x="664" y="469" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">HTTPS / API</text>
+        <line x1="752" y1="465" x2="768" y2="465" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="776" y="469" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">내부 흐름</text>
+        <line x1="852" y1="465" x2="868" y2="465" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <text x="876" y="469" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">비동기 푸시</text>
+      </svg>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="card-header"><span class="card-dot accent"></span><h3>기기가 맡는 것</h3></div>
+        <ul><li>Shortcuts 트리거 → App Intent 수집 (문자는 무확인, 앱 알림은 배너 탭 예상)</li><li>규칙 필터(OTP·카드·계좌·연락처) + Foundation Models 분류로 개인 대화 폐기</li><li>App Group SQLite 큐, background URLSession 전송</li><li>알림 액션 → EventKit 쓰기, executions로 멱등 보장</li></ul></div>
+      <div class="card"><div class="card-header"><span class="card-dot ink"></span><h3>서버가 맡는 것</h3></div>
+        <ul><li>Gmail Pub/Sub 수신, watch 갱신, historyId 복구</li><li>봉투 암호화 저장, jobs 영속 큐로 분류·추출·임베딩</li><li>proposals 생성 후 APNs 발송</li><li>chat: tsvector+trgm ∪ pgvector RRF, 인용 서버 검증</li></ul></div>
+      <div class="card"><div class="card-header"><span class="card-dot muted"></span><h3>확정 스택</h3></div>
+        <ul><li>SwiftUI · App Intents · EventKit · Foundation Models</li><li>Supabase Free (Postgres 17, pgvector, pg_cron, Edge Deno)</li><li>claude-haiku-4-5 추출 · claude-sonnet-5 채팅</li><li>Voyage voyage-4-lite 512차원 (약관 확인 후)</li></ul></div>
+    </div>
+  </div>
+
+  <!-- ============================================================ D2 데이터 흐름 -->
+  <div class="section">
+    <p class="section-eyebrow">02 · Data Flow</p>
+    <h2>수집 → 필터 → 저장 → 추출 → 제안 → 확인</h2>
+    <p class="section-sub">역할별로 데이터가 어떤 형태로 손을 바꾸는지. 액센트는 이 제품의 핵심 순간인 "잠금화면에서 확인"으로 들어가는 제안 푸시다.</p>
+    <div class="diagram-container">
+      <svg viewBox="0 0 840 356" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="flow-title flow-desc">
+        <title id="flow-title">수집에서 캘린더 등록까지의 데이터 흐름</title>
+        <desc id="flow-desc">기기가 알림·메일·공유를 수집해 필터링하고 서버가 암호화 저장·추출·제안을 만든 뒤, 사용자가 잠금화면에서 확인하면 기기가 EventKit에 쓴다. 각 노드의 하단 칩은 입력·출력 데이터 형태다.</desc>
+        <defs>
+          <pattern id="flow-dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="11" cy="11" r="0.8" fill="rgba(45,49,66,0.10)"/></pattern>
+          <marker id="arr-muted" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#4f5d75"/></marker>
+          <marker id="arr-accent" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#0f766e"/></marker>
+          <marker id="arr-link" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#4c1d95"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+        <rect width="100%" height="100%" fill="url(#flow-dots)"/>
+        <!-- lane tints (lane 0 and 2) -->
+        <rect x="0" y="36" width="840" height="80" fill="rgba(45,49,66,0.018)"/>
+        <rect x="0" y="196" width="840" height="80" fill="rgba(45,49,66,0.018)"/>
+        <!-- dividers -->
+        <line x1="0" y1="36" x2="840" y2="36" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <line x1="0" y1="116" x2="840" y2="116" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <line x1="0" y1="196" x2="840" y2="196" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <line x1="0" y1="276" x2="840" y2="276" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <line x1="140" y1="36" x2="140" y2="276" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+
+        <!-- Step header chips -->
+        <g font-family="'Geist Mono', monospace" text-anchor="middle">
+          <rect x="180" y="6" width="32" height="16" rx="8" fill="rgba(45,49,66,0.12)"/><text x="196" y="14" font-size="7" fill="#2d3142" dominant-baseline="middle">01</text><text x="196" y="29" font-size="7" fill="#4f5d75" letter-spacing="0.12em">COLLECT</text>
+          <rect x="292" y="6" width="32" height="16" rx="8" fill="rgba(45,49,66,0.12)"/><text x="308" y="14" font-size="7" fill="#2d3142" dominant-baseline="middle">02</text><text x="308" y="29" font-size="7" fill="#4f5d75" letter-spacing="0.12em">FILTER</text>
+          <rect x="404" y="6" width="32" height="16" rx="8" fill="rgba(45,49,66,0.12)"/><text x="420" y="14" font-size="7" fill="#2d3142" dominant-baseline="middle">03</text><text x="420" y="29" font-size="7" fill="#4f5d75" letter-spacing="0.12em">STORE</text>
+          <rect x="516" y="6" width="32" height="16" rx="8" fill="rgba(45,49,66,0.12)"/><text x="532" y="14" font-size="7" fill="#2d3142" dominant-baseline="middle">04</text><text x="532" y="29" font-size="7" fill="#4f5d75" letter-spacing="0.12em">EXTRACT</text>
+          <rect x="628" y="6" width="32" height="16" rx="8" fill="rgba(45,49,66,0.12)"/><text x="644" y="14" font-size="7" fill="#2d3142" dominant-baseline="middle">05</text><text x="644" y="29" font-size="7" fill="#4f5d75" letter-spacing="0.12em">PROPOSE</text>
+          <rect x="740" y="6" width="32" height="16" rx="8" fill="rgba(15,118,110,0.20)"/><text x="756" y="14" font-size="7" fill="#0f766e" dominant-baseline="middle">06</text><text x="756" y="29" font-size="7" fill="#0f766e" letter-spacing="0.12em">CONFIRM</text>
+        </g>
+
+        <!-- Lane labels -->
+        <g font-family="'Geist Mono', monospace" font-size="7" fill="#4f5d75" text-anchor="middle" letter-spacing="0.14em">
+          <text x="70" y="72">IPHONE</text><text x="70" y="84">DEVICE</text>
+          <text x="70" y="152">SUPABASE</text><text x="70" y="164">SERVER</text>
+          <text x="70" y="232">USER</text><text x="70" y="244">LOCK SCREEN</text>
+        </g>
+
+        <!-- Arrows -->
+        <line x1="246" y1="76" x2="258" y2="76" stroke="#4f5d75" stroke-width="1" marker-end="url(#arr-muted)"/>
+        <path d="M 358,76 H 412 Q 420,76 420,84 V 124" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arr-muted)"/>
+        <line x1="246" y1="156" x2="370" y2="156" stroke="#4f5d75" stroke-width="1" marker-end="url(#arr-muted)"/>
+        <line x1="470" y1="156" x2="482" y2="156" stroke="#4f5d75" stroke-width="1" marker-end="url(#arr-muted)"/>
+        <line x1="582" y1="156" x2="594" y2="156" stroke="#4f5d75" stroke-width="1" marker-end="url(#arr-muted)"/>
+        <path d="M 694,156 H 736 Q 744,156 744,164 V 204" fill="none" stroke="#0f766e" stroke-width="1.2" marker-end="url(#arr-accent)"/>
+        <line x1="768" y1="204" x2="768" y2="108" stroke="#4c1d95" stroke-width="1" marker-end="url(#arr-link)"/>
+        <!-- focal arrow label (Korean, 5 glyphs → mask 52) -->
+        <rect x="756" y="176" width="52" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="782" y="185" fill="#0f766e" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">제안 푸시</text>
+
+        <!-- Nodes: DEV lane (y=44) -->
+        <g font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">
+          <!-- DEV/0 수집 -->
+          <rect x="146" y="44" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+          <rect x="150" y="48" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/><text x="159" y="53" font-size="6" font-weight="600" fill="#2d3142" font-family="'Geist Mono', monospace" dominant-baseline="middle">DEV</text>
+          <text x="196" y="67" font-size="9" font-weight="600" fill="#2d3142">수집</text>
+          <text x="196" y="79" font-size="6.5" fill="#4f5d75" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">알림 · 메일 · 공유</text>
+          <text x="196" y="91" font-size="6.5" fill="#7a8399" font-family="'Geist Mono', monospace">App Intent · Share</text>
+          <rect x="150" y="98" width="16" height="8" rx="3" fill="#7c8f6f"/><text x="158" y="102" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">LS</text>
+          <rect x="226" y="98" width="16" height="8" rx="3" fill="#5e7a9b"/><text x="234" y="102" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">DB</text>
+          <!-- DEV/1 기기 필터 -->
+          <rect x="258" y="44" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+          <rect x="262" y="48" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/><text x="271" y="53" font-size="6" font-weight="600" fill="#2d3142" font-family="'Geist Mono', monospace" dominant-baseline="middle">DEV</text>
+          <text x="308" y="67" font-size="9" font-weight="600" fill="#2d3142">기기 필터</text>
+          <text x="308" y="79" font-size="6.5" fill="#4f5d75" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">OTP·카드 마스킹 · 개인대화 폐기</text>
+          <text x="308" y="91" font-size="6.5" fill="#7a8399" font-family="'Geist Mono', monospace">Rules · Foundation Models</text>
+          <rect x="262" y="98" width="16" height="8" rx="3" fill="#5e7a9b"/><text x="270" y="102" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">DB</text>
+          <rect x="338" y="98" width="16" height="8" rx="3" fill="#5e7a9b"/><text x="346" y="102" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">DB</text>
+          <!-- DEV/5 EventKit -->
+          <rect x="706" y="44" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+          <rect x="710" y="48" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/><text x="719" y="53" font-size="6" font-weight="600" fill="#2d3142" font-family="'Geist Mono', monospace" dominant-baseline="middle">DEV</text>
+          <text x="756" y="67" font-size="9" font-weight="600" fill="#2d3142">EventKit 쓰기</text>
+          <text x="756" y="79" font-size="6.5" fill="#4f5d75" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">캘린더 · 미리알림 1건</text>
+          <text x="756" y="91" font-size="6.5" fill="#7a8399" font-family="'Geist Mono', monospace">executions → report</text>
+          <rect x="710" y="98" width="16" height="8" rx="3" fill="#b8915a"/><text x="718" y="102" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">TB</text>
+
+          <!-- SRV lane (y=124) -->
+          <!-- SRV/0 Gmail 동기화 -->
+          <rect x="146" y="124" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+          <rect x="150" y="128" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/><text x="159" y="133" font-size="6" font-weight="600" fill="#2d3142" font-family="'Geist Mono', monospace" dominant-baseline="middle">SRV</text>
+          <text x="196" y="147" font-size="9" font-weight="600" fill="#2d3142">Gmail 동기화</text>
+          <text x="196" y="159" font-size="6.5" fill="#4f5d75" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">Pub/Sub → history.list</text>
+          <text x="196" y="171" font-size="6.5" fill="#7a8399" font-family="'Geist Mono', monospace">-category:promotions</text>
+          <rect x="226" y="178" width="16" height="8" rx="3" fill="#5e7a9b"/><text x="234" y="182" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">DB</text>
+          <!-- SRV/2 암호화 저장 -->
+          <rect x="370" y="124" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+          <rect x="374" y="128" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/><text x="383" y="133" font-size="6" font-weight="600" fill="#2d3142" font-family="'Geist Mono', monospace" dominant-baseline="middle">SRV</text>
+          <text x="420" y="147" font-size="9" font-weight="600" fill="#2d3142">암호화 저장</text>
+          <text x="420" y="159" font-size="6.5" fill="#4f5d75" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">items · jobs 큐 등록</text>
+          <text x="420" y="171" font-size="6.5" fill="#7a8399" font-family="'Geist Mono', monospace">AES-GCM · user key</text>
+          <rect x="374" y="178" width="16" height="8" rx="3" fill="#5e7a9b"/><text x="382" y="182" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">DB</text>
+          <rect x="450" y="178" width="16" height="8" rx="3" fill="#5e7a9b"/><text x="458" y="182" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">DB</text>
+          <!-- SRV/3 추출 -->
+          <rect x="482" y="124" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+          <rect x="486" y="128" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/><text x="495" y="133" font-size="6" font-weight="600" fill="#2d3142" font-family="'Geist Mono', monospace" dominant-baseline="middle">SRV</text>
+          <text x="532" y="147" font-size="9" font-weight="600" fill="#2d3142">분류 · 추출</text>
+          <text x="532" y="159" font-size="6.5" fill="#4f5d75" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">일정 · 할 일 · 구매 · 폐기</text>
+          <text x="532" y="171" font-size="6.5" fill="#7a8399" font-family="'Geist Mono', monospace">Haiku JSON · Voyage</text>
+          <rect x="486" y="178" width="16" height="8" rx="3" fill="#5e7a9b"/><text x="494" y="182" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">DB</text>
+          <rect x="566" y="178" width="16" height="8" rx="3" fill="#b8915a"/><text x="574" y="182" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">TB</text>
+          <!-- SRV/4 제안 -->
+          <rect x="594" y="124" width="100" height="64" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+          <rect x="598" y="128" width="18" height="10" rx="3" fill="rgba(45,49,66,0.12)"/><text x="607" y="133" font-size="6" font-weight="600" fill="#2d3142" font-family="'Geist Mono', monospace" dominant-baseline="middle">SRV</text>
+          <text x="644" y="147" font-size="9" font-weight="600" fill="#2d3142">제안 생성</text>
+          <text x="644" y="159" font-size="6.5" fill="#4f5d75" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">uncertain 없을 때만 즉시</text>
+          <text x="644" y="171" font-size="6.5" fill="#7a8399" font-family="'Geist Mono', monospace">proposals · APNs</text>
+          <rect x="598" y="178" width="16" height="8" rx="3" fill="#b8915a"/><text x="606" y="182" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">TB</text>
+          <rect x="678" y="178" width="16" height="8" rx="3" fill="#7c8f6f"/><text x="686" y="182" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">LS</text>
+
+          <!-- USR lane (y=204) -->
+          <!-- USR/5 잠금화면 확인 (focal) -->
+          <rect x="706" y="204" width="100" height="64" rx="6" fill="rgba(15,118,110,0.07)" stroke="#0f766e" stroke-width="1"/>
+          <rect x="710" y="208" width="18" height="10" rx="3" fill="rgba(15,118,110,0.20)"/><text x="719" y="213" font-size="6" font-weight="600" fill="#0f766e" font-family="'Geist Mono', monospace" dominant-baseline="middle">USR</text>
+          <text x="756" y="227" font-size="9" font-weight="600" fill="#2d3142">잠금화면 확인</text>
+          <text x="756" y="239" font-size="6.5" fill="#4f5d75" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">"추가" 탭 1회 · 무시</text>
+          <text x="756" y="251" font-size="6.5" fill="#7a8399" font-family="'Geist Mono', monospace">authenticationRequired</text>
+          <rect x="710" y="258" width="16" height="8" rx="3" fill="#7c8f6f"/><text x="718" y="262" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">LS</text>
+          <rect x="790" y="258" width="16" height="8" rx="3" fill="#b8915a"/><text x="798" y="262" font-size="5" font-weight="700" fill="#fff" font-family="'Geist Mono', monospace" dominant-baseline="middle">TB</text>
+        </g>
+
+        <!-- Legend -->
+        <g font-family="'Geist Mono', monospace" font-size="7" fill="#4f5d75">
+          <text x="144" y="295" letter-spacing="0.12em">STEPS</text>
+          <text x="200" y="295">01 COLLECT · 02 FILTER · 03 STORE · 04 EXTRACT · 05 PROPOSE · </text><text x="516" y="295" fill="#0f766e">06 CONFIRM</text>
+          <text x="144" y="316" letter-spacing="0.12em">DATA TYPE</text>
+          <rect x="200" y="309" width="16" height="8" rx="3" fill="#7c8f6f"/><text x="222" y="316">이벤트 · 알림</text>
+          <rect x="300" y="309" width="16" height="8" rx="3" fill="#5e7a9b"/><text x="322" y="316">원문 항목</text>
+          <rect x="384" y="309" width="16" height="8" rx="3" fill="#b8915a"/><text x="406" y="316">구조화 사실</text>
+          <text x="480" y="316" fill="#7a8399">왼쪽 칩 = 입력 · 오른쪽 칩 = 출력</text>
+          <text x="144" y="338" letter-spacing="0.12em">FLOW</text>
+          <line x1="200" y1="335" x2="220" y2="335" stroke="#4f5d75" stroke-width="1" marker-end="url(#arr-muted)"/><text x="228" y="338">데이터 전달</text>
+          <line x1="300" y1="335" x2="320" y2="335" stroke="#0f766e" stroke-width="1.2" marker-end="url(#arr-accent)"/><text x="328" y="338">핵심 전달 (제안 푸시)</text>
+          <line x1="440" y1="335" x2="460" y2="335" stroke="#4c1d95" stroke-width="1" marker-end="url(#arr-link)"/><text x="468" y="338">캘린더 쓰기</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ============================================================ D3 시퀀스 -->
+  <div class="section">
+    <p class="section-eyebrow">03 · Sequence</p>
+    <h2>메일 수신 → 잠금화면에서 캘린더 추가</h2>
+    <p class="section-sub">Gmail 푸시부터 EventKit 저장·보고까지. 캘린더 쓰기는 executions에 기록이 없을 때만 실행해 같은 알림을 두 번 눌러도 일정이 한 건만 생긴다.</p>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seq-title seq-desc">
+        <title id="seq-title">메일 수신에서 캘린더 등록까지의 시퀀스</title>
+        <desc id="seq-desc">Gmail Pub/Sub 푸시를 받은 Edge 워커가 메일을 조회해 암호화 저장하고 Haiku로 추출한 뒤 제안을 저장하고 APNs로 iPhone에 알린다. 사용자가 잠금화면에서 추가를 탭하면 앱이 executions를 확인하고 EventKit에 이벤트를 만든 뒤 서버에 보고한다.</desc>
+        <defs>
+          <marker id="seq-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="seq-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#0f766e"/></marker>
+          <marker id="seq-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4c1d95"/></marker>
+          <marker id="seq-arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline points="0 0, 8 3, 0 6" fill="none" stroke="#4f5d75" stroke-width="1.2"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- Lifelines -->
+        <line x1="100" y1="80" x2="100" y2="640" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="300" y1="80" x2="300" y2="640" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="500" y1="80" x2="500" y2="640" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="700" y1="80" x2="700" y2="640" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="900" y1="80" x2="900" y2="640" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+
+        <!-- opt fragment (iPhone ↔ EventKit) -->
+        <rect x="676" y="444" width="248" height="112" rx="4" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+        <rect x="676" y="444" width="40" height="16" rx="2" fill="#f5f5f5" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+        <text x="696" y="456" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">OPT</text>
+        <text x="724" y="456" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.04em">[executions에 없음]</text>
+
+        <!-- Activation bars -->
+        <rect x="296" y="120" width="8" height="240" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="96" y="156" width="8" height="36" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="496" y="224" width="8" height="12" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="496" y="320" width="8" height="12" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="696" y="360" width="8" height="240" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="896" y="488" width="8" height="36" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="296" y="580" width="8" height="40" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="496" y="612" width="8" height="12" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+
+        <!-- Messages -->
+        <line x1="104" y1="120" x2="296" y2="120" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#seq-arrow-open)"/>
+        <rect x="156" y="100" width="88" height="12" rx="2" fill="#f5f5f5"/><text x="200" y="109" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PUB/SUB PUSH</text>
+
+        <line x1="296" y1="156" x2="104" y2="156" stroke="#4c1d95" stroke-width="1.2" marker-end="url(#seq-arrow-link)"/>
+        <rect x="156" y="136" width="88" height="12" rx="2" fill="#f5f5f5"/><text x="200" y="145" fill="#4c1d95" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HISTORY.LIST</text>
+
+        <line x1="104" y1="192" x2="296" y2="192" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#seq-arrow)"/>
+        <rect x="168" y="172" width="64" height="12" rx="2" fill="#f5f5f5"/><text x="200" y="181" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">MESSAGES</text>
+
+        <line x1="304" y1="228" x2="496" y2="228" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#seq-arrow)"/>
+        <rect x="344" y="208" width="112" height="12" rx="2" fill="#f5f5f5"/><text x="400" y="217" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ENCRYPT · INSERT</text>
+
+        <path d="M 304,264 H 332 Q 340,264 340,272 V 280 Q 340,288 332,288 H 308" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#seq-arrow)"/>
+        <text x="352" y="280" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.06em">HAIKU 추출 · JSON</text>
+
+        <line x1="304" y1="324" x2="496" y2="324" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#seq-arrow)"/>
+        <rect x="364" y="304" width="72" height="12" rx="2" fill="#f5f5f5"/><text x="400" y="313" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PROPOSAL</text>
+
+        <line x1="304" y1="360" x2="696" y2="360" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#seq-arrow-open)"/>
+        <rect x="556" y="340" width="88" height="12" rx="2" fill="#f5f5f5"/><text x="600" y="349" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">APNS ALERT</text>
+
+        <path d="M 704,396 H 732 Q 740,396 740,404 V 412 Q 740,420 732,420 H 708" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#seq-arrow)"/>
+        <text x="752" y="412" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.06em">잠금화면 "추가" 탭</text>
+
+        <line x1="704" y1="488" x2="896" y2="488" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#seq-arrow)"/>
+        <rect x="760" y="468" width="80" height="12" rx="2" fill="#f5f5f5"/><text x="800" y="477" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SAVE EVENT</text>
+
+        <line x1="896" y1="524" x2="704" y2="524" stroke="#0f766e" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#seq-arrow-accent)"/>
+        <rect x="756" y="504" width="88" height="12" rx="2" fill="#f5f5f5"/><text x="800" y="513" fill="#0f766e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">EVENTKIT_ID</text>
+
+        <line x1="696" y1="580" x2="304" y2="580" stroke="#4c1d95" stroke-width="1.2" marker-end="url(#seq-arrow-link)"/>
+        <rect x="440" y="560" width="120" height="12" rx="2" fill="#f5f5f5"/><text x="500" y="569" fill="#4c1d95" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">REPORT EXECUTION</text>
+
+        <line x1="304" y1="616" x2="496" y2="616" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#seq-arrow)"/>
+        <rect x="360" y="596" width="80" height="12" rx="2" fill="#f5f5f5"/><text x="400" y="605" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SUCCEEDED</text>
+
+        <!-- Actors -->
+        <g font-family="'Pretendard', 'Noto Sans KR', sans-serif" font-size="12" font-weight="600" fill="#2d3142" text-anchor="middle">
+          <rect x="36" y="40" width="128" height="40" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/><text x="100" y="64">Gmail</text>
+          <rect x="236" y="40" width="128" height="40" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/><text x="300" y="64">Edge worker</text>
+          <rect x="436" y="40" width="128" height="40" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/><text x="500" y="64">Postgres</text>
+          <rect x="636" y="40" width="128" height="40" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/><text x="700" y="64">iPhone 앱</text>
+          <rect x="836" y="40" width="128" height="40" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/><text x="900" y="64">EventKit</text>
+        </g>
+
+        <!-- Legend -->
+        <line x1="36" y1="660" x2="964" y2="660" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="36" y="676" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <line x1="108" y1="673" x2="124" y2="673" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#seq-arrow)"/><text x="132" y="677" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">동기 호출</text>
+        <line x1="212" y1="673" x2="228" y2="673" stroke="#4c1d95" stroke-width="1.2" marker-end="url(#seq-arrow-link)"/><text x="236" y="677" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">HTTPS 호출</text>
+        <line x1="320" y1="673" x2="336" y2="673" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#seq-arrow)"/><text x="344" y="677" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">응답</text>
+        <line x1="400" y1="673" x2="416" y2="673" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#seq-arrow-open)"/><text x="424" y="677" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">비동기 알림</text>
+        <line x1="512" y1="673" x2="528" y2="673" stroke="#0f766e" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#seq-arrow-accent)"/><text x="536" y="677" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">핵심 성공 응답</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ============================================================ D4 검색 플로우차트 -->
+  <div class="section">
+    <p class="section-eyebrow">04 · Flowchart</p>
+    <h2>채팅 검색 · 답변 흐름</h2>
+    <p class="section-sub">구조화 질문은 SQL을, 나머지는 하이브리드 검색을 탄다. 모델이 낸 인용은 서버가 검색 집합과 대조하고, 근거 없는 문장은 그대로 내보내지 않는다.</p>
+    <div class="diagram-container">
+      <svg viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="chat-title chat-desc">
+        <title id="chat-title">채팅 질문이 답변이 되기까지의 분기</title>
+        <desc id="chat-desc">질문에서 Haiku가 필터를 뽑고, 구매·일정 같은 구조화 질문은 SQL로, 그 외는 tsvector와 pgvector를 RRF로 합친 하이브리드 검색으로 근거를 모은다. Sonnet이 인용 포함 JSON을 내면 서버가 인용을 검증해 출처 있는 답변 또는 근거 미확인 답변으로 나간다.</desc>
+        <defs>
+          <marker id="fc-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="fc-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#0f766e"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- Arrows -->
+        <line x1="400" y1="80" x2="400" y2="120" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#fc-arrow)"/>
+        <line x1="400" y1="176" x2="400" y2="200" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#fc-arrow)"/>
+        <line x1="520" y1="244" x2="576" y2="244" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#fc-arrow)"/>
+        <line x1="400" y1="288" x2="400" y2="328" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#fc-arrow)"/>
+        <path d="M 664,272 V 420 Q 664,428 656,428 H 408" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#fc-arrow)"/>
+        <line x1="400" y1="392" x2="400" y2="420" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#fc-arrow)"/>
+        <line x1="400" y1="436" x2="400" y2="464" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#fc-arrow)"/>
+        <line x1="400" y1="520" x2="400" y2="544" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#fc-arrow)"/>
+        <line x1="520" y1="588" x2="576" y2="588" stroke="#0f766e" stroke-width="1.2" marker-end="url(#fc-arrow-accent)"/>
+        <line x1="400" y1="632" x2="400" y2="672" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#fc-arrow)"/>
+
+        <!-- Arrow labels -->
+        <rect x="532" y="224" width="32" height="12" rx="2" fill="#f5f5f5"/><text x="548" y="233" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">YES</text>
+        <rect x="412" y="300" width="28" height="12" rx="2" fill="#f5f5f5"/><text x="426" y="309" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NO</text>
+        <rect x="532" y="568" width="32" height="12" rx="2" fill="#f5f5f5"/><text x="548" y="577" fill="#0f766e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">YES</text>
+        <rect x="412" y="644" width="28" height="12" rx="2" fill="#f5f5f5"/><text x="426" y="653" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NO</text>
+
+        <!-- merge dot -->
+        <circle cx="400" cy="428" r="4" fill="#2d3142"/>
+
+        <g font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">
+          <!-- start -->
+          <rect x="304" y="40" width="192" height="40" rx="20" fill="#f5f5f5"/>
+          <rect x="304" y="40" width="192" height="40" rx="20" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+          <text x="400" y="64" font-size="12" font-weight="600" fill="#2d3142">질문 입력 (채팅 · Siri)</text>
+          <!-- A -->
+          <rect x="304" y="120" width="192" height="56" rx="6" fill="#f5f5f5"/>
+          <rect x="304" y="120" width="192" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+          <text x="400" y="144" font-size="12" font-weight="600" fill="#2d3142">필터 추출</text>
+          <text x="400" y="160" font-size="9" fill="#4f5d75" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">Haiku · 날짜 · 출처 · 종류</text>
+          <!-- D1 -->
+          <polygon points="400,200 520,244 400,288 280,244" fill="#f5f5f5"/>
+          <polygon points="400,200 520,244 400,288 280,244" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+          <text x="400" y="248" font-size="12" font-weight="600" fill="#2d3142">구조화 질문?</text>
+          <!-- B -->
+          <rect x="576" y="216" width="176" height="56" rx="6" fill="#f5f5f5"/>
+          <rect x="576" y="216" width="176" height="56" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+          <text x="664" y="240" font-size="12" font-weight="600" fill="#2d3142">SQL 조회</text>
+          <text x="664" y="256" font-size="9" fill="#4f5d75" font-family="'Geist Mono', monospace">purchases · facts</text>
+          <!-- C -->
+          <rect x="304" y="328" width="192" height="64" rx="6" fill="#f5f5f5"/>
+          <rect x="304" y="328" width="192" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+          <text x="400" y="352" font-size="12" font-weight="600" fill="#2d3142">하이브리드 검색</text>
+          <text x="400" y="368" font-size="9" fill="#4f5d75" font-family="'Geist Mono', monospace">tsv+trgm ∪ pgvector · RRF</text>
+          <text x="400" y="382" font-size="9" fill="#4f5d75" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">+ memories 상위 5</text>
+          <!-- E -->
+          <rect x="304" y="464" width="192" height="56" rx="6" fill="#f5f5f5"/>
+          <rect x="304" y="464" width="192" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+          <text x="400" y="488" font-size="12" font-weight="600" fill="#2d3142">답변 생성</text>
+          <text x="400" y="504" font-size="9" fill="#4f5d75" font-family="'Geist Mono', monospace">Sonnet · {answer, citations[]}</text>
+          <!-- D2 -->
+          <polygon points="400,544 520,588 400,632 280,588" fill="#f5f5f5"/>
+          <polygon points="400,544 520,588 400,632 280,588" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+          <text x="400" y="586" font-size="12" font-weight="600" fill="#2d3142">인용이 검색</text>
+          <text x="400" y="600" font-size="12" font-weight="600" fill="#2d3142">집합에 있나?</text>
+          <!-- F (end, accent) -->
+          <rect x="576" y="568" width="176" height="40" rx="20" fill="#f5f5f5"/>
+          <rect x="576" y="568" width="176" height="40" rx="20" fill="rgba(15,118,110,0.08)" stroke="#0f766e" stroke-width="1"/>
+          <text x="664" y="592" font-size="12" font-weight="600" fill="#2d3142">출처 표시 답변</text>
+          <!-- G (end) -->
+          <rect x="304" y="672" width="192" height="40" rx="20" fill="#f5f5f5"/>
+          <rect x="304" y="672" width="192" height="40" rx="20" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+          <text x="400" y="696" font-size="12" font-weight="600" fill="#2d3142">"근거 미확인" 표시</text>
+        </g>
+
+        <!-- Legend -->
+        <line x1="40" y1="752" x2="760" y2="752" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="40" y="768" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <rect x="112" y="760" width="20" height="10" rx="5" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/><text x="140" y="769" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">시작 · 종료</text>
+        <rect x="232" y="760" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/><text x="252" y="769" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">처리 단계</text>
+        <polygon points="344,760 352,765 344,770 336,765" fill="#ffffff" stroke="#2d3142" stroke-width="1"/><text x="360" y="769" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">판단</text>
+        <rect x="416" y="760" width="14" height="10" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/><text x="436" y="769" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">저장소 조회</text>
+        <rect x="520" y="760" width="14" height="10" rx="2" fill="rgba(15,118,110,0.08)" stroke="#0f766e" stroke-width="1"/><text x="540" y="769" fill="#4f5d75" font-size="9" font-family="'Pretendard', 'Noto Sans KR', sans-serif">정상 경로</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ============================================================ D5 개인정보 계층 -->
+  <div class="section">
+    <p class="section-eyebrow">05 · Privacy Controls</p>
+    <h2>개인정보 보호 계층</h2>
+    <p class="section-sub">Superhuman·Spark 같은 서버 동기화형 구조를 그대로 두고, 여섯 층으로 보호한다. 액센트는 보호 범위를 정직하게 한정한 암호화 층이다. 실제 1차 방어는 접근 통제와 짧은 보관이다.</p>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="priv-title priv-desc">
+        <title id="priv-title">개인정보 보호 여섯 계층</title>
+        <desc id="priv-desc">데이터가 기기에서 서버로 흐르는 순서대로 기기 필터, 최소화와 짧은 보관, 봉투 암호화, 접근 통제와 감사, 외부 공급자 조건, 투명성과 사용자 통제의 여섯 층이 쌓여 있다.</desc>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- direction indicator -->
+        <line x1="72" y1="56" x2="72" y2="400" stroke="#7a8399" stroke-width="1"/>
+        <polygon points="68,400 76,400 72,408" fill="#7a8399"/>
+        <rect x="52" y="216" width="40" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="72" y="225" fill="#7a8399" font-size="7" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.08em">기기→서버</text>
+
+        <!-- Stack outline -->
+        <rect x="104" y="40" width="840" height="384" rx="8" fill="rgba(45,49,66,0.02)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="104" y="104" width="840" height="64" fill="rgba(45,49,66,0.03)"/>
+        <rect x="104" y="232" width="840" height="64" fill="rgba(45,49,66,0.03)"/>
+        <rect x="104" y="360" width="840" height="64" fill="rgba(45,49,66,0.03)"/>
+        <line x1="104" y1="104" x2="944" y2="104" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+        <line x1="104" y1="168" x2="944" y2="168" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+        <line x1="104" y1="232" x2="944" y2="232" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+        <line x1="104" y1="296" x2="944" y2="296" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+        <line x1="104" y1="360" x2="944" y2="360" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+        <!-- focal layer 3 -->
+        <rect x="104" y="168" width="840" height="64" fill="rgba(15,118,110,0.08)" stroke="#0f766e" stroke-width="1"/>
+
+        <g font-family="'Geist Mono', monospace" font-size="8" fill="#7a8399" letter-spacing="0.12em">
+          <text x="128" y="76">L1</text><text x="128" y="140">L2</text><text x="128" y="204" fill="#0f766e">L3</text><text x="128" y="268">L4</text><text x="128" y="332">L5</text><text x="128" y="396">L6</text>
+        </g>
+        <g font-family="'Pretendard', 'Noto Sans KR', sans-serif" font-size="16" font-weight="600" fill="#2d3142">
+          <text x="176" y="78">기기 필터</text>
+          <text x="176" y="142">최소화 · 짧은 보관</text>
+          <text x="176" y="206">봉투 암호화</text>
+          <text x="176" y="270">접근 통제 · 감사</text>
+          <text x="176" y="334">외부 공급자 조건</text>
+          <text x="176" y="398">투명성 · 사용자 통제</text>
+        </g>
+        <g font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" font-size="9" fill="#4f5d75" text-anchor="end">
+          <text x="920" y="76">OTP 폐기 · 카드/계좌 마스킹 · 연락처 발신자·개인 대화 폐기 (전송 전)</text>
+          <text x="920" y="140">프로모션·첨부 제외 · 원문 90일 · 이미지 30일 · 사실만 무기한</text>
+          <text x="920" y="204" fill="#0f766e">사용자 키 AES-GCM (Edge) · 원문·첨부만 보호 · 청크·사실은 평문</text>
+          <text x="920" y="268">RLS · 워커는 user_id 명시 프로시저만 · audit_log(read/decrypt)</text>
+          <text x="920" y="332">Anthropic 학습 미사용·30일 · Voyage 확인 전 임베딩 보류</text>
+          <text x="920" y="396">"내 데이터" 화면 · 삭제 3단계(만료/부분/전체+키 파기) · 내보내기</text>
+        </g>
+        <text x="944" y="452" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="end" letter-spacing="0.06em">덤프 유출 시 노출 범위: 최근 90일 청크 + 추출 사실 · 원문·첨부는 비노출</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ============================================================ 기능 리스트 -->
+  <div class="section">
+    <p class="section-eyebrow">06 · Feature List</p>
+    <h2>기능 목록 · 단계별</h2>
+    <p class="section-sub">스펙 §15 단계 계획 기준. 0단계 PoC 태그는 해당 기능이 의존하는 검증 항목이다.</p>
+    <table>
+      <thead><tr><th>단계</th><th>기능</th><th>입력 · 동작</th><th>의존 PoC</th></tr></thead>
+      <tbody>
+        <tr><td class="phase">0</td><td>실현 가능성 검증 10건</td><td>알림·문자 트리거, FM 분류, APNs, 알림 액션 EventKit, Gmail 동기화, 한국어 검색, 이미지 추출, background upload, jobs 워커</td><td class="src">PoC-1 ~ 10</td></tr>
+        <tr><td class="phase">1a</td><td>Gmail 연결·동기화</td><td>OAuth(serverAuthCode) → watch → Pub/Sub → history.list. 3개월 백필, 프로모션 제외, 404·7일 만료 복구</td><td><span class="tag poc">PoC-6</span></td></tr>
+        <tr><td class="phase">1a</td><td>텍스트·URL 공유 수집</td><td>Share Extension → App Group 큐 → background upload. URL은 서버 fetch(사설 IP 차단·2MB·10초)</td><td><span class="tag poc">PoC-9</span></td></tr>
+        <tr><td class="phase">1a</td><td>암호화 저장 + jobs 큐</td><td>Edge에서 사용자 키 AES-GCM. 임대·재시도·dead 상태의 영속 작업 큐</td><td><span class="tag poc">PoC-10</span></td></tr>
+        <tr><td class="phase">1a</td><td>채팅 검색 · 답변</td><td>Haiku 필터 → SQL 또는 하이브리드(tsv+trgm ∪ pgvector RRF) → Sonnet 인용 JSON → 서버 검증</td><td><span class="tag poc">PoC-7</span></td></tr>
+        <tr><td class="phase">1a</td><td>기억 저장</td><td>모든 발화는 utterances, 사실만 memories. 정정 발화는 이전 기억 retracted</td><td class="src">—</td></tr>
+        <tr><td class="phase">1a</td><td>보관·삭제 정책</td><td>원문 90일·이미지 30일 만료 잡. 항목/출처/전체 삭제 3단계, 전체 삭제 시 키 파기</td><td class="src">—</td></tr>
+        <tr><td class="phase">1b</td><td>일정·할 일 추출 + 제안</td><td>Haiku JSON 스키마, uncertain 필드. 취소·변경 감지로 기존 fact 갱신</td><td class="src">—</td></tr>
+        <tr><td class="phase">1b</td><td>잠금화면 제안 푸시</td><td>APNs ADD_EVENT / ADD_REMINDER / REVIEW. uncertain 있으면 REVIEW만</td><td><span class="tag poc">PoC-4</span></td></tr>
+        <tr><td class="phase">1b</td><td>EventKit 실행 (멱등)</td><td>알림 액션 → executions 확인 → 캘린더·미리알림 쓰기 → 보고. 수정·완료 액션 포함</td><td><span class="tag poc">PoC-5</span></td></tr>
+        <tr><td class="phase">2</td><td>문자 수집</td><td>Shortcuts Message 트리거(무확인) → CaptureIntent → 규칙 필터</td><td><span class="tag poc">PoC-2</span></td></tr>
+        <tr><td class="phase">2</td><td>앱 알림 수집</td><td>Notification 트리거(카카오톡·Instagram·쇼핑/금융). 배너 탭 1회 예상. 자동화 설치 가이드 화면</td><td><span class="tag poc">PoC-1</span></td></tr>
+        <tr><td class="phase">2</td><td>기기 필터</td><td>규칙(OTP·카드·계좌·연락처) + Foundation Models 분류. FM 불가 시 카톡·인스타는 폐기</td><td><span class="tag poc">PoC-3</span></td></tr>
+        <tr><td class="phase">2</td><td>이미지·PDF 일정 추출</td><td>청첩장·행사 안내. 기기 OCR 동시 생성, Haiku vision 월 100건 상한</td><td><span class="tag poc">PoC-8</span></td></tr>
+        <tr><td class="phase">2</td><td>구매 이력</td><td>상품·몰·주문일·금액·주문번호. (merchant, order_no) 연결, 배송 알림 결합. "어디서 언제 샀지" 답변</td><td class="src">—</td></tr>
+        <tr><td class="phase">3</td><td>Siri 질문 · 빠른 기억</td><td>AskIntent(App Shortcuts), 컨트롤센터/액션버튼 OpenIntent</td><td class="src">—</td></tr>
+        <tr><td class="phase">3</td><td>정기구독 추적</td><td>purchases.recurrence로 반복 결제 감지. "뭐 구독 중이지" 답변</td><td class="src">—</td></tr>
+        <tr><td class="phase">3</td><td>비용 통제</td><td>월 1만원. 호출 전 예약, 80%에서 모델 강등, 100%에서 추출·채팅 중단</td><td class="src">—</td></tr>
+        <tr><td class="phase">3</td><td>TestFlight 지인 배포</td><td>Sign in with Apple, 자동화 설치 가이드만으로 셋업. Gmail 앱 검증·CASA 판단</td><td class="src">—</td></tr>
+      </tbody>
+    </table>
+    <div class="cards">
+      <div class="card"><div class="card-header"><span class="card-dot accent"></span><h3>범위 밖</h3></div>
+        <ul><li>Outlook · Android · Mac 허브</li><li>카카오톡 개인 대화 수집</li><li>App Store 공개 출시</li><li>반복 일정 (1단계, uncertain으로 표시만)</li></ul></div>
+      <div class="card"><div class="card-header"><span class="card-dot link"></span><h3>플랜 B (미채택)</h3></div>
+        <ul><li>기기 SQLite 단일 원본, 서버는 신호 중계 + LLM 프록시</li><li>Notification Service Extension으로 실시간(30초 상한)</li><li>BGProcessingTask(충전 중)로 배치</li><li>지인 확대 시 신뢰 문제가 커지면 전환</li></ul></div>
+      <div class="card"><div class="card-header"><span class="card-dot muted"></span><h3>남은 리스크</h3></div>
+        <ul><li>Notification 트리거 배너 탭 (PoC-1)</li><li>Edge에서 APNs HTTP/2 (PoC-4)</li><li>Gmail 테스트 모드 7일 재인증</li><li>Voyage 데이터 정책 미확인</li></ul></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>iOS 개인 비서 · Architecture Report · spec v3 (Codex 2차 리뷰 반영)</span>
+    <span>2026-09-23</span>
+  </div>
+</div>
+</body>
+</html>
