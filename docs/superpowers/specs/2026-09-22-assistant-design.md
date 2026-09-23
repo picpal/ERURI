@@ -191,8 +191,9 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 |---|---|---|
 | `connections` | provider, account_ref, status, expires_at | 토큰은 `vault` |
 | `sync_states` | connection_id, cursor(historyId), last_success_at | |
-| `items` | source(GMAIL/MESSAGES/NOTIFICATION/SHARE/CHAT), app_name, sender, title, content_enc bytea, ocr_text_enc bytea, occurred_at, captured_at, device_filter, idempotency_key, status, storage_key, expires_at | 원문. `content_enc`·`ocr_text_enc`는 사용자별 키로 pgsodium 암호화(§12). 90일 후 삭제, 행은 유지 |
-| `user_keys` | user_id, key_id | 사용자별 데이터 키. 키 자체는 Supabase Vault, 이 테이블은 키 ID만 |
+| `items` | source(GMAIL/MESSAGES/NOTIFICATION/SHARE/CHAT), app_name, sender, title, content_enc bytea, ocr_text_enc bytea, occurred_at, captured_at, device_filter, idempotency_key, status, storage_key, expires_at | 원문. `content_enc`·`ocr_text_enc`는 Edge Function이 사용자 데이터 키로 AES-256-GCM 암호화해 저장(§12). 90일 후 삭제, 행은 유지 |
+| `user_keys` | user_id, wrapped_key bytea, created_at | 사용자별 데이터 키를 마스터 키로 감싼 값(봉투 암호화). 마스터 키는 Edge Function 시크릿에만 있고 DB에 없다 |
+| `utterances` / `memories` | (아래) | 평문. 사용자 삭제 시 연쇄 |
 | `item_chunks` | item_id, chunk_index, text, embedding vector(512), tsv tsvector | HNSW + GIN. 원문 만료 시 삭제 |
 | `facts` | item_id, kind, payload jsonb, evidence(원문 인용 ≤300자), status(active/cancelled/superseded), supersedes_id | 추출 결과, 무기한. evidence가 만료 후 출처 역할 |
 | `purchases` | fact_id, merchant, product[], ordered_at, amount, currency, order_no, status, delivery_status, recurrence | 구매·구독. `purchase_evidence(purchase_id, item_id)`로 다대다 |
@@ -208,10 +209,11 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 
 | 구분 | 트리거 | 지우는 것 | 남기는 것 |
 |---|---|---|---|
-| 원문 만료 | pg_cron, `expires_at` 경과 (원문 90일, 이미지 30일) | items.content_enc/ocr_text_enc, item_chunks.text(평문 청크), Storage 객체 | items 행(메타), item_chunks.embedding(벡터는 유지해 의미 검색 지속), facts, purchases, proposals, memories |
-| 사용자 삭제 | 사용자가 항목·연결·전체 삭제 | 위 전부 + facts, purchases, proposals, executions, memories까지 연쇄 | 감사 로그의 사유 코드 |
+| 원문 만료 | pg_cron, `expires_at` 경과 (원문 90일, 이미지 30일) | items.content_enc/ocr_text_enc, item_chunks **행 전체**(text·tsv·embedding), Storage 객체 | items 행(메타), facts(payload·evidence ≤300자), purchases, proposals, memories |
+| 항목·출처 삭제 | 사용자가 항목 또는 출처(예: Gmail 연결) 삭제 | 해당 items·chunks·facts·purchases·purchase_evidence·proposals·executions·jobs(payload 포함)·Storage 객체 | 다른 출처 데이터, memories |
+| 전체 삭제 | 사용자가 계정 삭제 | 위 전부 + utterances·memories·connections(Gmail 토큰 revoke 호출 포함)·devices·audit_log 본문 없는 행만 유지 + `user_keys` 행 삭제(crypto-shredding) + 기기에 삭제 푸시(로컬 큐·executions 정리) | 감사 로그의 사유 코드 |
 
-만료 후 검색 결과의 출처는 facts.evidence 인용문과 "원문 만료됨" 표시로 대체한다.
+만료 후 검색은 facts·purchases·memories만 대상이며 출처는 facts.evidence 인용문과 "원문 만료됨" 표시로 대체한다. 만료된 항목의 의미 검색은 되지 않는다(벡터 삭제). 백업은 Supabase 일일 백업 보관 기간(무료 7일) 동안 삭제 전 상태를 담고 있으며, `user_keys`가 지워진 뒤에는 백업의 `content_enc`를 복호화할 수 없다. 평문 파생물(청크·facts)은 백업 보관 기간 후에 완전히 사라진다. 이 사실을 §12 통제 5의 화면에 그대로 적는다.
 
 용량 추정(1인 1년): 메일 일 20건 × 4KB 원문 + 청크 복제 + 512차원 벡터(2KB)×청크 3개 ≈ 연 90MB. 500MB 안이지만 `pg_database_size`를 주간 잡으로 기록해 400MB에서 경고한다.
 
@@ -263,29 +265,33 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 
 이 앱은 Superhuman·Spark 같은 서버 동기화형 메일 비서와 같은 구조다. 서버에 본문이 있으며, 그 사실을 숨기지 않고 아래 다섯 통제로 보호한다. 온디바이스 저장 구조는 실시간성·백그라운드 처리를 잃어 채택하지 않았다(§16 플랜 B).
 
-### 통제 1. 저장 암호화와 키 분리
+### 통제 1. 저장 암호화와 키 분리 (보호 범위를 정직하게)
 
-- 디스크 암호화(Supabase 기본) 위에 **본문 컬럼을 사용자별 데이터 키로 암호화**한다. 키는 Supabase Vault에 두고 `user_keys`는 키 ID만 가진다.
-- 암호화 대상: `items.content_enc`, `items.ocr_text_enc`, Storage 객체(서버 측 암호화 + 서명 URL만). 평문 유지: `item_chunks.text`(검색 필요, 90일 후 삭제), 벡터, `facts.payload`·`evidence`, `purchases`, `memories`.
-- 복호화는 `jobs` 워커와 `chat` 함수만 수행한다. DB 덤프·백업이 유출돼도 본문은 읽히지 않는다.
-- 사용자 전체 삭제 시 데이터 키를 Vault에서 지워 백업에 남은 암호문도 무효화한다(crypto-shredding).
+- 방식: **봉투 암호화를 Edge Function에서 수행**한다. 사용자별 데이터 키(32바이트)는 마스터 키(Edge 시크릿 `MASTER_KEY`, DB에 없음)로 감싸 `user_keys.wrapped_key`에 둔다. 본문은 WebCrypto AES-256-GCM으로 `ingest`·`gmail-fetch`가 INSERT 전에 암호화한다. pgsodium은 Supabase가 폐기 예정으로 안내하므로 쓰지 않는다.
+- 복호화는 `worker`(추출·청크 생성)와 `chat`(출처 원문 표시) 두 함수만 메모리에서 수행하고, 복호화된 평문을 응답 로그·오류 로그에 남기지 않는다. DB 함수·대시보드에서는 복호화가 불가능하다(마스터 키가 DB에 없음).
+- **보호 범위**: 이 암호화가 지키는 것은 **메일 원문 전체와 이미지·OCR 원문**이다. `item_chunks.text`(90일), `facts.payload`·`evidence`, `purchases`, `memories`는 검색·답변에 필요해 평문이며, 청크를 이어 붙이면 원문 상당 부분이 복원된다. 따라서 "DB 덤프가 유출돼도 안전"하다고 말하지 않는다. 덤프 유출 시 노출되는 것은 최근 90일 청크와 추출 사실이고, 90일 이전 원문·첨부는 노출되지 않는다. 실제 1차 방어는 통제 4(접근 통제)와 통제 2(짧은 보관)다.
+- Storage 객체(이미지·PDF)는 업로드 전 기기에서 같은 사용자 키로 암호화할 수 없으므로(키가 서버에만 있음) Supabase 서버 측 암호화 + 비공개 버킷 + 서명 URL(60초)로 보호하고 30일 뒤 삭제한다.
+- crypto-shredding은 **계정 전체 삭제에만** 적용한다(사용자당 키 하나). 부분 삭제는 행 삭제로 처리하며 백업 보관 기간(7일) 동안 평문 파생물이 백업에 남는다는 점을 통제 5에 명시한다.
 
 ### 통제 2. 최소화와 짧은 보관
 
 - 수집 제외: 프로모션 라벨, 첨부파일(이미지·PDF는 사용자가 공유한 것만), OTP, 카드·계좌번호(마스킹), 카톡 개인 대화, 의료 결과지.
 - 원문 90일, 이미지 30일 뒤 삭제. 추출 사실·구매 이력·벡터·`evidence` 인용(≤300자)만 남아 검색은 계속된다.
 - 기기 입력은 기기에서 먼저 필터·마스킹 후 전송한다. Gmail은 서버가 직접 받으므로 "기기에서 먼저 마스킹"이라고 설명하지 않는다.
-- 폐기된 항목은 저장하지 않으며 로그에도 본문을 남기지 않는다. Foundation Models 분류 결과는 저장하지 않는다.
+- 처리 순서(§7과 동일): 규칙 필터(기기·서버) → 암호화 저장 → 워커가 복호화 → Haiku 분류 → discard 판정 시 즉시 삭제 → 통과분만 추출·청크·임베딩 → 감사 기록. **예외를 명시한다**: 규칙 필터를 통과한 항목은 Haiku 분류 전에 암호화된 채 저장되고 분류를 위해 Haiku로 1회 전송된다. 즉 "의료 결과지·개인 대화는 저장·전송되지 않는다"가 아니라 "암호화 저장 후 분류 1회 전송 뒤 삭제된다"이다. 예산 소진 시에는 분류되지 못한 항목이 암호화 상태로 `queued`에 남으며 90일 만료 규칙이 그대로 적용된다.
+- URL 본문·이미지 OCR·채팅 발화도 서버 규칙 필터(OTP·카드·계좌)를 같은 함수로 통과시킨 뒤 저장한다. URL 본문은 fetch 직후, OCR은 기기에서 이미 적용된 것을 서버에서 재적용한다.
+- 폐기 판정된 항목은 행을 삭제하고 로그에는 사유 코드만 남긴다. Foundation Models 분류 결과는 저장하지 않는다.
 
 ### 통제 3. LLM·임베딩 공급자 조건
 
 - Anthropic API: 기본 학습 미사용, 표준 보관 30일. 프롬프트 로그·요청 본문을 Supabase 로그에 남기지 않는다(`console.log`에 본문 금지, 요청 ID만).
-- Voyage: 학습 미사용 조건과 보관 기간을 이용약관에서 확인해 §16에 기록한다. 확인 전까지 임베딩 대상은 마스킹된 텍스트뿐이다.
+- Voyage: 학습 미사용 조건과 보관 기간을 이용약관에서 확인해 §16에 기록한다. **확인 전에는 임베딩을 생성하지 않는다**(키워드 검색만 동작). 마스킹은 개인정보 전송 제한이 아니므로 근거로 삼지 않는다. 확인 결과가 부적합하면 온디바이스 임베딩(Core ML multilingual-e5-small) 또는 Anthropic 제공 임베딩 경로로 교체한다.
 - 지인 확대 시 Anthropic ZDR(zero data retention) 신청을 검토한다.
 
 ### 통제 4. 접근 통제와 감사
 
-- 모든 테이블 RLS(`(select auth.uid()) = user_id`). `service_role` 키는 Edge Function 시크릿에만 존재하고 개발 기기·CI에 두지 않는다.
+- 모든 테이블 RLS(`(select auth.uid()) = user_id`)는 **앱 클라이언트 경로**를 격리한다. `service_role`은 RLS를 우회하므로 워커·웹훅은 별도 규칙을 따른다: (a) 모든 쿼리에 `user_id`를 명시하는 저장 프로시저(`worker_claim_item(p_user, p_item)` 등)만 호출하고 테이블 직접 접근 금지, (b) 복호화는 `user_keys`의 소유자와 `items.user_id`가 일치할 때만 수행(함수 내부 검사), (c) `service_role` 키는 Edge Function 시크릿에만 존재하고 개발 기기·CI에 두지 않는다.
+- 평문 파생물 읽기도 감사한다: `chat`·`worker`가 `item_chunks`·`facts`를 읽을 때 `audit_log(action='read', target=item_id 목록 해시)`를 남긴다. 복호화 호출은 `action='decrypt'`로 별도 기록한다.
 - 운영자(본인 포함)가 대시보드 SQL 편집기로 본문을 조회하지 않는다. 디버깅은 `item_id`·상태·오류 코드로만 한다. 이 규칙을 `CLAUDE.md`에 적어 에이전트에도 적용한다.
 - `audit_log(user_id, actor, action, target, at)`에 삭제·연결 해제·내보내기·복호화 호출을 기록한다. 본문은 기록하지 않는다.
 - 로그 보관 30일. 오류 로그에 본문·토큰이 섞이지 않도록 Edge Function 공통 오류 핸들러가 메시지를 정형화한다.
@@ -354,18 +360,23 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 
 미반영·사용자 판단: (1) Notification 트리거 판정은 "미확인"으로 완화하고 PoC-1에 위임. (21) MVP를 검색 전용으로 더 줄이는 제안은 1a/1b 분리로 절충했다.
 
+### 2차 리뷰 반영 (Codex gpt-6-astra, 2026-09-23, 개인정보 설계)
+
+10건 모두 반영: 암호화 보호 범위 정직화(1), 백업·키 파기 한계 명시(2), 삭제 범위 3단계로 통일(3), 저장→분류→삭제 순서와 예외 명시(4), service_role 격리·평문 읽기 감사(5), 만료 시 청크 행 전체 삭제(6), Voyage 확인 전 임베딩 보류(7), pgsodium → Edge 봉투 암호화(8), NSE 조건·상한 명시(9), BG 작업 비보장·`requiresExternalPower`·watch 갱신 주체(10).
+
 ### 플랜 B: 로컬 우선 구조 (미채택, 신뢰 문제 발생 시 전환)
 
 서버 저장에 대한 신뢰 문제가 지인 확대 단계에서 커지면 다음 구조로 전환할 수 있다. 1인 데이터 규모(연 청크 2만 개)에서는 기기 SQLite(FTS5 trigram + 벡터 브루트포스)로 검색 효율이 충분하다는 것을 확인했다.
 
-- 기기 SQLite가 단일 원본. 서버는 (a) Gmail Pub/Sub → APNs 가시 푸시 중계, (b) LLM 프록시·예산 카운터만 담당하며 내용을 저장하지 않는다.
-- 실시간 처리는 Notification Service Extension(푸시마다 30초, 앱 강제 종료 시에도 실행)이 Gmail 페치 → 추출 → 알림 교체를 수행한다. 따라잡기는 `BGAppRefreshTask`, 무거운 배치(임베딩·정리·백필)는 `BGProcessingTask`(충전 중).
+- 기기 SQLite가 단일 원본. 서버는 (a) Gmail Pub/Sub → APNs 가시 푸시 중계, (b) LLM 프록시·예산 카운터, (c) Gmail `watch` 7일 갱신(refresh token은 서버에 남음)만 담당한다. 프록시는 저장하지 않을 뿐 평문을 처리하므로 서버 신뢰가 완전히 사라지지는 않는다.
+- 실시간 처리는 Notification Service Extension이 맡는다. 조건: 푸시에 `mutable-content: 1`과 alert 페이로드가 있어야 하고, 사용자가 이 앱 알림을 꺼 두면 NSE는 실행되지 않는다. 실행 시간은 **최대** 30초(보장 아님)이며 초과 시 시스템이 원래 알림을 그대로 표시한다. 따라서 NSE는 Gmail 페치 → 로컬 저장까지를 체크포인트로 두고, 추출까지 못 마치면 "새 메일 1건" 알림으로 끝내고 앱 실행 시 이어서 처리한다. 잠금 중 Gmail 토큰 접근을 위해 키체인 항목은 `kSecAttrAccessibleAfterFirstUnlock`.
+- 따라잡기는 `BGAppRefreshTask`(시스템 재량, 보장 없음), 무거운 배치(임베딩·정리·백필)는 `BGProcessingTask`에 `requiresExternalPower = true`로 요청. 둘 다 앱 강제 종료 시 실행되지 않으므로 앱 실행 시 전체 flush가 최종 안전망이다.
 - 서버를 완전히 없애는 변형: Gmail을 Apple Mail에 추가하고 Shortcuts **Email 트리거**(무확인 자동 실행 목록에 있음)로 수집. 지연 15분 이상, 트리거가 본문을 넘기는지 미확인.
 - 잃는 것: 폰이 꺼진 동안의 처리, 기기 간 공유, 서버 측 검색 품질 튜닝. 전환 비용: §7 파이프라인 대부분을 Swift로 재작성.
 
 - **알림 트리거 배너 탭**: 사용자가 알림마다 탭해야 하면 편의성이 크게 떨어진다. PoC-1 결과에 따라 2단계 범위를 재조정한다.
 - **Voyage 데이터 정책**: 학습 미사용·보관 기간 미확인. 확인 전 임베딩 대상은 마스킹 텍스트만.
-- **pgsodium 복호화 비용**: 워커가 건마다 복호화하므로 CPU 2초 제한 안에서 배치 크기를 정해야 한다. PoC-10에 항목 추가.
+- **Edge 복호화 비용**: 워커가 건마다 AES-GCM 복호화하므로 CPU 2초 제한 안에서 배치 크기를 정해야 한다. PoC-10에 항목 추가.
 - **Gmail 7일 재인증**: 본인 사용 기간엔 감수. 지인 확대 시점에 앱 검증 비용을 결정한다.
 - **APNs from Deno**: 미확인. PoC-4.
 - **Voyage 가격·한국어 품질**: 공식 가격 페이지 미확인. PoC-7에서 품질 판정.
