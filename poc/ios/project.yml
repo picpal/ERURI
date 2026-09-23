@@ -1,0 +1,56 @@
+name: AssistantPoC
+options:
+  bundleIdPrefix: com.picpal.assistant
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "26.3"
+settings:
+  base:
+    DEVELOPMENT_TEAM: 6626BYCJG4
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "6.0"
+packages:
+  AssistantCore:
+    path: Packages/AssistantCore
+targets:
+  AssistantPoC:
+    type: application
+    platform: iOS
+    sources: [App]
+    dependencies:
+      - package: AssistantCore
+      - target: ShareExtension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.picpal.assistant.poc
+        CODE_SIGN_ENTITLEMENTS: App/App.entitlements
+        INFOPLIST_FILE: App/Info.plist
+  ShareExtension:
+    type: app-extension
+    platform: iOS
+    sources: [ShareExtension]
+    dependencies:
+      - package: AssistantCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.picpal.assistant.poc.share
+        CODE_SIGN_ENTITLEMENTS: ShareExtension/ShareExtension.entitlements
+        INFOPLIST_FILE: ShareExtension/Info.plist
+  AssistantCoreTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Packages/AssistantCore/Tests/AssistantCoreTests]
+    dependencies:
+      - package: AssistantCore
+      - target: AssistantPoC
+    settings:
+      base:
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/AssistantPoC.app/AssistantPoC
+        BUNDLE_LOADER: $(TEST_HOST)
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  AssistantPoC:
+    build:
+      targets: { AssistantPoC: all, ShareExtension: all, AssistantCoreTests: [test] }
+    test:
+      targets: [AssistantCoreTests]

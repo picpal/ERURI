@@ -1,1 +1,6 @@
 .context/
+poc/ios/build/
+poc/ios/*.xcodeproj
+poc/ios/.sim-udid
+.env
+poc/server/eval/images/
