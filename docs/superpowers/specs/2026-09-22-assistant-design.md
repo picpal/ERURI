@@ -37,7 +37,7 @@ Outlook, Android, Mac 허브, 카카오톡 개인 대화 수집, App Store 공�
 | 실행 권한 | Apple 캘린더 추가·수정, 미리알림 추가·완료 | 사용자 확정 |
 | 기억 | 채팅·Siri·빠른 기억에서 사용자가 한 모든 말을 저장·검색 | 사용자 확정 |
 | 제외 | OTP·인증번호, 카드·계좌번호 마스킹, 프로모션, 카톡 개인 대화, 의료 결과지 본문 | 사용자 확정 + 제안 |
-| 보관 | 원문 1년, 이미지 30일, 추출 사실 무기한 | 사용자 확정 |
+| 보관 | 원문 90일(사용자별 키 암호화), 이미지 30일, 추출 사실·벡터 무기한 | 사용자 확정(1년) → 개인정보 검토로 90일 단축 |
 | 진입점 | 채팅, Share, 푸시, Siri 질문, 액션버튼/컨트롤센터 빠른 기억 | 사용자 확정 |
 | 비용 | 월 1만원. 기기 Foundation Models → `claude-haiku-4-5` 추출 → `claude-sonnet-5` 채팅 | 사용자 확정 |
 | 임베딩 | Voyage `voyage-4-lite`, 512차원 | Supabase 내장 gte-small은 영어 전용. 한국어 필요 |
@@ -191,7 +191,8 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 |---|---|---|
 | `connections` | provider, account_ref, status, expires_at | 토큰은 `vault` |
 | `sync_states` | connection_id, cursor(historyId), last_success_at | |
-| `items` | source(GMAIL/MESSAGES/NOTIFICATION/SHARE/CHAT), app_name, sender, title, content, ocr_text, occurred_at, captured_at, device_filter, idempotency_key, status, storage_key, expires_at | 원문. 1년 후 content·storage 삭제, 행은 유지 |
+| `items` | source(GMAIL/MESSAGES/NOTIFICATION/SHARE/CHAT), app_name, sender, title, content_enc bytea, ocr_text_enc bytea, occurred_at, captured_at, device_filter, idempotency_key, status, storage_key, expires_at | 원문. `content_enc`·`ocr_text_enc`는 사용자별 키로 pgsodium 암호화(§12). 90일 후 삭제, 행은 유지 |
+| `user_keys` | user_id, key_id | 사용자별 데이터 키. 키 자체는 Supabase Vault, 이 테이블은 키 ID만 |
 | `item_chunks` | item_id, chunk_index, text, embedding vector(512), tsv tsvector | HNSW + GIN. 원문 만료 시 삭제 |
 | `facts` | item_id, kind, payload jsonb, evidence(원문 인용 ≤300자), status(active/cancelled/superseded), supersedes_id | 추출 결과, 무기한. evidence가 만료 후 출처 역할 |
 | `purchases` | fact_id, merchant, product[], ordered_at, amount, currency, order_no, status, delivery_status, recurrence | 구매·구독. `purchase_evidence(purchase_id, item_id)`로 다대다 |
@@ -207,7 +208,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 
 | 구분 | 트리거 | 지우는 것 | 남기는 것 |
 |---|---|---|---|
-| 원문 만료 | pg_cron, `expires_at` 경과 (원문 1년, 이미지 30일) | items.content/ocr_text, item_chunks, Storage 객체 | items 행(메타), facts, purchases, proposals, memories |
+| 원문 만료 | pg_cron, `expires_at` 경과 (원문 90일, 이미지 30일) | items.content_enc/ocr_text_enc, item_chunks.text(평문 청크), Storage 객체 | items 행(메타), item_chunks.embedding(벡터는 유지해 의미 검색 지속), facts, purchases, proposals, memories |
 | 사용자 삭제 | 사용자가 항목·연결·전체 삭제 | 위 전부 + facts, purchases, proposals, executions, memories까지 연쇄 | 감사 로그의 사유 코드 |
 
 만료 후 검색 결과의 출처는 facts.evidence 인용문과 "원문 만료됨" 표시로 대체한다.
@@ -260,12 +261,41 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 
 ## 12. 개인정보
 
-- 기기 입력은 기기에서 먼저 필터·마스킹 후 전송. Gmail은 서버가 직접 받으므로 "기기에서 먼저 마스킹"이라고 설명하지 않는다.
-- 폐기된 항목은 저장하지 않으며 로그에도 본문을 남기지 않는다.
-- Foundation Models 분류 결과는 저장하지 않고 통과/폐기 판정에만 쓴다.
-- 외부 LLM(Anthropic, Voyage)으로 나가는 데이터 범위를 설정 화면에 명시한다.
-- 연결 해제·수집 중지·전체 삭제·내보내기를 분리 제공한다.
-- 지인 확대 시 개인정보 처리방침과 Gmail 앱 검증을 선행한다.
+이 앱은 Superhuman·Spark 같은 서버 동기화형 메일 비서와 같은 구조다. 서버에 본문이 있으며, 그 사실을 숨기지 않고 아래 다섯 통제로 보호한다. 온디바이스 저장 구조는 실시간성·백그라운드 처리를 잃어 채택하지 않았다(§16 플랜 B).
+
+### 통제 1. 저장 암호화와 키 분리
+
+- 디스크 암호화(Supabase 기본) 위에 **본문 컬럼을 사용자별 데이터 키로 암호화**한다. 키는 Supabase Vault에 두고 `user_keys`는 키 ID만 가진다.
+- 암호화 대상: `items.content_enc`, `items.ocr_text_enc`, Storage 객체(서버 측 암호화 + 서명 URL만). 평문 유지: `item_chunks.text`(검색 필요, 90일 후 삭제), 벡터, `facts.payload`·`evidence`, `purchases`, `memories`.
+- 복호화는 `jobs` 워커와 `chat` 함수만 수행한다. DB 덤프·백업이 유출돼도 본문은 읽히지 않는다.
+- 사용자 전체 삭제 시 데이터 키를 Vault에서 지워 백업에 남은 암호문도 무효화한다(crypto-shredding).
+
+### 통제 2. 최소화와 짧은 보관
+
+- 수집 제외: 프로모션 라벨, 첨부파일(이미지·PDF는 사용자가 공유한 것만), OTP, 카드·계좌번호(마스킹), 카톡 개인 대화, 의료 결과지.
+- 원문 90일, 이미지 30일 뒤 삭제. 추출 사실·구매 이력·벡터·`evidence` 인용(≤300자)만 남아 검색은 계속된다.
+- 기기 입력은 기기에서 먼저 필터·마스킹 후 전송한다. Gmail은 서버가 직접 받으므로 "기기에서 먼저 마스킹"이라고 설명하지 않는다.
+- 폐기된 항목은 저장하지 않으며 로그에도 본문을 남기지 않는다. Foundation Models 분류 결과는 저장하지 않는다.
+
+### 통제 3. LLM·임베딩 공급자 조건
+
+- Anthropic API: 기본 학습 미사용, 표준 보관 30일. 프롬프트 로그·요청 본문을 Supabase 로그에 남기지 않는다(`console.log`에 본문 금지, 요청 ID만).
+- Voyage: 학습 미사용 조건과 보관 기간을 이용약관에서 확인해 §16에 기록한다. 확인 전까지 임베딩 대상은 마스킹된 텍스트뿐이다.
+- 지인 확대 시 Anthropic ZDR(zero data retention) 신청을 검토한다.
+
+### 통제 4. 접근 통제와 감사
+
+- 모든 테이블 RLS(`(select auth.uid()) = user_id`). `service_role` 키는 Edge Function 시크릿에만 존재하고 개발 기기·CI에 두지 않는다.
+- 운영자(본인 포함)가 대시보드 SQL 편집기로 본문을 조회하지 않는다. 디버깅은 `item_id`·상태·오류 코드로만 한다. 이 규칙을 `CLAUDE.md`에 적어 에이전트에도 적용한다.
+- `audit_log(user_id, actor, action, target, at)`에 삭제·연결 해제·내보내기·복호화 호출을 기록한다. 본문은 기록하지 않는다.
+- 로그 보관 30일. 오류 로그에 본문·토큰이 섞이지 않도록 Edge Function 공통 오류 핸들러가 메시지를 정형화한다.
+
+### 통제 5. 투명성과 사용자 통제
+
+- 설정 화면 "내 데이터": 출처별로 **서버 보관 기간·LLM 전송 여부·마지막 동기화 시각·항목 수**를 표로 보여준다.
+- 연결 해제(수집 중지, 데이터 유지) / 수집 중지 / 출처별 삭제 / 전체 삭제 / 내보내기(JSON)를 분리 제공한다. 삭제는 §8 연쇄 규칙과 키 파기까지 포함한다.
+- 잠금 화면 알림에 본문 대신 요약("일정 제안 1건")만 노출하는 옵션을 둔다.
+- 지인 확대 시 개인정보 처리방침, Google API Services User Data Policy(Limited Use) 준수 문구, Gmail 앱 검증(CASA)을 선행한다.
 
 ## 13. 비용 (월, 1인 기준 추정)
 
@@ -324,7 +354,18 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 
 미반영·사용자 판단: (1) Notification 트리거 판정은 "미확인"으로 완화하고 PoC-1에 위임. (21) MVP를 검색 전용으로 더 줄이는 제안은 1a/1b 분리로 절충했다.
 
+### 플랜 B: 로컬 우선 구조 (미채택, 신뢰 문제 발생 시 전환)
+
+서버 저장에 대한 신뢰 문제가 지인 확대 단계에서 커지면 다음 구조로 전환할 수 있다. 1인 데이터 규모(연 청크 2만 개)에서는 기기 SQLite(FTS5 trigram + 벡터 브루트포스)로 검색 효율이 충분하다는 것을 확인했다.
+
+- 기기 SQLite가 단일 원본. 서버는 (a) Gmail Pub/Sub → APNs 가시 푸시 중계, (b) LLM 프록시·예산 카운터만 담당하며 내용을 저장하지 않는다.
+- 실시간 처리는 Notification Service Extension(푸시마다 30초, 앱 강제 종료 시에도 실행)이 Gmail 페치 → 추출 → 알림 교체를 수행한다. 따라잡기는 `BGAppRefreshTask`, 무거운 배치(임베딩·정리·백필)는 `BGProcessingTask`(충전 중).
+- 서버를 완전히 없애는 변형: Gmail을 Apple Mail에 추가하고 Shortcuts **Email 트리거**(무확인 자동 실행 목록에 있음)로 수집. 지연 15분 이상, 트리거가 본문을 넘기는지 미확인.
+- 잃는 것: 폰이 꺼진 동안의 처리, 기기 간 공유, 서버 측 검색 품질 튜닝. 전환 비용: §7 파이프라인 대부분을 Swift로 재작성.
+
 - **알림 트리거 배너 탭**: 사용자가 알림마다 탭해야 하면 편의성이 크게 떨어진다. PoC-1 결과에 따라 2단계 범위를 재조정한다.
+- **Voyage 데이터 정책**: 학습 미사용·보관 기간 미확인. 확인 전 임베딩 대상은 마스킹 텍스트만.
+- **pgsodium 복호화 비용**: 워커가 건마다 복호화하므로 CPU 2초 제한 안에서 배치 크기를 정해야 한다. PoC-10에 항목 추가.
 - **Gmail 7일 재인증**: 본인 사용 기간엔 감수. 지인 확대 시점에 앱 검증 비용을 결정한다.
 - **APNs from Deno**: 미확인. PoC-4.
 - **Voyage 가격·한국어 품질**: 공식 가격 페이지 미확인. PoC-7에서 품질 판정.
