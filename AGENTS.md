@@ -14,6 +14,8 @@ Claude Code는 `CLAUDE.md`의 `@AGENTS.md`로, Codex는 이 파일을 직접 읽
 
 스펙과 코드가 다르면 스펙을 먼저 고친다. 스펙에 없는 기능은 만들지 않는다.
 
+원격 저장소는 `origin` = https://github.com/picpal/ERURI.git (브랜치 `main`). 서브 에이전트가 커밋을 만들면 메인이 결과 회수 직후 `git push origin main`으로 동기화한다. 서브 에이전트는 push하지 않는다.
+
 ## 2. 메인 에이전트는 조율만 한다
 
 메인 세션의 컨텍스트를 아끼기 위해 **간단한 작업 외에는 별도 pane의 서브 에이전트에 위임**한다.
