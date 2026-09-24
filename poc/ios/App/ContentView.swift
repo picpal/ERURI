@@ -14,6 +14,7 @@ struct ContentView: View {
         Section("디버그") {
           Button("권한 요청 (알림·캘린더)") { requestPermissions() }
           Button("디버그: 파이프라인 직접 호출") { runDebugCapture() }
+          Button("업로드 flush") { Uploader.shared.flush(); refresh() }
           if !lastResult.isEmpty { Text("결과: \(lastResult)").font(.caption).foregroundStyle(.secondary) }
         }
         Section("큐 (\(items.count)건)") {

@@ -11,8 +11,8 @@
 | PoC-5 | 잠금화면 알림 액션 → 백그라운드 EventKit 멱등 쓰기 | 6 | 부분 | 멱등성은 시뮬레이터 실측 통과(콜드 스타트 2회, 이벤트 1건). 백그라운드/잠금 상태 쓰기는 실기기 필요. 절차 `poc-5-notification-eventkit.md` | 2026-09-24 |
 | PoC-6 | Gmail watch → Pub/Sub → history 동기화 | 10 | 미검증 | GCP OAuth·Pub/Sub 필요 | 2026-09-24 |
 | PoC-7 | 한국어 하이브리드 검색 Top-5 정확도 | 11 | 미검증 | Supabase·Voyage 키 필요 | 2026-09-24 |
-| PoC-8 | 이미지·PDF → OCR/추출 → 일정 | 7, 12 | 미검증 | 기기 부분(Share Extension 저장·OCR)은 Task 7, 서버 부분은 Task 12 | 2026-09-24 |
-| PoC-9 | 앱 종료 후 background URLSession 업로드 완료 | 7 | 미검증 | Task 7 시뮬레이터 실측 예정 | 2026-09-24 |
+| PoC-8 | 이미지·PDF → OCR/추출 → 일정 | 7, 12 | 부분 | 기기 부분(파일 영속화·OCR·큐 적재)은 시뮬레이터 실측 통과(디버그 훅 경유, 공유 시트 UI 자체는 미검증). 서버 부분은 Task 12. 절차 `poc-8-9-share-upload.md` | 2026-09-24 |
+| PoC-9 | 앱 종료 후 background URLSession 업로드 완료 | 7 | 통과 | 호스트 `ps aux`로 앱 프로세스 완전 종료 확인(14:07:27.946) 후 3.68초 뒤 목 서버에 정확한 바이트 수로 도착(14:07:31.628) 실측. 절차 `poc-8-9-share-upload.md` | 2026-09-24 |
 | PoC-10 | jobs 큐 lease/재시도/dead 처리 | 8 | 미검증 | Supabase 프로젝트 필요 | 2026-09-24 |
 
 ## 실기기 세션 대기 목록
