@@ -11,6 +11,7 @@ struct AssistantPoCApp: App {
   init() {
     NotificationActions.register()
     UNUserNotificationCenter.current().delegate = Self.notificationDelegate
+    BFULog.prepare()
     Uploader.shared.flush()
 
     // 시뮬레이터에 탭 자동화 도구(idb 등)가 없어 단축어 앱을 직접 조작할 수 없을 때,
@@ -34,6 +35,40 @@ struct AssistantPoCApp: App {
       let pid = CommandLine.arguments.first(where: { $0.hasPrefix(prefix) }).map { String($0.dropFirst(prefix.count)) } ?? "p-001"
       let userInfo: [AnyHashable: Any] = ["proposal_id": pid, "title": "병원 예약", "start": "2026-09-25T15:00:00+09:00"]
       Task { await NotificationActions.handleAdd(userInfo: userInfo) }
+    }
+
+    // MED-5 검증: 같은 proposal_id 로 handleAdd 를 동시에 두 번 부른다. `--poc-debug-notification-action-concurrent [--proposal-id=<id>]`
+    if CommandLine.arguments.contains("--poc-debug-notification-action-concurrent") {
+      let prefix = "--proposal-id="
+      let pid = CommandLine.arguments.first(where: { $0.hasPrefix(prefix) }).map { String($0.dropFirst(prefix.count)) } ?? "p-conc"
+      Task {
+        // userInfo 는 Sendable 이 아니므로 각 자식 태스크 안에서 만든다
+        async let a: Void = NotificationActions.handleAdd(userInfo: ["proposal_id": pid, "title": "병원 예약", "start": "2026-09-25T15:00:00+09:00"])
+        async let b: Void = NotificationActions.handleAdd(userInfo: ["proposal_id": pid, "title": "병원 예약", "start": "2026-09-25T15:00:00+09:00"])
+        _ = await (a, b)
+      }
+    }
+
+    // PoC-5 로컬 알림: `--poc-debug-local-notification[=<seconds>] [--proposal-id=<id>]` (기본 10초). APNs 없이 배너·액션 경로를 탄다.
+    let localPrefix = "--poc-debug-local-notification"
+    if let arg = CommandLine.arguments.first(where: { $0.hasPrefix(localPrefix) }) {
+      let seconds = TimeInterval(arg.split(separator: "=").last.map(String.init) ?? "") ?? 10
+      let prefix = "--proposal-id="
+      let pid = CommandLine.arguments.first(where: { $0.hasPrefix(prefix) }).map { String($0.dropFirst(prefix.count)) } ?? "p-local-1"
+      NotificationActions.scheduleLocal(proposalId: pid, after: seconds)
+    }
+
+    // CaptureIntent.perform() 을 앱 프로세스에서 그대로 실행한다(단축어 호출 경로는 아님).
+    // `--poc-debug-capture-intent=<app>` : 합성 본문으로 규칙→FM→라우팅→큐 전체를 탄다.
+    let intentPrefix = "--poc-debug-capture-intent="
+    if let arg = CommandLine.arguments.first(where: { $0.hasPrefix(intentPrefix) }) {
+      let app = String(arg.dropFirst(intentPrefix.count))
+      Task {
+        let intent = CaptureIntent()
+        intent.text = "[합성] 9월 25일 15:00 진료 예약이 확정되었습니다"
+        intent.appName = app; intent.title = "합성병원"; intent.source = "NOTIFICATION"
+        do { _ = try await intent.perform() } catch { PoCLog.append("DebugCaptureIntent error:\(type(of: error))") }
+      }
     }
 
     // OS 레벨에서 실제로 몇 건이 생성됐는지 독립 검증하기 위한 훅: `--poc-debug-count-events`.

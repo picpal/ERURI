@@ -17,19 +17,31 @@ Error Domain=com.apple.UnifiedAssetFramework Code=5000
 
 `import FoundationModels`, `@Generable`/`@Guide` 매크로, `SystemLanguageModel.default.availability`의 `.available`/`.unavailable(_:)` 패턴 모두 이 Mac의 iOS 26.3 SDK에서 계획서 코드 그대로 컴파일된다. 다만 Swift 6 엄격 동시성 때문에 `withThrowingTaskGroup(of: FMVerdict?.self)`에서 클로저 경계를 넘는 `FMVerdict`(및 `NoticeKind`)에 `Sendable` 준수를 명시로 추가해야 했다.
 
+## 재실측 (2026-09-24, Opus 재검증 반영 후)
+
+- **원인 확정**: 호스트 Mac(macOS 26.5)에서 같은 API를 직접 호출하면 `SystemLanguageModel.default.availability = unavailable(appleIntelligenceNotEnabled)`, `respond` → `assetsUnavailable("Apple Intelligence is not enabled.")`이다(`com.apple.CloudSubscriptionFeatures.optIn`의 `opted_out_buddy=1`). 시뮬레이터는 호스트 모델을 쓰는데 `availability()`만 `available`로 잘못 보고한다. 시뮬레이터에서 분류를 돌리려면 **사용자가 Mac 시스템 설정 → Apple Intelligence 및 Siri를 켜고 모델 다운로드를 끝내야** 한다(이 세션은 시스템 설정을 바꾸지 않았다).
+- 시뮬레이터 `respond` 실패는 `GenerationError`로 변환되지 않아 코드 `other`로 기록된다(`FM error other`).
+- 수정 후 동작: 호출마다 새 `LanguageModelSession`, `@Generable enum GenKind`, 제목 입력, 1,500자 절단, 에러를 잡아 `FMOutcome.error(<코드>)`로 반환, 타임아웃은 continuation 경합으로 **respond의 취소 협조와 무관하게** 제시간에 반환(`testClassifyReturnsNilOnImmediateTimeout`이 0.5초 미만을 단정).
+- 앱 프로세스에서 `CaptureIntent.perform()`을 실행한 결과(`--poc-debug-capture-intent=<app>`): Coupang → `FM fallback error("other") kind=unknown` 후 `queued:rules`(758ms), KakaoTalk → `discarded:fm-error`(272ms). 스펙 §6 폴백대로다.
+- 판정에 쓸 수치(정확도·p95·메모리)는 여전히 없다.
+
 ## 실기기에서 사용자가 할 일
 
-1. **Mac에서 Apple Intelligence 상태 확인**: 이 실기기 절차는 Mac의 Xcode 시뮬레이터가 아니라 **iPhone 실기기**에서 실행해야 진짜 온디바이스 모델을 쓴다. iPhone 설정 → Apple Intelligence & Siri에서 Apple Intelligence를 켜고, 모델 다운로드가 "완료" 상태인지 확인한다(다운로드 중이면 `modelNotReady`가 나올 수 있다).
-2. Xcode에서 실기기를 대상으로 선택하고 `⌘U`로 `AssistantCoreTests` 전체(또는 `AssistantCoreTests/FMClassifierTests`만)를 실행한다.
-3. `testAvailabilityReturnsKnownValue`가 통과하는지 확인하고, 콘솔에 출력되는 `FMClassifier.availability()` 실제 값을 기록한다.
-4. `testBenchmark`가 스킵되지 않고 실제로 200건을 도는지 확인한다.
-   - 스킵되며 "availability()==available 이지만 실제 생성 실패"라는 메시지가 뜨면, 해당 실기기에서도 모델 에셋이 아직 준비되지 않은 것이다. 몇 시간 후(백그라운드 다운로드 완료 후) 재시도한다.
-   - 스킵 사유가 `FM unavailable: deviceNotEligible`이면 그 기기는 Apple Intelligence 자체를 지원하지 않는 기종이다(iPhone 15 Pro 미만 등).
-5. 벤치마크가 끝까지 돌면 콘솔의 `FM_BENCH ...` 로그와 App Group의 `fm_bench.txt`(ContentView의 poc.log 섹션 근처에서 직접 확인하거나 Xcode 컨테이너 다운로드로 확인)를 기록한다. 형식: `p95=<초>s personalPass=<n>/<100> noticeDrop=<n>/<100>`.
-6. 위 수치를 `docs/superpowers/poc/results.md`(Task 13에서 생성)의 PoC-3 행에 옮겨 적는다. 이 문서 작성 시점에는 `results.md`가 아직 없어 여기 옮겨 적지 못했다.
+1. **Mac(시뮬레이터로 먼저 돌려볼 때)**: 시스템 설정 → Apple Intelligence 및 Siri → 켜기, 모델 다운로드 완료 확인. 그 뒤 `scripts/sim.sh test AssistantCoreTests/FMClassifierTests`로 벤치마크가 스킵되지 않는지 본다(시뮬레이터 수치는 참고용이지 판정 근거가 아니다).
+2. **iPhone(판정)**: 설정 → Apple Intelligence 및 Siri에서 켜고 모델 다운로드 "완료"를 확인한다(다운로드 중이면 `modelNotReady`).
+3. Xcode에서 실기기를 대상으로 `⌘U`로 `AssistantCoreTests/FMClassifierTests`를 실행한다. `testBenchmark`가 스킵되면 사유(`FM unavailable: …` 또는 `생성 실패: <코드>`)를 기록한다.
+4. 끝까지 돌면 `FM_BENCH` 로그와 App Group의 `fm_bench.txt`를 기록한다. 형식: `p95=<초>s personalPass=<n>/100 noticeDrop=<n>/100 errors=<n> timeouts=<n> personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21`. 행마다 새 세션이고, 에러·타임아웃은 폐기로 센다.
+5. **메모리**: 벤치마크 실행 중 Xcode Debug navigator의 Memory 게이지 최대값(또는 Instruments의 Foundation Models 템플릿)을 기록한다.
+6. **백그라운드 인텐트에서 FM**: 단축어 앱에서 "비서에 저장"을 본문을 채워 10~20회 짧은 간격으로 실행한다(앱은 백그라운드). `poc.log`에서 `FM error rateLimited` 빈도, `queued:fm`/`queued:rules` 비율, 지연(ms)을 기록한다. `rateLimited`는 공식 문서상 백그라운드에서만 난다.
+7. 결과를 `docs/superpowers/poc/results.md` PoC-3 행에 적는다.
 
-## 판정 기준 (스펙 §14 PoC-3, 계획서 Step 2 임계값 기준)
+## 픽스처 (2026-09-24 정리)
 
-- **통과**: `p95 < 3.0`초, `personalPass/personalTotal ≤ 0.02`(사적 대화를 알림으로 오분류하는 비율 2% 이하), `noticeDrop/noticeTotal ≤ 0.15`(진짜 알림을 놓치는 비율 15% 이하).
-- **부분 통과**: 지연시간은 기준을 충족하나 정확도 임계값 중 하나만 못 미치는 경우 → 임계값 조정 또는 규칙 필터와의 역할 분담 재검토 대상으로 기록.
-- **실패 / 대안 채택**: `availability()`가 어떤 조건에서도 `available`이 되지 않거나(테스트 기기가 지원 기종이 아님), 지연시간이 3초를 크게 초과하는 경우 → FM 분류 단계를 생략하고 규칙 필터 결과만으로 큐 적재 여부를 결정하는 대안(`CaptureIntent`의 `isChatApp` 조건부 폐기 로직만 유지)을 채택.
+- 완전 중복 4쌍을 새 합성 문구로 교체, 제목·본문 불일치 7건의 제목을 본문 기관으로 정정.
+- 앱 분포: personal = KakaoTalk 50 · Instagram 29 · iMessage 21, notice = KakaoTalk 61 · Messages(`[Web발신]` 문자) 25 · 쇼핑 앱 푸시 14. 카톡 사적 대화 50건이 가장 어려운 집합이다.
+- 남은 일(사용자): 사용자가 직접 쓴 변형을 절반 이상으로(현재 대부분 프로그램 생성 흔적), "건강검진 결과가 준비되었습니다" 4건(#35·#98·#108·#117)의 라벨 정책을 스펙에서 정한다(현재 notice).
+
+## 판정 기준 (스펙 §14 PoC-3 문구 그대로)
+
+- **통과**: 세 수치 모두 충족 — p95 < 3초, 개인 대화 통과율 ≤ 2%(`personalPass/100`), 알림톡 폐기율 ≤ 15%(`noticeDrop/100`). 메모리와 백그라운드 인텐트 동작은 함께 기록한다.
+- **실패**: 하나라도 미달 → 대안: 규칙 필터만 + 카톡·인스타 경로 폐기.

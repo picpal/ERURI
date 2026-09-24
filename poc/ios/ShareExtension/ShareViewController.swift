@@ -23,6 +23,7 @@ final class ShareViewController: UIViewController {
           let ocr = type == .image ? (try? await OCR.recognize(imageURL: dst)) ?? "" : ""
           try? CaptureQueue.shared().enqueue(CaptureItem(id: id, source: "SHARE", appName: nil, sender: nil, title: nil,
             text: "", localFile: "inbox/" + dst.lastPathComponent, ocrText: ocr, capturedAt: Date(), attempts: 0))
+          PoCLog.append("ShareExtension file id=\(id) type=\(type == .pdf ? "pdf" : "image") ocrLen=\(ocr.count)")
         } else if p.hasItemConformingToTypeIdentifier(UTType.url.identifier),
                   let url = try? await p.loadItem(forTypeIdentifier: UTType.url.identifier) as? URL {
           try? CaptureQueue.shared().enqueue(CaptureItem(id: UUID().uuidString, source: "SHARE", appName: nil, sender: nil, title: nil,

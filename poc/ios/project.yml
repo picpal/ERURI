@@ -48,9 +48,25 @@ targets:
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/AssistantPoC.app/AssistantPoC
         BUNDLE_LOADER: $(TEST_HOST)
         GENERATE_INFOPLIST_FILE: YES
+  # 시뮬레이터 재실측용: 알림 권한 대화상자·배너 액션·단축어 앱·사진 공유 시트를 springboard 로 조작한다
+  AssistantPoCUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: AssistantPoC
+    settings:
+      base:
+        TEST_TARGET_NAME: AssistantPoC
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   AssistantPoC:
     build:
       targets: { AssistantPoC: all, ShareExtension: all, AssistantCoreTests: [test] }
     test:
       targets: [AssistantCoreTests]
+  AssistantPoCUI:
+    build:
+      targets: { AssistantPoC: all, ShareExtension: all, AssistantPoCUITests: [test] }
+    test:
+      targets: [AssistantPoCUITests]

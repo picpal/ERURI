@@ -6,6 +6,7 @@ import AssistantCore
 struct ContentView: View {
   @State private var items: [CaptureItem] = []
   @State private var logLines: [String] = []
+  @State private var bfuLines: [String] = []
   @State private var lastResult: String = ""
 
   var body: some View {
@@ -15,6 +16,7 @@ struct ContentView: View {
           Button("권한 요청 (알림·캘린더)") { requestPermissions() }
           Button("디버그: 파이프라인 직접 호출") { runDebugCapture() }
           Button("업로드 flush") { Uploader.shared.flush(); refresh() }
+          Button("10초 뒤 ADD_EVENT 로컬 알림") { NotificationActions.scheduleLocal(proposalId: "p-local-1", after: 10) }
           if !lastResult.isEmpty { Text("결과: \(lastResult)").font(.caption).foregroundStyle(.secondary) }
         }
         Section("큐 (\(items.count)건)") {
@@ -23,7 +25,8 @@ struct ContentView: View {
           } else {
             ForEach(items, id: \.id) { item in
               VStack(alignment: .leading) {
-                Text("[\(item.source)] \(item.appName ?? "-")").font(.caption).foregroundStyle(.secondary)
+                Text("[\(item.source)] \(item.appName ?? "-") filter=\(item.deviceFilter ?? "-") titleLen=\(item.title?.count ?? -1) attempts=\(item.attempts)")
+                  .font(.caption).foregroundStyle(.secondary)
                 Text(item.text)
               }
             }
@@ -37,6 +40,9 @@ struct ContentView: View {
               Text(line).font(.system(.caption, design: .monospaced))
             }
           }
+        }
+        Section("bfu.log") {
+          ForEach(bfuLines, id: \.self) { line in Text(line).font(.system(.caption, design: .monospaced)) }
         }
       }
       .navigationTitle("Assistant PoC")
@@ -59,7 +65,8 @@ struct ContentView: View {
   }
 
   private func refresh() {
-    items = (try? CaptureQueue.shared().pending(limit: 50)) ?? []
+    items = (try? CaptureQueue.shared().pending(limit: 50, now: .distantFuture)) ?? []   // 백오프·lease 중인 항목도 표시
+    bfuLines = BFULog.tail(lines: 10)
     logLines = PoCLog.tail(lines: 20)
   }
 

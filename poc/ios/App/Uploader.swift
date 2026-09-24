@@ -1,18 +1,23 @@
 import Foundation
 import AssistantCore
 
-final class Uploader: NSObject, URLSessionDelegate, URLSessionTaskDelegate, @unchecked Sendable {
+/// 가변 상태가 없어 컴파일러 검사로 Sendable 이다(`@unchecked` 불필요). 세션 delegate 는 별도 객체로 분리했다.
+final class Uploader: Sendable {
   static let shared = Uploader()
   static let base = URL(string: ProcessInfo.processInfo.environment["INGEST_URL"] ?? "http://localhost:8787")!
 
-  lazy var session: URLSession = {
+  let session: URLSession
+  private init() {
     let c = URLSessionConfiguration.background(withIdentifier: "com.picpal.assistant.poc.upload")
     c.sharedContainerIdentifier = AppGroup.id
-    return URLSession(configuration: c, delegate: self, delegateQueue: nil)
-  }()
+    session = URLSession(configuration: c, delegate: UploadDelegate(), delegateQueue: nil)
+  }
 
+  /// claim 이 lease 를 걸어 가져가므로 init·scenePhase 의 연속 flush 나 다른 프로세스가 같은 항목을 두 번 올리지 않는다.
+  /// lease 만료 전 완료·실패 콜백이 markSent/markFailed 로 상태를 덮어쓴다.
   func flush() {
-    guard let q = try? CaptureQueue.shared(), let items = try? q.pending(limit: 20) else { return }
+    guard let q = try? CaptureQueue.shared(), let items = try? q.claim(limit: 20) else { return }
+    if !items.isEmpty { PoCLog.append("flush claimed \(items.count)") }
     for it in items {
       if let rel = it.localFile, let container = try? AppGroup.containerURL() {
         var r = URLRequest(url: Self.base.appendingPathComponent("upload/\(it.id)")); r.httpMethod = "PUT"
@@ -27,7 +32,9 @@ final class Uploader: NSObject, URLSessionDelegate, URLSessionTaskDelegate, @unc
       }
     }
   }
+}
 
+final class UploadDelegate: NSObject, URLSessionTaskDelegate, Sendable {
   func urlSession(_ s: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
     guard let id = task.taskDescription, let q = try? CaptureQueue.shared() else { return }
     if error == nil, (task.response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true {

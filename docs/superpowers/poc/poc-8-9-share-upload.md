@@ -81,9 +81,28 @@ Vision(`ko-KR`, `.accurate`)이 4줄 69자를 정확히 인식했다(원문 "청
 않고 매번 새 태스크를 만드는 것을 확인했다(계획서에 없던 관찰 — 아래 "계획서와 달라진 점" 참고). 실패 감지까지 걸리는
 정확한 시간과 재시도 백오프 정책은 이 세션에서 특정하지 못해 **미검증**으로 남긴다.
 
+### (d) 실제 공유 시트 UI — 통과, 재실측 (2026-09-24, Opus 재검증 반영 후)
+
+XCUITest(`UITests/SimRemeasureUITests.testPhotosShareSheetRunsExtension`, `scripts/sim.sh uitest`)로 사진 앱을 조작했다.
+`xcrun simctl addmedia`로 합성 이미지("[합성] 합성치과 예약 안내 9월 25일 15:00 진료")를 넣고, 사진 앱 그리드
+(`Image`, identifier `PXGGridLayout-Info`) → 공유 버튼 → 공유 시트의 `shareCell` "Assistant PoC"를 탭했다.
+확장 프로세스가 실제로 떠서 `poc.log`에 `ShareExtension file id=476CF7E4-… type=image ocrLen=43`(14:35:36Z)를 남겼고,
+큐에 `SHARE | inbox/476CF7E4-….jpg | ocrText 43자` 행이 생겼다. 이전 세션의 "도구 부재" 판단은 XCUITest로 해소됐다.
+
+### 중복 업로드 (Task 7 관찰) — 수정·재실측
+
+이전 세션 `poc.log`에 같은 id의 `upload ok`가 같은 초에 두 번(14:14:29Z), `upload fail`도 두 번씩 남아 있었다. 앱 init과
+scenePhase `.active`가 연달아 `flush()`를 부르는데 in-flight 표시가 없었기 때문이다. `CaptureQueue.claim(limit:)`이
+단일 `UPDATE … RETURNING`으로 `next_attempt_at = now + 600초` lease를 걸고 항목을 가져가게 바꿨다(연결·프로세스 간에도 원자적,
+`testClaimFromTwoConnectionsNeverDuplicates`). 실패 콜백은 lease를 지수 백오프(30초×2ⁿ, 상한 1시간)로 덮어쓴다.
+재실측: 앱 실행 한 번에 `flush claimed 1` 한 줄, 해당 id의 `upload fail`도 한 줄(14:31:28Z, 목 서버 미기동).
+`Uploader`의 `@unchecked Sendable`은 URLSession delegate를 별도 `UploadDelegate`(상태 없음)로 분리하고 `session`을
+`let`으로 바꿔 없앴다. 이제 컴파일러가 Sendable을 검사한다.
+
 ### 검증하지 못한 것
 
-- **실제 공유 시트 UI**(사진 앱 → 공유 → AssistantPoC 확장 탭): 자동화 도구 부재로 미검증.
+- ~~실제 공유 시트 UI~~: (d)에서 XCUITest로 통과.
+- 공유된 OCR 텍스트는 아직 기기 규칙 필터(OTP·카드·계좌)를 거치지 않는다. 스펙 §12는 서버에서 재적용한다고 하므로 Task 8/12에서 확인한다.
 - **Network Link Conditioner 100% loss 후 복구**(계획서 Step 4의 4번): 이 세션에 passwordless sudo가 없어
   `pfctl`/`dnctl` 기반 호스트 네트워크 제어를 시도하지 않았고, 시뮬레이터 Settings 앱의 UI 조작도 자동화 도구가 없어
   하지 못했다. 미검증.

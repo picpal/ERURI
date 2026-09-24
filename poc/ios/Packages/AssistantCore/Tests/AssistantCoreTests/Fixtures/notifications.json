@@ -1,6 +1,6 @@
 [
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "우리팀 단톡",
     "text": "오늘 컨디션 어때? ㅋㅋ",
     "expected": "personal"
@@ -60,14 +60,14 @@
     "expected": "personal"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "가족방",
     "text": "이거 배송 언제 오는지 알아?",
     "expected": "personal"
   },
   {
     "app": "KakaoTalk",
-    "title": "삼성카드",
+    "title": "국민은행",
     "text": "국민은행 20,000원 출금되었습니다. 잔액 701,000원",
     "expected": "notice"
   },
@@ -84,7 +84,7 @@
     "expected": "notice"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "김민수",
     "text": "오늘 야근이라 늦을 것 같아!",
     "expected": "personal"
@@ -96,7 +96,7 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "명동칼국수",
     "text": "[Web발신] 명동칼국수 예약 알림 - 7월 22일 19시, 예약자 정하늘",
     "expected": "notice"
@@ -108,7 +108,7 @@
     "expected": "notice"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "이서연",
     "text": "축하해 정말 잘됐다 ㅎㅎ",
     "expected": "personal"
@@ -150,19 +150,19 @@
     "expected": "personal"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "우리팀 단톡",
     "text": "예약 확인했어? 시간 맞아?",
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "로젠택배",
     "text": "[Web발신] 로젠택배: 부재중으로 재배송 예정입니다.",
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Kurly",
     "title": "마켓컬리",
     "text": "[마켓컬리] 주문번호 39958838 정상 접수되었습니다. 결제금액 22,000원",
     "expected": "notice"
@@ -182,7 +182,7 @@
   {
     "app": "KakaoTalk",
     "title": "한진택배",
-    "text": "[한진택배] 경비실에 택배가 도착했습니다. 찾아가세요.",
+    "text": "[한진택배] 무인택배함 3번에 보관했습니다. 비밀번호는 앱에서 확인하세요.",
     "expected": "notice"
   },
   {
@@ -192,7 +192,7 @@
     "expected": "personal"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "이서연",
     "text": "너 그거 주문했었나?",
     "expected": "personal"
@@ -216,13 +216,13 @@
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "현대카드",
     "text": "[Web발신] 현대카드 승인 알림: 대성갈비에서 56,000원 결제되었습니다.",
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "마켓컬리",
     "text": "[Web발신] 마켓컬리 주문 확인. 상품 준비 중입니다. (주문번호 70291817)",
     "expected": "notice"
@@ -240,19 +240,19 @@
     "expected": "notice"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "오랜만이야",
     "text": "회식 장소 정해졌어?",
     "expected": "personal"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "우리팀 단톡",
     "text": "네 알겠습니다, 확인 후 연락드리겠습니다. ㅋㅋ",
     "expected": "personal"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": null,
     "text": "저 사람 누구야? 😊",
     "expected": "personal"
@@ -264,7 +264,7 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "마켓컬리",
     "text": "[Web발신] 마켓컬리 택배가 배송 중입니다. 도착 예정 14시경",
     "expected": "notice"
@@ -276,7 +276,7 @@
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "올리브영",
     "text": "[Web발신] 올리브영 택배가 배송 중입니다. 도착 예정 19시경",
     "expected": "notice"
@@ -307,7 +307,7 @@
   },
   {
     "app": "KakaoTalk",
-    "title": "신한카드",
+    "title": "신한은행",
     "text": "신한은행 계좌에서 75,000원이 GS더프레시로 이체되었습니다.",
     "expected": "notice"
   },
@@ -318,19 +318,19 @@
     "expected": "personal"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": null,
     "text": "ㄱㄱ 출발 😊",
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "국민카드",
     "text": "[Web발신] 국민카드 승인 알림: 성수동파스타에서 79,000원 결제되었습니다.",
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "365안과",
     "text": "[Web발신] 365안과: 처방전이 약국으로 전송되었습니다.",
     "expected": "notice"
@@ -342,13 +342,13 @@
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "현대카드",
     "text": "[Web발신] 현대카드 승인 알림: 배달의민족에서 111,000원 결제되었습니다.",
     "expected": "notice"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "오랜만이야",
     "text": "오늘 컨디션 어때? 진짜로",
     "expected": "personal"
@@ -378,7 +378,7 @@
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "ZIGZAG",
     "title": "지그재그",
     "text": "지그재그에서 주문하신 상품이 확인되었습니다. 주문번호 83197857, 결제 16,000원",
     "expected": "notice"
@@ -390,13 +390,13 @@
     "expected": "personal"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "이서연",
     "text": "이번 달 목표 달성했어? ㅋㅋ",
     "expected": "personal"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "우리팀 단톡",
     "text": "네 알겠습니다, 확인 후 연락드리겠습니다. 진짜로",
     "expected": "personal"
@@ -414,7 +414,7 @@
     "expected": "notice"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": null,
     "text": "이번 주말에 등산 갈 사람? ㅋㅋ",
     "expected": "personal"
@@ -426,7 +426,7 @@
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "올리브영",
     "text": "[Web발신] 올리브영 주문 확인. 상품 준비 중입니다. (주문번호 22981052)",
     "expected": "notice"
@@ -438,7 +438,7 @@
     "expected": "notice"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "이서연",
     "text": "ㅇㅇ 알겠어",
     "expected": "personal"
@@ -456,7 +456,7 @@
     "expected": "personal"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "가족방",
     "text": "응 병원 다녀왔어 별거 아니래",
     "expected": "personal"
@@ -492,7 +492,7 @@
     "expected": "notice"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "우리팀 단톡",
     "text": "지금 가는 중이야 😊",
     "expected": "personal"
@@ -504,7 +504,7 @@
     "expected": "personal"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "우리팀 단톡",
     "text": "배송 시작됐다고 문자 왔던데 너도 왔어?",
     "expected": "personal"
@@ -516,19 +516,19 @@
     "expected": "notice"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "김민수",
     "text": "감사합니다 선생님 😊",
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "SSG.COM",
     "title": "SSG닷컴",
     "text": "SSG닷컴에서 주문하신 상품이 확인되었습니다. 주문번호 10872248, 결제 25,000원",
     "expected": "notice"
   },
   {
-    "app": "iMessage",
+    "app": "KakaoTalk",
     "title": "우리팀 단톡",
     "text": "저 사람 누구야? 진짜로",
     "expected": "personal"
@@ -540,19 +540,19 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Kurly",
     "title": "마켓컬리",
     "text": "[마켓컬리] 상품이 출고되어 배송을 시작합니다. 운송장번호 296546131054",
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "29CM",
     "title": "29CM",
     "text": "29CM 주문이 완료되었습니다. 주문번호: 96977837 / 총 14,000원",
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "연세정형외과",
     "text": "[Web발신] 연세정형외과: 처방전이 약국으로 전송되었습니다.",
     "expected": "notice"
@@ -564,13 +564,13 @@
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "롯데카드",
     "text": "[Web발신] 롯데카드 승인 알림: 이마트몰에서 138,000원 결제되었습니다.",
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "MUSINSA",
     "title": "무신사",
     "text": "[무신사] 주문번호 35808537 정상 접수되었습니다. 결제금액 13,000원",
     "expected": "notice"
@@ -618,7 +618,7 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "배달의민족",
     "text": "[Web발신] 배달의민족 택배가 배송 중입니다. 도착 예정 13시경",
     "expected": "notice"
@@ -660,7 +660,7 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "롯데택배",
     "text": "[Web발신] 롯데택배: 부재중으로 재배송 예정입니다.",
     "expected": "notice"
@@ -678,7 +678,7 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Kurly",
     "title": "마켓컬리",
     "text": "[마켓컬리] 주문번호 77827638 정상 접수되었습니다. 결제금액 82,000원",
     "expected": "notice"
@@ -710,7 +710,7 @@
   {
     "app": "iMessage",
     "title": "오랜만이야",
-    "text": "이거 사진 좀 보내줘 ㅋㅋ",
+    "text": "어제 찍은 거 단톡에 올려줄 수 있어?",
     "expected": "personal"
   },
   {
@@ -720,7 +720,7 @@
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "지그재그",
     "text": "[Web발신] 지그재그 주문 확인. 상품 준비 중입니다. (주문번호 24942603)",
     "expected": "notice"
@@ -732,7 +732,7 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "SSG.COM",
     "title": "SSG닷컴",
     "text": "[SSG닷컴] 주문번호 55176955 정상 접수되었습니다. 결제금액 18,000원",
     "expected": "notice"
@@ -762,13 +762,13 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Kurly",
     "title": "마켓컬리",
     "text": "마켓컬리: 고객님의 상품이 배송 완료되었습니다. 문 앞에 두었습니다.",
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "롯데카드",
     "text": "[Web발신] 롯데카드 승인 알림: 농협하나로마트에서 70,000원 결제되었습니다.",
     "expected": "notice"
@@ -792,7 +792,7 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "ZIGZAG",
     "title": "지그재그",
     "text": "[지그재그] 주문번호 40587988 정상 접수되었습니다. 결제금액 42,000원",
     "expected": "notice"
@@ -811,7 +811,7 @@
   },
   {
     "app": "KakaoTalk",
-    "title": "롯데카드",
+    "title": "국민은행",
     "text": "국민은행 22,000원 출금되었습니다. 잔액 717,000원",
     "expected": "notice"
   },
@@ -858,13 +858,13 @@
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "롯데카드",
     "text": "[Web발신] 롯데카드 승인 알림: 올리브영에서 147,000원 결제되었습니다.",
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "배달의민족",
     "title": "배달의민족",
     "text": "배달의민족 배송 안내: 오늘 오후 도착 예정입니다. (송장 804054194082)",
     "expected": "notice"
@@ -888,7 +888,7 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Coupang",
     "title": "쿠팡",
     "text": "쿠팡 배송 안내: 오늘 오후 도착 예정입니다. (송장 988335239225)",
     "expected": "notice"
@@ -906,7 +906,7 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "GS더프레시",
     "text": "[Web발신] GS더프레시 주문 확인. 상품 준비 중입니다. (주문번호 57683626)",
     "expected": "notice"
@@ -924,7 +924,7 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "마켓컬리",
     "text": "[Web발신] 마켓컬리 주문 확인. 상품 준비 중입니다. (주문번호 23556182)",
     "expected": "notice"
@@ -942,7 +942,7 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "현대카드",
     "text": "[Web발신] 현대카드 승인 알림: 성수동파스타에서 83,000원 결제되었습니다.",
     "expected": "notice"
@@ -1002,7 +1002,7 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "로젠택배",
     "text": "[Web발신] 로젠택배 택배가 배송 중입니다. 도착 예정 21시경",
     "expected": "notice"
@@ -1022,11 +1022,11 @@
   {
     "app": "iMessage",
     "title": "이서연",
-    "text": "고생했어 오늘도 ㅎㅎ ㅋㅋ",
+    "text": "오늘 발표 잘했더라 수고 많았어",
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "신한카드",
     "text": "[Web발신] 신한카드 승인 알림: GS더프레시에서 36,000원 결제되었습니다.",
     "expected": "notice"
@@ -1038,13 +1038,13 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "농협하나로마트",
     "text": "[Web발신] 농협하나로마트 주문 확인. 상품 준비 중입니다. (주문번호 49349722)",
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "MUSINSA",
     "title": "무신사",
     "text": "무신사에서 주문하신 상품이 확인되었습니다. 주문번호 45503389, 결제 10,000원",
     "expected": "notice"
@@ -1056,7 +1056,7 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "CU편의점",
     "text": "[Web발신] CU편의점 택배가 배송 중입니다. 도착 예정 14시경",
     "expected": "notice"
@@ -1068,14 +1068,14 @@
     "expected": "personal"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Coupang",
     "title": "쿠팡",
     "text": "쿠팡 주문이 완료되었습니다. 주문번호: 13999315 / 총 16,000원",
     "expected": "notice"
   },
   {
     "app": "KakaoTalk",
-    "title": "롯데카드",
+    "title": "국민은행",
     "text": "국민은행 계좌에서 144,000원이 GS더프레시로 이체되었습니다.",
     "expected": "notice"
   },
@@ -1086,7 +1086,7 @@
     "expected": "notice"
   },
   {
-    "app": "KakaoTalk",
+    "app": "Messages",
     "title": "CJ대한통운",
     "text": "[Web발신] CJ대한통운: 부재중으로 재배송 예정입니다.",
     "expected": "notice"
@@ -1099,7 +1099,7 @@
   },
   {
     "app": "KakaoTalk",
-    "title": "삼성카드",
+    "title": "농협은행",
     "text": "농협은행 계좌에서 144,000원이 CU편의점로 이체되었습니다.",
     "expected": "notice"
   },
@@ -1117,7 +1117,7 @@
   },
   {
     "app": "KakaoTalk",
-    "title": "삼성카드",
+    "title": "농협은행",
     "text": "농협은행 계좌에서 70,000원이 성수동파스타로 이체되었습니다.",
     "expected": "notice"
   },
@@ -1136,7 +1136,7 @@
   {
     "app": "iMessage",
     "title": "오랜만이야",
-    "text": "지금 어디야?? 늦었어 ㅠㅠ 😊",
+    "text": "벌써 도착했어? 나 5분만 늦을 듯",
     "expected": "personal"
   },
   {
@@ -1147,7 +1147,7 @@
   },
   {
     "app": "KakaoTalk",
-    "title": "신한카드",
+    "title": "신한은행",
     "text": "신한은행 32,000원 출금되었습니다. 잔액 119,000원",
     "expected": "notice"
   },
