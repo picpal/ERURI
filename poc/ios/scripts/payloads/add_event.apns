@@ -1,0 +1,3 @@
+{ "Simulator Target Bundle": "com.picpal.assistant.poc",
+  "aps": { "alert": { "title": "일정 제안", "body": "9월 25일 15:00 병원 예약" }, "category": "ADD_EVENT" },
+  "proposal_id": "p-001", "title": "병원 예약", "start": "2026-09-25T15:00:00+09:00" }

@@ -1,4 +1,6 @@
 import SwiftUI
+import UserNotifications
+import EventKit
 import AssistantCore
 
 struct ContentView: View {
@@ -10,6 +12,7 @@ struct ContentView: View {
     NavigationStack {
       List {
         Section("디버그") {
+          Button("권한 요청 (알림·캘린더)") { requestPermissions() }
           Button("디버그: 파이프라인 직접 호출") { runDebugCapture() }
           if !lastResult.isEmpty { Text("결과: \(lastResult)").font(.caption).foregroundStyle(.secondary) }
         }
@@ -42,6 +45,15 @@ struct ContentView: View {
         }
       }
       .onAppear { refresh() }
+    }
+  }
+
+  private func requestPermissions() {
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+      PoCLog.append("notif permission granted=\(granted) error=\(String(describing: error))")
+    }
+    EKEventStore().requestFullAccessToEvents { granted, error in
+      PoCLog.append("calendar permission granted=\(granted) error=\(String(describing: error))")
     }
   }
 
