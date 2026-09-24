@@ -9,7 +9,7 @@ Claude Code는 `CLAUDE.md`의 `@AGENTS.md`로, Codex는 이 파일을 직접 읽
 | 설계 스펙 (단일 원본) | `docs/superpowers/specs/2026-09-22-assistant-design.md` |
 | 0단계 PoC 계획 | `docs/superpowers/plans/2026-09-23-phase0-poc.md` |
 | 아키텍처 리포트 | `docs/superpowers/reports/2026-09-23-architecture-report.html` |
-| PoC 판정표 | `docs/superpowers/poc/results.md` (Task 13에서 생성) |
+| PoC 판정표 | `docs/superpowers/poc/results.md` (태스크마다 갱신) |
 | 에이전트 지시문·세션 상태 | `.context/` (gitignore) |
 
 스펙과 코드가 다르면 스펙을 먼저 고친다. 스펙에 없는 기능은 만들지 않는다.
@@ -82,6 +82,7 @@ herdr agent prompt codex-reviewer "Read .context/codex-review-N.prompt.md and fo
 5. 구현 계획 작성 (`writing-plans`)
 6. 기능 단위 PoC로 실현 가능성 판정 후 제작
 7. 태스크별 서브 에이전트 구현 + 리뷰
+8. **실측 게이트**: PoC 태스크는 판정 기준을 실제로 재현·측정한 결과를 `docs/superpowers/poc/results.md`에 적고, 그 PoC가 **통과**여야 다음 단계로 간다. 디버그 훅·시뮬레이터 대체는 "부분"이지 통과가 아니다. 실기기가 필요한 항목은 실기기 세션을 잡아 통과시킨 뒤 진행한다.
 
 ## 6. 이 기계의 제약
 
