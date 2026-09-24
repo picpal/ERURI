@@ -1,0 +1,1392 @@
+<!DOCTYPE html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>실기기 PoC 세션 절차</title>
+<style>
+  :root{
+    --page-bg:#e9e7e2;
+    --page-muted:#7c7a75;
+    --ink:#121212;
+    --paper:#ffffff;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --page-bg:#1a1a1a; --page-muted:#8d8b86; }
+  }
+  :root[data-theme="dark"]{ --page-bg:#1a1a1a; --page-muted:#8d8b86; }
+  :root[data-theme="light"]{ --page-bg:#e9e7e2; --page-muted:#7c7a75; }
+
+  html{ -webkit-text-size-adjust:100%; }
+  body{
+    background:var(--page-bg);
+    font-family:"Apple SD Gothic Neo","Pretendard","Noto Sans KR",-apple-system,system-ui,"Segoe UI",sans-serif;
+    color:var(--ink);
+    line-height:1.7;
+    font-size:15px;
+  }
+  .deck{
+    max-width:1060px;
+    margin:0 auto;
+    padding:48px 20px 72px;
+    display:flex;
+    flex-direction:column;
+    gap:26px;
+  }
+  .deck-caption{
+    color:var(--page-muted);
+    font-size:11px;
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    padding:0 4px;
+  }
+
+  /* ---------- slide grounds (deliberately fixed, deck is monochrome) ---------- */
+  .slide{
+    background:var(--paper);
+    color:#141414;
+    border:1px solid #d9d7d1;
+    padding:52px 56px;
+    --rule:#e3e1dc;
+    --muted:#71706b;
+    --chipbg:#f4f3f0;
+    --fg:#141414;
+    --ground:#ffffff;
+  }
+  .slide.dark{
+    background:var(--ink);
+    color:#f4f3ef;
+    border-color:var(--ink);
+    --rule:#2e2e2e;
+    --muted:#9b9994;
+    --chipbg:#1e1e1e;
+    --fg:#f4f3ef;
+    --ground:#121212;
+  }
+
+  /* ---------- type ---------- */
+  .display{
+    font-family:"Helvetica Neue",Helvetica,Arial,"Apple SD Gothic Neo",sans-serif;
+    font-weight:800;
+    font-stretch:condensed;
+    text-transform:uppercase;
+    letter-spacing:-.015em;
+    line-height:1.02;
+    text-wrap:balance;
+    margin:0;
+  }
+  .eyebrow{
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin:0 0 10px;
+  }
+  .slide h3{
+    font-size:20px;
+    font-weight:800;
+    letter-spacing:-.01em;
+    line-height:1.35;
+    margin:0 0 8px;
+    text-wrap:balance;
+  }
+  .slide p{ margin:0; max-width:62ch; }
+  .muted{ color:var(--muted); }
+  .num{ font-variant-numeric:tabular-nums; }
+
+  /* ---------- cover ---------- */
+  .cover{
+    min-height:430px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    gap:64px;
+  }
+  .cover-top{
+    display:flex;
+    justify-content:space-between;
+    gap:16px;
+    font-size:11px;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+  .cover h1{ font-size:clamp(52px,9vw,104px); }
+  .cover .sub{
+    margin-top:18px;
+    max-width:56ch;
+    color:var(--muted);
+    font-size:14px;
+  }
+
+  /* ---------- contents ---------- */
+  .toc{ list-style:none; margin:28px 0 0; padding:0; }
+  .toc li{
+    display:grid;
+    grid-template-columns:64px 1fr auto;
+    gap:20px;
+    align-items:baseline;
+    padding:16px 4px;
+    border-top:1px solid var(--rule);
+  }
+  .toc li:last-child{ border-bottom:1px solid var(--rule); }
+  .toc .no{
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    font-weight:800;
+    font-size:15px;
+    letter-spacing:.04em;
+  }
+  .toc .t{ font-weight:700; }
+  .toc .d{ color:var(--muted); font-size:12.5px; letter-spacing:.08em; text-transform:uppercase; }
+
+  /* ---------- 2-up summary ---------- */
+  .split{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:0;
+    border-top:1px solid var(--rule);
+    margin-top:26px;
+  }
+  .split > div{ padding:24px 28px 4px 0; }
+  .split > div + div{ border-left:1px solid var(--rule); padding-left:28px; padding-right:0; }
+  .split h4{
+    margin:0 0 14px;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+  }
+  .list{ list-style:none; margin:0; padding:0; }
+  .list li{
+    padding:9px 0;
+    border-top:1px solid var(--rule);
+    display:flex;
+    gap:12px;
+    font-size:14px;
+  }
+  .list li:first-child{ border-top:0; }
+  .list .k{
+    flex:0 0 auto;
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    font-weight:800;
+    font-size:12px;
+    letter-spacing:.06em;
+    margin-top:2px;
+  }
+
+  /* ---------- action slides (4-quadrant + big number) ---------- */
+  .action-head{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:24px;
+    padding-bottom:26px;
+    border-bottom:1px solid var(--rule);
+  }
+  .action-head .bignum{
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    font-weight:800;
+    font-stretch:condensed;
+    font-size:clamp(48px,7vw,76px);
+    line-height:.9;
+    letter-spacing:-.02em;
+  }
+  .action-title{ flex:1; min-width:0; }
+  .action-title h2{
+    font-size:clamp(22px,3.4vw,30px);
+    font-weight:800;
+    letter-spacing:-.01em;
+    line-height:1.25;
+    margin:2px 0 6px;
+    text-wrap:balance;
+  }
+  .tag{
+    flex:0 0 auto;
+    font-size:10.5px;
+    font-weight:700;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    border:1px solid currentColor;
+    padding:6px 12px;
+    white-space:nowrap;
+    margin-top:6px;
+  }
+  .action-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:0;
+  }
+  .cell{
+    padding:24px 28px 24px 0;
+    border-bottom:1px solid var(--rule);
+  }
+  .cell:nth-child(even){
+    border-left:1px solid var(--rule);
+    padding-left:28px;
+    padding-right:0;
+  }
+  .cell:nth-last-child(-n+2){ border-bottom:0; padding-bottom:6px; }
+  .cell h4{
+    margin:0 0 10px;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+  .cell p, .cell li{ font-size:14px; }
+  .cell ul{ margin:0; padding-left:17px; }
+  .cell li{ margin:5px 0; }
+  .cell li::marker{ color:var(--muted); }
+  code{
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;
+    font-size:.86em;
+    background:var(--chipbg);
+    padding:1.5px 5px;
+    border:1px solid var(--rule);
+  }
+
+  /* ---------- before / after + outcome ---------- */
+  .ba{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    border-top:1px solid var(--rule);
+    margin-top:26px;
+  }
+  .ba > div{ padding:22px 28px 22px 0; }
+  .ba > div + div{ border-left:1px solid var(--rule); padding-left:28px; padding-right:0; }
+  .outcome{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    border-top:1px solid var(--rule);
+    margin-top:6px;
+  }
+  .outcome > div{ padding:26px 20px 4px 0; }
+  .outcome > div + div{ border-left:1px solid var(--rule); padding-left:24px; }
+  .outcome .v{
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    font-weight:800;
+    font-stretch:condensed;
+    font-size:clamp(40px,6vw,60px);
+    line-height:1;
+    letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums;
+  }
+  .outcome .l{
+    margin-top:10px;
+    font-size:11px;
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+
+  /* ---------- as-is / to-be table ---------- */
+  .tablewrap{ overflow-x:auto; margin-top:26px; }
+  table{
+    width:100%;
+    min-width:640px;
+    border-collapse:collapse;
+    font-size:13.5px;
+  }
+  th{
+    text-align:left;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    color:var(--muted);
+    padding:0 18px 12px 0;
+    border-bottom:1px solid currentColor;
+  }
+  td{
+    vertical-align:top;
+    padding:13px 18px 13px 0;
+    border-bottom:1px solid var(--rule);
+  }
+  td:first-child{ font-weight:700; white-space:nowrap; }
+  tr:last-child td{ border-bottom:0; }
+
+  /* ---------- sequence ---------- */
+  .seq{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    border-top:1px solid var(--rule);
+    margin-top:26px;
+  }
+  .seq > div{ padding:22px 20px 4px 0; }
+  .seq > div + div{ border-left:1px solid var(--rule); padding-left:22px; }
+  .seq .no{
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    font-weight:800;
+    font-size:13px;
+    letter-spacing:.08em;
+  }
+  .seq h4{ margin:12px 0 6px; font-size:14.5px; font-weight:800; line-height:1.4; }
+  .seq p{ font-size:12.5px; color:var(--muted); }
+
+  /* ---------- closing ---------- */
+  .closing{
+    min-height:300px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    gap:48px;
+  }
+  .closing h2{ font-size:clamp(44px,8vw,92px); }
+  .closing .foot{
+    display:flex;
+    justify-content:space-between;
+    gap:16px;
+    font-size:11px;
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+
+  a{ color:inherit; }
+  :focus-visible{ outline:2px solid currentColor; outline-offset:3px; }
+
+  /* ==========================================================
+     VISUAL GRAMMAR — monochrome data/diagram components.
+     Fill encodes series: solid = 현재/확정/강조, hatch = 비교군/
+     잠정/진행중, open(hairline) = 미완/보조. Two or more fills
+     on one slide REQUIRE a .viz-legend. All components inherit
+     currentColor so they work on paper and ink slides alike.
+     ========================================================== */
+  .viz-legend{
+    display:flex; flex-wrap:wrap; gap:18px; margin-top:18px;
+    font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
+  }
+  .viz-legend span{ display:inline-flex; align-items:center; gap:7px; }
+  /* swatches use --fg (full contrast) so they match the actual fills,
+     while the labels stay muted; denser hatch so the texture reads at 12px */
+  .viz-legend i{ width:12px; height:12px; border:1px solid currentColor; color:var(--fg); }
+  .viz-legend i.solid{ background:currentColor; }
+  .viz-legend i.hatch{
+    background-image:repeating-linear-gradient(45deg,currentColor 0,currentColor 1px,transparent 1px,transparent 3.5px);
+  }
+
+  /* horizontal bar chart — width via inline style="width:NN%" */
+  .barchart{ margin-top:26px; border-top:1px solid var(--rule); }
+  .bar-row{
+    display:grid; grid-template-columns:150px 1fr 64px; gap:14px; align-items:center;
+    padding:10px 0; border-bottom:1px solid var(--rule);
+  }
+  .bar-row .l{ font-size:12.5px; font-weight:700; min-width:0; }
+  .bar-row .v{ font-size:12.5px; text-align:right; }
+  /* track outlines carry information (the 100% frame) — use --muted, not the
+     hairline token, so they survive on ink slides */
+  .bar-track{ height:13px; border:1px solid var(--muted); }
+  .bar-fill{ height:100%; background:currentColor; }
+
+  /* thin progress meter — inline inside Action cells / lists */
+  .meter{ display:flex; align-items:center; gap:10px; margin-top:8px; }
+  .meter .meter-track{ flex:1; height:4px; border:1px solid var(--muted); }
+  .meter .meter-fill{ height:100%; background:currentColor; }
+  .meter .v{ font-size:11.5px; font-weight:700; }
+
+  /* status chips — solid=DONE, hatch=WIP, outline=TODO/BLOCKED */
+  .chip{
+    display:inline-block; font-size:10px; font-weight:700; letter-spacing:.14em;
+    text-transform:uppercase; border:1px solid currentColor; white-space:nowrap;
+    padding:3px 9px 6px;  /* bottom room hosts the hatch band — same box for all three fills */
+  }
+  .chip.solid{ background:#141414; color:#fff; border-color:#141414; }
+  .slide.dark .chip.solid{ background:#f4f3ef; color:#121212; border-color:#f4f3ef; }
+  /* chip hatch = bottom texture band only, so the 10px label stays clean */
+  .chip.hatch{
+    background-image:repeating-linear-gradient(45deg,currentColor 0,currentColor 1px,transparent 1px,transparent 4px);
+    background-size:100% 4px;
+    background-position:bottom left;
+    background-repeat:repeat-x;
+  }
+
+  /* severity scale ■■■□□ — filled squares = level */
+  .scale{ display:inline-flex; gap:3px; vertical-align:baseline; }
+  .scale i{ width:9px; height:9px; border:1px solid currentColor; }
+  .scale i.on{ background:currentColor; }
+
+  /* delta marker under outcome stats — direction from ▲/▼ glyph, never color */
+  .delta{ display:block; margin-top:8px; font-size:12px; font-weight:700; }
+  .delta small{
+    font-weight:600; color:var(--muted); letter-spacing:.08em;
+    text-transform:uppercase; font-size:10px; margin-left:6px;
+  }
+
+  /* callout / pull-quote — ONE key sentence, editorial scale */
+  .callout{
+    border-left:3px solid currentColor; padding:4px 0 4px 24px; margin-top:30px;
+    font-size:clamp(17px,2.4vw,22px); font-weight:700; line-height:1.55;
+    letter-spacing:-.01em; text-wrap:balance; max-width:34ch;
+  }
+  .callout .src{
+    display:block; margin-top:10px; font-size:11px; font-weight:600;
+    letter-spacing:.16em; text-transform:uppercase; color:var(--muted);
+  }
+
+  /* mono diff — add: left bar + chip bg / del: hatched + muted */
+  .diffwrap{ overflow-x:auto; margin-top:26px; border:1px solid var(--rule); }
+  .diff{
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;
+    font-size:12.5px; line-height:1.75;
+    width:max-content; min-width:100%;  /* line boxes span the longest line, so add/del fills survive h-scroll */
+    padding:12px 0;
+  }
+  .diff .ln{ display:block; white-space:pre; padding:0 18px; }
+  .diff .meta{ color:var(--muted); }
+  .diff .add{ background:var(--chipbg); box-shadow:inset 3px 0 0 currentColor; }
+  .diff .del{
+    color:var(--muted);
+    background-image:repeating-linear-gradient(45deg,var(--rule) 0,var(--rule) 1px,transparent 1px,transparent 6px);
+  }
+
+  /* linear flow — boxes joined by hairline arrows; .now = current step */
+  .flow{ display:flex; align-items:stretch; margin-top:26px; }
+  /* flex column (not align-self:center) so multi-line nodes keep equal heights */
+  .flow-node{
+    flex:1; min-width:0; border:1px solid currentColor;
+    padding:14px 16px; text-align:center;
+    display:flex; flex-direction:column; justify-content:center;
+  }
+  .flow-node h5{ margin:0; font-size:13px; font-weight:800; line-height:1.4; }
+  .flow-node p{ margin:4px 0 0; font-size:11.5px; color:var(--muted); max-width:none; }
+  .flow-node.now{ border-width:2px; }
+  .flow-node.now h5::before{ content:"● "; font-size:9px; vertical-align:2px; }
+  .flow-arrow{
+    flex:0 0 30px; align-self:center; height:1px;
+    background:currentColor; position:relative; margin:0 2px;
+  }
+  .flow-arrow::after{
+    content:""; position:absolute; right:-1px; top:-3.5px;
+    border-left:6px solid currentColor;
+    border-top:4px solid transparent; border-bottom:4px solid transparent;
+  }
+
+  /* timeline / gantt — bar position inline style="left:NN%;width:NN%" */
+  .gantt{ margin-top:26px; border-top:1px solid var(--rule); }
+  .gantt-row{
+    display:grid; grid-template-columns:150px 1fr; gap:14px; align-items:center;
+    padding:9px 0; border-bottom:1px solid var(--rule);
+  }
+  .gantt-row .l{ font-size:12.5px; font-weight:700; }
+  .gantt-lane{ position:relative; height:15px; }
+  .gantt-bar{ position:absolute; top:0; bottom:0; background:currentColor; }
+  /* hatched (잠정) bars need an outline — their start/end edges ARE the dates */
+  .gantt-bar.hatch{ border:1px solid currentColor; }
+  .gantt-axis{
+    display:flex; justify-content:space-between; padding:8px 0 0; margin-left:164px;
+    font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted);
+  }
+
+  /* 2x2 matrix — quadrant frame; items are numbered like their Action slides */
+  .matrix-axis-y{
+    font-size:10.5px; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--muted); margin:26px 0 8px;
+  }
+  .matrix{ display:grid; grid-template-columns:1fr 1fr; grid-auto-rows:minmax(170px,auto); border:1px solid currentColor; }
+  .matrix .q{ padding:12px 14px; }
+  .matrix .q:nth-child(2){ border-left:1px solid var(--rule); }
+  .matrix .q:nth-child(3){ border-top:1px solid var(--rule); }
+  .matrix .q:nth-child(4){ border-top:1px solid var(--rule); border-left:1px solid var(--rule); }
+  .matrix .q h5{
+    margin:0 0 10px; font-size:10px; font-weight:700; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--muted);
+  }
+  .matrix .q .it{ display:flex; gap:8px; align-items:baseline; font-size:12.5px; margin:5px 0; }
+  /* long unbroken tokens (티켓키·브랜치명) wrap inside the quadrant instead of
+     escaping the frame — label span ONLY, or the .no numbers break vertically */
+  .matrix .q .it > span:last-child{ min-width:0; overflow-wrap:anywhere; }
+  .matrix .q .it .no{ font-family:"Helvetica Neue",Helvetica,Arial,sans-serif; font-weight:800; font-size:11px; }
+  .matrix-axis-x{
+    display:flex; justify-content:space-between; margin-top:8px;
+    font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted);
+  }
+
+  /* SVG diagrams (sequence / branching flow) — each <svg> carries inline
+     min-width/max-width EQUAL to its viewBox width, so 1 viewBox unit = 1px
+     everywhere (12px labels, 1px hairlines on desktop and mobile alike);
+     diagrams wider than the slide scroll inside .diagramwrap instead of
+     shrinking. Never size a diagram by letting width:100% rescale it. */
+  .diagramwrap{ overflow-x:auto; margin-top:26px; }
+  .diagramwrap figure{ margin:0; }
+  .diagramwrap svg{ display:block; width:100%; height:auto; margin-inline:auto; }
+  .diagramwrap figcaption{ margin-top:12px; font-size:12px; color:var(--muted); }
+
+  /* screen mock — mono wireframe + numbered event annotations */
+  .mockgrid{ display:grid; grid-template-columns:1fr 1fr; gap:32px; margin-top:26px; align-items:start; }
+  .mock{ border:1px solid currentColor; }
+  .mock-bar{ display:flex; gap:6px; padding:10px 12px; border-bottom:1px solid var(--rule); }
+  .mock-bar i{ width:8px; height:8px; border:1px solid currentColor; border-radius:50%; }
+  .mock-body{ padding:18px; display:flex; flex-direction:column; gap:12px; }
+  .mock .ui-row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  /* every mock UI element is position:relative so a .marker pinned to it
+     anchors to the element itself (the slide's rise animation makes .slide a
+     containing block — a static parent would fling the marker to the slide corner) */
+  .mock .ui-btn, .mock .ui-input, .mock .ui-line, .mock .ui-text{ position:relative; }
+  .mock .ui-btn{
+    display:inline-block; border:1px solid currentColor; padding:7px 14px;
+    font-size:12px; font-weight:700;
+  }
+  .mock .ui-btn.primary{ background:#141414; color:#fff; border-color:#141414; }
+  .slide.dark .mock .ui-btn.primary{ background:#f4f3ef; color:#121212; border-color:#f4f3ef; }
+  .mock .ui-input{ flex:1; min-width:0; border:1px solid var(--rule); padding:7px 12px; font-size:12px; color:var(--muted); }
+  .mock .ui-text{ font-size:12.5px; }
+  .mock .ui-line{ height:7px; background:var(--chipbg); }
+  .marker{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:18px; height:18px; border-radius:50%; flex:0 0 auto;
+    background:#141414; color:#fff; font-size:10px; font-weight:800;
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  }
+  .slide.dark .marker{ background:#f4f3ef; color:#121212; }
+  .mock .marker{ position:absolute; top:-9px; right:-9px; }
+  /* ground-colored ring so a marker over the (same-colored) primary button reads as a badge */
+  .mock .ui-btn.primary .marker{ box-shadow:0 0 0 1.5px #ffffff; }
+  .slide.dark .mock .ui-btn.primary .marker{ box-shadow:0 0 0 1.5px #121212; }
+  .mock-notes .list .marker{ margin-top:2px; }
+
+  /* Korean wraps at word boundaries (not mid-syllable) in narrow label cells;
+     overflow-wrap still breaks unbroken tokens so boxes never overflow */
+  .flow-node h5, .flow-node p, .bar-row .l, .gantt-row .l, .seq h4, .seq p,
+  .matrix .q .it > span:last-child{
+    word-break:keep-all; overflow-wrap:anywhere;
+  }
+
+  /* hatch fill = series #2 (비교군/잠정/WIP). Keep LAST so it overrides solid fills. */
+  .hatch{
+    background-color:transparent;
+    background-image:repeating-linear-gradient(45deg,currentColor 0,currentColor 1px,transparent 1px,transparent 5px);
+  }
+
+  /* ---------- quick nav (fixed slide navigator, bottom-right) ---------- */
+  .deck section[id]{ scroll-margin-top:26px; }
+  .quicknav{
+    position:fixed;
+    right:18px;
+    bottom:18px;
+    z-index:50;
+    background:var(--ink);
+    border:1px solid #2e2e2e;
+    padding:10px 8px;
+    max-height:min(62vh,480px);
+    overflow-y:auto;
+  }
+  .quicknav ol{ list-style:none; margin:0; padding:0; }
+  .quicknav a{
+    display:flex;
+    align-items:baseline;
+    gap:9px;
+    padding:4px 8px 4px 6px;
+    border-left:2px solid transparent;
+    font-size:10.5px;
+    font-weight:600;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    text-decoration:none;
+    color:#9b9994;
+    white-space:nowrap;
+  }
+  .quicknav a:hover,
+  .quicknav a.active{ color:#f4f3ef; }
+  .quicknav a.active{ border-left-color:#f4f3ef; }
+  .quicknav .no{
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    font-weight:800;
+    font-size:10px;
+    letter-spacing:.06em;
+  }
+
+  /* quicknav sits over the deck's right edge below ~1265px viewport width —
+     shrink it to numbers and reserve deck padding so it never covers content */
+  @media (min-width:721px) and (max-width:1265px){
+    .quicknav .t{ display:none; }
+    .deck{ padding-right:72px; }
+  }
+  @media (max-width:720px){
+    .deck{ padding-right:44px; }  /* mobile quicknav is numbers-only (~42px) */
+    .slide{ padding:34px 24px; }
+    .cover{ min-height:360px; }
+    .split, .action-grid, .ba{ grid-template-columns:1fr; }
+    .split > div + div, .cell:nth-child(even), .ba > div + div{
+      border-left:0; padding-left:0;
+    }
+    .split > div, .ba > div{ padding-right:0; }
+    .cell{ padding-right:0; }
+    .cell:nth-last-child(-n+2){ border-bottom:1px solid var(--rule); padding-bottom:24px; }
+    .cell:last-child{ border-bottom:0; padding-bottom:6px; }
+    .outcome{ grid-template-columns:1fr; }
+    .outcome > div{ padding:20px 0 14px; border-left:0 !important; padding-left:0 !important; border-bottom:1px solid var(--rule); }
+    .outcome > div:last-child{ border-bottom:0; }
+    .seq{ grid-template-columns:1fr 1fr; }
+    .seq > div{ border-left:0 !important; padding-left:0 !important; border-bottom:1px solid var(--rule); padding-bottom:18px; }
+    .toc li{ grid-template-columns:48px 1fr; }
+    .toc .d{ grid-column:2; }
+    .quicknav{ right:10px; bottom:10px; padding:8px 6px; max-height:50vh; }
+    .quicknav .t{ display:none; }  /* numbers only on mobile */
+    .action-head{ flex-wrap:wrap; gap:12px; }
+    .action-head .bignum{ order:1; }
+    .action-head .tag{ order:2; margin-left:auto; }
+    .action-head .action-title{ order:3; flex:1 1 100%; }
+    .bar-row{ grid-template-columns:100px 1fr 44px; gap:8px; }
+    .bar-row .l{ line-height:1.35; }
+    .gantt-row{ grid-template-columns:92px 1fr; gap:10px; }
+    .gantt-axis{ margin-left:102px; }
+    .flow{ flex-direction:column; }
+    .flow-node{ align-self:stretch; }
+    .flow-arrow{
+      flex:0 0 auto; width:1px; height:26px; align-self:center;
+      margin:2px 0; background:currentColor;
+    }
+    .flow-arrow::after{
+      right:auto; left:-3.5px; top:auto; bottom:-1px;
+      border-left:4px solid transparent; border-right:4px solid transparent;
+      border-top:6px solid currentColor; border-bottom:0;
+    }
+    .matrix{ grid-auto-rows:minmax(140px,auto); }
+    .mockgrid{ grid-template-columns:1fr; gap:24px; }
+  }
+  @media (prefers-reduced-motion: no-preference){
+    html{ scroll-behavior:smooth; }
+    .slide{ animation:rise .45s ease both; }
+    @keyframes rise{ from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
+  }
+</style>
+
+
+<style>
+  /* device-session additions — monochrome only, inherits currentColor */
+  .slide pre{
+    font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:12.5px; line-height:1.6;
+    background:var(--chipbg); border:1px solid var(--rule); padding:12px 14px; margin:10px 0 0;
+    overflow-x:auto; white-space:pre; max-width:100%;
+  }
+  .slide pre .c{ color:var(--muted); }
+  .who{
+    display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.14em; text-transform:uppercase;
+    border:1px solid currentColor; padding:1px 6px; margin-right:6px; vertical-align:1px; white-space:nowrap;
+  }
+  .who.mac{ border-style:dashed; }
+  .steps{ margin:0; padding-left:20px; }
+  .steps li{ margin:7px 0; font-size:14px; }
+  .checks{ list-style:none; margin:18px 0 0; padding:0; columns:2; column-gap:40px; }
+  .checks li{ break-inside:avoid; padding:9px 0; border-bottom:1px solid var(--rule); font-size:14px; display:flex; gap:10px; align-items:flex-start; }
+  .checks input, td input{ accent-color:#141414; width:15px; height:15px; margin-top:4px; flex:0 0 auto; }
+  .slide.dark .checks input, .slide.dark td input{ accent-color:#f4f3ef; }
+  .need{ font-size:9.5px; font-weight:800; letter-spacing:.12em; border:1px dashed currentColor; padding:1px 6px; white-space:nowrap; }
+  .rec td{ height:34px; }
+  .rec td:first-child{ width:48px; }
+  .subh{ font-size:11px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:34px 0 0; }
+  table{ color:inherit; font-size:13.5px; }
+  .slide, .cell, .split > div, .deck > section{ min-width:0; }
+  .action-grid, .split{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  @media (max-width:720px){ .action-grid, .split{ grid-template-columns:minmax(0,1fr); } .checks{ columns:1; } .slide pre{ font-size:11.5px; } }
+</style>
+
+<div class="deck">
+  <div class="deck-caption num"><span>ERURI · Phase 0 PoC</span><span>Real-Device Session · 2026-09-24</span></div>
+
+  <!-- 01 COVER -->
+  <section class="slide dark cover" id="cover">
+    <div class="cover-top num">
+      <span>Phase 0 · PoC-1 / 2 / 3 / 5 / 8 / 9</span>
+      <span>2026-09-24 · iOS 26</span>
+    </div>
+    <div>
+      <h1 class="display">Real Device<br>Session Runbook</h1>
+      <p class="sub">iPhone 한 대를 옆에 두고 한 세션에 실기기 대기 PoC를 실측 판정하는 절차서. 위에서 아래로 따라 하며 체크한다. 예상 소요 약 3시간(추정 — 원 절차 문서에는 소요 시간이 없다).</p>
+    </div>
+  </section>
+
+  <!-- 02 CONTENTS -->
+  <section class="slide" id="contents">
+    <p class="eyebrow">Contents</p>
+    <h3 class="display" style="font-size:clamp(26px,4vw,38px);">Session Map</h3>
+    <ol class="toc">
+      <li><span class="no">01</span><span class="t">요약 · 확인 필요 항목 · 준비물</span><span class="d">Brief</span></li>
+      <li><span class="no">02</span><span class="t">Mac 사전 준비 — 실기기 빌드·설치, 목 서버</span><span class="d">Setup</span></li>
+      <li><span class="no">03</span><span class="t">PoC 별 절차 — 1 · 2 · 3 · 5 · 8+9</span><span class="d">Run</span></li>
+      <li><span class="no">04</span><span class="t">실행 순서 권장안 · 실패 시 흔한 원인</span><span class="d">Order</span></li>
+      <li><span class="no">05</span><span class="t">결과 기록 — results.md 갱신, 스펙 §16 반영</span><span class="d">Record</span></li>
+      <li><span class="no">06</span><span class="t">부록 — 원 절차 문서 경로</span><span class="d">Appendix</span></li>
+    </ol>
+  </section>
+
+  <!-- 03 SUMMARY -->
+  <section class="slide dark" id="summary">
+    <p class="eyebrow">Summary</p>
+    <h3>이 세션이 끝나면 PoC-1·2·3·5가 "통과/실패"로 확정되고, PoC-8 기기 부분과 PoC-9 가 실기기에서 재확인된다.</h3>
+    <p class="muted" style="font-size:14px;">현재 판정표: PoC-1·2 미검증, PoC-3·5·8 부분, PoC-9 통과(시뮬레이터). 디버그 훅·시뮬레이터 대체는 "부분"이며 통과가 아니다(AGENTS §5-8).</p>
+    <div class="split">
+      <div>
+        <h4>세션 목표</h4>
+        <ul class="list">
+          <li><span class="k num">＋</span><span><b>PoC-1·2</b> 단축어 알림·메시지 트리거가 본문·앱명·발신자를 <code>CaptureIntent</code>에 넘기는지, 잠금 중 무확인 실행되는지</span></li>
+          <li><span class="k num">＋</span><span><b>PoC-3</b> 실기기 FM 벤치마크 p95·개인 대화 통과율·알림톡 폐기율, 메모리, 백그라운드 <code>rateLimited</code></span></li>
+          <li><span class="k num">＋</span><span><b>PoC-5</b> 잠금 화면에서 <code>.authenticationRequired</code> 액션이 Face ID/암호 후 이벤트 1건만 쓰는지</span></li>
+          <li><span class="k num">＋</span><span><b>PoC-8·9</b> 실기기 공유 시트 → 큐, 앱 종료·오프라인 후 업로드</span></li>
+        </ul>
+      </div>
+      <div>
+        <h4>확인 필요 — 문서 간 불일치</h4>
+        <ul class="list">
+          <li><span class="k num">—</span><span><b>자동화 개수</b>: 계획서 "사용자 수동 단계"는 2개, PoC-1(카톡·인스타)+PoC-2(메시지) 절차와 results.md 대기 목록은 3개. 이 절차서는 3개로 진행.</span></li>
+          <li><span class="k num">—</span><span><b>PoC-9 강제 종료</b>: 스펙 §14는 "강제 종료 시 취소되는 것을 기록", 절차 문서는 "시뮬레이터 통과, 실기기는 회귀만". 시뮬레이터의 <code>simctl terminate</code>와 사용자의 앱 전환기 스와이프 종료는 같은 조건이 아닐 수 있다.</span></li>
+          <li><span class="k num">—</span><span><b>INGEST_URL</b>: 스킴 환경변수라 Xcode 에서 띄울 때만 적용. 홈 화면에서 다시 열면 기본값 <code>http://localhost:8787</code>(<code>Uploader.swift:7</code>).</span></li>
+          <li><span class="k num">—</span><span><b>PoC-8 공유 시트</b>: 절차 문서 사용자 단계 3은 "미검증으로 남긴 유일한 핵심 항목", 같은 문서 (d)는 XCUITest 통과. 판정표는 "부분" — 실기기 확인이 남은 것은 맞다.</span></li>
+          <li><span class="k num">—</span><span><b>대기 목록 범위</b>: results.md 실기기 대기 목록은 PoC-1·2·3·5 만. PoC-8·9 는 이 세션 지시로 추가.</span></li>
+          <li><span class="k num">—</span><span><b>목 서버 명령</b>: 지시문은 <code>deno run -A</code>, 절차 문서는 <code>--allow-net --allow-env</code>. 둘 다 동작하나 문서 기준(권한 최소)을 쓴다.</span></li>
+        </ul>
+      </div>
+    </div>
+    <blockquote class="callout">디버그 훅·시뮬레이터 결과는 "부분"이다. 실기기에서 재현·측정한 로그만 "통과"의 근거가 된다.<span class="src">AGENTS.md §5 — 실측 게이트</span></blockquote>
+  </section>
+
+  <!-- 04 CHECKLIST -->
+  <section class="slide" id="checklist">
+    <p class="eyebrow">01 · Before You Start</p>
+    <h3 class="display" style="font-size:clamp(26px,4vw,38px);">What You Need</h3>
+    <p class="muted" style="font-size:14px;">세션 시작 전에 전부 체크한다. 하나라도 빠지면 해당 PoC 는 "부분"에서 멈춘다.</p>
+    <ul class="checks">
+      <li><input type="checkbox" aria-label="기기"><span><b>iPhone 15 Pro 이상, iOS 26+</b>. 기기 암호(Face ID) 켜짐 — PoC-5 잠금 화면 인증에 필요</span></li>
+      <li><input type="checkbox" aria-label="케이블"><span><b>데이터 케이블</b> (Xcode Run·⌘U·Memory 게이지)</span></li>
+      <li><input type="checkbox" aria-label="Apple ID"><span><b>Apple ID</b> — Xcode 계정에 팀 <code>6626BYCJG4</code> 로그인 (Automatic 서명)</span></li>
+      <li><input type="checkbox" aria-label="Apple Intelligence"><span><b>Apple Intelligence 켜짐 + 모델 다운로드 "완료"</b> (설정 → Apple Intelligence 및 Siri). 다운로드 중이면 <code>modelNotReady</code></span></li>
+      <li><input type="checkbox" aria-label="개발자 모드"><span><b>개발자 모드</b> 켜짐 (설정 → 개인정보 보호 및 보안)</span></li>
+      <li><input type="checkbox" aria-label="Xcode"><span><b>Xcode 26.3</b> + <code>xcodegen</code> (<code>project.yml</code> 의 <code>xcodeVersion</code>)</span></li>
+      <li><input type="checkbox" aria-label="Wi-Fi"><span><b>Mac·iPhone 같은 Wi-Fi</b> — 목 서버에 LAN IP 로 접근</span></li>
+      <li><input type="checkbox" aria-label="목 서버"><span><b>Mac 에 deno + 목 서버</b> <code>poc/server/mock-ingest.ts</code>, 방화벽에서 포트 허용</span></li>
+      <li><input type="checkbox" aria-label="카톡 인스타"><span><b>카카오톡·Instagram</b> 설치·로그인, 합성 문구를 보낼 <b>두 번째 계정</b></span></li>
+      <li><input type="checkbox" aria-label="테스트 번호"><span><b>테스트 문자 발신 번호</b> — 본인 세컨폰·가족 (실제 타인 번호 금지)</span></li>
+      <li><input type="checkbox" aria-label="합성 이미지"><span><b>합성 이미지</b> (청첩장·영수증 형태) — 실제 원문 금지 (AGENTS §7)</span></li>
+      <li><input type="checkbox" aria-label="메모리"><span><b>Mac 메모리</b>: 빌드 전 <code>vm_stat | grep -E 'free|compressor'</code>. 시뮬레이터 빌드·deno 테스트와 동시에 돌리지 않는다</span></li>
+    </ul>
+  </section>
+
+  <!-- 05 BUILD -->
+  <section class="slide dark" id="build">
+    <p class="eyebrow">02 · Mac Setup</p>
+    <h3 class="display" style="font-size:clamp(26px,4vw,38px);">Build &amp; Install</h3>
+    <div class="action-grid">
+      <div class="cell">
+        <h4>서명·번들</h4>
+        <ul>
+          <li>팀 <code>6626BYCJG4</code>, <code>CODE_SIGN_STYLE: Automatic</code> — 실기기에도 그대로 적용</li>
+          <li>앱 <code>com.picpal.assistant.poc</code>, 공유 확장 <code>com.picpal.assistant.poc.share</code></li>
+          <li>App Group <code>group.com.picpal.assistant</code> — 시뮬레이터는 프로비저닝을 강제하지 않았다. <b>실기기 설치 때 처음 검증된다</b></li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>iPhone 쪽</h4>
+        <ol class="steps">
+          <li><span class="who">iPhone</span>케이블 연결 → "이 컴퓨터 신뢰"</li>
+          <li><span class="who">iPhone</span>설정 → 개인정보 보호 및 보안 → 개발자 모드 켜기 → 재시동</li>
+          <li><span class="who">iPhone</span>첫 실행이 막히면 설정 → 일반 → VPN 및 기기 관리 → 개발자 앱 신뢰</li>
+        </ol>
+      </div>
+      <div class="cell" style="grid-column:1 / -1; padding-right:0; border-left:0; padding-left:0;">
+        <h4>Mac — UDID·빌드·설치</h4>
+<pre><span class="c"># 1. 기기 UDID</span>
+xcrun devicectl list devices
+
+<span class="c"># 2. 프로젝트 생성 (poc/ios)</span>
+cd poc/ios &amp;&amp; scripts/sim.sh gen
+
+<span class="c"># 3-a. 권장: Xcode 에서 AssistantPoC 스킴 → 대상 기기 선택 → Run (⌘R)</span>
+<span class="c">#      스킴 편집 → Run → Arguments → Environment Variables 에 INGEST_URL (다음 슬라이드)</span>
+
+<span class="c"># 3-b. 명령줄 대안 (sim.sh 의 build 와 같은 형태, destination 만 실기기)</span>
+xcodebuild -project AssistantPoC.xcodeproj -scheme AssistantPoC \
+  -destination 'platform=iOS,id=&lt;UDID&gt;' -derivedDataPath build \
+  -allowProvisioningUpdates build
+xcrun devicectl device install app --device &lt;UDID&gt; build/Build/Products/Debug-iphoneos/AssistantPoC.app
+xcrun devicectl device process launch --device &lt;UDID&gt; com.picpal.assistant.poc</pre>
+        <p class="muted" style="font-size:13px; margin-top:10px;"><span class="need">확인 필요</span> 3-b 는 절차 문서에 없는 명령줄 경로다. 절차 문서가 지정한 방법은 Xcode Run. 3-b 로 띄우면 스킴의 <code>INGEST_URL</code> 이 적용되지 않는다.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 SERVER -->
+  <section class="slide" id="server">
+    <p class="eyebrow">02 · Mac Setup</p>
+    <h3 class="display" style="font-size:clamp(26px,4vw,38px);">Mock Server &amp; LAN IP</h3>
+    <p class="muted" style="font-size:14px;">PoC-8·9 에만 필요. 실기기에서 <code>localhost</code> 는 iPhone 자신이므로 Mac 의 LAN IP 를 넣는다.</p>
+<pre><span class="c"># Mac LAN IP (Wi-Fi 가 en0 이 아니면 인터페이스를 바꾼다)</span>
+ipconfig getifaddr en0
+
+<span class="c"># 목 서버 — 기본 포트 8787. 이 Mac 은 8787·8788 이 무관한 프로세스에 점유된 이력이 있다</span>
+lsof -nP -iTCP:8787 -sTCP:LISTEN
+MOCK_INGEST_PORT=8799 deno run --allow-net --allow-env poc/server/mock-ingest.ts   <span class="c"># 점유 시</span>
+
+<span class="c"># 도착 확인 (Mac)</span>
+curl -s http://&lt;MAC_IP&gt;:&lt;PORT&gt;/received</pre>
+    <div class="action-grid" style="margin-top:22px;">
+      <div class="cell">
+        <h4>엔드포인트</h4>
+        <ul>
+          <li><code>POST /ingest</code> — JSON 항목 (202)</li>
+          <li><code>PUT /upload/&lt;id&gt;</code> — 파일 바이트</li>
+          <li><code>GET /received</code> — 도착 목록 (<code>bytes</code>, <code>at</code>)</li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>앱에 IP 넣기</h4>
+        <ol class="steps">
+          <li><span class="who mac">Mac</span>Xcode 스킴 편집 → Run → Environment Variables → <code>INGEST_URL = http://&lt;MAC_IP&gt;:&lt;PORT&gt;</code></li>
+          <li><span class="who mac">Mac</span>시스템 설정 → 네트워크 → 방화벽에서 deno 수신 허용</li>
+          <li><span class="who">iPhone</span>Safari 로 <code>http://&lt;MAC_IP&gt;:&lt;PORT&gt;/received</code> 를 열어 도달 확인</li>
+        </ol>
+      </div>
+      <div class="cell">
+        <h4>주의</h4>
+        <p><span class="need">확인 필요</span> <code>INGEST_URL</code> 은 Xcode 가 띄운 프로세스에만 들어간다. 홈 화면에서 앱을 다시 열면 <code>http://localhost:8787</code> 로 떨어진다. PoC-8·9 에서 앱을 "다시 여는" 단계는 <b>Xcode ⌘R 로 재실행</b>한다.</p>
+      </div>
+      <div class="cell">
+        <h4>ATS</h4>
+        <p><code>Info.plist</code> 에 <code>NSAllowsLocalNetworking = true</code>. iOS 가 "로컬 네트워크" 권한을 물으면 허용한다 <span class="need">확인 필요</span> (절차 문서에 언급 없음).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 07 POC-1 -->
+  <section class="slide dark" id="poc-1">
+    <div class="action-head">
+      <span class="bignum num">01</span>
+      <div class="action-title">
+        <p class="eyebrow">PoC-1 · 현재 미검증 · Task 4</p>
+        <h2>단축어 Notification 트리거 → CaptureIntent</h2>
+      </div>
+      <span class="tag">iPhone only</span>
+    </div>
+    <div class="action-grid">
+      <div class="cell">
+        <h4>준비</h4>
+        <ol class="steps">
+          <li><span class="who">iPhone</span>설정 → 알림 → 카카오톡·Instagram → 미리보기 "항상"</li>
+          <li><span class="who">iPhone</span>단축어 → 자동화 → 새 자동화 → <b>알림</b> → 앱: 카카오톡, 필터 없음. <b>Instagram 도 하나 더</b></li>
+          <li><span class="who">iPhone</span>"즉시 실행" 토글이 <b>나타나는지</b> 기록 (공식 "자동 실행 가능" 목록에 없음)</li>
+          <li><span class="who">iPhone</span>동작 "비서에 저장" 추가 → 알림 마법 변수를 <code>text</code>·<code>appName</code>·<code>title</code> 에 연결, 변수 목록 <b>스크린샷</b></li>
+          <li><span class="who">iPhone</span>두 번째 계정에서 합성 문구만 발송 — 예: "[합성] 9월 25일 15시 예약 확정"</li>
+        </ol>
+      </div>
+      <div class="cell">
+        <h4>실행 단계</h4>
+        <ol class="steps">
+          <li>잠금 해제 상태에서 카톡 합성 알림톡 수신 (시나리오 1)</li>
+          <li>잠그고 <b>15초 이상</b> 기다린 뒤 수신 (2)</li>
+          <li>미리보기 "잠금 해제 시"로 바꾸고 2 반복 (3) → 끝나면 "항상" 복구</li>
+          <li>5초 안에 3건 연속 발송 (4)</li>
+          <li>Instagram DM 수신 (5)</li>
+          <li>자동화 필터 "주문" 추가 후 "주문" 없는 알림 수신 (6)</li>
+          <li>iOS 27 기기가 있으면 1~2 반복 (7)</li>
+        </ol>
+        <p style="font-size:13px; margin-top:8px;">매 시나리오 후 <span class="who">iPhone</span>앱을 열어 큐 목록과 하단 <code>poc.log</code> 섹션을 본다.</p>
+      </div>
+      <div class="cell">
+        <h4>관찰할 것 — poc.log 한 줄 = 인텐트 1회</h4>
+<pre>CaptureIntent &lt;결과&gt; &lt;ms&gt;ms src=&lt;출처&gt; app=&lt;appName|nil&gt;
+  titleLen=&lt;n|-1&gt; textLen=&lt;n&gt; sender=&lt;nil|set&gt; locked=&lt;true|false&gt;</pre>
+        <ul style="margin-top:10px;">
+          <li><code>textLen&gt;0</code> 본문 전달, <code>app=</code> 앱명 전달</li>
+          <li>결과 <code>queued:fm</code> · <code>queued:rules</code> · <code>discarded:otp|contact|fm:&lt;kind&gt;|fm-timeout|fm-unavailable|fm-error</code></li>
+          <li>확인 배너 표시 여부, 잠금 시 <code>locked=true</code></li>
+          <li>에러면 <code>CaptureIntent error &lt;타입&gt;</code></li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>판정 기준 (스펙 §14)</h4>
+        <ul>
+          <li><b>통과</b>: 본문·앱명 전달 — <code>textLen&gt;0</code> 이고 <code>app=</code> 로 앱 식별</li>
+          <li><b>기록</b>(설계 입력): 배너 여부, 잠금 동작, 미리보기 꺼짐, 묶음 알림</li>
+          <li><b>대안</b>: 본문 미전달 → 알림 경로 폐기·공유만. 배너 필수 → 키워드 필터로 탭 최소화</li>
+          <li>연락처 폐기 규칙은 미배선 — 관찰 대상 아님</li>
+        </ul>
+      </div>
+    </div>
+    <p class="subh">시나리오 표 — 원 절차 그대로</p>
+    <div class="tablewrap" style="margin-top:12px;">
+      <table>
+        <thead><tr><th>#</th><th>상황</th><th>기록할 것</th><th>기대 결과</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1</td><td>잠금 해제, 카톡 알림톡 수신</td><td>배너 표시 여부, <code>app=</code>·<code>titleLen=</code>·<code>textLen=</code> (값은 적지 않음)</td><td>배너 없이 자동 실행이 이상적. 배너면 탭 1회로 실행되는지</td></tr>
+          <tr><td class="num">2</td><td>잠금 상태 수신 (15초+ 대기)</td><td>자동화 실행 여부, <code>locked=</code></td><td>실행 여부와 <code>locked=true</code> 기록</td></tr>
+          <tr><td class="num">3</td><td>미리보기 "잠금 해제 시" + 잠금 수신</td><td><code>text</code> 가 비었는지·자리표시자인지</td><td>비어 있으면 이 설정에선 PoC-1 가치 없음</td></tr>
+          <tr><td class="num">4</td><td>5초 안에 3건 (묶음)</td><td>3건 도착, 순서·중복</td><td>3건 모두 개별 적재</td></tr>
+          <tr><td class="num">5</td><td>Instagram DM</td><td><code>titleLen</code>/<code>textLen</code> 형식</td><td>앱마다 필드 구성 차이 기록</td></tr>
+          <tr><td class="num">6</td><td>필터 "주문" + "주문" 없는 알림</td><td>트리거 미실행</td><td>큐에 없어야 함</td></tr>
+          <tr><td class="num">7</td><td>(있다면) iOS 27 에서 1~2</td><td>OS 간 차이</td><td>스펙 §14 각주에 기록</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" style="font-size:13px; margin-top:10px;"><span class="need">확인 필요</span> 스펙 §14 방법 열은 "iOS 26과 27 각각", 절차 문서는 시나리오 7 "(있다면)". iOS 27 기기가 없으면 판정은 26 기준으로만 남는다.</p>
+    <p class="subh">기록란</p>
+    <div class="tablewrap rec" style="margin-top:12px;">
+      <table>
+        <thead><tr><th>#</th><th>배너</th><th>결과 · app · titleLen · textLen · locked</th><th>시각 (UTC)</th><th>메모</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="num">2</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="num">3</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="num">4</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="num">5</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="num">6</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="num">7</td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 08 POC-2 -->
+  <section class="slide" id="poc-2">
+    <div class="action-head">
+      <span class="bignum num">02</span>
+      <div class="action-title">
+        <p class="eyebrow">PoC-2 · 현재 미검증 · Task 4</p>
+        <h2>단축어 Message 트리거 → CaptureIntent</h2>
+      </div>
+      <span class="tag">iPhone only</span>
+    </div>
+    <div class="action-grid">
+      <div class="cell">
+        <h4>준비</h4>
+        <ol class="steps">
+          <li><span class="who">iPhone</span>단축어 → 자동화 → 새 자동화 → <b>메시지</b>. 발신자: 테스트 번호 또는 "모든 메시지"</li>
+          <li><span class="who">iPhone</span><b>"즉시 실행"</b>과 <b>"잠금 시 실행 허용"</b> 켜기 — 토글이 실제로 있는지, 안 켜지는 경우가 있는지 기록</li>
+          <li><span class="who">iPhone</span>"비서에 저장" 추가 → 발신자 → <code>sender</code>, 본문 → <code>text</code>, <code>source</code> = <code>"MESSAGES"</code></li>
+          <li><span class="who">iPhone</span>시나리오 3 대비: <b>재부팅 전에 앱을 한 번 실행</b>해 <code>bfu.log</code>(보호 등급 none)를 만들어 둔다</li>
+        </ol>
+      </div>
+      <div class="cell">
+        <h4>실행 단계</h4>
+        <ol class="steps">
+          <li>잠금 해제 상태에서 테스트 번호로 합성 문자 (시나리오 1)</li>
+          <li>잠그고 <b>15초 이상</b> 뒤 문자 (2) — 잠근 직후 약 10초는 <code>isProtectedDataAvailable</code> 이 true</li>
+          <li>합성 OTP "[Web발신] 인증번호 123456" (4)</li>
+          <li><b>세션 마지막에</b> 재부팅 → 잠금 해제하지 않고 문자 → 해제 후 앱 <code>bfu.log</code> 섹션 확인 (3)</li>
+        </ol>
+      </div>
+      <div class="cell">
+        <h4>관찰할 것</h4>
+        <ul>
+          <li>확인 없이 실행되는지, <code>textLen</code>·<code>sender=set|nil</code> (값은 안 남는다)</li>
+          <li><code>locked=true</code> 로 큐 적재되는지</li>
+          <li>OTP → <code>CaptureIntent discarded:otp</code></li>
+          <li>BFU: <code>bfu.log</code> 에 <code>CaptureIntent start textLen=… locked=true</code> 와 뒤이은 <code>CaptureIntent error …</code> 유무, <code>poc.log</code> 에는 없는지</li>
+          <li>연락처 번호로 보내도 <code>discarded:contact</code> 는 안 나온다 (미배선)</li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>판정 기준 (스펙 §14)</h4>
+        <ul>
+          <li><b>통과</b>: 잠금 상태에서 확인 없이 발신자·본문이 큐에 저장 (<code>locked=true</code> 적재)</li>
+          <li><b>주의</b>: BFU 수신분 미처리 → 유실 vs 지연 처리 방식을 스펙에 명시</li>
+          <li><b>실패</b>: 잠금 중 미실행 또는 발신자·본문 미전달 → Message 경로 폐기, 공유 확장만</li>
+          <li>BFU 해석: <code>start</code> 없음 = 자동화 미실행, <code>start</code>+<code>error</code> = 실행됐으나 큐(CUFUA) 접근 실패 → 유실</li>
+        </ul>
+      </div>
+    </div>
+    <p class="subh">시나리오 표 — 원 절차 그대로</p>
+    <div class="tablewrap" style="margin-top:12px;">
+      <table>
+        <thead><tr><th>#</th><th>상황</th><th>기록할 것</th><th>기대 결과</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1</td><td>잠금 해제 수신</td><td>확인 없이 실행, <code>text</code>/<code>sender</code></td><td>확인 없이 큐 적재</td></tr>
+          <tr><td class="num">2</td><td>잠금 수신 (15초+)</td><td><code>locked=</code>, 큐 적재</td><td><code>locked=true</code> 로 정상 적재</td></tr>
+          <tr><td class="num">3</td><td>재부팅 후 첫 해제 전 (BFU)</td><td><code>bfu.log</code> 의 <code>start</code>·<code>error</code>, <code>poc.log</code> 부재</td><td>미실행 / 실행·유실 중 하나로 기록</td></tr>
+          <tr><td class="num">4</td><td>OTP 문자</td><td><code>discarded:otp</code></td><td>큐에 적재하지 않음</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="subh">기록란</p>
+    <div class="tablewrap rec" style="margin-top:12px;">
+      <table>
+        <thead><tr><th>#</th><th>토글 / 확인창</th><th>결과 · textLen · sender · locked</th><th>시각 (UTC)</th><th>메모</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="num">2</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="num">3</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="num">4</td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 09 POC-3 -->
+  <section class="slide dark" id="poc-3">
+    <div class="action-head">
+      <span class="bignum num">03</span>
+      <div class="action-title">
+        <p class="eyebrow">PoC-3 · 현재 부분 · Task 5</p>
+        <h2>Foundation Models 한국어 분류 200건</h2>
+      </div>
+      <span class="tag">⌘U on device</span>
+    </div>
+    <div class="action-grid">
+      <div class="cell">
+        <h4>준비</h4>
+        <ul>
+          <li><span class="who">iPhone</span>Apple Intelligence 켜짐, 모델 다운로드 <b>"완료"</b></li>
+          <li><span class="who mac">Mac</span>Xcode 대상 = 실기기, 스킴 AssistantPoC (테스트 타깃 <code>AssistantCoreTests</code>)</li>
+          <li>시뮬레이터 결과는 참고용 — 호스트 Mac 이 <code>appleIntelligenceNotEnabled</code> 라 시뮬레이터 <code>availability()=available</code> 은 오표시였다</li>
+          <li>픽스처: personal 100 (KakaoTalk 50·Instagram 29·iMessage 21), notice 100</li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>실행 단계</h4>
+        <ol class="steps">
+          <li><span class="who mac">Mac</span>⌘U 로 <code>AssistantCoreTests/FMClassifierTests</code> 실행 (Test navigator 에서 해당 클래스만)</li>
+          <li><span class="who mac">Mac</span>실행 중 Debug navigator <b>Memory 게이지 최대값</b> 기록 (또는 Instruments Foundation Models 템플릿)</li>
+          <li><span class="who mac">Mac</span><code>testBenchmark</code> 가 스킵되면 사유 기록: <code>FM unavailable: …</code> / <code>생성 실패: &lt;코드&gt;</code></li>
+          <li><span class="who">iPhone</span>앱을 백그라운드로 두고 단축어 "비서에 저장"을 <b>본문을 채워 10~20회</b> 짧은 간격으로 실행</li>
+        </ol>
+      </div>
+      <div class="cell">
+        <h4>관찰할 것</h4>
+        <p><code>FM_BENCH</code> 로그와 App Group <code>fm_bench.txt</code>:</p>
+<pre>p95=&lt;초&gt;s personalPass=&lt;n&gt;/100 noticeDrop=&lt;n&gt;/100
+errors=&lt;n&gt; timeouts=&lt;n&gt;
+personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
+        <ul style="margin-top:10px;">
+          <li>행마다 새 세션, 에러·타임아웃은 폐기로 센다</li>
+          <li>백그라운드: <code>FM error rateLimited</code> 빈도, <code>queued:fm</code>/<code>queued:rules</code> 비율, 지연 ms</li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>판정 기준 (스펙 §14)</h4>
+        <ul>
+          <li><b>통과</b>: 세 수치 모두 — <b class="num">p95 &lt; 3초</b>, <b class="num">개인 대화 통과율 ≤ 2%</b> (<code>personalPass ≤ 2/100</code>), <b class="num">알림톡 폐기율 ≤ 15%</b> (<code>noticeDrop ≤ 15/100</code>)</li>
+          <li>메모리·백그라운드 동작은 함께 기록</li>
+          <li><b>실패</b>(하나라도 미달) → 규칙 필터만 + 카톡·인스타 경로 폐기</li>
+        </ul>
+      </div>
+    </div>
+    <p class="subh">기록란</p>
+    <div class="tablewrap rec" style="margin-top:12px;">
+      <table>
+        <thead><tr><th>항목</th><th>기준</th><th>측정값</th><th>충족</th></tr></thead>
+        <tbody>
+          <tr><td>p95</td><td class="num">&lt; 3s</td><td></td><td><input type="checkbox" aria-label="p95 충족"></td></tr>
+          <tr><td>personalPass</td><td class="num">≤ 2/100</td><td></td><td><input type="checkbox" aria-label="personalPass 충족"></td></tr>
+          <tr><td>noticeDrop</td><td class="num">≤ 15/100</td><td></td><td><input type="checkbox" aria-label="noticeDrop 충족"></td></tr>
+          <tr><td>errors · timeouts</td><td>기록</td><td></td><td></td></tr>
+          <tr><td>personalPassByApp</td><td>기록</td><td></td><td></td></tr>
+          <tr><td>메모리 최대</td><td>기록</td><td></td><td></td></tr>
+          <tr><td>BG rateLimited</td><td>기록 (n / 10~20회)</td><td></td><td></td></tr>
+          <tr><td>BG fm : rules · ms</td><td>기록</td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 10 POC-5 -->
+  <section class="slide" id="poc-5">
+    <div class="action-head">
+      <span class="bignum num">05</span>
+      <div class="action-title">
+        <p class="eyebrow">PoC-5 · 현재 부분 · Task 6</p>
+        <h2>잠금 화면 알림 액션 → 백그라운드 EventKit</h2>
+      </div>
+      <span class="tag">No APNs</span>
+    </div>
+    <div class="action-grid">
+      <div class="cell">
+        <h4>준비</h4>
+        <ul>
+          <li><span class="who">iPhone</span>기기 암호(Face ID) 켜짐 확인</li>
+          <li><span class="who">iPhone</span>앱 → "권한 요청 (알림·캘린더)" → 두 대화상자 모두 허용</li>
+          <li>알림은 앱이 예약하는 <b>로컬 알림</b>이라 APNs·PoC-4 가 필요 없다. 버튼이 쓰는 proposal id 는 <code>p-local-1</code></li>
+          <li>시뮬레이터에서 이미 통과: 백그라운드 쓰기, 재탭 <code>dup skip</code>, 콜드 스타트, 동시 탭. <b>남은 것은 잠금 화면 인증</b></li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>실행 단계</h4>
+        <ol class="steps">
+          <li><span class="who">iPhone</span>"10초 뒤 ADD_EVENT 로컬 알림" → <b>즉시 잠금</b></li>
+          <li><span class="who">iPhone</span>잠금 화면 배너 길게 눌러 "캘린더에 추가" → Face ID/암호 요구 여부 기록 → 인증</li>
+          <li><span class="who">iPhone</span>같은 버튼 다시 → 잠금 → 같은 액션 (두 번 탭)</li>
+          <li><span class="who">iPhone</span>버튼 → 앱 전환기에서 위로 밀어 종료 → 잠금 → 액션 (콜드 스타트)</li>
+          <li><span class="who">iPhone</span>캘린더 앱에서 이벤트 수, 앱 <code>poc.log</code> 확인</li>
+        </ol>
+      </div>
+      <div class="cell">
+        <h4>관찰할 것</h4>
+        <ul>
+          <li>1회차: <code>ADD ok p-local-1 … bg=true</code> (시뮬레이터 로그에는 <code>auth=3</code> 도 남았다)</li>
+          <li>재탭: 이벤트 증가 없음, <code>ADD dup skip p-local-1 … unreported=1</code></li>
+          <li>콜드 스타트: <code>ADD ok … bg=true</code></li>
+          <li>잠금 화면에서 앱이 열리지 않는지, 인증 요구가 뜨는지</li>
+          <li>보고 실패 후 재탭: 서버가 없어 <code>reported=0</code> 그대로 — <code>unreported=1</code> 이 근거. 서버 보고(Task 9) 이후 재확인</li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>판정 기준 (스펙 §14)</h4>
+        <ul>
+          <li><b>통과</b>: 잠금 상태 <code>authenticationRequired</code> 액션에서 앱을 열지 않고 캘린더에 <b class="num">1건만</b> 생성 (두 번 탭·보고 실패 후 재탭 포함)</li>
+          <li><b>실패 → 대안</b>: <code>foreground</code> 액션으로 앱을 열어 실행</li>
+        </ul>
+      </div>
+    </div>
+    <p class="subh">기록란</p>
+    <div class="tablewrap rec" style="margin-top:12px;">
+      <table>
+        <thead><tr><th>단계</th><th>인증 요구</th><th>앱 열림</th><th>poc.log (bg · auth · dup · unreported)</th><th>이벤트 수</th></tr></thead>
+        <tbody>
+          <tr><td>잠금 1회차</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td>같은 알림 재탭</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td>콜드 스타트</td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 11 POC-8+9 -->
+  <section class="slide dark" id="poc-8-9">
+    <div class="action-head">
+      <span class="bignum num">08</span>
+      <div class="action-title">
+        <p class="eyebrow">PoC-8 기기 부분 · 부분 / PoC-9 · 통과(시뮬) · Task 7</p>
+        <h2>공유 시트 → 큐 → 백그라운드 업로드</h2>
+      </div>
+      <span class="tag">Mock Server</span>
+    </div>
+    <div class="action-grid">
+      <div class="cell">
+        <h4>준비</h4>
+        <ul>
+          <li><span class="who mac">Mac</span>목 서버 실행, <code>INGEST_URL</code> = Mac LAN IP:포트 (Mock Server 슬라이드)</li>
+          <li><span class="who mac">Mac</span>Xcode ⌘R 로 앱 실행 — 스킴 환경변수가 들어간 프로세스여야 한다</li>
+          <li><span class="who">iPhone</span>사진 앱에 합성 이미지 (청첩장·영수증 형태)</li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>실행 단계</h4>
+        <ol class="steps">
+          <li><span class="who">iPhone</span>사진 길게 눌러 공유 → "AssistantPoC" 확장 탭 → 앱에서 <code>[SHARE]</code> 항목·OCR 텍스트 확인</li>
+          <li><span class="who">iPhone</span>"업로드 flush" 또는 백그라운드→포그라운드 → <span class="who mac">Mac</span><code>curl …/received</code></li>
+          <li><span class="who">iPhone</span>새 공유 직후 앱 전환기에서 스와이프 종료 → <span class="who mac">Mac</span>몇 초~몇십 초 뒤 <code>/received</code>, 도착 시각이 종료 시각보다 뒤인지</li>
+          <li><span class="who">iPhone</span>비행기 모드 → 공유 → 앱 열기 → flush 실패 확인 → 비행기 모드 해제 → 앱 다시 열기(<b>Xcode ⌘R</b>) → 재시도 성공, 같은 바이트 도착</li>
+        </ol>
+      </div>
+      <div class="cell">
+        <h4>관찰할 것</h4>
+        <ul>
+          <li>확장 로그 <code>ShareExtension file id=… type=image ocrLen=&lt;n&gt;</code>, 큐 <code>SHARE</code> 행 (App Group 서명이 실기기에서 통하는지도 여기서 드러난다)</li>
+          <li>목 서버 <code>PUT /upload/&lt;id&gt;</code> 의 <code>bytes</code> 가 원본과 같은지</li>
+          <li>앱 로그 <code>flush claimed 1</code>, <code>upload ok</code> / <code>upload fail</code> — 같은 id 가 한 번만</li>
+          <li>종료 시각(수동 기록)과 <code>/received</code> 의 <code>at</code> 차이</li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>판정 기준</h4>
+        <ul>
+          <li><b>PoC-8 기기 부분</b>: 공유가 App Group 에 영속화되고, 이미지는 OCR 텍스트가 큐에 함께 저장</li>
+          <li><b>PoC-9</b>: 앱이 완전히 종료된 뒤에도 이미 시작된 background URLSession 전송이 서버에 도착. 스펙 §14: 앱 재실행 포함 시 유실 <b class="num">0</b>, 강제 종료 시 취소되는 것을 기록</li>
+          <li>오프라인 후 복구 유실 0 (스펙 PoC-8 의 5/5 추출은 서버 Task 12)</li>
+        </ul>
+        <p style="font-size:13px; margin-top:8px;"><span class="need">확인 필요</span> 단계 3 에서 도착하지 않으면 "실패"가 아니라 스펙 문구대로 "강제 종료 시 취소"로 기록하고, 판정 해석은 스펙 수정 후 정한다.</p>
+      </div>
+    </div>
+    <p class="subh">기록란</p>
+    <div class="tablewrap rec" style="margin-top:12px;">
+      <table>
+        <thead><tr><th>단계</th><th>앱 / 확장 로그</th><th>/received (bytes · at)</th><th>종료·복구 시각</th><th>결과</th></tr></thead>
+        <tbody>
+          <tr><td>1 공유 시트</td><td></td><td>—</td><td>—</td><td></td></tr>
+          <tr><td>2 flush</td><td></td><td></td><td>—</td><td></td></tr>
+          <tr><td>3 스와이프 종료</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td>4 비행기 모드</td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 12 ORDER + TROUBLESHOOT -->
+  <section class="slide" id="order">
+    <p class="eyebrow">04 · Order</p>
+    <h3 class="display" style="font-size:clamp(26px,4vw,38px);">Recommended Order</h3>
+    <div class="flow">
+      <div class="flow-node"><h5>설치·권한</h5><p>알림·캘린더</p></div>
+      <div class="flow-arrow"></div>
+      <div class="flow-node"><h5>자동화 3개</h5><p>PoC-1 · PoC-2</p></div>
+      <div class="flow-arrow"></div>
+      <div class="flow-node"><h5>FM ⌘U</h5><p>PoC-3 + BG 10~20회</p></div>
+      <div class="flow-arrow"></div>
+      <div class="flow-node"><h5>잠금 액션</h5><p>PoC-5 로컬 알림</p></div>
+      <div class="flow-arrow"></div>
+      <div class="flow-node"><h5>공유·종료 업로드</h5><p>PoC-8 · PoC-9</p></div>
+      <div class="flow-arrow"></div>
+      <div class="flow-node"><h5>재부팅 BFU</h5><p>PoC-2 시나리오 3</p></div>
+    </div>
+    <div class="split" style="margin-top:30px;">
+      <div>
+        <h4>이 순서인 이유</h4>
+        <ul class="list">
+          <li><span class="k num">01</span><span><b>권한 먼저</b>: 알림·캘린더 대화상자를 한 번에 넘겨야 PoC-5 와 배너 관찰이 권한 문제로 섞이지 않는다.</span></li>
+          <li><span class="k num">02</span><span><b>자동화 다음</b>: 합성 메시지를 보내는 두 번째 계정·번호가 준비된 초반에 몰아서 한다. 앱 목록 변수 스크린샷도 이때.</span></li>
+          <li><span class="k num">03</span><span><b>FM 은 케이블 연결 중</b>: ⌘U·Memory 게이지가 Xcode 에 묶여 있다. 백그라운드 FM 10~20회는 단축어가 이미 만들어진 뒤라야 한다.</span></li>
+          <li><span class="k num">04</span><span><b>잠금 액션</b>: APNs 불필요, 앱 버튼만으로 된다. 잠금·해제 반복이 많아 FM 측정과 섞지 않는다.</span></li>
+          <li><span class="k num">05</span><span><b>공유·종료 업로드</b>: 목 서버·LAN IP 가 필요한 유일한 블록이라 뒤로 모은다.</span></li>
+          <li><span class="k num">06</span><span><b>재부팅은 맨 끝</b>: 기기 재시동이 Xcode 연결·앱 상태를 끊는다. 재부팅 전 앱 1회 실행으로 <code>bfu.log</code> 준비.</span></li>
+        </ul>
+      </div>
+      <div>
+        <h4>실패 시 흔한 원인</h4>
+        <ul class="list">
+          <li><span class="k num">—</span><span><b>본문이 비어 온다</b> → 해당 앱 알림 미리보기 "항상"인지 확인 (PoC-1 준비 1).</span></li>
+          <li><span class="k num">—</span><span><b>매번 확인 배너</b> → 자동화의 "즉시 실행"(실행 전 확인 끄기) 확인. 알림 트리거에 토글이 없으면 그 자체가 기록 대상.</span></li>
+          <li><span class="k num">—</span><span><b>잠금인데 <code>locked=false</code></b> → 잠근 뒤 15초를 안 기다렸다.</span></li>
+          <li><span class="k num">—</span><span><b>FM 벤치 스킵·<code>modelNotReady</code></b> → Apple Intelligence 모델 다운로드 "완료"까지 대기.</span></li>
+          <li><span class="k num">—</span><span><b>Run 이 안 된다·기기 안 보임</b> → 개발자 모드 켜기 후 재시동, 개발자 앱 신뢰.</span></li>
+          <li><span class="k num">—</span><span><b>업로드가 안 온다</b> → 앱을 홈 화면에서 다시 열어 <code>INGEST_URL</code> 이 빠졌는지, 방화벽, 같은 Wi-Fi.</span></li>
+          <li><span class="k num">—</span><span><b>공유 확장·큐가 비어 있다</b> → App Group 프로비저닝 (실기기 첫 검증).</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 13 RECORD -->
+  <section class="slide dark" id="record">
+    <p class="eyebrow">05 · After The Session</p>
+    <h3 class="display" style="font-size:clamp(26px,4vw,38px);">Update results.md</h3>
+    <div class="action-grid">
+      <div class="cell">
+        <h4>상태 값 (results.md 머리말)</h4>
+        <ul>
+          <li><b>통과</b> — 계획서 판정 기준을 실측으로 충족</li>
+          <li><b>부분</b> — 코드 경로만 확인 (디버그 훅·시뮬레이터 대체)</li>
+          <li><b>실패</b></li>
+          <li><b>미검증</b></li>
+        </ul>
+        <p style="font-size:13px; margin-top:8px;">다음 단계 진입 조건은 해당 PoC 가 <b>통과</b>인 것.</p>
+      </div>
+      <div class="cell">
+        <h4>근거 한 줄 형식 (기존 행 관례)</h4>
+<pre>실기기(iPhone &lt;모델&gt;, iOS &lt;버전&gt;, &lt;MM-DD&gt;): &lt;핵심 로그&gt;(&lt;hh:mm:ssZ&gt;),
+&lt;측정값&gt;. 남은 실측: &lt;없음|…&gt;. 절차 `poc-N-….md`</pre>
+        <p style="font-size:13px; margin-top:8px;">원문 값은 적지 않는다 — 길이·형식·결과 코드·시각만. 갱신일 열은 세션 날짜.</p>
+      </div>
+      <div class="cell">
+        <h4>갱신할 곳</h4>
+        <ul>
+          <li>표의 PoC-1·2·3·5·8·9 행: 상태 · 근거 · 갱신일</li>
+          <li>"실기기 세션 대기 목록"에서 끝난 항목 제거</li>
+          <li>"참고" 절: 새로 드러난 제약 (예: App Group 실기기 서명 결과)</li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>실패·대안 채택 시 — 스펙 반영</h4>
+        <ul>
+          <li>계획서 Task 13 Step 2: 스펙 §3 "설계 반영" 열, §5 경로 표, <b>§16 리스크</b>를 고친다</li>
+          <li>PoC-1 "배너 필수" → §5 자동화 수준 "배너 탭 1회(확정)", 2단계 완료 기준에 "탭 1회로 수집"</li>
+          <li>PoC-2 BFU 미처리 → 유실 vs 지연 처리를 스펙에 명시</li>
+          <li>스펙과 코드가 다르면 스펙을 먼저 고친다 (AGENTS §1)</li>
+        </ul>
+      </div>
+    </div>
+    <p class="muted" style="font-size:13px; margin-top:18px;"><span class="need">확인 필요</span> 계획서 Task 13 의 results.md 템플릿(측정값·기준·판정·채택 대안 열)과 현재 results.md(상태·근거/남은 실측 열)의 열 구성이 다르다. 이 절차서는 <b>현재 results.md</b> 형식을 따른다.</p>
+  </section>
+
+  <!-- 14 APPENDIX -->
+  <section class="slide" id="appendix">
+    <p class="eyebrow">06 · Appendix</p>
+    <h3 class="display" style="font-size:clamp(26px,4vw,38px);">Source Documents</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>PoC</th><th>원 절차 문서</th><th>비고</th></tr></thead>
+        <tbody>
+          <tr><td>PoC-1</td><td><code>docs/superpowers/poc/poc-1-notification-trigger.md</code></td><td>poc.log 판독법 원본</td></tr>
+          <tr><td>PoC-2</td><td><code>docs/superpowers/poc/poc-2-message-trigger.md</code></td><td>BFU 판독</td></tr>
+          <tr><td>PoC-3</td><td><code>docs/superpowers/poc/poc-3-fm-classifier.md</code></td><td>픽스처 구성·FM_BENCH 형식</td></tr>
+          <tr><td>PoC-5</td><td><code>docs/superpowers/poc/poc-5-notification-eventkit.md</code></td><td>시뮬레이터 실측 표</td></tr>
+          <tr><td>PoC-8·9</td><td><code>docs/superpowers/poc/poc-8-9-share-upload.md</code></td><td>포트 우회, SLOW_MS</td></tr>
+          <tr><td>판정표</td><td><code>docs/superpowers/poc/results.md</code></td><td>세션 후 갱신</td></tr>
+          <tr><td>기준</td><td><code>docs/superpowers/specs/2026-09-22-assistant-design.md</code> §14 · §16</td><td>판정 문구 원본</td></tr>
+          <tr><td>계획</td><td><code>docs/superpowers/plans/2026-09-23-phase0-poc.md</code> Task 13 · 사용자 수동 단계</td><td>스펙 갱신 규칙</td></tr>
+          <tr><td>빌드</td><td><code>poc/ios/project.yml</code> · <code>poc/ios/scripts/sim.sh</code></td><td>팀·번들·스킴</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 15 CLOSING -->
+  <section class="slide dark closing" id="closing">
+    <h2 class="display">Measure On Device.<br>Then Decide.</h2>
+    <div class="foot num">
+      <span>ERURI · Phase 0 PoC · Real-Device Session</span>
+      <span>2026-09-24</span>
+    </div>
+  </section>
+</div>
+
+<nav class="quicknav num" aria-label="Slide navigation">
+  <ol>
+    <li><a href="#cover"><span class="no num">01</span><span class="t">Cover</span></a></li>
+    <li><a href="#contents"><span class="no num">02</span><span class="t">Contents</span></a></li>
+    <li><a href="#summary"><span class="no num">03</span><span class="t">Summary</span></a></li>
+    <li><a href="#checklist"><span class="no num">04</span><span class="t">Checklist</span></a></li>
+    <li><a href="#build"><span class="no num">05</span><span class="t">Build</span></a></li>
+    <li><a href="#server"><span class="no num">06</span><span class="t">Mock Server</span></a></li>
+    <li><a href="#poc-1"><span class="no num">07</span><span class="t">PoC-1</span></a></li>
+    <li><a href="#poc-2"><span class="no num">08</span><span class="t">PoC-2</span></a></li>
+    <li><a href="#poc-3"><span class="no num">09</span><span class="t">PoC-3</span></a></li>
+    <li><a href="#poc-5"><span class="no num">10</span><span class="t">PoC-5</span></a></li>
+    <li><a href="#poc-8-9"><span class="no num">11</span><span class="t">PoC-8/9</span></a></li>
+    <li><a href="#order"><span class="no num">12</span><span class="t">Order</span></a></li>
+    <li><a href="#record"><span class="no num">13</span><span class="t">Record</span></a></li>
+    <li><a href="#appendix"><span class="no num">14</span><span class="t">Appendix</span></a></li>
+    <li><a href="#closing"><span class="no num">15</span><span class="t">Closing</span></a></li>
+  </ol>
+</nav>
+
+<!-- Active-slide highlight for the quick nav. Inline (CSP-safe); keep as is.
+     Deterministic scrollspy: clicked link wins immediately; on scroll, active =
+     last slide whose top passed the 35%-viewport reading line (last slide when
+     pinned at true bottom). Works when the window OR an inner container scrolls. -->
+<script>
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll('.quicknav a'));
+  var sections = Array.prototype.slice.call(document.querySelectorAll('.deck section[id]'));
+  if(!links.length || !sections.length) return;
+  var locked = 0, raf = 0, scrollEl = null;
+  function setActive(id){
+    links.forEach(function(a){ a.classList.toggle('active', a.getAttribute('href') === '#' + id); });
+  }
+  function scroller(){
+    if(scrollEl) return scrollEl;
+    var el = sections[0].parentElement;
+    while(el && el !== document.body){
+      var o = getComputedStyle(el).overflowY;
+      if(el.scrollHeight > el.clientHeight + 1 && (o === 'auto' || o === 'scroll')) return (scrollEl = el);
+      el = el.parentElement;
+    }
+    return (scrollEl = document.scrollingElement || document.documentElement);
+  }
+  function compute(){
+    if(Date.now() < locked) return;
+    var sc = scroller(), current;
+    if(sc.scrollHeight > sc.clientHeight + 4 && sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2){
+      current = sections[sections.length - 1].id;
+    } else {
+      var line = window.innerHeight * 0.35;
+      current = sections[0].id;
+      sections.forEach(function(s){ if(s.getBoundingClientRect().top <= line) current = s.id; });
+    }
+    setActive(current);
+  }
+  function onScroll(){ if(!raf) raf = requestAnimationFrame(function(){ raf = 0; compute(); }); }
+  links.forEach(function(a){
+    a.addEventListener('click', function(){
+      setActive(a.getAttribute('href').slice(1));
+      locked = Date.now() + 1200;
+    });
+  });
+  ['wheel','touchstart','keydown'].forEach(function(ev){
+    window.addEventListener(ev, function(){ locked = 0; }, {passive:true});
+  });
+  document.addEventListener('scroll', onScroll, true);
+  window.addEventListener('resize', onScroll);
+  compute();
+})();
+</script>
