@@ -17,10 +17,28 @@ struct CaptureIntent: AppIntent {
   func perform() async throws -> some IntentResult & ProvidesDialog {
     let started = Date()
     let pipeline = CapturePipeline(filter: RuleFilter(), queue: try CaptureQueue.shared())
-    let result = try pipeline.handle(source: source, appName: appName, title: title, sender: sender, text: text)
+    let result = try await runPipeline(pipeline)
     let ms = Int(Date().timeIntervalSince(started) * 1000)
     let locked = await MainActor.run { UIApplication.shared.isProtectedDataAvailable == false }
     PoCLog.append("CaptureIntent \(result) \(ms)ms locked=\(locked)")
     return .result(dialog: "\(result)")
+  }
+
+  private func runPipeline(_ pipeline: CapturePipeline) async throws -> String {
+    guard case .pass(let masked) = pipeline.filterOnly(text: text, sender: sender) else {
+      PoCLog.append("rule discard"); return "discarded:rule"
+    }
+    let isChatApp = ["KakaoTalk", "카카오톡", "Instagram"].contains(appName ?? "")
+    if FMClassifier.availability() == "available" {
+      if let v = try await FMClassifier().classify(text: masked, appName: appName) {
+        if v.kind != .notice { PoCLog.append("FM discard \(v.kind) \(v.confidence)"); return "discarded:fm:\(v.kind.rawValue)" }
+      } else if isChatApp {
+        return "discarded:fm-timeout"
+      }
+    } else if isChatApp {
+      return "discarded:fm-unavailable"
+    }
+    try pipeline.enqueue(source: source, appName: appName, title: title, sender: sender, masked: masked)
+    return "queued"
   }
 }

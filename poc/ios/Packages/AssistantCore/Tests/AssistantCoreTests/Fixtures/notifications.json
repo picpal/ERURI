@@ -1,0 +1,1202 @@
+[
+  {
+    "app": "iMessage",
+    "title": "우리팀 단톡",
+    "text": "오늘 컨디션 어때? ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": "가족방",
+    "text": "심심한데 뭐하지 ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "오랜만이야",
+    "text": "회의 몇 시부터야? 진짜로",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": "오랜만이야",
+    "text": "너무 웃기다 ㅋㅋㅋㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": null,
+    "text": "그 영화 재밌었어?~",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": null,
+    "text": "다음 주에 시간 괜찮아? ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "연세정형외과",
+    "text": "연세정형외과 예약 안내: 내일 17시 방문 예정이십니다. 변경 시 연락 주세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "한진택배",
+    "text": "[한진택배] 경비실에 택배가 도착했습니다. 찾아가세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "이서연",
+    "text": "ㄱㄱ 출발",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": "이서연",
+    "text": "너 아까 그거 결제 했어?",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "가족방",
+    "text": "이거 배송 언제 오는지 알아?",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "삼성카드",
+    "text": "국민은행 20,000원 출금되었습니다. 잔액 701,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "농협하나로마트",
+    "text": "농협하나로마트: 고객님의 상품이 배송 완료되었습니다. 문 앞에 두었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "농협하나로마트",
+    "text": "농협하나로마트 배송 안내: 오늘 오후 도착 예정입니다. (송장 429103158382)",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "김민수",
+    "text": "오늘 야근이라 늦을 것 같아!",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "우리팀 단톡",
+    "text": "어제 그 드라마 봤어? 대박이더라~",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "명동칼국수",
+    "text": "[Web발신] 명동칼국수 예약 알림 - 7월 22일 19시, 예약자 정하늘",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "명동칼국수",
+    "text": "[명동칼국수] 김민수님, 11월 21일 19시 예약이 확정되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "이서연",
+    "text": "축하해 정말 잘됐다 ㅎㅎ",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": "김민수",
+    "text": "밥은 먹었어?",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "농협하나로마트",
+    "text": "[농협하나로마트] 주문번호 26753883 정상 접수되었습니다. 결제금액 53,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "신한카드",
+    "text": "[신한카드] 승인 147,000원 CU편의점 일시불",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "우체국택배",
+    "text": "[우체국택배] 경비실에 택배가 도착했습니다. 찾아가세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "GS더프레시",
+    "text": "GS더프레시 주문이 완료되었습니다. 주문번호: 47295260 / 총 24,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": null,
+    "text": "주문 넣었어 조금만 기다려봐",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "우리팀 단톡",
+    "text": "예약 확인했어? 시간 맞아?",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "로젠택배",
+    "text": "[Web발신] 로젠택배: 부재중으로 재배송 예정입니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "마켓컬리",
+    "text": "[마켓컬리] 주문번호 39958838 정상 접수되었습니다. 결제금액 22,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "김민수",
+    "text": "오늘 저녁에 뭐 먹을까~",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "로젠택배",
+    "text": "로젠택배 배송 안내: 오늘 오후 도착 예정입니다. (송장 332212511873)",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "한진택배",
+    "text": "[한진택배] 경비실에 택배가 도착했습니다. 찾아가세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "우리팀 단톡",
+    "text": "미안 늦었어 ㅠㅠ ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "이서연",
+    "text": "너 그거 주문했었나?",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "365안과",
+    "text": "365안과 예약 안내: 내일 12시 방문 예정이십니다. 변경 시 연락 주세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "오랜만이야",
+    "text": "미안 늦었어 ㅠㅠ!",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "연세정형외과",
+    "text": "연세정형외과 건강검진 결과가 준비되었습니다. 방문 또는 앱에서 확인하세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "현대카드",
+    "text": "[Web발신] 현대카드 승인 알림: 대성갈비에서 56,000원 결제되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "마켓컬리",
+    "text": "[Web발신] 마켓컬리 주문 확인. 상품 준비 중입니다. (주문번호 70291817)",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": null,
+    "text": "오늘 좀 피곤하네 진짜로",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "연세정형외과",
+    "text": "[연세정형외과] 최유진님, 다음 진료 예약일은 1월 22일입니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "오랜만이야",
+    "text": "회식 장소 정해졌어?",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "우리팀 단톡",
+    "text": "네 알겠습니다, 확인 후 연락드리겠습니다. ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": null,
+    "text": "저 사람 누구야? 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": "오랜만이야",
+    "text": "지금 어디야?? 늦었어 ㅠㅠ 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "마켓컬리",
+    "text": "[Web발신] 마켓컬리 택배가 배송 중입니다. 도착 예정 14시경",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "이태원버거",
+    "text": "이태원버거 예약 안내: 내일 16시 방문 예정이십니다. 변경 시 연락 주세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "올리브영",
+    "text": "[Web발신] 올리브영 택배가 배송 중입니다. 도착 예정 19시경",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": null,
+    "text": "그 택배 아직 안 왔어?",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "CJ대한통운",
+    "text": "CJ대한통운 택배 도착 안내: 문 앞에 보관되어 있습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "현대카드",
+    "text": "[현대카드] 승인 66,000원 성수동파스타 일시불",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "우체국택배",
+    "text": "우체국택배 택배 도착 안내: 문 앞에 보관되어 있습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "신한카드",
+    "text": "신한은행 계좌에서 75,000원이 GS더프레시로 이체되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": "오랜만이야",
+    "text": "결제 됐어? 카드 오류 났었잖아",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": null,
+    "text": "ㄱㄱ 출발 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "국민카드",
+    "text": "[Web발신] 국민카드 승인 알림: 성수동파스타에서 79,000원 결제되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "365안과",
+    "text": "[Web발신] 365안과: 처방전이 약국으로 전송되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "국민카드",
+    "text": "[국민카드] 승인 66,000원 대성갈비 일시불",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "현대카드",
+    "text": "[Web발신] 현대카드 승인 알림: 배달의민족에서 111,000원 결제되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "오랜만이야",
+    "text": "오늘 컨디션 어때? 진짜로",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "CU편의점",
+    "text": "CU편의점 주문이 완료되었습니다. 주문번호: 95320121 / 총 51,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "이서연",
+    "text": "결제 완료됐다고 나오는데 너도 확인해봐",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "네일아트샵 나비",
+    "text": "[네일아트샵 나비] 장도윤님, 2월 8일 12시 예약이 확정되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "행복한의원",
+    "text": "[행복한의원] 장도윤님, 7월 7일 10시 예약이 확정되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "지그재그",
+    "text": "지그재그에서 주문하신 상품이 확인되었습니다. 주문번호 83197857, 결제 16,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": "우리팀 단톡",
+    "text": "어 결제 됐어 방금 확인함",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "이서연",
+    "text": "이번 달 목표 달성했어? ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "우리팀 단톡",
+    "text": "네 알겠습니다, 확인 후 연락드리겠습니다. 진짜로",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": null,
+    "text": "오늘 야근이라 늦을 것 같아 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "튼튼내과",
+    "text": "튼튼내과 예약 안내: 내일 20시 방문 예정이십니다. 변경 시 연락 주세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": null,
+    "text": "이번 주말에 등산 갈 사람? ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "농협하나로마트",
+    "text": "농협하나로마트에서 주문하신 상품이 확인되었습니다. 주문번호 36687537, 결제 88,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "올리브영",
+    "text": "[Web발신] 올리브영 주문 확인. 상품 준비 중입니다. (주문번호 22981052)",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "연세정형외과",
+    "text": "[연세정형외과] 박지훈님, 다음 진료 예약일은 3월 14일입니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "이서연",
+    "text": "ㅇㅇ 알겠어",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "한진택배",
+    "text": "한진택배 택배 도착 안내: 문 앞에 보관되어 있습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "가족방",
+    "text": "다음 주에 시간 괜찮아? ㅎㅎ",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "가족방",
+    "text": "응 병원 다녀왔어 별거 아니래",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "서울병원",
+    "text": "서울병원 예약 안내: 내일 10시 방문 예정이십니다. 변경 시 연락 주세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": "가족방",
+    "text": "오랜만이다 ㅎㅎ 잘 지냈어?!",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "명동칼국수",
+    "text": "명동칼국수에서 예약 리마인더를 보냅니다. 18시 뵙겠습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": "김민수",
+    "text": "이번 달 목표 달성했어?~",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "행복한의원",
+    "text": "[행복한의원] 윤소희님, 1월 6일 15시 예약이 확정되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "우리팀 단톡",
+    "text": "지금 가는 중이야 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "가족방",
+    "text": "이거 좀 봐줄 수 있어? ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "우리팀 단톡",
+    "text": "배송 시작됐다고 문자 왔던데 너도 왔어?",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "CJ대한통운",
+    "text": "[CJ대한통운] 상품이 출고되어 배송을 시작합니다. 운송장번호 190532572167",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "김민수",
+    "text": "감사합니다 선생님 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "SSG닷컴",
+    "text": "SSG닷컴에서 주문하신 상품이 확인되었습니다. 주문번호 10872248, 결제 25,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "우리팀 단톡",
+    "text": "저 사람 누구야? 진짜로",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": "가족방",
+    "text": "오랜만이다 ㅎㅎ 잘 지냈어? ㅎㅎ",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "마켓컬리",
+    "text": "[마켓컬리] 상품이 출고되어 배송을 시작합니다. 운송장번호 296546131054",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "29CM",
+    "text": "29CM 주문이 완료되었습니다. 주문번호: 96977837 / 총 14,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "연세정형외과",
+    "text": "[Web발신] 연세정형외과: 처방전이 약국으로 전송되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "우체국택배",
+    "text": "[우체국택배] 상품이 출고되어 배송을 시작합니다. 운송장번호 658939878788",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "롯데카드",
+    "text": "[Web발신] 롯데카드 승인 알림: 이마트몰에서 138,000원 결제되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "무신사",
+    "text": "[무신사] 주문번호 35808537 정상 접수되었습니다. 결제금액 13,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": null,
+    "text": "심심한데 뭐하지!",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "이서연",
+    "text": "오랜만에 얼굴 좀 보자 ㅎㅎ",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "서울병원",
+    "text": "서울병원 건강검진 결과가 준비되었습니다. 방문 또는 앱에서 확인하세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": "김민수",
+    "text": "주말 잘 보냈어? ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "미소치과",
+    "text": "[미소치과] 윤소희님, 다음 진료 예약일은 10월 24일입니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "우리팀 단톡",
+    "text": "아직 예약 안 했는데 지금 할까?",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": null,
+    "text": "야 너 그 식당 예약했어?",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "배달의민족",
+    "text": "[Web발신] 배달의민족 택배가 배송 중입니다. 도착 예정 13시경",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "가족방",
+    "text": "잘자~ 내일 봐 진짜로",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": "가족방",
+    "text": "조심히 들어가 진짜로",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": null,
+    "text": "생일 축하해!! 🎉!",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": null,
+    "text": "이거 사진 좀 보내줘 ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "365안과",
+    "text": "365안과 건강검진 결과가 준비되었습니다. 방문 또는 앱에서 확인하세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "이서연",
+    "text": "너 예약한 병원 몇 시야?",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "롯데택배",
+    "text": "[Web발신] 롯데택배: 부재중으로 재배송 예정입니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "한진택배",
+    "text": "[한진택배] 상품이 출고되어 배송을 시작합니다. 운송장번호 939124570476",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": null,
+    "text": "고생했어 오늘도 ㅎㅎ ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "마켓컬리",
+    "text": "[마켓컬리] 주문번호 77827638 정상 접수되었습니다. 결제금액 82,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "이마트몰",
+    "text": "[이마트몰] 상품이 출고되어 배송을 시작합니다. 운송장번호 638263151675",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "롯데카드",
+    "text": "[롯데카드] 승인 17,000원 요기요 일시불",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "이서연",
+    "text": "그 영화 재밌었어? 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "미소치과",
+    "text": "미소치과 건강검진 결과가 준비되었습니다. 방문 또는 앱에서 확인하세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "오랜만이야",
+    "text": "이거 사진 좀 보내줘 ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "행복한의원",
+    "text": "행복한의원에서 예약 리마인더를 보냅니다. 11시 뵙겠습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "지그재그",
+    "text": "[Web발신] 지그재그 주문 확인. 상품 준비 중입니다. (주문번호 24942603)",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": "이서연",
+    "text": "비 온다 우산 챙겨~",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "SSG닷컴",
+    "text": "[SSG닷컴] 주문번호 55176955 정상 접수되었습니다. 결제금액 18,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "오랜만이야",
+    "text": "휴가 언제 가? 진짜로",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "GS더프레시",
+    "text": "GS더프레시 배송 안내: 오늘 오후 도착 예정입니다. (송장 953703406284)",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": "가족방",
+    "text": "오늘 저녁에 뭐 먹을까",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "오랜만이야",
+    "text": "축하해 정말 잘됐다!",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "마켓컬리",
+    "text": "마켓컬리: 고객님의 상품이 배송 완료되었습니다. 문 앞에 두었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "롯데카드",
+    "text": "[Web발신] 롯데카드 승인 알림: 농협하나로마트에서 70,000원 결제되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "이태원버거",
+    "text": "[이태원버거] 이서연님, 1월 21일 17시 예약이 확정되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "미소치과",
+    "text": "미소치과에서 예약 리마인더를 보냅니다. 10시 뵙겠습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "우리팀 단톡",
+    "text": "주말에 시간 되면 영화 보러 갈래? ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "지그재그",
+    "text": "[지그재그] 주문번호 40587988 정상 접수되었습니다. 결제금액 42,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "삼성카드",
+    "text": "[삼성카드] 승인 96,000원 이마트몰 일시불",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "오랜만이야",
+    "text": "병원 갔다왔어? 괜찮아?",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "롯데카드",
+    "text": "국민은행 22,000원 출금되었습니다. 잔액 717,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": null,
+    "text": "택배 왔더라 확인해봤어?",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "김민수",
+    "text": "배송 왔어? 언제 온대?",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "로젠택배",
+    "text": "[로젠택배] 경비실에 택배가 도착했습니다. 찾아가세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": "가족방",
+    "text": "휴가 언제 가?!",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "헤어라인 미용실",
+    "text": "헤어라인 미용실에서 예약 리마인더를 보냅니다. 15시 뵙겠습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "우리팀 단톡",
+    "text": "주문했어? 아직 안 왔는데",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "이마트몰",
+    "text": "이마트몰: 고객님의 상품이 배송 완료되었습니다. 문 앞에 두었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "롯데카드",
+    "text": "[Web발신] 롯데카드 승인 알림: 올리브영에서 147,000원 결제되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "배달의민족",
+    "text": "배달의민족 배송 안내: 오늘 오후 도착 예정입니다. (송장 804054194082)",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "이서연",
+    "text": "고마워 진짜!",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": null,
+    "text": "넵 확인했습니다 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": "김민수",
+    "text": "주말에 시간 되면 영화 보러 갈래?!",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "쿠팡",
+    "text": "쿠팡 배송 안내: 오늘 오후 도착 예정입니다. (송장 988335239225)",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": "이서연",
+    "text": "그 얘기 진짜야? 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "이서연",
+    "text": "오늘 날씨 진짜 좋다 ☀️ ㅎㅎ",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "GS더프레시",
+    "text": "[Web발신] GS더프레시 주문 확인. 상품 준비 중입니다. (주문번호 57683626)",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": null,
+    "text": "비 온다 우산 챙겨 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "이서연",
+    "text": "예약했어? 몇 시로 했어",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "마켓컬리",
+    "text": "[Web발신] 마켓컬리 주문 확인. 상품 준비 중입니다. (주문번호 23556182)",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "CU편의점",
+    "text": "CU편의점: 고객님의 상품이 배송 완료되었습니다. 문 앞에 두었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "오랜만이야",
+    "text": "커피 한잔 할까? 진짜로",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "현대카드",
+    "text": "[Web발신] 현대카드 승인 알림: 성수동파스타에서 83,000원 결제되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": "가족방",
+    "text": "오랜만에 얼굴 좀 보자!",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "오랜만이야",
+    "text": "밥은 먹었어? 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "행복한의원",
+    "text": "[행복한의원] 강태오님, 다음 진료 예약일은 5월 28일입니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "이서연",
+    "text": "택배 왔어? 나 오늘 못 받을 것 같은데",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": "우리팀 단톡",
+    "text": "이거 좀 봐줄 수 있어?",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "우리팀 단톡",
+    "text": "주문 확인 메일 왔어?",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": "이서연",
+    "text": "넵 확인했습니다!",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "가족방",
+    "text": "지금 가는 중이야 ㅎㅎ",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "김민수",
+    "text": "다음에 또 봐요!",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "로젠택배",
+    "text": "[Web발신] 로젠택배 택배가 배송 중입니다. 도착 예정 21시경",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": null,
+    "text": "회식 장소 정해졌어?~",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": null,
+    "text": "오늘 좀 피곤하네~",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "이서연",
+    "text": "고생했어 오늘도 ㅎㅎ ㅋㅋ",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "신한카드",
+    "text": "[Web발신] 신한카드 승인 알림: GS더프레시에서 36,000원 결제되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "우리팀 단톡",
+    "text": "주말 잘 보냈어? 진짜로",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "농협하나로마트",
+    "text": "[Web발신] 농협하나로마트 주문 확인. 상품 준비 중입니다. (주문번호 49349722)",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "무신사",
+    "text": "무신사에서 주문하신 상품이 확인되었습니다. 주문번호 45503389, 결제 10,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "오랜만이야",
+    "text": "어제 그 드라마 봤어? 대박이더라 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "CU편의점",
+    "text": "[Web발신] CU편의점 택배가 배송 중입니다. 도착 예정 14시경",
+    "expected": "notice"
+  },
+  {
+    "app": "iMessage",
+    "title": "이서연",
+    "text": "다음에 또 봐요 진짜로",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "쿠팡",
+    "text": "쿠팡 주문이 완료되었습니다. 주문번호: 13999315 / 총 16,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "롯데카드",
+    "text": "국민은행 계좌에서 144,000원이 GS더프레시로 이체되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "서울병원",
+    "text": "서울병원 예약 안내: 내일 9시 방문 예정이십니다. 변경 시 연락 주세요.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "CJ대한통운",
+    "text": "[Web발신] CJ대한통운: 부재중으로 재배송 예정입니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "미소치과",
+    "text": "[미소치과] 최유진님, 5월 7일 9시 예약이 확정되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "삼성카드",
+    "text": "농협은행 계좌에서 144,000원이 CU편의점로 이체되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": "이서연",
+    "text": "생일 축하해!! 🎉",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "GS더프레시",
+    "text": "GS더프레시 배송 안내: 오늘 오후 도착 예정입니다. (송장 535935878833)",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "삼성카드",
+    "text": "농협은행 계좌에서 70,000원이 성수동파스타로 이체되었습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "Instagram",
+    "title": "김민수",
+    "text": "이번 주말에 등산 갈 사람? 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "김민수",
+    "text": "요즘 운동 하고 있어? 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "오랜만이야",
+    "text": "지금 어디야?? 늦었어 ㅠㅠ 😊",
+    "expected": "personal"
+  },
+  {
+    "app": "Instagram",
+    "title": "우리팀 단톡",
+    "text": "ㅇㅇ 알겠어 ㅎㅎ",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "신한카드",
+    "text": "신한은행 32,000원 출금되었습니다. 잔액 119,000원",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "오랜만이야",
+    "text": "감사합니다 선생님!",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "김민수",
+    "text": "오늘 날씨 진짜 좋다 ☀️ 진짜로",
+    "expected": "personal"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "연세정형외과",
+    "text": "연세정형외과에서 예약 리마인더를 보냅니다. 16시 뵙겠습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "성수동파스타",
+    "text": "성수동파스타에서 예약 리마인더를 보냅니다. 15시 뵙겠습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "튼튼내과",
+    "text": "튼튼내과에서 예약 리마인더를 보냅니다. 11시 뵙겠습니다.",
+    "expected": "notice"
+  },
+  {
+    "app": "KakaoTalk",
+    "title": "우리팀 단톡",
+    "text": "요즘 운동 하고 있어?!",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "오랜만이야",
+    "text": "회의 몇 시부터야?~",
+    "expected": "personal"
+  },
+  {
+    "app": "iMessage",
+    "title": "우리팀 단톡",
+    "text": "고마워 진짜",
+    "expected": "personal"
+  }
+]
