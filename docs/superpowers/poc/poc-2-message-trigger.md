@@ -11,7 +11,7 @@
 3. "즉시 실행"과 **"잠금 시 실행 허용"**을 모두 켠다. 이 두 토글이 실제로 존재하는지, 켜지지 않는 경우가 있는지 기록한다.
 4. 동작에 **"비서에 저장"**(`CaptureIntent`) 액션을 추가하고, 메시지 발신자·본문을 각각 `sender`/`text` 파라미터에 연결한다. `source`는 `"MESSAGES"`로 지정한다.
 5. 테스트 문자는 합성 문구만 쓴다. `poc.log`에는 값 없이 `textLen`·`sender=set|nil`만 남는다(판독법은 PoC-1 문서 "기록 읽는 법").
-6. 연락처 발신자 폐기 규칙은 아직 배선되지 않았다(`RuleFilter()`에 연락처 목록 없음). 연락처에 있는 번호로 보내도 `discarded:contact`는 나오지 않는다. 이 PoC의 관찰 대상이 아니다.
+6. 연락처 규칙(시나리오 5): 앱 → "권한 요청 (알림·캘린더·연락처)"으로 연락처 권한을 허용하고, 테스트 번호를 연락처에 저장한 뒤 앱을 한 번 열어 캐시를 갱신한다(`poc.log`의 `contacts status=… names=<n>`). 인텐트는 이 캐시만 읽어 `sender`·`title`과 비교한다(공백 전부 제거, 끝 "님"/"씨" 제거). 단축어가 `sender`에 넘기는 값이 연락처 이름인지 번호인지도 기록한다.
 
 > 시뮬레이터에서는 단축어 앱의 수동 실행으로 `CaptureIntent`가 시스템 경로로 호출되는 것까지만 확인했다(PoC-1 문서 참조). 메시지 트리거는 실기기 전용이다.
 
@@ -23,6 +23,7 @@
 | 2 | 잠금 상태 수신 | 화면 잠그고 **15초 이상** 기다린 뒤 문자 발송(`isProtectedDataAvailable`은 잠근 직후 약 10초 동안 true) | `poc.log`의 `locked=` 값, 큐 적재 여부 | `locked=true`로 정상 적재 |
 | 3 | 재부팅 후 첫 잠금 해제 전(BFU) 수신 | 재부팅 전에 앱을 한 번 실행해 `bfu.log`(보호 등급 none)를 만들어 둔다 → 재부팅 → 잠금 해제하지 않은 채로 문자 발송 → 해제 후 앱에서 `bfu.log` 섹션 확인 | `bfu.log`에 `CaptureIntent start textLen=… locked=true`가 있는지, 이어서 `CaptureIntent error …`가 있는지, `poc.log`에는 없는지 | `start`도 없으면 "자동화 미실행", `start`+`error`면 "실행됐지만 큐(CUFUA) 접근 실패 → 유실"로 기록 |
 | 4 | OTP 문자 수신 | "[Web발신] 인증번호 123456" 형태의 합성 문자 발송 | `poc.log`에 `CaptureIntent discarded:otp`로 기록되는지 | `RuleFilter`가 OTP로 판정해 큐에 적재하지 않아야 함 (규칙 필터 자체 검증이지만 같이 확인) |
+| 5 | 연락처에 저장한 번호에서 문자 수신 | 준비 6 후 합성 문자 발송 | `poc.log`의 결과 코드 | `CaptureIntent discarded:contact`. 나오지 않으면 `sender`가 번호로 와서 이름과 비교되지 않는 것인지 기록 |
 
 ## 판정 기준 (스펙 §14 PoC-2)
 

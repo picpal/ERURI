@@ -142,11 +142,11 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
 
 ### 기기 규칙 필터 (0단계 Task 2 실측 반영, 2026-09-24)
 
-서버 규칙 필터(§7)도 연락처 규칙을 뺀 같은 규칙을 쓴다. 적용 순서는 연락처 → OTP → 카드 → 계좌다.
+서버 규칙 필터(§7)도 연락처 규칙을 뺀 같은 규칙을 쓴다. 적용 순서는 연락처 → OTP → 카드 → 계좌다. OTP 판정은 제목과 본문을 합친 문자열로 한다(키워드가 제목, 숫자가 본문에 있어도 폐기). 카드·계좌 마스킹은 제목·본문 각각에 적용하고, 마스킹된 제목이 FM 입력과 큐에 들어간다.
 
 | 규칙 | 판정 | 근거 |
 |---|---|---|
-| 연락처 | 연락처 이름 목록을 앱이 CNContactStore에서 읽어 App Group에 캐시하고, 인텐트는 캐시만 읽는다. `sender`와 카톡처럼 발신자가 `title`에 오는 경우 모두 비교하고, 앞뒤 공백·호칭 "님"을 떼고 비교한다 | 인텐트는 백그라운드 실행이라 매번 연락처 전체를 읽지 않는다 |
+| 연락처 | 앱이 실행·포그라운드 복귀 때 CNContactStore에서 이름 목록을 읽어 App Group `contacts.json`에 캐시한다(이름만). 권한은 앱의 "권한 요청 (알림·캘린더·연락처)" 버튼에서 받고, 미허용이면 빈 목록을 캐시한다. 인텐트는 캐시만 읽는다. `sender`와 카톡처럼 발신자가 `title`에 오는 경우 모두 비교하고, **모든 공백을 지우고 끝의 호칭 "님"·"씨"를 뗀 뒤** 비교한다. 폐기 사유는 `contact` | 인텐트는 백그라운드 실행이라 매번 연락처 전체를 읽지 않는다 |
 | OTP 키워드 | 인증번호·인증 코드·보안번호·승인번호·확인번호(`(인증\|보안\|승인\|확인)\s*(번호\|코드)`), verification·verify·passcode·one-time, 영문 `code`·`OTP` | 실측에서 "인증코드", "login code", "verify"가 새어 나갔다 |
 | OTP 영문 경계 | `code`·`OTP`는 앞뒤가 영문자가 아닐 때만 키워드로 본다. `\b`는 ICU가 한글도 단어 문자로 보아 `OTP번호`를 놓치므로 쓰지 않는다 | "Hotpot 예약"이 `otp`로 폐기됐다 |
 | OTP 숫자 | 4~8자리 또는 3-3 분리(`123-456`). 날짜·시각·금액 형태(`2026년`, `15:00`, `9/25`, `32,000원`)는 제외 | 연도 숫자로 예약 안내가 폐기됐다 |
@@ -190,8 +190,9 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
 - 중복 업로드 방지: 보낼 항목은 `claim(limit:)`으로 가져온다. 단일 `UPDATE … RETURNING`이 `next_attempt_at = now + 600초`(lease)를 걸면서 행을 반환하므로 연결·프로세스 사이에서도 원자적이다. 앱 시작과 `scenePhase == .active`가 연달아 flush해도 같은 항목을 두 번 올리지 않는다.
 - 완료 콜백은 `markSent`(삭제), 실패 콜백은 `markFailed`(attempts+1, lease를 백오프 시각으로 덮어씀)로 lease를 끝낸다. 콜백 없이 lease가 만료된 항목(앱 강제 종료로 전송 취소)은 다음 flush가 다시 가져간다.
 - 그래서 "보냈는데 콜백을 못 받은" 항목은 두 번 갈 수 있다. 서버 `/ingest`는 기기 항목의 `external_id`로 큐 항목 `id`(UUID)를 받아 멱등 키(§7)로 중복을 막는다.
+- 업로드 서버 주소는 App Group `UserDefaults`(`group.com.picpal.assistant`) 키 `ingestURL`에 저장하고 앱 화면에서 바꾼다. PoC 앱은 저장값이 없을 때만 스킴 환경변수 `INGEST_URL`을 초기값으로 쓰고, 둘 다 없으면 `http://localhost:8787`이다. 홈 화면에서 다시 열어도 저장값이 유지된다.
 
-Share Extension은 1단계만 적용하고 큐에 넣는다(텍스트·URL 본문과 OCR 텍스트 모두). 이미지·PDF는 **먼저 App Group 컨테이너에 파일로 영속화**한 뒤 큐에 로컬 경로를 기록하고, 업로드는 앱이 background URLSession 파일 업로드로 수행한다. 업로드 성공 후에만 로컬 파일을 지운다. 이미지에는 정규식 마스킹이 적용되지 않으므로 사용자에게 "이미지는 서버로 그대로 전송됨"을 공유 화면에 표시한다.
+Share Extension은 1단계(규칙 필터)만 적용하고 큐에 넣는다(텍스트·URL 문자열과 이미지 OCR 텍스트 모두). OTP로 폐기되면 큐에 넣지 않고 **파일도 App Group에 저장하지 않는다**. 그래서 이미지는 확장의 임시 복사본에서 OCR을 먼저 돌리고, 규칙을 통과한 경우에만 App Group `inbox/`로 영속화한다(임시 복사 → OCR → 규칙 → 영속화 → 큐). PDF는 OCR이 없어 규칙 대상 텍스트가 없으므로 그대로 영속화한다. 로그는 본문 없이 종류·결과만 남긴다: `ShareExtension file queued id=<uuid> type=image ocrLen=<n>`, 폐기면 `ShareExtension file discarded:otp id=- type=image ocrLen=<n>`, 텍스트·URL은 `ShareExtension text|url queued` 또는 `discarded:<reason>`. 이미지·PDF는 App Group 컨테이너에 파일로 영속화한 뒤 큐에 로컬 경로를 기록하고, 업로드는 앱이 background URLSession 파일 업로드로 수행한다. 업로드 성공 후에만 로컬 파일을 지운다. 이미지에는 정규식 마스킹이 적용되지 않으므로 사용자에게 "이미지는 서버로 그대로 전송됨"을 공유 화면에 표시한다.
 
 이미지·PDF 공유 시 기기 Vision 프레임워크 OCR 텍스트를 **항상 함께** 생성해 큐에 넣는다. 서버가 vision 상한에 걸리면 이 텍스트로 대체하므로 기기 재개 절차가 필요 없다.
 
@@ -390,9 +391,9 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 
 | # | 검증 대상 | 방법 | 통과 기준 | 실패 시 대안 |
 |---|---|---|---|---|
-| PoC-1 | Notification 트리거 → App Intent | 빈 앱 + CaptureIntent, 카카오톡·Instagram 알림 트리거 자동화. iOS 26과 27 각각 | 본문·앱명 전달 확인. 확인 배너 여부·잠금 상태·미리보기 꺼짐 상태·묶음 알림 동작 기록 | 본문 미전달 → 알림 경로 폐기, 공유만. 배너 필수 → 키워드 필터로 탭 최소화 |
+| PoC-1 | Notification 트리거 → App Intent | 빈 앱 + CaptureIntent, 카카오톡·Instagram 알림 트리거 자동화. iOS 26 (iOS 27 기기가 있다면 27도) | 본문·앱명 전달 확인. 확인 배너 여부·잠금 상태·미리보기 꺼짐 상태·묶음 알림 동작 기록 | 본문 미전달 → 알림 경로 폐기, 공유만. 배너 필수 → 키워드 필터로 탭 최소화 |
 | PoC-2 | Message 트리거 → App Intent | 문자 수신 시 발신자·본문 전달, 잠금 중 무확인 실행. 재부팅 후 첫 잠금 해제 전 수신 | 잠금 상태에서 큐에 저장됨. 첫 해제 전 수신분 처리 방식 기록 | 실패 시 문자도 공유 경로만 |
-| PoC-3 | Foundation Models in-app 백그라운드 인텐트 | 한국어 알림 200건(개인 대화 100·알림톡 100) 분류, 지연·메모리 측정. 백그라운드 인텐트 10~20회 연속 호출로 `rateLimited` 빈도 측정 | p95 < 3초. **개인 대화 통과율 ≤ 2%**, 알림톡 폐기율 ≤ 15% | 규칙 필터만 + 카톡·인스타 경로 폐기 |
+| PoC-3 | Foundation Models in-app 백그라운드 인텐트 | 한국어 알림 200건(개인 대화 100·알림톡 96·검진 결과 안내 `medical_result` 4) 분류, 지연·메모리 측정. 백그라운드 인텐트 10~20회 연속 호출로 `rateLimited` 빈도 측정 | p95 < 3초. **개인 대화 통과율 ≤ 2%**, 알림톡 폐기율 ≤ 15%(분모 notice 96, `medical_result` 4건은 따로 센다) | 규칙 필터만 + 카톡·인스타 경로 폐기 |
 | PoC-4 | Edge Function → APNs HTTP/2 | 프로덕션 리전에서 100회 발송, 동시 10회 포함 | 성공률 ≥ 99%, h2 스트림 오류 0 | Cloudflare Worker 릴레이 |
 | PoC-5 | 알림 액션 → 백그라운드 EventKit 쓰기 | `authenticationRequired` 액션에서 이벤트 생성. 같은 알림 두 번 탭, 동시 두 번 탭, 앱 종료 후 액션(콜드 스타트), 보고 실패 후 재탭. APNs 없이 로컬 알림으로 가능 | 앱 열지 않고 캘린더에 1건만 생성 | `foreground` 액션으로 앱 열어 실행 |
 | PoC-6 | Gmail serverAuthCode 교환 + watch + history | 테스트 계정으로 3개월 백필, push 수신. 8일 재인증 만료 재현, 커서 404 재현 | 쿼터 초과 없이 완료, push 1분 내 수신, 만료·404 후 누락 0건 | 폴링(15분) |
@@ -407,8 +408,8 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 
 | # | 상태 | 시뮬레이터에서 확인한 것 (부분 검증) | 실기기·외부 자원이 필요한 남은 실측 |
 |---|---|---|---|
-| PoC-1 | 미검증 | CaptureIntent·App Shortcut 등록(`Metadata.appintents`), 단축어 앱에서 수동 실행 시 앱을 열지 않고 인텐트 실행(XCUITest). 알림 트리거가 아닌 호출 경로 확인일 뿐 | **실기기**: 알림 자동화 시나리오 1~7, `app=`·`textLen=` 로그로 본문·앱명 전달 판정. 연락처 규칙은 미배선이라 관찰 불가 |
-| PoC-2 | 미검증 | 인텐트 호출 경로(PoC-1과 같음) | **실기기**: 메시지 자동화, 잠금 15초 후 수신 `locked=true`, BFU 수신(`bfu.log`, 길이만), OTP 문자 `discarded:otp` |
+| PoC-1 | 미검증 | CaptureIntent·App Shortcut 등록(`Metadata.appintents`), 단축어 앱에서 수동 실행 시 앱을 열지 않고 인텐트 실행(XCUITest). 알림 트리거가 아닌 호출 경로 확인일 뿐 | **실기기**: 알림 자동화 시나리오 1~7, `app=`·`textLen=` 로그로 본문·앱명 전달 판정. 연락처에 저장한 계정에서 보낸 카톡 → `discarded:contact` |
+| PoC-2 | 미검증 | 인텐트 호출 경로(PoC-1과 같음) | **실기기**: 메시지 자동화, 잠금 15초 후 수신 `locked=true`, BFU 수신(`bfu.log`, 길이만), OTP 문자 `discarded:otp`, 연락처 번호 문자 `discarded:contact` |
 | PoC-3 | 부분 | 폴백 경로(앱 프로세스에서 Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error`), 새 세션·enum 스키마·타임아웃 단위 테스트. 호스트 Mac Apple Intelligence 꺼짐으로 `respond` 에셋 오류, 정확도·p95 수치 없음 | **실기기**(또는 사용자가 Mac Apple Intelligence 켠 뒤 시뮬레이터 참고치): 200건 정확도·p95·메모리, 백그라운드 `rateLimited` 빈도 |
 | PoC-4 | 미검증 | — | Supabase 프로젝트·APNs `.p8` |
 | PoC-5 | 부분 | 실제 배너·액션 탭(XCUITest, 로컬 알림): 백그라운드 쓰기 `bg=true`, 재탭 `dup skip`, 앱 종료 후 콜드 스타트, 동시 두 번 탭 이벤트 +1 | **실기기**: 잠금 화면에서 `.authenticationRequired`의 Face ID/암호 요구와 쓰기 성공. 보고 실패 후 재탭은 서버 연동 후 |
@@ -418,7 +419,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 | PoC-9 | **통과** | 앱 프로세스 완전 종료 확인 후 3.68초 뒤 목 서버에 정확한 바이트 수로 도착 | — (시뮬레이터 실측이 판정 기준을 그대로 재현) |
 | PoC-10 | 미검증 | — | Supabase 프로젝트 |
 
-실기기 세션 한 번에 PoC-1·2·3·5를 순서대로 진행한다: 설치 → 권한 → 단축어 자동화 3개(카톡·인스타 알림, 메시지) → FM 벤치마크(메모리 게이지 기록) → 단축어로 백그라운드 FM 10~20회 → 잠금 화면 로컬 알림 액션 → 재부팅 후 BFU 문자 수신.
+실기기 세션 한 번에 PoC-1·2·3·5를 순서대로 진행한다: 설치 → 권한 → 단축어 자동화 3개(카톡 알림·인스타 알림·메시지) → FM 벤치마크(메모리 게이지 기록) → 단축어로 백그라운드 FM 10~20회 → 잠금 화면 로컬 알림 액션 → 재부팅 후 BFU 문자 수신.
 
 ## 15. 단계 계획
 
@@ -465,7 +466,7 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 - **시뮬레이터 FM 가용성이 호스트 Mac 설정에 종속**: 시뮬레이터는 호스트 Mac의 모델을 쓴다. 호스트가 Apple Intelligence 꺼짐(`appleIntelligenceNotEnabled`, macOS 26.5에서 직접 호출로 확인)이면 시뮬레이터 `respond`는 에셋 오류를 낸다. 그런데 시뮬레이터 `availability()`는 **`available`로 오표시**한다. 따라서 시뮬레이터 FM 결과는 판정 근거가 아니고, 가용성은 1건 사전 점검(§6)으로 판단하며, PoC-3 수치는 실기기에서 잰다. 시뮬레이터로 참고치를 보려면 사용자가 Mac의 Apple Intelligence를 켜고 모델 다운로드를 마쳐야 한다.
 - **FM 백그라운드 `rateLimited`**: 백그라운드 인텐트에서만 나는 에러다. 폴백으로 흡수되지만 빈도가 높으면 카톡·인스타 항목이 대량 폐기된다. PoC-3 실기기에서 빈도를 재고, 높으면 카톡 경로의 폴백 정책을 다시 정한다.
 - **예약 확인번호 오탐**: "예약 확인번호 58213"이 든 병원·식당 예약 안내는 OTP 규칙으로 폐기된다(§6 알려진 한계). 2단계에서 `otp` 사유 코드 비율을 보고 재검토한다.
-- **연락처 규칙 미검증**: PoC 앱은 연락처 목록을 읽지 않아 PoC-1/2에서 연락처 발신자 폐기를 관찰할 수 없다. 단위 테스트로만 검증됐다.
+- **연락처 규칙**: 앱이 연락처 이름을 App Group에 캐시하고 인텐트가 `sender`·`title`과 비교하도록 배선했다. 시뮬레이터 실측 완료(합성 연락처, 결과는 `results.md`). 실기기 카톡·문자에서의 확인은 PoC-1/2에서 한다.
 
 ### 0단계 Opus 재검증 반영 (2026-09-24, Task 1~7)
 
@@ -473,12 +474,12 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 
 ### 코드 수정 필요 (스펙 대비, 2026-09-24)
 
-코드가 스펙을 어긴 곳이다. 스펙은 그대로 두고 코드를 고친다.
+코드가 스펙을 어긴 곳이다. 스펙은 그대로 두고 코드를 고친다. 1~4는 코드 수정 완료, 5는 1b 제품 코드로 미룬다.
 
 | # | 스펙 | 현재 코드 | 수정 |
 |---|---|---|---|
-| 1 | §6 1단계: 규칙 필터를 `text`와 `title`에 적용 | `CaptureIntent`·`CapturePipeline`이 `text`만 필터링. `title`은 원문 그대로 큐에 들어간다 | `title`에도 OTP 폐기·카드/계좌 마스킹 적용 |
-| 2 | §6: Share Extension도 1단계 적용 | `ShareViewController`가 텍스트·URL·OCR 텍스트를 규칙 필터 없이 큐에 넣는다 | 텍스트·OCR에 `RuleFilter` 적용(OTP면 텍스트만 비우고 파일은 유지할지 함께 결정) |
-| 3 | §6 연락처 규칙: 목록 캐시, `sender`+`title` 비교, 공백·"님" 정규화 | `RuleFilter()`를 연락처 없이 생성, `sender` 정확 일치만 비교 | 앱 실행 시 연락처 이름을 App Group에 캐시하고 인텐트가 읽는다(0단계 계획 Task 4 Step 6) |
-| 4 | §6 라벨 정의: 검진 결과 준비 안내 = `medical_result` | FM 픽스처 4건("건강검진 결과가 준비되었습니다")이 `expected: notice`, `@Guide` 설명에 결과 안내 경계가 없다 | 4건을 `medical_result`로 바꾸고 벤치마크 집계(개인 대화 통과율·알림톡 폐기율)에서 따로 센다. `@Guide`에 경계 문구 추가 |
+| 1 | §6 1단계: 규칙 필터를 `text`와 `title`에 적용 | `CaptureIntent`·`CapturePipeline`이 `text`만 필터링. `title`은 원문 그대로 큐에 들어간다 | `title`에도 OTP 폐기·카드/계좌 마스킹 적용. **완료 (affe7e9)**: OTP는 제목+본문을 합쳐 판정, 마스킹은 각각, 마스킹된 `title`이 FM 입력과 큐로 |
+| 2 | §6: Share Extension도 1단계 적용 | `ShareViewController`가 텍스트·URL·OCR 텍스트를 규칙 필터 없이 큐에 넣는다 | 텍스트·URL·OCR에 `RuleFilter` 적용. OTP 폐기면 큐에도 넣지 않고 파일도 영속화하지 않는다(임시 복사 → OCR → 규칙 → 영속화). **완료 (affe7e9)** |
+| 3 | §6 연락처 규칙: 목록 캐시, `sender`+`title` 비교, 공백·호칭("님"/"씨") 정규화 | `RuleFilter()`를 연락처 없이 생성, `sender` 정확 일치만 비교 | 앱 실행 시 연락처 이름을 App Group에 캐시하고 인텐트가 읽는다(0단계 계획 Task 4 Step 6). **완료 (affe7e9)**: `ContactNames`, 공백 전부 제거·끝 "님"/"씨" 제거, `sender`·`title` 비교 |
+| 4 | §6 라벨 정의: 검진 결과 준비 안내 = `medical_result` | FM 픽스처 4건("건강검진 결과가 준비되었습니다")이 `expected: notice`, `@Guide` 설명에 결과 안내 경계가 없다 | 4건을 `medical_result`로 바꾸고 벤치마크 집계(개인 대화 통과율·알림톡 폐기율)에서 따로 센다. `@Guide`에 경계 문구 추가. **완료 (affe7e9)**: 픽스처 personal 100·notice 96·medical_result 4, `medicalDrop=x/4` |
 | 5 | §10: 기록 없을 때 EventKit 표식 조회로 복구 | 표식(`ev.url`)은 넣지만 저장 전 조회는 없다 | PoC에서는 허용. 1b 제품 코드에서 구현 |
