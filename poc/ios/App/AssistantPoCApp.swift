@@ -12,13 +12,15 @@ struct AssistantPoCApp: App {
     NotificationActions.register()
     UNUserNotificationCenter.current().delegate = Self.notificationDelegate
     BFULog.prepare()
+    IngestSettings.seed(from: ProcessInfo.processInfo.environment)   // 저장값이 없을 때만 스킴 INGEST_URL 을 초기값으로
+    PoCLog.append("ingest base=\(Uploader.base.absoluteString)")
     Uploader.shared.flush()
 
     // 시뮬레이터에 탭 자동화 도구(idb 등)가 없어 단축어 앱을 직접 조작할 수 없을 때,
     // `simctl launch <udid> <bundle> --poc-debug-capture` 로 같은 파이프라인을 실제 앱 프로세스에서 검증하는 훅.
     if CommandLine.arguments.contains("--poc-debug-capture") {
       do {
-        let pipeline = CapturePipeline(filter: RuleFilter(), queue: try CaptureQueue.shared())
+        let pipeline = CapturePipeline(filter: RuleFilter(contactNames: ContactNames.cached()), queue: try CaptureQueue.shared())
         let result = try pipeline.handle(source: "NOTIFICATION", appName: "LaunchArgDebug", title: "런치아규먼트 디버그",
                                           sender: nil, text: "launch argument 로 큐에 넣은 테스트 알림입니다")
         PoCLog.append("LaunchArgDebug \(result)")
@@ -59,14 +61,21 @@ struct AssistantPoCApp: App {
     }
 
     // CaptureIntent.perform() 을 앱 프로세스에서 그대로 실행한다(단축어 호출 경로는 아님).
-    // `--poc-debug-capture-intent=<app>` : 합성 본문으로 규칙→FM→라우팅→큐 전체를 탄다.
+    // `--poc-debug-capture-intent=<app> [--poc-debug-title=<t>] [--poc-debug-sender=<s>]` : 합성 본문으로 규칙→FM→라우팅→큐 전체를 탄다.
+    // 제목·발신자를 바꾸면 연락처 규칙(`discarded:contact`)을 앱 프로세스에서 실측할 수 있다.
     let intentPrefix = "--poc-debug-capture-intent="
     if let arg = CommandLine.arguments.first(where: { $0.hasPrefix(intentPrefix) }) {
       let app = String(arg.dropFirst(intentPrefix.count))
+      func value(_ prefix: String) -> String? {
+        CommandLine.arguments.first(where: { $0.hasPrefix(prefix) }).map { String($0.dropFirst(prefix.count)) }
+      }
+      let title = value("--poc-debug-title=") ?? "합성병원", sender = value("--poc-debug-sender=")
       Task {
+        // 앱 실행 직후라 scenePhase 갱신보다 먼저 돌 수 있어 연락처 캐시를 동기로 한 번 채운다
+        await ContactsLoader.refreshNow()
         let intent = CaptureIntent()
         intent.text = "[합성] 9월 25일 15:00 진료 예약이 확정되었습니다"
-        intent.appName = app; intent.title = "합성병원"; intent.source = "NOTIFICATION"
+        intent.appName = app; intent.title = title; intent.sender = sender; intent.source = "NOTIFICATION"
         do { _ = try await intent.perform() } catch { PoCLog.append("DebugCaptureIntent error:\(type(of: error))") }
       }
     }
@@ -82,22 +91,18 @@ struct AssistantPoCApp: App {
     }
 
     // 시뮬레이터에 공유 시트를 탭할 자동화 도구가 없어, ShareViewController 가 하는 것과
-    // 동일한 AssistantCore 호출(파일 영속화 -> OCR -> CaptureQueue.enqueue)을 launch argument 로 직접
+    // 동일한 AssistantCore 호출(OCR -> 규칙 필터 -> 통과 시 파일 영속화 -> CaptureQueue.enqueue)을 launch argument 로 직접
     // 재현하는 훅. `--poc-debug-share-image=<host absolute path>`.
     let shareImagePrefix = "--poc-debug-share-image="
     if let arg = CommandLine.arguments.first(where: { $0.hasPrefix(shareImagePrefix) }) {
-      let srcPath = String(arg.dropFirst(shareImagePrefix.count))
+      let src = URL(fileURLWithPath: String(arg.dropFirst(shareImagePrefix.count)))
       Task {
         do {
-          let id = UUID().uuidString
-          let dir = try AppGroup.containerURL().appendingPathComponent("inbox", isDirectory: true)
-          try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-          let dst = dir.appendingPathComponent(id + ".jpg")
-          try FileManager.default.copyItem(at: URL(fileURLWithPath: srcPath), to: dst)
-          let ocr = (try? await OCR.recognize(imageURL: dst)) ?? ""
-          try CaptureQueue.shared().enqueue(CaptureItem(id: id, source: "SHARE", appName: nil, sender: nil, title: nil,
-            text: "", localFile: "inbox/" + dst.lastPathComponent, ocrText: ocr, capturedAt: Date(), attempts: 0))
-          PoCLog.append("DebugShareImage ok id=\(id) ocrLen=\(ocr.count)")
+          let ocr = (try? await OCR.recognize(imageURL: src)) ?? ""
+          let result = try CapturePipeline(filter: RuleFilter(), queue: try CaptureQueue.shared()).handleShareFile(ocrText: ocr) { id in
+            try ShareInbox.persist(src, id: id, ext: "jpg")
+          }
+          PoCLog.append("DebugShareImage \(result) ocrLen=\(ocr.count)")
         } catch {
           PoCLog.append("DebugShareImage error:\(error)")
         }
@@ -110,7 +115,7 @@ struct AssistantPoCApp: App {
       ContentView()
     }
     .onChange(of: scenePhase) { _, newPhase in
-      if newPhase == .active { Uploader.shared.flush() }
+      if newPhase == .active { ContactsLoader.refresh(); Uploader.shared.flush() }
     }
   }
 }

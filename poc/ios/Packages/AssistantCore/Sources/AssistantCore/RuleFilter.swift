@@ -1,10 +1,15 @@
 import Foundation
 
 public enum RuleVerdict: Equatable, Sendable { case discard(reason: String), pass(masked: String) }
+/// 제목+본문 판정 결과. 마스킹은 제목·본문 각각에 적용된다.
+public enum CaptureVerdict: Equatable, Sendable { case discard(reason: String), pass(title: String?, text: String) }
 
 public struct RuleFilter: Sendable {
   private let contactNames: Set<String>
-  public init(contactNames: Set<String> = []) { self.contactNames = contactNames }
+  /// 이름은 `ContactNames.normalize`(공백·호칭 제거)로 정규화해 보관한다.
+  public init(contactNames: Set<String> = []) {
+    self.contactNames = Set(contactNames.map(ContactNames.normalize).filter { !$0.isEmpty })
+  }
 
   // OTP 키워드. `OTP`·`code`는 영문자 경계로만 인정한다(`\b`는 ICU에서 한글도 단어 문자로 보아 `OTP번호`를 놓친다).
   private static let otpKeyword = try! NSRegularExpression(pattern:
@@ -29,7 +34,40 @@ public struct RuleFilter: Sendable {
   private static let accountWindow = 20
 
   public func apply(text: String, sender: String?) -> RuleVerdict {
-    if let s = sender, contactNames.contains(s) { return .discard(reason: "contact") }
+    switch apply(title: nil, text: text, sender: sender) {
+    case .discard(let r): return .discard(reason: r)
+    case .pass(_, let t): return .pass(masked: t)
+    }
+  }
+
+  /// 연락처는 `sender`·`title` 양쪽을 비교한다(카톡은 발신자가 제목에 온다).
+  /// 제목+본문을 합쳐 판정·마스킹한 뒤 다시 나눈다(키워드가 제목, 숫자가 본문이어도 폐기·마스킹).
+  /// 마스킹은 숫자를 `*`로 1:1 치환해 길이가 보존되므로 제목 길이에서 그대로 자를 수 있다.
+  public func apply(title: String?, text: String, sender: String?) -> CaptureVerdict {
+    if isContact(sender) || isContact(title) { return .discard(reason: "contact") }
+    guard let title else {
+      guard case .pass(let m) = mask(text) else { return .discard(reason: "otp") }
+      return .pass(title: nil, text: m)
+    }
+    let joined = title + "\n" + text
+    guard case .pass(let m) = mask(joined) else { return .discard(reason: "otp") }
+    let ns = m as NSString, titleLen = (title as NSString).length
+    if ns.length == (joined as NSString).length {
+      return .pass(title: ns.substring(to: titleLen), text: ns.substring(from: titleLen + 1))
+    }
+    // 보조 평면 숫자 등으로 길이가 바뀌면 각각 마스킹한다
+    guard case .pass(let mt) = mask(title), case .pass(let mx) = mask(text) else { return .discard(reason: "otp") }
+    return .pass(title: mt, text: mx)
+  }
+
+  private func isContact(_ name: String?) -> Bool {
+    guard let name else { return false }
+    let n = ContactNames.normalize(name)
+    return !n.isEmpty && contactNames.contains(n)
+  }
+
+  /// OTP 폐기 + 승인번호·카드·계좌 마스킹
+  private func mask(_ text: String) -> RuleVerdict {
     var out = text
     // OTP: 키워드 ±30자 안에 숫자가 있으면 폐기. 단 "승인번호"+결제 문맥이면 승인번호만 가리고 통과.
     let ns = text as NSString

@@ -4,7 +4,8 @@ import AssistantCore
 /// 가변 상태가 없어 컴파일러 검사로 Sendable 이다(`@unchecked` 불필요). 세션 delegate 는 별도 객체로 분리했다.
 final class Uploader: Sendable {
   static let shared = Uploader()
-  static let base = URL(string: ProcessInfo.processInfo.environment["INGEST_URL"] ?? "http://localhost:8787")!
+  /// 앱 설정값(App Group UserDefaults). 스킴 환경변수 INGEST_URL 은 앱 시작 시 저장값이 없을 때만 초기값으로 들어간다.
+  static var base: URL { IngestSettings.url() }
 
   let session: URLSession
   private init() {
@@ -17,13 +18,14 @@ final class Uploader: Sendable {
   /// lease 만료 전 완료·실패 콜백이 markSent/markFailed 로 상태를 덮어쓴다.
   func flush() {
     guard let q = try? CaptureQueue.shared(), let items = try? q.claim(limit: 20) else { return }
-    if !items.isEmpty { PoCLog.append("flush claimed \(items.count)") }
+    let base = Self.base
+    if !items.isEmpty { PoCLog.append("flush claimed \(items.count) to=\(base.host() ?? "-"):\(base.port ?? 0)") }
     for it in items {
       if let rel = it.localFile, let container = try? AppGroup.containerURL() {
-        var r = URLRequest(url: Self.base.appendingPathComponent("upload/\(it.id)")); r.httpMethod = "PUT"
+        var r = URLRequest(url: base.appendingPathComponent("upload/\(it.id)")); r.httpMethod = "PUT"
         let t = session.uploadTask(with: r, fromFile: container.appendingPathComponent(rel)); t.taskDescription = it.id; t.resume()
       } else {
-        var r = URLRequest(url: Self.base.appendingPathComponent("ingest")); r.httpMethod = "POST"
+        var r = URLRequest(url: base.appendingPathComponent("ingest")); r.httpMethod = "POST"
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         guard let body = try? JSONEncoder().encode(it) else { continue }
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(it.id + ".json")

@@ -8,30 +8,37 @@ final class ShareViewController: UIViewController {
     Task { await handle(); extensionContext?.completeRequest(returningItems: nil) }
   }
 
+  /// 스펙 §6: 규칙 필터(1단계)만 적용해 큐에 넣는다. 폐기(OTP)면 큐에도, App Group 에도 남기지 않는다.
+  /// 이미지는 확장 임시 복사본에서 OCR 을 먼저 돌리고, 통과할 때만 App Group `inbox/` 로 영속화한다.
   private func handle() async {
     guard let items = extensionContext?.inputItems as? [NSExtensionItem] else { return }
+    let pipeline: CapturePipeline
+    do { pipeline = CapturePipeline(filter: RuleFilter(), queue: try CaptureQueue.shared()) } catch {
+      PoCLog.append("ShareExtension error \(type(of: error))"); return
+    }
     for item in items {
       for p in item.attachments ?? [] {
-        if p.hasItemConformingToTypeIdentifier(UTType.image.identifier) || p.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
-          let type = p.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) ? UTType.pdf : UTType.image
-          guard let src = try? await p.loadFileURL(type) else { continue }
-          let id = UUID().uuidString
-          guard let dir = try? AppGroup.containerURL().appendingPathComponent("inbox", isDirectory: true) else { continue }
-          try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-          let dst = dir.appendingPathComponent(id + "." + (type == .pdf ? "pdf" : "jpg"))
-          try? FileManager.default.copyItem(at: src, to: dst)            // 1. 먼저 영속화
-          let ocr = type == .image ? (try? await OCR.recognize(imageURL: dst)) ?? "" : ""
-          try? CaptureQueue.shared().enqueue(CaptureItem(id: id, source: "SHARE", appName: nil, sender: nil, title: nil,
-            text: "", localFile: "inbox/" + dst.lastPathComponent, ocrText: ocr, capturedAt: Date(), attempts: 0))
-          PoCLog.append("ShareExtension file id=\(id) type=\(type == .pdf ? "pdf" : "image") ocrLen=\(ocr.count)")
-        } else if p.hasItemConformingToTypeIdentifier(UTType.url.identifier),
-                  let url = try? await p.loadItem(forTypeIdentifier: UTType.url.identifier) as? URL {
-          try? CaptureQueue.shared().enqueue(CaptureItem(id: UUID().uuidString, source: "SHARE", appName: nil, sender: nil, title: nil,
-            text: url.absoluteString, localFile: nil, ocrText: nil, capturedAt: Date(), attempts: 0))
-        } else if p.hasItemConformingToTypeIdentifier(UTType.plainText.identifier),
-                  let s = try? await p.loadItem(forTypeIdentifier: UTType.plainText.identifier) as? String {
-          try? CaptureQueue.shared().enqueue(CaptureItem(id: UUID().uuidString, source: "SHARE", appName: nil, sender: nil, title: nil,
-            text: s, localFile: nil, ocrText: nil, capturedAt: Date(), attempts: 0))
+        do {
+          if p.hasItemConformingToTypeIdentifier(UTType.image.identifier) || p.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
+            let isPDF = p.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
+            let tmp = try await p.loadFileURL(isPDF ? .pdf : .image)
+            defer { try? FileManager.default.removeItem(at: tmp) }
+            let ocr = isPDF ? "" : (try? await OCR.recognize(imageURL: tmp)) ?? ""
+            var savedId = "-"
+            let result = try pipeline.handleShareFile(ocrText: ocr) { id in
+              savedId = id
+              return try ShareInbox.persist(tmp, id: id, ext: isPDF ? "pdf" : "jpg")
+            }
+            PoCLog.append("ShareExtension file \(result) id=\(savedId) type=\(isPDF ? "pdf" : "image") ocrLen=\(ocr.count)")
+          } else if p.hasItemConformingToTypeIdentifier(UTType.url.identifier),
+                    let url = try await p.loadItem(forTypeIdentifier: UTType.url.identifier) as? URL {
+            PoCLog.append("ShareExtension url \(try pipeline.handleShare(text: url.absoluteString))")
+          } else if p.hasItemConformingToTypeIdentifier(UTType.plainText.identifier),
+                    let s = try await p.loadItem(forTypeIdentifier: UTType.plainText.identifier) as? String {
+            PoCLog.append("ShareExtension text \(try pipeline.handleShare(text: s))")
+          }
+        } catch {
+          PoCLog.append("ShareExtension error \(type(of: error))")
         }
       }
     }

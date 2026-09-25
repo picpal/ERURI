@@ -39,6 +39,22 @@ final class FMClassifierTests: XCTestCase {
     }
   }
 
+  // fix-2: 검진 "결과 준비" 안내 4건은 스펙 §6 라벨 정의대로 medical_result 다.
+  func testFixtureLabels() throws {
+    let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "notifications", withExtension: "json"))
+    let rows = try JSONDecoder().decode([Row].self, from: Data(contentsOf: url))
+    let medical = rows.filter { $0.expected == "medical_result" }
+    XCTAssertEqual(medical.count, 4)
+    XCTAssertTrue(medical.allSatisfy { $0.text.contains("건강검진 결과가 준비") })
+    XCTAssertFalse(rows.contains { $0.text.contains("결과가 준비") && $0.expected != "medical_result" })
+    XCTAssertEqual(rows.filter { $0.expected == "notice" }.count, 96)
+    XCTAssertEqual(rows.filter { $0.expected == "personal" }.count, 100)
+  }
+  func testGuideDescribesResultBoundary() {
+    XCTAssertTrue(FMClassifier.kindGuide.contains("검사 결과가 나왔다는 안내"))
+    XCTAssertTrue(FMClassifier.kindGuide.contains("검진 예약·준비물 안내"))
+  }
+
   func testBenchmark() async throws {
     try XCTSkipUnless(FMClassifier.availability() == "available", "FM unavailable: \(FMClassifier.availability())")
     let url = Bundle(for: Self.self).url(forResource: "notifications", withExtension: "json")!
@@ -49,6 +65,7 @@ final class FMClassifierTests: XCTestCase {
     let probe = await c.classifyDetailed(text: "사전 점검용 텍스트입니다", appName: nil, timeout: .seconds(30))
     if case .error(let code) = probe { throw XCTSkip("availability()==available 이지만 생성 실패: \(code)") }
     var personalPassed = 0, noticeDropped = 0, personalTotal = 0, noticeTotal = 0, errors = 0, timeouts = 0
+    var medicalDropped = 0, medicalTotal = 0   // 검진 결과 준비 안내: 폐기(≠notice)가 정답. 두 비율과 분리해 센다
     var personalByApp: [String: (pass: Int, total: Int)] = [:]
     var latencies: [Double] = []
     for r in rows {
@@ -66,10 +83,11 @@ final class FMClassifierTests: XCTestCase {
         personalByApp[r.app] = (cur.pass + (passed ? 1 : 0), cur.total + 1)
       }
       if r.expected == "notice" { noticeTotal += 1; if kind != .notice { noticeDropped += 1 } }
+      if r.expected == "medical_result" { medicalTotal += 1; if kind != .notice { medicalDropped += 1 } }
     }
     let p95 = latencies.sorted()[Int(Double(latencies.count) * 0.95)]
     let byApp = personalByApp.keys.sorted().map { "\($0)=\(personalByApp[$0]!.pass)/\(personalByApp[$0]!.total)" }.joined(separator: ",")
-    let report = "p95=\(p95)s personalPass=\(personalPassed)/\(personalTotal) noticeDrop=\(noticeDropped)/\(noticeTotal) errors=\(errors) timeouts=\(timeouts) personalPassByApp=\(byApp)"
+    let report = "p95=\(p95)s personalPass=\(personalPassed)/\(personalTotal) noticeDrop=\(noticeDropped)/\(noticeTotal) medicalDrop=\(medicalDropped)/\(medicalTotal) errors=\(errors) timeouts=\(timeouts) personalPassByApp=\(byApp)"
     print("FM_BENCH", report)
     try report.write(to: AppGroup.containerURL().appendingPathComponent("fm_bench.txt"), atomically: true, encoding: .utf8)
     XCTAssertLessThan(p95, 3.0)

@@ -34,20 +34,21 @@ struct CaptureIntent: AppIntent {
 
   /// 반환: "queued:<fm|rules>" 또는 "discarded:<reason>"
   func runPipeline() async throws -> String {
-    let pipeline = CapturePipeline(filter: RuleFilter(), queue: try CaptureQueue.shared())
-    let masked: String
-    switch pipeline.filterOnly(text: text, sender: sender) {
+    // 연락처는 앱이 App Group 에 캐시한 이름만 읽는다(백그라운드에서 연락처 DB 를 열지 않음)
+    let pipeline = CapturePipeline(filter: RuleFilter(contactNames: ContactNames.cached()), queue: try CaptureQueue.shared())
+    let masked: String, maskedTitle: String?
+    switch pipeline.filterOnly(title: title, text: text, sender: sender) {
     case .discard(let reason): return "discarded:\(reason)"   // otp / contact
-    case .pass(let m): masked = m
+    case .pass(let t, let m): maskedTitle = t; masked = m
     }
-    let outcome = await FMClassifier().classifyDetailed(text: masked, appName: appName, title: title)
+    let outcome = await FMClassifier().classifyDetailed(text: masked, appName: appName, title: maskedTitle)
     switch CapturePipeline.route(outcome, appName: appName) {
     case .discard(let reason):
       if case .verdict(let v) = outcome { PoCLog.append("FM discard \(v.kind) \(v.confidence)") }
       return "discarded:\(reason)"
     case .queue(let deviceFilter):
       if deviceFilter == "rules" { PoCLog.append("FM fallback \(outcome) kind=unknown") }
-      try pipeline.enqueue(source: source, appName: appName, title: title, sender: sender, masked: masked, deviceFilter: deviceFilter)
+      try pipeline.enqueue(source: source, appName: appName, title: maskedTitle, sender: sender, masked: masked, deviceFilter: deviceFilter)
       return "queued:\(deviceFilter)"
     }
   }

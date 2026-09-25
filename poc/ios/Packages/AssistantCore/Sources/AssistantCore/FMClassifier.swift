@@ -19,12 +19,14 @@ enum GenKind { case notice, personal, otp, promo, medical_result }   // enum 이
 
 @Generable
 struct GenVerdict {
-  @Guide(description: "notice=기업·기관·봇의 정형 안내(주문,배송,예약,결제,병원 안내). personal=사람이 쓴 대화. otp=인증번호. promo=광고. medical_result=검사 결과·진단 내용")
+  @Guide(description: FMClassifier.kindGuide)
   var kind: GenKind
   @Guide(description: "0.0~1.0") var confidence: Double
 }
 
 public actor FMClassifier {
+  /// 스펙 §6 라벨 정의. 검진은 "결과가 나왔다는 안내"와 "예약·준비물 안내"를 가른다.
+  static let kindGuide = "notice=기업·기관·봇의 정형 안내(주문,배송,예약,결제,병원 예약). personal=사람이 쓴 대화. otp=인증번호. promo=광고. medical_result=검사 결과·진단 내용. 검사 결과가 나왔다는 안내 = medical_result, 검진 예약·준비물 안내 = notice"
   public static func availability() -> String {
     switch SystemLanguageModel.default.availability {
     case .available: return "available"

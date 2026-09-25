@@ -35,7 +35,7 @@ final class SimRemeasureUITests: XCTestCase {
   }
 
   func grantPermissions(_ app: XCUIApplication) {
-    let b = app.buttons["권한 요청 (알림·캘린더)"]
+    let b = app.buttons["권한 요청 (알림·캘린더·연락처)"]
     XCTAssertTrue(b.waitForExistence(timeout: 10))
     b.tap()
     allowSystemAlerts()
@@ -138,5 +138,34 @@ final class SimRemeasureUITests: XCTestCase {
     ext.tap()
     sleep(8)
     shot("after-share")
+  }
+
+  // fix-2: 업로드 서버 주소를 앱 화면에서 저장하면 홈 화면에서 다시 열어도(스킴 환경변수 없이) 유지된다.
+  func testIngestURLPersistsAcrossRelaunch() {
+    print("POC_UI ingest-url")
+    let target = "http://192.168.77.7:9787"
+    var app = launchApp([])
+    let field = app.textFields["ingestURLField"]
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    field.tap()
+    field.press(forDuration: 1.2)
+    if app.menuItems["전체 선택"].waitForExistence(timeout: 2) { app.menuItems["전체 선택"].tap() }
+    else if app.menuItems["Select All"].exists { app.menuItems["Select All"].tap() }
+    field.typeText(XCUIKeyboardKey.delete.rawValue)
+    field.typeText(target)
+    app.buttons["ingestURLSave"].tap()
+    XCTAssertTrue(app.staticTexts["현재: \(target)"].waitForExistence(timeout: 5))
+    shot("ingest-saved")
+    app.terminate()
+    // 홈 화면 아이콘으로 다시 연다(Xcode·launchEnvironment 없이)
+    XCUIDevice.shared.press(.home)
+    let icon = springboard.icons["Assistant PoC"]
+    XCTAssertTrue(icon.waitForExistence(timeout: 10), "홈 화면 아이콘 없음")
+    for _ in 0..<6 where !icon.isHittable { springboard.swipeLeft(); sleep(1) }   // 앱 아이콘이 뒤쪽 홈 페이지에 있을 수 있다
+    shot("home-icon")
+    icon.tap()
+    app = XCUIApplication()
+    XCTAssertTrue(app.staticTexts["현재: \(target)"].waitForExistence(timeout: 10), "다시 연 뒤 저장값이 사라짐")
+    shot("ingest-after-relaunch")
   }
 }

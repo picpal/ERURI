@@ -213,7 +213,7 @@
     "app": "KakaoTalk",
     "title": "연세정형외과",
     "text": "연세정형외과 건강검진 결과가 준비되었습니다. 방문 또는 앱에서 확인하세요.",
-    "expected": "notice"
+    "expected": "medical_result"
   },
   {
     "app": "Messages",
@@ -591,7 +591,7 @@
     "app": "KakaoTalk",
     "title": "서울병원",
     "text": "서울병원 건강검진 결과가 준비되었습니다. 방문 또는 앱에서 확인하세요.",
-    "expected": "notice"
+    "expected": "medical_result"
   },
   {
     "app": "Instagram",
@@ -651,7 +651,7 @@
     "app": "KakaoTalk",
     "title": "365안과",
     "text": "365안과 건강검진 결과가 준비되었습니다. 방문 또는 앱에서 확인하세요.",
-    "expected": "notice"
+    "expected": "medical_result"
   },
   {
     "app": "KakaoTalk",
@@ -705,7 +705,7 @@
     "app": "KakaoTalk",
     "title": "미소치과",
     "text": "미소치과 건강검진 결과가 준비되었습니다. 방문 또는 앱에서 확인하세요.",
-    "expected": "notice"
+    "expected": "medical_result"
   },
   {
     "app": "iMessage",

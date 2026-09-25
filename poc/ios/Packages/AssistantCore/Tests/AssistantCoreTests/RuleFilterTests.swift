@@ -72,3 +72,49 @@ final class RuleFilterReviewTests: XCTestCase {
   }
   func testApprovalNumberWithoutPaymentContextDiscarded() { otp("[OO은행] 승인번호 123456 을 입력하세요") }
 }
+
+// fix-2: title 에도 규칙 적용(판정은 제목+본문 합쳐서, 마스킹은 각각), 연락처 정규화(공백·"님/씨").
+final class RuleFilterTitleContactTests: XCTestCase {
+  let f = RuleFilter(contactNames: ["김민수", "이 영희"])
+  func testOTPInTitleWithPlainBodyDiscarded() {
+    XCTAssertEqual(f.apply(title: "[OO은행] 인증번호 483920", text: "타인에게 알려주지 마세요", sender: nil), .discard(reason: "otp"))
+  }
+  func testOTPKeywordInTitleDigitsInBodyDiscarded() {
+    XCTAssertEqual(f.apply(title: "인증번호", text: "483920 을 입력하세요", sender: nil), .discard(reason: "otp"))
+  }
+  func testTitleAndBodyMaskedSeparately() {
+    XCTAssertEqual(f.apply(title: "카드 4111-1111-1111-1111", text: "승인 32,000원", sender: nil),
+                   .pass(title: "카드 ****-****-****-1111", text: "승인 32,000원"))
+  }
+  func testApprovalNumberInTitleWithPaymentInBodyMasked() {
+    XCTAssertEqual(f.apply(title: "[신한카드] 승인번호 12345678", text: "32,000원 일시불", sender: nil),
+                   .pass(title: "[신한카드] 승인번호 ********", text: "32,000원 일시불"))
+  }
+  func testNilTitlePassesThrough() {
+    XCTAssertEqual(f.apply(title: nil, text: "내일 오후 3시 진료 예약입니다", sender: nil),
+                   .pass(title: nil, text: "내일 오후 3시 진료 예약입니다"))
+  }
+  func testContactInTitleWithHonorificDiscarded() {
+    XCTAssertEqual(f.apply(title: "김민수님", text: "토요일 2시에 보자", sender: nil), .discard(reason: "contact"))
+  }
+  func testContactSenderWhitespaceDiscarded() {
+    XCTAssertEqual(f.apply(title: nil, text: "토요일 2시에 보자", sender: " 김민수 "), .discard(reason: "contact"))
+  }
+  func testContactStoredWithSpaceMatchesSenderWithSsi() {
+    XCTAssertEqual(f.apply(title: nil, text: "회의 자료 보냈어요", sender: "이영희 씨"), .discard(reason: "contact"))
+  }
+  func testUnknownNamePasses() {
+    XCTAssertEqual(f.apply(title: "박지훈", text: "토요일 2시에 보자", sender: "박지훈"), .pass(title: "박지훈", text: "토요일 2시에 보자"))
+  }
+  func testNormalize() {
+    XCTAssertEqual(ContactNames.normalize(" 김 민수 님 "), "김민수")
+    XCTAssertEqual(ContactNames.normalize("김민수씨"), "김민수")
+    XCTAssertEqual(ContactNames.normalize("님"), "님")
+  }
+  func testCacheRoundTrip() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+    XCTAssertEqual(ContactNames.cached(from: url), [])   // 캐시 없음 → 빈 집합
+    try ContactNames.save(["김민수", "Kim Minsu"], to: url)
+    XCTAssertEqual(ContactNames.cached(from: url), ["김민수", "Kim Minsu"])
+  }
+}
