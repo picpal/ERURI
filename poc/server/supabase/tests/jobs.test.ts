@@ -63,6 +63,7 @@ Deno.test("insert_item stores ciphertext, enqueues process job, dedups by idempo
   const { data: jobs } = await sb.from("jobs").select("kind, user_id, payload").eq("kind", "process");
   assertEquals(jobs!.length, 1);
   assertEquals(jobs![0].payload.item_id, first.data);
+  await sb.from("jobs").delete().eq("payload->>item_id", first.data);   // 항목만 지우면 워커가 not_found로 재시도한다
   await sb.from("items").delete().eq("id", first.data);
 });
 

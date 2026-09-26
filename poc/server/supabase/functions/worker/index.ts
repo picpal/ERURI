@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { isServiceCaller } from "../_shared/auth.ts";
 import { SERVER_AUTH } from "../_shared/crypto.ts";
+import { gmailFetch, gmailSync, gmailWatch } from "../_shared/gmail-jobs.ts";
 import type { Job } from "../_shared/job.ts";
 import { withHeartbeat } from "./heartbeat.ts";
 import { type Metrics, processItem } from "./process.ts";
@@ -15,6 +16,9 @@ const handlers: Record<string, (job: Job) => Promise<string>> = {
   sleep: async (j) => { await new Promise((r) => setTimeout(r, Number(j.payload.ms ?? 0))); return "done"; },
   // PoC-10에서는 복호화 비용만 측정한다. Task 12 Step 3에서 extract를 extractEvent로 교체한다
   process: (j) => processItem(sb, j, async () => "decrypted", (m) => { metrics = m; }),
+  "gmail-sync": (j) => gmailSync(sb, j),
+  "gmail-fetch": (j) => gmailFetch(sb, j),
+  "gmail-watch": (j) => gmailWatch(sb, j),
 };
 Deno.serve(async (req) => {
   if (!isServiceCaller(req)) return new Response(null, { status: 403 });

@@ -382,3 +382,7 @@ s3_region = "env(S3_REGION)"
 s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
+
+# Pub/Sub push는 Supabase JWT가 없다. 함수 안에서 Google OIDC(aud·email)를 검증한다(스펙 §7)
+[functions.gmail-webhook]
+verify_jwt = false
