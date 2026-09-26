@@ -26,6 +26,31 @@ Deno.test("expired lease is reclaimable and dead after 5 attempts", async () => 
   assertEquals(j!.status, "dead");
 });
 
+Deno.test("default lease is 180s: a job still running at 65s is not reclaimed", async () => {
+  await sb.from("jobs").delete().neq("kind", "");
+  await sb.from("jobs").insert({ kind: "t", lease_key: "u3" });
+  const a = await sb.rpc("claim_jobs", { p_limit: 1 });
+  assertEquals(a.error, null);
+  const j = a.data![0];
+  assertEquals((Date.parse(j.leased_until) - Date.parse(j.updated_at)) / 1000, 180);
+  // 임대 180초라 90초 잡의 65초 시점은 만료 전이다. 두 번째 클레임은 0건
+  const b = await sb.rpc("claim_jobs", { p_limit: 10 });
+  assertEquals(b.data!.length, 0);
+});
+
+Deno.test("heartbeat_job extends a running lease and is false for finished jobs", async () => {
+  await sb.from("jobs").delete().neq("kind", "");
+  await sb.from("jobs").insert({ kind: "t", lease_key: "u4" });
+  const { data: [j] } = await sb.rpc("claim_jobs", { p_limit: 1, p_lease_seconds: 1 });
+  await new Promise((r) => setTimeout(r, 1500));                       // 임대 만료
+  const hb = await sb.rpc("heartbeat_job", { p_id: j.id });
+  assertEquals(hb.data, true);
+  const again = await sb.rpc("claim_jobs", { p_limit: 10 });
+  assertEquals(again.data!.length, 0);                                  // 연장돼 재클레임 안 됨
+  await sb.rpc("complete_job", { p_id: j.id, p_checkpoint: "done" });
+  assertEquals((await sb.rpc("heartbeat_job", { p_id: j.id })).data, false);
+});
+
 Deno.test("insert_item stores ciphertext, enqueues process job, dedups by idempotency_key", async () => {
   await sb.from("jobs").delete().neq("kind", "");
   const key = "test:" + crypto.randomUUID();

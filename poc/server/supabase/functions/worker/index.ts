@@ -1,7 +1,11 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { SERVER_AUTH } from "../_shared/crypto.ts";
 import type { Job } from "../_shared/job.ts";
+import { withHeartbeat } from "./heartbeat.ts";
 import { type Metrics, processItem } from "./process.ts";
+
+// 임대 180초 > Edge 무료 wall-clock 150초. 30초 넘게 걸리는 잡은 하트비트로 연장한다(스펙 §7)
+const LEASE_SECONDS = 180;
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, SERVER_AUTH);
 // 잡별 측정값(복호화 ms·글자 수). 본문은 담지 않는다
 let metrics: Metrics | null = null;
@@ -25,7 +29,7 @@ function isServiceCaller(req: Request): boolean {
 Deno.serve(async (req) => {
   if (!isServiceCaller(req)) return new Response(null, { status: 403 });
   const t0 = performance.now();
-  const { data: jobs, error } = await sb.rpc("claim_jobs", { p_limit: 5, p_lease_seconds: 60 });
+  const { data: jobs, error } = await sb.rpc("claim_jobs", { p_limit: 5, p_lease_seconds: LEASE_SECONDS });
   if (error) return new Response(error.code, { status: 500 });
   const results = [];
   for (const j of (jobs ?? []) as Job[]) {
@@ -33,7 +37,11 @@ Deno.serve(async (req) => {
     metrics = null;
     try {
       const run = handlers[j.kind] ?? (async () => { throw new Error("unknown kind " + j.kind); });
-      const cp = await run(j);
+      const beat = async () => {
+        const { data, error } = await sb.rpc("heartbeat_job", { p_id: j.id, p_lease_seconds: LEASE_SECONDS });
+        if (error || data !== true) console.log(JSON.stringify({ job_id: j.id, heartbeat: error ? error.code : "lost" }));
+      };
+      const cp = await withHeartbeat(beat, () => run(j));
       await sb.rpc("complete_job", { p_id: j.id, p_checkpoint: cp });
       results.push([j.id, "done", Math.round(performance.now() - tj), metrics]);
     } catch (e) {
