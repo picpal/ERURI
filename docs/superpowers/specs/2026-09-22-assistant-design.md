@@ -65,7 +65,7 @@ Outlook, Android, Mac 허브, 카카오톡 개인 대화 수집, App Store 공�
 | OpenAI 임베딩 (2026-09-26, /api/docs/guides/embeddings · /api/docs/models/text-embedding-3-small · /api/reference/resources/embeddings/methods/create) | 검증됨. 기본 1536차원, `dimensions`로 축소(3세대 모델만), 출력 길이 1 정규화, 입력당 8,192토큰·요청당 30만 토큰·배열 2,048개, $0.02/1M. **한국어·다국어 성능 수치는 공식 문서에 없음** | `dimensions: 512`로 기존 `vector(512)` 유지. 한국어 품질은 PoC-7에서 판정, 미달 시 `text-embedding-3-large`(`dimensions: 512`, $0.13/1M) |
 | OpenAI API 데이터 정책 (2026-09-26, /api/docs/guides/your-data) | 검증됨. API 입력은 기본 학습 미사용(2023-03-01부터, 옵트인 시에만). 남용 모니터링 로그 최대 30일. Responses API는 `store` 기본값으로 애플리케이션 상태 30일 보관. ZDR·수정 남용 모니터링은 OpenAI 사전 승인 필요. `/v1/responses`·`/v1/embeddings` 모두 ZDR 대상. 이미지는 CSAM 분류기 탐지 시 ZDR이어도 보관 | §12 통제 3 갱신, 임베딩 약관 보류 해제(§16). 모든 Responses 호출에 `store: false` |
 | Deno에서 OpenAI SDK (2026-09-26, github.com/openai/openai-node) | 검증됨. Deno 1.28+ 지원, `import OpenAI from "npm:openai"`. 기본 타임아웃 10분·재시도 2회(`timeout`·`maxRetries` 옵션). 현재 npm 최신 7.23.0 | `npm:openai@7`, Edge 벽시계 150초에 맞춰 `timeout: 60_000`, `maxRetries: 1` |
-| Edge Function에서 APNs HTTP/2 | **미확인.** Deno h2 이슈 보고 있음 | PoC-4. 실패 시 Cloudflare Worker 릴레이 |
+| Edge Function에서 APNs HTTP/2 (0단계 실측 2026-09-27) | **h2 동작 확인.** sandbox에 가짜 토큰으로 `400 BadDeviceToken` + `apns-id`(APNs는 HTTP/1.1을 연결 단계에서 거부), Edge 서울 100회 동시 1 → 100/100 p50 419ms. 동시 10은 가짜 토큰 탓 `GOAWAY` 오류가 섞여 실기기 토큰으로 재확인 대기 | Edge에서 직접 발송. JWT는 in-flight 공유 + 30분 경계 iat(동시 생성 시 `429 TooManyProviderTokenUpdates`), 연결 오류(`GOAWAY`) 1회 재시도. Cloudflare Worker 릴레이는 보류(동시 10 재측정 실패 시) |
 | Supabase Storage TTL | 없음 | pg_cron 삭제 잡 |
 | Edge Function 한계 | 검증됨. CPU 2초, 벽시계 150초(무료), 256MB | `waitUntil`은 큐가 아님. `jobs` 테이블 기반 영속 작업 큐 + pg_cron 워커 호출로 처리 (§7) |
 | 무료 프로젝트 | 1주 미사용 시 일시정지 | pg_cron 일일 잡이 활동 유지. 지인 확대 시 Pro |
@@ -245,11 +245,13 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 ### Gmail 동기화
 
-- 연결: iOS Google Sign-In → `serverAuthCode` → Edge가 웹 클라이언트 ID·시크릿으로 교환. refresh token은 `vault` 스키마에 암호화 저장.
+- OAuth 클라이언트 두 개의 역할: **iOS 클라이언트**(`GOOGLE_CLIENT_ID`)는 앱의 Google Sign-In에만 쓰고(시크릿 없음), **Web 클라이언트**(`GOOGLE_WEB_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`, Edge secret)는 앱의 `serverClientID`이자 서버의 코드 교환·토큰 갱신에 쓴다.
+- 연결: iOS Google Sign-In(`gmail.readonly`) → `serverAuthCode`(1회용, 수 분 내 만료) → `POST /functions/v1/gmail-connect`. 인증은 **Supabase 사용자 JWT**(`Authorization: Bearer <access_token>`, body `{ code }`)이고 user_id는 JWT에서 얻는다. service role 키는 앱에 두지 않는다. Edge가 Web 클라이언트로 교환(`redirect_uri=""`) → `profile` → `watch` → `gmail_save_connection`(refresh token은 `vault`의 `gmail_rt:<connection_id>`, 연결 삭제 시 트리거가 함께 삭제) → 90일 백필 `gmail-fetch` 잡 → `gmail-sync` 잡.
+  - 응답: 200 `{ connection_id, account, refresh_token_stored, watch_expires_at, backfill_pages, backfill_messages }`. `refresh_token_stored: false`면 Google이 이전 동의 때문에 refresh token을 다시 주지 않은 것이라 앱이 `disconnect()` 후 재동의한다. 401 세션 없음·만료, 400 `missing_code`, 409 `account_linked_to_another_user`, 502 `token_exchange_failed`(코드 만료·재사용·`serverClientID` 불일치).
 - 초기: `messages.list q="newer_than:90d -category:promotions"` → 분당 250건 이하로 `messages.get(format=metadata)` 후 필요 시 full.
 - 증분: `users.watch` → Pub/Sub push → jobs INSERT(kind = gmail-sync) → `history.list(startHistoryId)` 페이지 전부 처리 후 커서 갱신. 404 시 `sync_states.last_success_at - 1일`부터 `messages.list(after:)`로 재동기화.
 - 푸시 유실 대비: pg_cron 6시간마다 연결별 gmail-sync 잡을 무조건 넣는다 (커서 기반이라 중복 비용 없음).
-- 웹훅 인증: Pub/Sub push 구독에 OIDC 토큰을 붙이고 Edge에서 Google 발급 JWT의 `aud`·`email`(서비스 계정)을 검증한다. 본문의 `emailAddress`를 `connections.account_ref`로 조회해 user_id를 결정한다. 검증 실패는 저장 없이 401. 이 함수는 `verify_jwt = false`이며 service role로 동작하므로 **모든 쿼리에 user_id를 명시**한다.
+- 웹훅 인증: Pub/Sub push 구독에 OIDC 토큰을 붙이고 Edge에서 Google 공개키(JWKS)로 서명·issuer를 확인한 뒤 `aud`(구독의 audience = 웹훅 URL)와 `email`(푸시용 서비스 계정, Edge secret `PUBSUB_PUSH_SA_EMAIL`, `email_verified`)을 검증한다. 이 secret이 없으면 모든 요청을 거부한다. 모르는 계정·형식 오류는 재전송 폭주를 막으려고 200으로 ack하고 로그에는 코드만 남긴다. 본문의 `emailAddress`를 `connections.account_ref`로 조회해 user_id를 결정한다. 검증 실패는 저장 없이 401. 이 함수는 `verify_jwt = false`이며 service role로 동작하므로 **모든 쿼리에 user_id를 명시**한다.
 - Gmail 수집 본문도 `/ingest`와 같은 서버 규칙 필터를 거친 뒤 암호화해 저장한다(프로모션 라벨 메일은 폐기).
 - 만료 두 가지를 분리한다.
   - **Gmail watch 만료** `sync_states.watch_expires_at`: `users.watch` 응답의 expiration(7일). pg_cron이 매일 watch를 갱신해 이 값을 밀어낸다.
@@ -262,8 +264,8 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 | 테이블 | 핵심 컬럼 | 비고 |
 |---|---|---|
-| `connections` | provider, account_ref, status(active/reauth_required/disconnected), expires_at | 토큰은 `vault`. `expires_at` = OAuth refresh token 만료(테스트 모드 7일, 게시 후 null) |
-| `sync_states` | connection_id, cursor(historyId), last_success_at, watch_expires_at | `watch_expires_at` = Gmail watch 만료(7일, 매일 갱신) |
+| `connections` | provider, account_ref(unique with provider), status(active/reauth_required/disconnected), expires_at, created_at | 토큰은 `vault` `gmail_rt:<id>`(행 삭제 시 트리거로 삭제). `expires_at` = OAuth refresh token 만료(테스트 모드 7일, 게시 후 null) |
+| `sync_states` | connection_id(pk), cursor(historyId), last_success_at, watch_expires_at | `watch_expires_at` = Gmail watch 만료(7일, 매일 갱신). 0단계 `0006_gmail.sql`과 일치 |
 | `items` | source(GMAIL/MESSAGES/NOTIFICATION/SHARE/CHAT), app_name, sender, title, content_enc bytea, ocr_text_enc bytea, occurred_at, captured_at, device_filter, idempotency_key, status, storage_key, expires_at | 원문. `content_enc`·`ocr_text_enc`는 Edge Function이 사용자 데이터 키로 AES-256-GCM 암호화해 저장(§12). 90일 후 삭제, 행은 유지 |
 | `user_keys` | user_id, wrapped_key bytea, created_at | 사용자별 데이터 키를 마스터 키로 감싼 값(봉투 암호화). 마스터 키는 Edge Function 시크릿에만 있고 DB에 없다 |
 | `utterances` / `memories` | (아래) | 평문. 사용자 삭제 시 연쇄 |
@@ -428,16 +430,16 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 기기 PoC는 앱 하나(`poc/ios`: 앱 + Share Extension + `AssistantCore` 패키지 + UI 테스트)에, 서버 PoC는 `poc/server`에 둔다. 결과는 `docs/superpowers/poc/`에 기록하고 판정의 원본은 `results.md`다. PoC 코드는 폐기 대상이며 제품 코드에 복사하지 않는다.
 
-### 판정 현황 (2026-09-24, 원본 `docs/superpowers/poc/results.md`)
+### 판정 현황 (2026-09-27, 원본 `docs/superpowers/poc/results.md`)
 
 | # | 상태 | 시뮬레이터에서 확인한 것 (부분 검증) | 실기기·외부 자원이 필요한 남은 실측 |
 |---|---|---|---|
 | PoC-1 | 미검증 | CaptureIntent·App Shortcut 등록(`Metadata.appintents`), 단축어 앱에서 수동 실행 시 앱을 열지 않고 인텐트 실행(XCUITest). 알림 트리거가 아닌 호출 경로 확인일 뿐 | **실기기**: 알림 자동화 시나리오 1~7, `app=`·`textLen=` 로그로 본문·앱명 전달 판정. 연락처에 저장한 계정에서 보낸 카톡 → `discarded:contact` |
 | PoC-2 | 미검증 | 인텐트 호출 경로(PoC-1과 같음) | **실기기**: 메시지 자동화, 잠금 15초 후 수신 `locked=true`, BFU 수신(`bfu.log`, 길이만), OTP 문자 `discarded:otp`, 연락처 번호 문자 `discarded:contact` |
 | PoC-3 | 부분 | 폴백 경로(앱 프로세스에서 Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error`), 새 세션·enum 스키마·타임아웃 단위 테스트. 호스트 Mac Apple Intelligence 꺼짐으로 `respond` 에셋 오류, 정확도·p95 수치 없음 | **실기기**(또는 사용자가 Mac Apple Intelligence 켠 뒤 시뮬레이터 참고치): 200건 정확도·p95·메모리, 백그라운드 `rateLimited` 빈도 |
-| PoC-4 | 미검증 | — | Supabase 프로젝트·APNs `.p8` |
+| PoC-4 | 부분 | 서버 경로(2026-09-27): 로컬·Edge에서 sandbox `400 BadDeviceToken` + `apns-id`, h2 동작, Edge 100회 동시 1 100/100 p50 419ms. JWT 429 수정 | **실기기 토큰**: 1회 수신, 100회 동시 10 성공률 ≥ 99%·h2 오류 0 (절차 `poc-4-apns.md`) |
 | PoC-5 | 부분 | 실제 배너·액션 탭(XCUITest, 로컬 알림): 백그라운드 쓰기 `bg=true`, 재탭 `dup skip`, 앱 종료 후 콜드 스타트, 동시 두 번 탭 이벤트 +1 | **실기기**: 잠금 화면에서 `.authenticationRequired`의 Face ID/암호 요구와 쓰기 성공. 보고 실패 후 재탭은 서버 연동 후 |
-| PoC-6 | 미검증 | — | GCP OAuth·Pub/Sub |
+| PoC-6 | 부분 | 서버 경로(2026-09-27): 모의 API 테스트(history 병합, 404 재동기화, `invalid_grant` → `reauth_required`, watch 갱신, 규칙 필터 → 암호화 → 저장, OIDC 검증), DB 테스트(cron 적재, 재인증 대상, vault 토큰 소유자 한정), 배포 후 거부 경로 401·400·502 | Push 구독·`PUBSUB_PUSH_SA_EMAIL`, iOS GoogleSignIn 연결, 백필·웹훅 지연·404 재동기화 누락 0·watch 갱신·6일/8일 재인증 (절차 `poc-6-gmail.md`) |
 | PoC-7 | 미검증 | — | Supabase·OpenAI 키(합성 코퍼스) |
 | PoC-8 | 부분 | 기기 부분: 사진 앱 → 공유 시트 → 확장 실행, OCR 텍스트와 `SHARE` 큐 행(합성 이미지) | 서버 부분(Task 12): vision 추출 5/5, 오프라인 후 유실 0 |
 | PoC-9 | **통과** | 앱 프로세스 완전 종료 확인 후 3.68초 뒤 목 서버에 정확한 바이트 수로 도착 | — (시뮬레이터 실측이 판정 기준을 그대로 재현) |
@@ -485,7 +487,7 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 - **인용 검증의 한계**: OpenAI에는 문서 인용 기능이 없어 인용은 모델이 JSON에 적은 `source_item_ids`다. 서버는 id가 검색 결과에 있는지만 확인하므로 "있는 문서를 잘못 인용"은 막지 못한다. PoC-7·1a 검색 평가의 인용 정확도 지표로 측정하고, 미달 시 문장-문서 대조(gpt-6-luna 재검증) 단계를 추가한다.
 - **Edge 복호화 비용**: 워커가 건마다 AES-GCM 복호화하므로 CPU 2초 제한 안에서 배치 크기를 정해야 한다. PoC-10에 항목 추가.
 - **Gmail 7일 재인증**: 테스트 모드 refresh token 만료(`connections.expires_at`) 24시간 전 푸시로 완화. 본인 사용 기간엔 감수. 지인 확대 시점에 앱 검증 비용을 결정한다.
-- **APNs from Deno**: 미확인. PoC-4.
+- **APNs from Deno**: h2 동작 확인(2026-09-27, sandbox `400 BadDeviceToken` + `apns-id`, Edge 서울 100회 동시 1 100/100 p50 419ms). 동시 10은 가짜 토큰에 대한 APNs `GOAWAY`로 스트림 오류 10~18%·`dispatch task is gone` 1~2건이 섞여(로컬 Deno도 같음) 실기기 토큰으로 재확인 대기. 남으면 연결 오류 1회 재시도, 그래도 남으면 Cloudflare Worker 릴레이. 그 전까지 대안 보류. PoC-4.
 - **임베딩 한국어 품질**: `text-embedding-3-small` 가격($0.02/1M)은 확인, 한국어·다국어 성능 수치는 공식 문서에 없다. PoC-7(합성 코퍼스)에서 판정하고 미달 시 `text-embedding-3-large`(`dimensions: 512`)로 재평가.
 - **모델 ID 수명**: `gpt-6-luna`·`gpt-6-sol`은 별칭과 스냅샷이 같은 ID 하나뿐이다. 날짜 고정 스냅샷이 나오면 제품 코드에서는 스냅샷으로 고정한다.
 - **Supabase 무료 티어 500MB**: 1인 1년 원문이면 충분하나 이미지 포함 시 Storage 1GB 상한 감시.
