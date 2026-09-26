@@ -215,7 +215,11 @@ Share Extension은 1단계(규칙 필터)만 적용하고 큐에 넣는다(텍�
   → items INSERT (status = queued) + jobs INSERT (kind = process, item_id)
   → 202 반환
 
-jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 재시도, 실패 시 dead 상태)
+jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회 재시도, 실패 시 dead 상태)
+  → 임대 180초는 Edge 무료 wall-clock 150초보다 길다: 살아 있는 워커의 잡은 만료되지 않아 다른 호출이 재클레임하지 않는다.
+    잡 하나를 30초 넘게 붙들면 30초마다 heartbeat_job(id)으로 leased_until을 연장한다
+    (0단계 실측: 임대 60초에서 90초 잡이 65초에 재클레임돼 중복 실행 → 180초+하트비트에서 재클레임 0건)
+  → cron 호출은 vault(worker_url, service_role_key)가 있을 때만 보낸다. worker는 secret 키 호출만 처리한다(§12 통제 4)
   → 단계별 체크포인트: classified → extracted → embedded → proposed. 재시도는 마지막 체크포인트부터
   → 재분류 (gpt-6-luna, effort none, ≤200 토큰 Structured Outputs JSON): event|task|purchase|subscription|reference|discard|medical_result
       medical_result·personal 경계는 §6 분류 라벨 정의와 같다. device_filter = "rules" 항목은 기기 FM 판정이 없으므로 여기서 처음 분류된다
@@ -370,6 +374,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 ### 통제 4. 접근 통제와 감사
 
 - 모든 테이블 RLS(`(select auth.uid()) = user_id`)는 **앱 클라이언트 경로**를 격리한다. `service_role`은 RLS를 우회하므로 워커·웹훅은 별도 규칙을 따른다: (a) 모든 쿼리에 `user_id`를 명시하는 저장 프로시저(`worker_claim_item(p_user, p_item)` 등)만 호출하고 테이블 직접 접근 금지, (b) 복호화는 `user_keys`의 소유자와 `items.user_id`가 일치할 때만 수행(함수 내부 검사), (c) `service_role` 키는 Edge Function 시크릿에만 존재하고 개발 기기·CI에 두지 않는다.
+- **워커 호출 인증**: Edge 게이트웨이의 JWT 검증은 publishable(anon) 키로도 통과한다(0단계 실측). `worker`처럼 service role로 도는 함수는 게이트웨이 검증에 기대지 않고, 함수 안에서 `Authorization: Bearer`가 런타임이 주입한 secret 키(`SUPABASE_SERVICE_ROLE_KEY`·`SUPABASE_SECRET_KEYS`)와 같을 때만 처리하고 아니면 403을 돌려준다. cron은 vault의 secret 키로 호출한다.
 - 평문 파생물 읽기도 감사한다: `chat`·`worker`가 `item_chunks`·`facts`를 읽을 때 `audit_log(action='read', target=item_id 목록 해시)`를 남긴다. 복호화 호출은 `action='decrypt'`로 별도 기록한다.
 - 운영자(본인 포함)가 대시보드 SQL 편집기로 본문을 조회하지 않는다. 디버깅은 `item_id`·상태·오류 코드로만 한다. 이 규칙을 `CLAUDE.md`에 적어 에이전트에도 적용한다.
 - `audit_log(user_id, actor, action, target, at)`에 삭제·연결 해제·내보내기·복호화 호출을 기록한다. 본문은 기록하지 않는다.

@@ -13,7 +13,7 @@
 | PoC-7 | 한국어 하이브리드 검색 Top-5 정확도 | 11 | 미검증 | Supabase·Voyage 키 필요 | 2026-09-24 |
 | PoC-8 | 이미지·PDF → OCR/추출 → 일정 | 7, 12 | 부분 | 기기 부분(시뮬레이터): 재실측 09-24 XCUITest로 **사진 앱 → 공유 시트 → Assistant PoC 확장**을 실제로 실행, `ShareExtension file … ocrLen=43`(14:35:36Z)·큐 `SHARE` 행 확인(합성 이미지). 남은 실측: 실기기 공유 시트 → 큐·업로드(App Group 서명 포함, 대기 목록), 서버 부분(vision 추출 5/5, 오프라인 유실 0)은 Task 12. 절차 `poc-8-9-share-upload.md` | 2026-09-24 |
 | PoC-9 | 앱 종료 후 background URLSession 업로드 완료 | 7 | 통과 | 호스트 `ps aux`로 앱 프로세스 완전 종료 확인(14:07:27.946) 후 3.68초 뒤 목 서버에 정확한 바이트 수로 도착(14:07:31.628) 실측. 실기기 회귀 확인은 대기 목록. 절차 `poc-8-9-share-upload.md` | 2026-09-24 |
-| PoC-10 | jobs 큐 lease/재시도/dead 처리 | 8 | 부분 | 호스팅 프로젝트 `assistant-poc`(서울) 실측 09-26. **충족**: 같은 lease_key 2건 동시 클레임 시 1건만(deno 테스트), pg_cron 매분 → worker(HTTP 200 연속)로 `unknown` 잡 5회 후 `dead`·attempts=5, 변조 암호문 잡 5회 후 `dead`(last_error=`decrypt failed`, 본문 없음). **미충족**: `sleep` 90초 잡을 lease 60초로 클레임한 뒤 65초에 두 번째 워커 호출이 만료 임대를 **재클레임해 동시에 두 번 실행**(attempts=2, 두 호출 모두 done). 규칙: lease는 잡 최대 처리 시간보다 길어야 하며, 보장하려면 lease > Edge wall-clock 한도(무료 150초)로 두거나 하트비트로 연장해야 한다(스펙 §7 "임대 60초" 수정 필요) → 수정 후 시나리오 2 재측정하면 통과. 남은 실측: 위 재측정, 24시간 일시정지 없음(시나리오 7). 상세는 아래 "PoC-10 실측" | 2026-09-26 |
+| PoC-10 | jobs 큐 lease/재시도/dead 처리 | 8 | 통과 | 호스팅 프로젝트 `assistant-poc`(서울) 실측. 같은 lease_key 2건 동시 클레임 시 1건만(deno 테스트), pg_cron 매분 → worker로 `unknown` 잡 5회 후 `dead`·attempts=5, 변조 암호문 잡 5회 후 `dead`(last_error=`decrypt failed`, 본문 없음). **재실측 09-26(임대 180초 + 30초 하트비트, `6ca66d8`)**: `sleep` 90초 잡 클레임 후 65초에 두 번째 워커 호출 → `claimed: 0`, 65초 시점 임대 잔여 177초(하트비트 약 32·62초에 연장), 최종 `done` attempts=1. 이전 임대 60초에서는 같은 조건에서 재클레임·중복 실행(attempts=2)이었다. 남은 확인(판정 기준 밖): Edge wall-clock 150초를 넘겨 강제 종료된 잡의 임대 만료 후 재클레임, 24시간 일시정지 없음(시나리오 7). 상세는 아래 "PoC-10 실측" | 2026-09-26 |
 
 ## 실기기 세션 대기 목록
 
@@ -30,15 +30,16 @@ PoC-8·9 실기기 항목(절차 `poc-8-9-share-upload.md` "실기기에서 사�
 ## PoC-10 실측 (2026-09-26, Task 8)
 
 - 환경: Supabase 호스팅 `dbbdaawotqrcizlcpsjk`(ap-northeast-2), 마이그레이션 `0001_jobs`·`0002_cron`·`0003_items_keys`, Edge `ingest`·`worker`(JWT 검증 유지). 키는 새 형식(`sb_publishable_`/`sb_secret_`)으로 supabase-js 2.x·Edge 게이트웨이 모두 동작.
-- deno 테스트 34개 통과: jobs 4(호스팅 DB), crypto 5, rules 18(기기 `RuleFilter` 회귀 케이스 포함), ingest 7. 테스트 중 cron 비활성 → 종료 후 재활성.
+- deno 테스트 39개 통과: jobs 6(호스팅 DB), heartbeat 3, crypto 5, rules 18(기기 `RuleFilter` 회귀 케이스 포함), ingest 7. 테스트 중 cron 비활성 → 종료 후 재활성.
 - 시나리오 1 noop 20개(+unknown 1개 동시): cron 틱당 5건(`p_limit` 5) 처리라 20개 완료까지 **270초(5틱)**. 계획서 기대 "2분 후 전부 done"은 `p_limit` 5와 맞지 않는다.
-- 시나리오 2 lease 만료: 위 표 참고. 첫 호출·두 번째 호출 모두 약 90.4초 뒤 200, 최종 `done` attempts=2.
+- 시나리오 2 lease 만료(1차, 임대 60초): 65초 시점 임대 만료 → 두 번째 호출이 재클레임해 동시에 두 번 실행, 두 호출 모두 약 90.4초 뒤 200, 최종 `done` attempts=2.
+- 시나리오 2 재실측(임대 180초 + 하트비트, `0004_lease_heartbeat`·`worker/heartbeat.ts`): 10초 시점 임대 잔여 172초, 65초 시점 잔여 177초(`updated_at` 62초 = 하트비트 연장), 두 번째 호출 264ms에 `claimed: 0`, 첫 호출 92초에 `done`(attempts=1), 완료 후 호출 `claimed: 0`. deno 테스트로 고정: 기본 임대 180초·만료 전 재클레임 0건, `heartbeat_job`이 만료된 임대를 연장해 재클레임 막음·완료 잡은 false, `withHeartbeat` 주기 호출·종료 후 정지.
 - 시나리오 3 unknown: 첫 클레임 후 5틱째 `dead`, attempts=5, last_error=`unknown kind unknown`.
 - 시나리오 4 복호화 비용(5KB 합성 50건, 워커 수동 호출 11회): `decrypt_ms` p50 **0.7ms**, p95 **56ms**(격리 인스턴스별 첫 호출의 `get_wrapped_key` 왕복·unwrap 포함), 최대 77ms. 잡당 전체 p50 104ms·p95 169ms(대부분 RPC I/O). 5건 배치 함수 시간 p50 646ms·최대 700ms(호출 왕복 p50 840ms). CPU 사용은 복호화 1ms 미만/건이라 CPU 2초 한도는 배치 크기를 제약하지 않는다. `p_limit` 5 유지(배치 1초 미만), 늘릴 때는 cron `timeout_milliseconds` 5초와 wall-clock을 기준으로 정한다. `audit_log` decrypt 54행(정상 49 + 변조 항목 재시도 5, 항목 50개 전부).
 - 시나리오 5 변조 검출: `content_enc` 마지막 바이트 XOR 1 → 5회 후 `dead`, last_error=`decrypt failed`(WebCrypto 메시지·본문 없음). 함수 로그는 코드상 `item_id`·`decrypt_ms`·`chars`만 남긴다(대시보드 로그 직접 열람은 안 함).
 - 시나리오 6 ingest 실호출(PoC 사용자 JWT): 카드 문자 **202**, OTP **204**, `(광고)` **204**, 토큰 없음 401, publishable 키를 Bearer로 보내면 401, 같은 id 재전송 202 `duplicate:true`. `items` MESSAGES 1행(`content_enc` 72바이트, 평문 본문 컬럼 없음), process 잡 생성. 왕복: 콜드 약 2.4~2.7초, 웜 10건 p50 **347ms**·p95 376ms. ingest 1건 → cron → worker 복호화 → `done`까지 10초 안(해당 항목 decrypt 감사 1행).
 - 보안 발견: Edge 게이트웨이 JWT 검증은 **publishable 키로도 `worker` 호출을 통과**시킨다(원안의 legacy anon JWT도 같음). `worker`는 service role로 돌므로 함수 안에서 Bearer가 런타임 주입 secret 키(`SUPABASE_SERVICE_ROLE_KEY`·`SUPABASE_SECRET_KEYS`)와 같을 때만 처리하고 아니면 403(실측: secret 200, publishable 403).
-- 운영 메모: `0002_cron`은 vault(`worker_url`·`service_role_key`) 등록 전부터 매분 실행돼 그 사이 `net.http_post` url null 오류가 난다. vault 등록은 `vault.create_secret`을 스크립트(값 출력 없음)로 했다. 24시간 활동 유지 확인은 남음.
+- 운영 메모: `0002_cron`은 vault(`worker_url`·`service_role_key`) 등록 전부터 매분 실행돼 `net.http_post` url null 오류를 냈다 → `0005_cron_vault_guard`로 vault 두 값이 있을 때만 호출(교체 후 cron 틱 `succeeded`·HTTP 200, noop 40초 안에 `done`; 값이 없을 때 조건 0행 확인). vault 등록은 `scripts/vault-setup.ts`(값 출력 없음). 테스트 전체 39개 통과. 24시간 활동 유지 확인은 남음.
 
 ## 참고 (Opus 재검증 반영, 2026-09-24)
 
