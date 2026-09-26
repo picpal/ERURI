@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { isServiceCaller } from "../_shared/auth.ts";
 import { SERVER_AUTH } from "../_shared/crypto.ts";
 import type { Job } from "../_shared/job.ts";
 import { withHeartbeat } from "./heartbeat.ts";
@@ -15,17 +16,6 @@ const handlers: Record<string, (job: Job) => Promise<string>> = {
   // PoC-10에서는 복호화 비용만 측정한다. Task 12 Step 3에서 extract를 extractEvent로 교체한다
   process: (j) => processItem(sb, j, async () => "decrypted", (m) => { metrics = m; }),
 };
-// 게이트웨이 JWT 검증은 publishable(anon) 키도 통과시킨다. 워커는 service role로 돌므로 secret 키 호출만 받는다.
-// 키 형식(legacy JWT / sb_secret_)에 의존하지 않도록 런타임이 주입한 값들과 비교한다
-const SECRET_KEYS = new Set<string>([
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-  ...Object.values(JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}") as Record<string, string>),
-].filter((k) => k.length > 0));
-function isServiceCaller(req: Request): boolean {
-  const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1] ?? "";
-  return SECRET_KEYS.has(token);
-}
-
 Deno.serve(async (req) => {
   if (!isServiceCaller(req)) return new Response(null, { status: 403 });
   const t0 = performance.now();
