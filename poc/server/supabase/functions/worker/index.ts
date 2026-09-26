@@ -1,0 +1,48 @@
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { SERVER_AUTH } from "../_shared/crypto.ts";
+import type { Job } from "../_shared/job.ts";
+import { type Metrics, processItem } from "./process.ts";
+const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, SERVER_AUTH);
+// 잡별 측정값(복호화 ms·글자 수). 본문은 담지 않는다
+let metrics: Metrics | null = null;
+const handlers: Record<string, (job: Job) => Promise<string>> = {
+  noop: async () => "done",
+  sleep: async (j) => { await new Promise((r) => setTimeout(r, Number(j.payload.ms ?? 0))); return "done"; },
+  // PoC-10에서는 복호화 비용만 측정한다. Task 12 Step 3에서 extract를 extractEvent로 교체한다
+  process: (j) => processItem(sb, j, async () => "decrypted", (m) => { metrics = m; }),
+};
+// 게이트웨이 JWT 검증은 publishable(anon) 키도 통과시킨다. 워커는 service role로 돌므로 secret 키 호출만 받는다.
+// 키 형식(legacy JWT / sb_secret_)에 의존하지 않도록 런타임이 주입한 값들과 비교한다
+const SECRET_KEYS = new Set<string>([
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+  ...Object.values(JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}") as Record<string, string>),
+].filter((k) => k.length > 0));
+function isServiceCaller(req: Request): boolean {
+  const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1] ?? "";
+  return SECRET_KEYS.has(token);
+}
+
+Deno.serve(async (req) => {
+  if (!isServiceCaller(req)) return new Response(null, { status: 403 });
+  const t0 = performance.now();
+  const { data: jobs, error } = await sb.rpc("claim_jobs", { p_limit: 5, p_lease_seconds: 60 });
+  if (error) return new Response(error.code, { status: 500 });
+  const results = [];
+  for (const j of (jobs ?? []) as Job[]) {
+    const tj = performance.now();
+    metrics = null;
+    try {
+      const run = handlers[j.kind] ?? (async () => { throw new Error("unknown kind " + j.kind); });
+      const cp = await run(j);
+      await sb.rpc("complete_job", { p_id: j.id, p_checkpoint: cp });
+      results.push([j.id, "done", Math.round(performance.now() - tj), metrics]);
+    } catch (e) {
+      // 오류 메시지는 코드·식별자만 담도록 각 모듈이 만든다. 길이도 제한한다
+      await sb.rpc("fail_job", { p_id: j.id, p_error: (e instanceof Error ? e.message : "error").slice(0, 200) });
+      results.push([j.id, "fail", Math.round(performance.now() - tj)]);
+    }
+  }
+  const ms = Math.round(performance.now() - t0);
+  console.log(JSON.stringify({ worker: "batch", claimed: jobs?.length ?? 0, ms }));
+  return Response.json({ claimed: jobs?.length ?? 0, ms, results });
+});
