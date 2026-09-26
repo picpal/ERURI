@@ -1,6 +1,6 @@
 # iOS 개인 비서 앱 설계 스펙
 
-작성일: 2026-09-22 · 갱신: 2026-09-24 (0단계 Task 1~7 실측 반영) · 상태: 초안(리뷰 대기) · 대상: iPhone 15 Pro 이상, iOS 26+, 한국
+작성일: 2026-09-22 · 갱신: 2026-09-26 (AI 벤더 OpenAI 단일화) · 2026-09-24 (0단계 Task 1~7 실측 반영) · 상태: 초안(리뷰 대기) · 대상: iPhone 15 Pro 이상, iOS 26+, 한국
 
 ## 1. 목표
 
@@ -39,8 +39,9 @@ Outlook, Android, Mac 허브, 카카오톡 개인 대화 수집, App Store 공�
 | 제외 | OTP·인증번호, 카드·계좌번호 마스킹, 프로모션, 카톡 개인 대화, 의료 결과지 본문 | 사용자 확정 + 제안 |
 | 보관 | 원문 90일(사용자별 키 암호화), 이미지 30일, 추출 사실·벡터 무기한 | 사용자 확정(1년) → 개인정보 검토로 90일 단축 |
 | 진입점 | 채팅, Share, 푸시, Siri 질문, 액션버튼/컨트롤센터 빠른 기억 | 사용자 확정 |
-| 비용 | 월 1만원. 기기 Foundation Models → `claude-haiku-4-5` 추출 → `claude-sonnet-5` 채팅 | 사용자 확정 |
-| 임베딩 | Voyage `voyage-4-lite`, 512차원 | Supabase 내장 gte-small은 영어 전용. 한국어 필요 |
+| 비용 | 월 1만원. 기기 Foundation Models → OpenAI `gpt-6-luna` 분류·추출 → `gpt-6-sol` 채팅 | 사용자 확정. 벤더는 2026-09-26 Anthropic+Voyage → OpenAI 단일로 교체(사용자 결정) |
+| AI 벤더 | OpenAI 단일. 키 `OPENAI_API_KEY` 하나. Responses API(`/v1/responses`) + Structured Outputs(`text.format` json_schema, `strict: true`), 모든 호출 `store: false` | 키·약관·청구 한 곳. §3 검증 표 |
+| 임베딩 | OpenAI `text-embedding-3-small`, `dimensions: 512` | Supabase 내장 gte-small은 영어 전용. `vector(512)` 스키마 유지, HNSW 2000차원 한도 안 |
 
 ## 3. 공식 문서 검증 결과 (2026-09-22)
 
@@ -57,7 +58,13 @@ Outlook, Android, Mac 허브, 카카오톡 개인 대화 수집, App Store 공�
 | Gmail 테스트 모드 | 검증됨. 테스트 사용자 100명, **동의 7일 후 만료** | 본인 사용 중엔 7일마다 재연결. 지인 확대 전 앱 검증 + CASA(추정 $500~4,500, 2~6주) 결정 |
 | Gmail 쿼터 | 검증됨. **분당** 사용자 6,000 유닛 (`messages.get` 20) | 백필 배치 분당 250건 이하 |
 | Gmail watch | 검증됨. 7일 내 갱신, historyId 404 시 전체 재동기화 | pg_cron 일 1회 watch 갱신. 404 시 마지막 성공 커서 시각부터 `messages.list(after:)`로 재동기화 (§7) |
-| Supabase gte-small 임베딩 | 검증됨, 그러나 **영어 전용** | Voyage로 교체 |
+| Supabase gte-small 임베딩 | 검증됨, 그러나 **영어 전용** | OpenAI `text-embedding-3-small`로 교체 |
+| OpenAI 모델·가격 (2026-09-26, developers.openai.com/api/docs/pricing · /api/docs/models/gpt-6-luna · /api/docs/models/gpt-6-sol) | 검증됨. `gpt-6-luna` $0.10/$0.01(캐시)/$0.50, `gpt-6-sol` $2.00/$0.20/$10.00 (1M 토큰 입력/캐시 입력/출력). 둘 다 Responses·Chat Completions, Structured Outputs, 이미지 입력, reasoning effort `none`~`max`(기본 `medium`) 지원. 스냅샷은 별칭과 같은 ID 하나뿐 | 분류·추출 `gpt-6-luna`(effort `none`), 채팅 `gpt-6-sol`(effort `low`). `gpt-6-astra`는 `none` 미지원·$10/$50이라 제외 |
+| Structured Outputs (2026-09-26, /api/docs/guides/structured-outputs) | 검증됨. Responses API 권장, `text: { format: { type: "json_schema", name, schema, strict: true } }`. strict는 모든 객체 `additionalProperties: false`, 모든 필드 `required`, nullable은 `["string","null"]`, `pattern`·`default` 미지원. 거절은 `refusal` 콘텐츠, 잘림은 `status = incomplete` | 스키마는 strict 규칙으로 작성. 거절·잘림은 파싱하지 않고 잡 실패 처리 |
+| 이미지·PDF 입력 (2026-09-26, /api/docs/guides/images-vision · /api/docs/guides/pdf-files) | 검증됨. `input_image`(data URL, PNG·JPEG·WEBP·GIF), `input_file`(`file_data` data URL, 파일당 50MB). PDF는 텍스트+페이지 이미지로 처리 | PoC-8 vision을 같은 모델로. 스펙 PDF 상한(10MB·50페이지)이 더 좁아 그대로 둔다 |
+| OpenAI 임베딩 (2026-09-26, /api/docs/guides/embeddings · /api/docs/models/text-embedding-3-small · /api/reference/resources/embeddings/methods/create) | 검증됨. 기본 1536차원, `dimensions`로 축소(3세대 모델만), 출력 길이 1 정규화, 입력당 8,192토큰·요청당 30만 토큰·배열 2,048개, $0.02/1M. **한국어·다국어 성능 수치는 공식 문서에 없음** | `dimensions: 512`로 기존 `vector(512)` 유지. 한국어 품질은 PoC-7에서 판정, 미달 시 `text-embedding-3-large`(`dimensions: 512`, $0.13/1M) |
+| OpenAI API 데이터 정책 (2026-09-26, /api/docs/guides/your-data) | 검증됨. API 입력은 기본 학습 미사용(2023-03-01부터, 옵트인 시에만). 남용 모니터링 로그 최대 30일. Responses API는 `store` 기본값으로 애플리케이션 상태 30일 보관. ZDR·수정 남용 모니터링은 OpenAI 사전 승인 필요. `/v1/responses`·`/v1/embeddings` 모두 ZDR 대상. 이미지는 CSAM 분류기 탐지 시 ZDR이어도 보관 | §12 통제 3 갱신, 임베딩 약관 보류 해제(§16). 모든 Responses 호출에 `store: false` |
+| Deno에서 OpenAI SDK (2026-09-26, github.com/openai/openai-node) | 검증됨. Deno 1.28+ 지원, `import OpenAI from "npm:openai"`. 기본 타임아웃 10분·재시도 2회(`timeout`·`maxRetries` 옵션). 현재 npm 최신 7.23.0 | `npm:openai@7`, Edge 벽시계 150초에 맞춰 `timeout: 60_000`, `maxRetries: 1` |
 | Edge Function에서 APNs HTTP/2 | **미확인.** Deno h2 이슈 보고 있음 | PoC-4. 실패 시 Cloudflare Worker 릴레이 |
 | Supabase Storage TTL | 없음 | pg_cron 삭제 잡 |
 | Edge Function 한계 | 검증됨. CPU 2초, 벽시계 150초(무료), 256MB | `waitUntil`은 큐가 아님. `jobs` 테이블 기반 영속 작업 큐 + pg_cron 워커 호출로 처리 (§7) |
@@ -83,11 +90,11 @@ iPhone                                                                │
                                           Postgres: items, purchases, facts,
                                           proposals, memories, chunks(pgvector)
                                                         │
-                                   Edge: process (Haiku 분류·추출, Voyage 임베딩)
+                                   Edge: process (gpt-6-luna 분류·추출, OpenAI 임베딩)
                                                         │
                                    Edge: notify (APNs) ──► 잠금화면 제안 알림
                                                         │
-                                   Edge: chat (하이브리드 검색 + Sonnet)
+                                   Edge: chat (하이브리드 검색 + gpt-6-sol)
 ```
 
 ### 책임
@@ -133,7 +140,7 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
      personal/otp/promo/medical_result → 폐기 (사유 fm:<kind>)
      불가·타임아웃·생성 에러 → 같은 폴백:
        카카오톡·Instagram 출처는 **폐기** (개인 대화 배제 원칙이 우선)
-       그 외(메시지·쇼핑/금융 앱)는 kind = unknown, device_filter = "rules"로 통과 → 서버 Haiku 분류(§7)에 맡긴다
+       그 외(메시지·쇼핑/금융 앱)는 kind = unknown, device_filter = "rules"로 통과 → 서버 LLM 분류(§7)에 맡긴다
   3. App Group SQLite 큐에 저장 (보호 등급 completeUntilFirstUserAuthentication, WAL + busy_timeout. 아래 "큐")
   4. background URLSession (sharedContainerIdentifier) → POST /ingest. 보낼 항목은 claim(lease)으로 가져온다 (아래 "업로더")
   5. 성공 시 큐 삭제, 실패 시 지수 재시도(30초 × 2^n, 상한 1시간). 앱 강제 종료 시 백그라운드 전송이 취소되므로
@@ -169,7 +176,7 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
 - `rateLimited`는 앱이 백그라운드에서 시스템 한도를 넘을 때만 난다. `.background` 인텐트가 바로 그 경로이므로 빈도를 PoC-3 실기기에서 잰다.
 - 폴백 여부는 큐 항목의 `device_filter`("fm" 또는 "rules")로 서버에 전달된다.
 
-**분류 라벨 정의** (기기 FM과 서버 Haiku 분류(§7)가 같은 정의를 쓴다)
+**분류 라벨 정의** (기기 FM과 서버 LLM 분류(§7)가 같은 정의를 쓴다)
 
 | 라벨 | 뜻 | 경계 사례 |
 |---|---|---|
@@ -210,20 +217,20 @@ Share Extension은 1단계(규칙 필터)만 적용하고 큐에 넣는다(텍�
 
 jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 재시도, 실패 시 dead 상태)
   → 단계별 체크포인트: classified → extracted → embedded → proposed. 재시도는 마지막 체크포인트부터
-  → 재분류 (Haiku, ≤200 토큰 JSON): event|task|purchase|subscription|reference|discard|medical_result
+  → 재분류 (gpt-6-luna, effort none, ≤200 토큰 Structured Outputs JSON): event|task|purchase|subscription|reference|discard|medical_result
       medical_result·personal 경계는 §6 분류 라벨 정의와 같다. device_filter = "rules" 항목은 기기 FM 판정이 없으므로 여기서 처음 분류된다
       discard·medical_result → items DELETE, 감사 로그에 사유 코드만. 이 단계 전에는 다른 외부 전송 없음
-  → 추출 (Haiku, output_config.format JSON 스키마)
+  → 추출 (gpt-6-luna, Responses API `text.format` json_schema strict. `store: false`)
       event: title, start, end, allDay, location, tz, evidence, uncertain[]  (예: year, ampm, end, tz)
       task: title, due, evidence, uncertain[]
       purchase: merchant, product[], ordered_at, amount, currency, order_no, status, recurrence?, evidence
-  → 이미지/PDF: Haiku vision. 월 상한 100건(usage_counters). 초과 시 기기에서 같이 올라온 OCR 텍스트 사용
+  → 이미지/PDF: gpt-6-luna vision(`input_image`·`input_file`). 월 상한 100건(usage_counters). 초과 시 기기에서 같이 올라온 OCR 텍스트 사용
       PDF: 10MB·50페이지 초과, 암호화, 파싱 실패 → "앱에서 확인" 상태로 두고 푸시
   → URL: 허용 스킴 http(s)만, 사설·루프백 IP 차단, 리디렉션 3회, 응답 2MB·10초 제한, 텍스트 MIME만
       본문 추출 실패(HTML 파싱 오류·JS 전용) → "스크린샷 공유 요청" 푸시. 짧은 정상 문서는 그대로 저장
   → 연결: purchases는 (merchant, order_no) 복합 키. 없으면 (merchant, amount, ordered_at ±1일)로 후보 제시
       취소·변경 문구 → 기존 fact status = cancelled/superseded, 새 fact에 supersedes_id
-  → 청크(512자) → item_chunks. Voyage 임베딩은 약관 확인(§12 통제 3) 전까지 생성하지 않고 embedding = null로 둔다
+  → 청크(512자) → item_chunks. 임베딩(`text-embedding-3-small`, 512차원)은 PoC-7 통과 전까지 생성하지 않고 embedding = null로 둔다(§16)
   → proposals INSERT (event/task). uncertain 비어 있을 때만 잠금화면 "추가" 버튼 노출,
       아니면 REVIEW 카테고리로 앱에서 확인 유도
   → 백필(occurred_at이 수집 시각보다 3일 이상 과거)에서 나온 제안은 푸시하지 않고 보관함에만 표시
@@ -263,9 +270,9 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 | `executions` | proposal_id, device_id, eventkit_id, executed_at | 기기가 쓰기 성공 직후 기록. 보고 실패 복구용 |
 | `jobs` | kind, payload, lease_key, leased_until, attempts, status(queued/running/done/dead), checkpoint | 영속 작업 큐 |
 | `utterances` | text, embedding, said_at, source(chat/siri/quick), kind(statement/question/correction) | 사용자 발화 전체 기록 |
-| `memories` | text, embedding, utterance_id, status(active/retracted), supersedes_id | "기억해줘" 또는 Haiku가 statement로 판정한 것만. 정정 발화는 이전 memory를 retracted 처리 |
+| `memories` | text, embedding, utterance_id, status(active/retracted), supersedes_id | "기억해줘" 또는 gpt-6-luna가 statement로 판정한 것만. 정정 발화는 이전 memory를 retracted 처리 |
 | `devices` | apns_token, environment, last_seen_at | |
-| `usage_counters` | month, vision_calls, haiku_tokens, sonnet_tokens, reserved_krw | 비용 상한. 호출 전 예약, 후 정산 |
+| `usage_counters` | month, vision_calls, extract_tokens, chat_tokens, reserved_krw | 비용 상한. 호출 전 예약, 후 정산 |
 
 ### 삭제·만료 정책 (두 가지를 분리)
 
@@ -282,20 +289,23 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 ## 9. 채팅·검색
 
 ```text
-질문 → Haiku가 필터 추출 {date_range, sources, kinds, merchant?}
+질문 → gpt-6-luna가 필터 추출 {date_range, sources, kinds, merchant?}
      → purchases/facts SQL 우선 (구조화 질문)
      → 하이브리드: tsvector(simple + pg_trgm) ∪ pgvector cosine, RRF 융합, 상위 12개
      → memories(active만) 상위 5개 포함. utterances의 question/correction은 검색 풀에서 제외
-     → Sonnet 답변. output_config.format으로 {answer, citations:[{sentence_idx, source_ids[]}]} 구조화 출력
-     → 서버 검증: citations의 source_id가 이번 검색 결과 집합에 있는지 확인. 없는 인용은 제거하고
-        해당 문장을 "근거 미확인"으로 표시. 인용 0개면 "저장된 정보에서 확인되지 않음"으로 대체
+     → gpt-6-sol 답변(effort low). Responses API `text.format` json_schema strict로
+        {sentences:[{text, source_item_ids[]}]} 출력. 검색 결과는 <document id="item_id"> 블록으로 넣는다
+        (OpenAI에는 Anthropic식 citations 기능이 없으므로 인용은 모델이 JSON에 적은 item_id뿐이다)
+     → 서버 검증: 각 문장의 source_item_ids가 이번 검색 결과 집합에 있는지 대조. 없는 id는 제거하고
+        id가 하나도 남지 않은 문장은 "근거 미확인"으로 표시. 전체 유효 인용 0개면 "저장된 정보에서 확인되지 않음"으로 대체.
+        인용 id는 존재만 검증되고 문장이 그 문서에 실제로 근거하는지는 보장하지 않는다 → 인용 정확도(§9 지표)로 측정
      → 실행 가능 항목은 proposal 카드로 반환. 검색 문서 내용은 절대 proposal payload를 직접 만들지 못하고
         추출 파이프라인(§7)을 다시 거친다
 ```
 
 - 한국어 키워드는 PostgreSQL `simple` 설정으로는 형태소가 안 잘리므로 pg_trgm 유사도를 함께 쓴다.
 - 검색 품질 평가는 **1단계 완료 기준**에 포함한다(§15). 지표: 정답 포함(Top-5 ≥ 90%, 질문 50개), 무근거 질문 거절률, 취소·정정 반영, 인용 정확도, 날짜 필터 오판.
-- 수집된 메일·웹·알림 안의 지시문은 데이터로만 취급한다. 검색 결과는 `<document>` 블록으로 감싸 user 턴에 넣고 시스템 프롬프트는 고정 + `cache_control`로 캐시한다. 도구 호출 권한은 chat 함수에 없다(읽기 전용).
+- 수집된 메일·웹·알림 안의 지시문은 데이터로만 취급한다. 검색 결과는 `<document>` 블록으로 감싸 user 턴에 넣고 시스템 프롬프트는 고정해 앞에 두어 OpenAI 자동 프롬프트 캐시(캐시 입력 단가 1/10)에 걸리게 한다. 도구 호출 권한은 chat 함수에 없다(읽기 전용).
 - 모든 발화는 `utterances`에 기록하되, 사실로 검색되는 것은 `memories`(statement 판정 또는 "기억해줘")뿐이다. "아니 그거 안 샀어" 같은 정정은 이전 memory를 retracted로 바꾼다.
 
 ## 10. 실행
@@ -342,15 +352,20 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 - 수집 제외: 프로모션 라벨, 첨부파일(이미지·PDF는 사용자가 공유한 것만), OTP, 카드·계좌번호(마스킹), 카톡 개인 대화, 의료 결과지.
 - 원문 90일, 이미지 30일 뒤 삭제. 추출 사실·구매 이력·벡터·`evidence` 인용(≤300자)만 남아 검색은 계속된다.
 - 기기 입력은 기기에서 먼저 필터·마스킹 후 전송한다. Gmail은 서버가 직접 받으므로 "기기에서 먼저 마스킹"이라고 설명하지 않는다.
-- 처리 순서(§7과 동일): 규칙 필터(기기·서버) → 암호화 저장 → 워커가 복호화 → Haiku 분류 → discard 판정 시 즉시 삭제 → 통과분만 추출·청크·임베딩 → 감사 기록. **예외를 명시한다**: 규칙 필터를 통과한 항목은 Haiku 분류 전에 암호화된 채 저장되고 분류를 위해 Haiku로 1회 전송된다. 즉 "의료 결과지·개인 대화는 저장·전송되지 않는다"가 아니라 "암호화 저장 후 분류 1회 전송 뒤 삭제된다"이다. 예산 소진 시에는 분류되지 못한 항목이 암호화 상태로 `queued`에 남으며 90일 만료 규칙이 그대로 적용된다.
+- 처리 순서(§7과 동일): 규칙 필터(기기·서버) → 암호화 저장 → 워커가 복호화 → gpt-6-luna 분류 → discard 판정 시 즉시 삭제 → 통과분만 추출·청크·임베딩 → 감사 기록. **예외를 명시한다**: 규칙 필터를 통과한 항목은 LLM 분류 전에 암호화된 채 저장되고 분류를 위해 OpenAI로 1회 전송된다. 즉 "의료 결과지·개인 대화는 저장·전송되지 않는다"가 아니라 "암호화 저장 후 분류 1회 전송 뒤 삭제된다"이다. 예산 소진 시에는 분류되지 못한 항목이 암호화 상태로 `queued`에 남으며 90일 만료 규칙이 그대로 적용된다.
 - URL 본문·이미지 OCR·채팅 발화도 서버 규칙 필터(OTP·카드·계좌)를 같은 함수로 통과시킨 뒤 저장한다. URL 본문은 fetch 직후, OCR은 기기에서 이미 적용된 것을 서버에서 재적용한다.
 - 폐기 판정된 항목은 행을 삭제하고 로그에는 사유 코드만 남긴다. Foundation Models 분류 결과는 저장하지 않는다.
 
 ### 통제 3. LLM·임베딩 공급자 조건
 
-- Anthropic API: 기본 학습 미사용, 표준 보관 30일. 프롬프트 로그·요청 본문을 Supabase 로그에 남기지 않는다(`console.log`에 본문 금지, 요청 ID만).
-- Voyage: 학습 미사용 조건과 보관 기간을 이용약관에서 확인해 §16에 기록한다. **확인 전에는 임베딩을 생성하지 않는다**(키워드 검색만 동작). 마스킹은 개인정보 전송 제한이 아니므로 근거로 삼지 않는다. 확인 결과가 부적합하면 온디바이스 임베딩(Core ML multilingual-e5-small) 또는 Anthropic 제공 임베딩 경로로 교체한다.
-- 지인 확대 시 Anthropic ZDR(zero data retention) 신청을 검토한다.
+- 공급자는 OpenAI 하나(LLM·임베딩). 근거: 공식 문서 "Data controls in the OpenAI platform"(2026-09-26 확인, §3).
+  - API 입력·출력은 기본 학습 미사용(옵트인하지 않는다).
+  - 남용 모니터링 로그 최대 30일 보관(법적 요구 시 연장 가능). 이 30일은 끌 수 없으며 ZDR·수정 남용 모니터링은 OpenAI 사전 승인이 필요하다.
+  - Responses API는 `store` 기본값이면 응답을 30일 보관하므로 **모든 호출에 `store: false`**를 넣는다. `previous_response_id` 대화 이어가기는 쓰지 않는다(대화 문맥은 서버가 직접 구성).
+  - 이미지 입력은 CSAM 분류기에 걸리면 ZDR이어도 수동 검토용으로 보관된다. 사용자가 공유한 이미지만 보내는 현재 범위에서 수용한다.
+- 임베딩(`/v1/embeddings`)은 분류·추출과 **같은 공급자·같은 약관**이다. 분류 단계에서 이미 같은 텍스트가 OpenAI로 가므로 임베딩이 새 수신자를 만들지 않는다. 따라서 약관 사유의 임베딩 보류는 해제한다(§16). 마스킹은 개인정보 전송 제한이 아니므로 근거로 삼지 않는다.
+- 프롬프트·요청 본문을 Supabase 로그에 남기지 않는다(`console.log`에 본문 금지, 요청 ID만).
+- 지인 확대 시 OpenAI ZDR(`/v1/responses`·`/v1/embeddings` 모두 대상) 신청을 검토한다. 승인되지 않으면 30일 남용 모니터링 보관을 처리방침에 적는다.
 
 ### 통제 4. 접근 통제와 감사
 
@@ -371,18 +386,22 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 
 | 항목 | 가정 | 비용 |
 |---|---|---|
-| Haiku 분류·추출 | 일 60건 × 1.5k 토큰 | 약 $3 |
-| Sonnet 채팅 | 일 10회 × 6k 입력/0.5k 출력 | 약 $5 |
-| Vision | 월 30건 | 약 $0.5 |
-| Voyage 임베딩 | 월 3M 토큰 | 약 $0.1 (가격 문서 미확인) |
-| Supabase | 무료 | $0 |
-| 합계 | | 약 $9 ≈ 1.2만원 |
+가격 근거: developers.openai.com/api/docs/pricing (2026-09-26, 1M 토큰당, Standard). `gpt-6-luna` 입력 $0.10·출력 $0.50, `gpt-6-sol` 입력 $2.00·캐시 입력 $0.20·출력 $10.00, `text-embedding-3-small` $0.02.
 
-자체 추정이 이미 상한을 넘으므로 다음 통제를 둔다.
+| 항목 | 가정 | 비용 |
+|---|---|---|
+| gpt-6-luna 분류·추출 | 일 60건 × 입력 1.5k + 출력 0.3k 토큰 → 월 입력 2.7M, 출력 0.54M | 약 $0.5 |
+| gpt-6-sol 채팅 | 일 10회 × 입력 6k(시스템 1k 캐시)/출력 0.5k + reasoning low 0.5k → 월 입력 1.8M(캐시 0.3M), 출력 0.3M | 약 $6 |
+| Vision (gpt-6-luna) | 월 30건 × 입력 약 3k(이미지·PDF 페이지) + 출력 0.3k | 약 $0.01 |
+| 임베딩 `text-embedding-3-small` | 월 3M 토큰 | 약 $0.06 |
+| Supabase | 무료 | $0 |
+| 합계 | | 약 $6.6 ≈ 0.9만원 |
+
+채팅이 비용의 90%다. 기존 Anthropic+Voyage 추정(약 $9)보다 싸지만 상한과 여유가 없으므로 다음 통제를 둔다. reasoning 토큰은 출력 단가로 청구되므로 채팅은 effort `low`, 분류·추출은 `none`으로 고정한다.
 
 - 호출 전 `usage_counters.reserved_krw`에 예상 비용을 예약하고, 월 상한(기본 1만원) 초과 예약은 거부한다. 응답 후 실제 토큰으로 정산한다.
-- 80% 도달: Sonnet → Haiku 강등, vision → OCR 텍스트. 100% 도달: 추출·채팅 중단, 수집만 계속(jobs는 queued 유지). 앱에 잔여 예산 표시.
-- 초기 백필 3개월(약 1,800건 × 1.5k 토큰 ≈ $3)은 별도 1회 예산으로 잡는다.
+- 80% 도달: 채팅 gpt-6-sol → gpt-6-luna 강등, vision → OCR 텍스트. 100% 도달: 추출·채팅 중단, 수집만 계속(jobs는 queued 유지). 앱에 잔여 예산 표시.
+- 초기 백필 3개월(약 1,800건 × 1.8k 토큰, gpt-6-luna ≈ $0.5)은 별도 1회 예산으로 잡는다.
 - 동시 LLM 호출은 사용자당 2개로 제한한다.
 
 ## 14. 0단계: 기능별 사전 검증 (구현 전 필수)
@@ -414,7 +433,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 60초, 최대 5회 
 | PoC-4 | 미검증 | — | Supabase 프로젝트·APNs `.p8` |
 | PoC-5 | 부분 | 실제 배너·액션 탭(XCUITest, 로컬 알림): 백그라운드 쓰기 `bg=true`, 재탭 `dup skip`, 앱 종료 후 콜드 스타트, 동시 두 번 탭 이벤트 +1 | **실기기**: 잠금 화면에서 `.authenticationRequired`의 Face ID/암호 요구와 쓰기 성공. 보고 실패 후 재탭은 서버 연동 후 |
 | PoC-6 | 미검증 | — | GCP OAuth·Pub/Sub |
-| PoC-7 | 미검증 | — | Supabase·Voyage 키(합성 코퍼스) |
+| PoC-7 | 미검증 | — | Supabase·OpenAI 키(합성 코퍼스) |
 | PoC-8 | 부분 | 기기 부분: 사진 앱 → 공유 시트 → 확장 실행, OCR 텍스트와 `SHARE` 큐 행(합성 이미지) | 서버 부분(Task 12): vision 추출 5/5, 오프라인 후 유실 0 |
 | PoC-9 | **통과** | 앱 프로세스 완전 종료 확인 후 3.68초 뒤 목 서버에 정확한 바이트 수로 도착 | — (시뮬레이터 실측이 판정 기준을 그대로 재현) |
 | PoC-10 | 미검증 | — | Supabase 프로젝트 |
@@ -443,7 +462,7 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 
 ### 2차 리뷰 반영 (Codex gpt-6-astra, 2026-09-23, 개인정보 설계)
 
-10건 모두 반영: 암호화 보호 범위 정직화(1), 백업·키 파기 한계 명시(2), 삭제 범위 3단계로 통일(3), 저장→분류→삭제 순서와 예외 명시(4), service_role 격리·평문 읽기 감사(5), 만료 시 청크 행 전체 삭제(6), Voyage 확인 전 임베딩 보류(7), pgsodium → Edge 봉투 암호화(8), NSE 조건·상한 명시(9), BG 작업 비보장·`requiresExternalPower`·watch 갱신 주체(10).
+10건 모두 반영: 암호화 보호 범위 정직화(1), 백업·키 파기 한계 명시(2), 삭제 범위 3단계로 통일(3), 저장→분류→삭제 순서와 예외 명시(4), service_role 격리·평문 읽기 감사(5), 만료 시 청크 행 전체 삭제(6), 임베딩 공급자 확인 전 보류(7, 2026-09-26 OpenAI 약관 확인으로 해제 — 아래 "임베딩 보류"), pgsodium → Edge 봉투 암호화(8), NSE 조건·상한 명시(9), BG 작업 비보장·`requiresExternalPower`·watch 갱신 주체(10).
 
 ### 플랜 B: 로컬 우선 구조 (미채택, 신뢰 문제 발생 시 전환)
 
@@ -456,11 +475,14 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 - 잃는 것: 폰이 꺼진 동안의 처리, 기기 간 공유, 서버 측 검색 품질 튜닝. 전환 비용: §7 파이프라인 대부분을 Swift로 재작성.
 
 - **알림 트리거 배너 탭**: 사용자가 알림마다 탭해야 하면 편의성이 크게 떨어진다. PoC-1 결과에 따라 2단계 범위를 재조정한다.
-- **Voyage 데이터 정책**: 학습 미사용·보관 기간 미확인. §12 통제 3에 따라 **확인 전에는 임베딩을 생성하지 않는다**(키워드 검색만). 마스킹은 전송 근거가 아니다. PoC-7은 합성 코퍼스로만 평가한다.
+- **임베딩 보류 → 약관 사유 해제 (2026-09-26)**: 벤더를 OpenAI로 바꾸며 학습 미사용·보관 30일(남용 모니터링)을 공식 문서로 확인했고, 임베딩은 분류와 같은 공급자·약관이라 새 전송처가 아니다(§12 통제 3). 남은 활성화 조건은 **PoC-7 통과(합성 코퍼스, 하이브리드 경로)** 하나다. 그 전까지 실제 사용자 데이터의 `embedding`은 null, 검색은 키워드 경로. PoC-7 평가는 여전히 합성 코퍼스로만 한다.
+- **OpenAI 30일 보관**: ZDR은 사전 승인제라 본인 사용 단계에서는 남용 모니터링 30일 보관을 수용한다. 지인 확대 시 ZDR 신청, 거절되면 처리방침에 명시.
+- **인용 검증의 한계**: OpenAI에는 문서 인용 기능이 없어 인용은 모델이 JSON에 적은 `source_item_ids`다. 서버는 id가 검색 결과에 있는지만 확인하므로 "있는 문서를 잘못 인용"은 막지 못한다. PoC-7·1a 검색 평가의 인용 정확도 지표로 측정하고, 미달 시 문장-문서 대조(gpt-6-luna 재검증) 단계를 추가한다.
 - **Edge 복호화 비용**: 워커가 건마다 AES-GCM 복호화하므로 CPU 2초 제한 안에서 배치 크기를 정해야 한다. PoC-10에 항목 추가.
 - **Gmail 7일 재인증**: 테스트 모드 refresh token 만료(`connections.expires_at`) 24시간 전 푸시로 완화. 본인 사용 기간엔 감수. 지인 확대 시점에 앱 검증 비용을 결정한다.
 - **APNs from Deno**: 미확인. PoC-4.
-- **Voyage 가격·한국어 품질**: 공식 가격 페이지 미확인. PoC-7(합성 코퍼스)에서 품질 판정.
+- **임베딩 한국어 품질**: `text-embedding-3-small` 가격($0.02/1M)은 확인, 한국어·다국어 성능 수치는 공식 문서에 없다. PoC-7(합성 코퍼스)에서 판정하고 미달 시 `text-embedding-3-large`(`dimensions: 512`)로 재평가.
+- **모델 ID 수명**: `gpt-6-luna`·`gpt-6-sol`은 별칭과 스냅샷이 같은 ID 하나뿐이다. 날짜 고정 스냅샷이 나오면 제품 코드에서는 스냅샷으로 고정한다.
 - **Supabase 무료 티어 500MB**: 1인 1년 원문이면 충분하나 이미지 포함 시 Storage 1GB 상한 감시.
 - **Foundation Models 가용성**: Apple Intelligence 꺼진 기기는 규칙 필터만(카톡·인스타 폐기, 그 외 서버 분류). 지인 확대 시 안내 필요.
 - **시뮬레이터 FM 가용성이 호스트 Mac 설정에 종속**: 시뮬레이터는 호스트 Mac의 모델을 쓴다. 호스트가 Apple Intelligence 꺼짐(`appleIntelligenceNotEnabled`, macOS 26.5에서 직접 호출로 확인)이면 시뮬레이터 `respond`는 에셋 오류를 낸다. 그런데 시뮬레이터 `availability()`는 **`available`로 오표시**한다. 따라서 시뮬레이터 FM 결과는 판정 근거가 아니고, 가용성은 1건 사전 점검(§6)으로 판단하며, PoC-3 수치는 실기기에서 잰다. 시뮬레이터로 참고치를 보려면 사용자가 Mac의 Apple Intelligence를 켜고 모델 다운로드를 마쳐야 한다.
