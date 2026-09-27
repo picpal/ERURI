@@ -1,21 +1,34 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { encrypt, SERVER_AUTH, toBytea } from "../_shared/crypto.ts";
 import { handleIngest } from "./handler.ts";
+import { handleDevice, isDevicePath } from "./device.ts";
 import { handleTrace, isTracePath } from "./trace.ts";
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, SERVER_AUTH);
+// 사용자 JWT로 만든 클라이언트: RLS를 그대로 적용한다
+const userDb = (userToken: string) => createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!,
+  { ...SERVER_AUTH, global: { headers: { Authorization: `Bearer ${userToken}` } } });
 const authUser = async (token: string) => {
   const { data, error } = await sb.auth.getUser(token);
   return error ? null : data.user?.id ?? null;
 };
 Deno.serve((req) => {
+  const url = new URL(req.url);
+  // POST /functions/v1/ingest/device: 기기 APNs 토큰·환경 등록(devices)
+  if (isDevicePath(url)) {
+    return handleDevice(req, {
+      authUser,
+      upsertDevice: async (userToken, row) => {
+        const { error } = await userDb(userToken).from("devices").upsert(row, { onConflict: "user_id,device_id" });
+        if (error) throw new Error("devices upsert " + error.code);
+      },
+    });
+  }
   // POST /functions/v1/ingest/trace: PoC 추적 이벤트(poc_traces). 사용자 JWT 클라이언트로 넣어 RLS를 그대로 적용한다
-  if (isTracePath(new URL(req.url))) {
+  if (isTracePath(url)) {
     return handleTrace(req, {
       authUser,
       insertTraces: async (userToken, rows) => {
-        const userDb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!,
-          { ...SERVER_AUTH, global: { headers: { Authorization: `Bearer ${userToken}` } } });
-        const { error } = await userDb.from("poc_traces").insert(rows);
+        const { error } = await userDb(userToken).from("poc_traces").insert(rows);
         if (error) throw new Error("poc_traces insert " + error.code);
       },
     });

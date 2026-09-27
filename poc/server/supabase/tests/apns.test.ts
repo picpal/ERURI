@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert";
-import { __resetJWTCache, makeJWT, normalizeP8, sendAPNs } from "../functions/_shared/apns.ts";
+import { stub } from "jsr:@std/testing/mock";
+import { __resetJWTCache, type ApnsEnv, apnsHost, defaultApnsEnv, makeJWT, normalizeP8, sendAPNs, sendWithEnvFallback } from "../functions/_shared/apns.ts";
 
 const P8 = Deno.env.get("APNS_P8")!;
 const opts = { keyId: "ABC123DEFG", teamId: "6626BYCJG4", p8: P8 };
@@ -85,4 +86,45 @@ Deno.test("live sandbox APNs: fake device token → 400 BadDeviceToken with apns
   assertEquals(r.reason, "BadDeviceToken");
   assert(r.apnsId);
   assertEquals(r2.status, 400);
+});
+
+// ── APNs 환경(sandbox/production) 선택과 불일치 재시도 ──────────────────
+
+Deno.test("apnsHost and default env from APNS_ENV (invalid → sandbox)", () => {
+  assertEquals(apnsHost("production"), "api.push.apple.com");
+  assertEquals(apnsHost("sandbox"), "api.sandbox.push.apple.com");
+  const prev = Deno.env.get("APNS_ENV");
+  try {
+    Deno.env.set("APNS_ENV", "production"); assertEquals(defaultApnsEnv(), "production");
+    Deno.env.set("APNS_ENV", "bogus"); assertEquals(defaultApnsEnv(), "sandbox");
+    Deno.env.delete("APNS_ENV"); assertEquals(defaultApnsEnv(), "sandbox");
+  } finally {
+    if (prev === undefined) Deno.env.delete("APNS_ENV"); else Deno.env.set("APNS_ENV", prev);
+  }
+});
+
+Deno.test("env mismatch reasons retry once on the opposite environment, logged without the token", async () => {
+  const token = "ab".repeat(32);
+  for (const reason of ["BadDeviceToken", "BadEnvironmentToken"]) {
+    const calls: string[] = [], lines: string[] = [];
+    using _log = stub(console, "log", (...a: unknown[]) => { lines.push(a.map(String).join(" ")); });
+    const send = async (o: { env: ApnsEnv }) => { calls.push(o.env); return o.env === "production" ? { status: 400, reason } : { status: 200, apnsId: "id-1" }; };
+    const r = await sendWithEnvFallback(send, { token, payload: {}, topic: "t", env: "production" });
+    assertEquals(calls, ["production", "sandbox"]);
+    assertEquals([r.status, r.env, r.retried, r.firstReason], [200, "sandbox", true, reason]);
+    assert(lines.some((l) => l.includes("env_retry")) && !lines.join("\n").includes(token));
+  }
+});
+
+Deno.test("no retry on success or on other errors; the retry itself is not retried", async () => {
+  // 403 BadEnvironmentKeyInToken = .p8 키 환경 문제(Sandbox 전용 키로 production 발송 등) → 재시도 없음
+  for (const first of [{ status: 200 }, { status: 403, reason: "InvalidProviderToken" }, { status: 410, reason: "Unregistered" },
+                       { status: 403, reason: "BadEnvironmentKeyInToken" }]) {
+    const calls: string[] = [];
+    const r = await sendWithEnvFallback(async (o) => { calls.push(o.env); return first; }, { token: "cd".repeat(32), payload: {}, topic: "t", env: "sandbox" });
+    assertEquals([calls, r.retried, r.env], [["sandbox"], false, "sandbox"]);
+  }
+  const calls: string[] = [];
+  const r = await sendWithEnvFallback(async (o) => { calls.push(o.env); return { status: 400, reason: "BadDeviceToken" }; }, { token: "ef".repeat(32), payload: {}, topic: "t", env: "sandbox" });
+  assertEquals([calls, r.status, r.retried], [["sandbox", "production"], 400, true]);
 });

@@ -38,6 +38,41 @@ iat를 30분 경계로 내림(isolate가 달라도 같은 iat, 나이 ≤ 30분)
 `functions/apns-send/index.ts`(secret 키 호출만, 응답에 토큰·JWT 없음), `tests/apns.test.ts`(8개).
 Edge secrets: `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC`, `APNS_P8`(`.p8` 파일 원문. `.env`의 한 줄 `\n` 표기도 `normalizeP8`이 받는다).
 
+## APNs 환경: 기기별 sandbox/production (2026-09-27)
+
+개발 서명(Xcode 설치) 앱은 **sandbox** 토큰, **TestFlight·App Store 빌드는 production** 토큰을 발급한다. 서버는 기기별 환경으로 보낸다.
+
+- `devices(user_id, device_id, apns_token, apns_env, build, last_seen_at)` — 마이그레이션 `0011_devices.sql`, RLS 소유자 select/insert/update. (스펙 §8 `devices`의 `environment` 열 이름을 이번 구현은 `apns_env`로 썼다.)
+- secret `APNS_ENV`(`sandbox`|`production`, 기본 sandbox): 토큰만 받은 발송의 기본 환경. **현재 `production`으로 설정.**
+- 발송(`sendWithEnvFallback`): 400 `BadDeviceToken`/`BadEnvironmentToken`이면 반대 환경으로 **1회** 재시도하고 `{"apns":"env_retry","from","to","reason"}`를 로그(토큰 없음). 403 `BadEnvironmentKeyInToken`은 재시도하지 않고 `key_env_mismatch`를 로그한다.
+
+### 기기 등록 계약
+
+```http
+POST {SUPABASE_URL}/functions/v1/ingest/device
+Authorization: Bearer <Supabase 사용자 access_token>
+apikey: <SUPABASE_ANON_KEY>
+content-type: application/json
+
+{"device_id":"<identifierForVendor>","apns_token":"<hex 64~200자>","apns_env":"production","build":"1.0 (7)"}
+```
+
+- 앱은 `didRegisterForRemoteNotificationsWithDeviceToken`마다(실행 시·토큰 갱신 시) 보낸다. `apns_env`는 빌드 구성으로 정한다: TestFlight·App Store 배포 빌드 = `production`, Xcode Debug 설치 = `sandbox`(entitlement `aps-environment`와 같게).
+- 응답: 200 `{"device_id","apns_env"}` / 400 `bad_device_id`·`bad_apns_token`·`bad_apns_env`·`bad_build`·`bad_body`·`bad_json` / 401 세션 없음. 같은 `(user_id, device_id)`는 한 행으로 갱신된다. 토큰은 소문자로 저장.
+- 발송: `apns-send` body `{ "device_id": "...", "user_id": "<uuid>", "count": 1, "concurrency": 1 }`(service 키)로 기기에 저장된 토큰·환경을 쓴다. `{ "token": "...", "env"?: "sandbox"|"production" }`도 된다(env 생략 시 `APNS_ENV`). 응답에 `env`·`envRetries`·`byEnv` 추가.
+
+### 실측 (배포 후, 가짜 토큰·전용 테스트 사용자)
+
+| 요청 | 결과 |
+|---|---|
+| `ingest/device` 인증 없음 / `apns_env: "prod"` / 정상 | 401 / 400 `bad_apns_env` / 200 |
+| `apns-send` device_id(production) 1회 | **403 `BadEnvironmentKeyInToken`**, `apns-id` 있음, 0.8초 |
+| `apns-send` token(기본 `APNS_ENV=production`) | 403 `BadEnvironmentKeyInToken` |
+
+**현재 `.p8` 키(`APNS_KEY_ID`)는 Sandbox 전용이다.** production 호스트가 키 단계에서 거부하므로 TestFlight 설치 기기로는 푸시가 가지 않는다.
+조치(사용자): developer.apple.com → Keys에서 APNs 키를 **Sandbox & Production**(또는 Production)으로 새로 만든다. 그다음 `poc/server/keys/`에 `.p8`을 두고 `.env`의 `APNS_KEY_ID`·`APNS_P8`을 바꾼 뒤, secrets `APNS_KEY_ID`·`APNS_P8`을 다시 설정한다(에이전트가 `.p8` 원문으로 등록).
+그 전까지 Xcode 개발 설치(sandbox)로 실측하려면 `APNS_ENV=sandbox`로 되돌리거나 기기를 `apns_env: "sandbox"`로 등록한다.
+
 ## 실기기에서 할 일 (사용자)
 
 ### 1. 앱에 토큰 등록 추가 (구현 필요, 계획서 Task 9 Step 4)

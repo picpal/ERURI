@@ -38,14 +38,42 @@ async function signJWT(o: { keyId: string; teamId: string; p8: string }, iat: nu
 }
 
 export type APNsResult = { status: number; apnsId?: string; reason?: string };
+export type ApnsEnv = "sandbox" | "production";
 
-export async function sendAPNs(o: { token: string; payload: unknown; topic: string; priority?: 5 | 10; sandbox?: boolean }): Promise<APNsResult> {
+// 개발 서명(Xcode 설치)은 sandbox 토큰, TestFlight·App Store 빌드는 production 토큰을 발급한다
+export function apnsHost(env: ApnsEnv): string {
+  return env === "production" ? "api.push.apple.com" : "api.sandbox.push.apple.com";
+}
+export function defaultApnsEnv(): ApnsEnv {
+  return Deno.env.get("APNS_ENV") === "production" ? "production" : "sandbox";
+}
+
+export async function sendAPNs(o: { token: string; payload: unknown; topic: string; priority?: 5 | 10; env?: ApnsEnv }): Promise<APNsResult> {
   const jwt = await makeJWT({ keyId: Deno.env.get("APNS_KEY_ID")!, teamId: Deno.env.get("APNS_TEAM_ID")!, p8: Deno.env.get("APNS_P8")! });
-  const host = o.sandbox === false ? "api.push.apple.com" : "api.sandbox.push.apple.com";
-  const r = await fetch(`https://${host}/3/device/${o.token}`, { method: "POST",
+  const r = await fetch(`https://${apnsHost(o.env ?? defaultApnsEnv())}/3/device/${o.token}`, { method: "POST",
     headers: { authorization: `bearer ${jwt}`, "apns-topic": o.topic, "apns-priority": String(o.priority ?? 10), "apns-push-type": "alert" },
     body: JSON.stringify(o.payload) });
   const apnsId = r.headers.get("apns-id") ?? undefined;
   if (r.status === 200) { await r.body?.cancel(); return { status: 200, apnsId }; }
   return { status: r.status, apnsId, reason: (await r.json().catch(() => ({}))).reason };
+}
+
+// 토큰과 호스트 환경이 어긋났을 때 APNs가 주는 400 사유. Apple 문서의 환경 불일치는 BadDeviceToken으로 오고,
+// BadEnvironmentToken은 요청에서 명시한 이름이라 함께 받는다. 403 BadEnvironmentKeyInToken은 .p8 키가 그 환경용이 아니라는 뜻이라
+// (예: Sandbox 전용 키로 production 발송) 재시도해도 소용없다 → 재시도하지 않고 로그로 알린다(2026-09-27 실측)
+const ENV_MISMATCH = new Set(["BadDeviceToken", "BadEnvironmentToken"]);
+export type EnvSendResult = APNsResult & { env: ApnsEnv; retried: boolean; firstReason?: string };
+
+// 환경 불일치면 반대 환경으로 1회만 재시도한다. 로그에는 환경·사유만(토큰 없음)
+export async function sendWithEnvFallback(
+  send: (o: { token: string; payload: unknown; topic: string; priority?: 5 | 10; env: ApnsEnv }) => Promise<APNsResult>,
+  o: { token: string; payload: unknown; topic: string; priority?: 5 | 10; env: ApnsEnv },
+): Promise<EnvSendResult> {
+  const first = await send(o);
+  if (first.reason === "BadEnvironmentKeyInToken") console.log(JSON.stringify({ apns: "key_env_mismatch", env: o.env }));
+  if (first.status !== 400 || !first.reason || !ENV_MISMATCH.has(first.reason)) return { ...first, env: o.env, retried: false };
+  const other: ApnsEnv = o.env === "production" ? "sandbox" : "production";
+  console.log(JSON.stringify({ apns: "env_retry", from: o.env, to: other, reason: first.reason }));
+  const second = await send({ ...o, env: other });
+  return { ...second, env: other, retried: true, firstReason: first.reason };
 }
