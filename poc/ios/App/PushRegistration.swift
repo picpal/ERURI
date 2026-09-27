@@ -1,0 +1,122 @@
+import UIKit
+import UserNotifications
+import EruriCore
+
+/// PoC-4: 알림 권한이 있으면 `registerForRemoteNotifications()` → 받은 토큰을 App Group 에 두고 `ingest/device` 로 등록한다.
+/// 계약·환경 판정: docs/superpowers/poc/poc-4-apns.md "기기 등록 계약". 토큰은 poc.log·Trace 에 sha8 만 남긴다.
+final class PushDelegate: NSObject, UIApplicationDelegate {
+  func application(_ application: UIApplication,
+                   didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+    // 권한이 이미 있으면 실행마다 등록해 토큰 갱신을 받는다(Apple 권장).
+    // `--poc-debug-apns-register`: 권한 대화상자 없이 등록만 시도한다(시뮬레이터 실패 경로 확인용)
+    let force = CommandLine.arguments.contains("--poc-debug-apns-register")
+    Task {
+      let authorized = await PushRegistration.authorized()
+      if force || authorized { PushRegistration.registerRemote() }
+    }
+    return true
+  }
+
+  func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+    let hex = APNsDevice.hex(deviceToken), env = PushRegistration.env
+    APNsDevice.store(token: hex, env: env)
+    PoCLog.append("apns token sha8=\(Trace.sha8(hex)) len=\(hex.count) env=\(env.rawValue) dist=\(PushRegistration.distribution)")
+    Task { await DeviceRegistrar.shared.register() }
+  }
+
+  func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+    let e = error as NSError
+    APNsDevice.setStatus("토큰 발급 실패 \(e.domain) \(e.code)")
+    PoCLog.append("apns register failed domain=\(e.domain) code=\(e.code)")
+    Trace.log("poc4.register_failed", ["domain": e.domain, "code": e.code, "apns_env": PushRegistration.env.rawValue,
+                                       "distribution": PushRegistration.distribution])
+  }
+}
+
+enum PushRegistration {
+  static func authorized() async -> Bool {
+    let s = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    return s == .authorized || s == .provisional
+  }
+
+  @MainActor static func registerRemote() {
+    PoCLog.append("apns registerForRemoteNotifications")
+    UIApplication.shared.registerForRemoteNotifications()
+  }
+
+  private static var profile: Data? {
+    Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision").flatMap { try? Data(contentsOf: $0) }
+  }
+  private static var isDebug: Bool {
+    #if DEBUG
+    true
+    #else
+    false
+    #endif
+  }
+  private static var isSimulator: Bool {
+    #if targetEnvironment(simulator)
+    true
+    #else
+    false
+    #endif
+  }
+
+  /// 이 설치의 APNs 환경. 서명 entitlement `aps-environment` 와 같아야 한다(Xcode 설치 = sandbox, TestFlight = production).
+  static var env: APNsDevice.Env {
+    let p = profile
+    return APNsDevice.environment(isDebug: isDebug, hasProfile: p != nil, profileAPSEnvironment: p.flatMap(APNsDevice.profileAPSEnvironment))
+  }
+  static var distribution: String {
+    APNsDevice.distribution(isSimulator: isSimulator, hasProfile: profile != nil,
+                            receiptName: Bundle.main.appStoreReceiptURL?.lastPathComponent)
+  }
+  static var build: String {
+    let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
+    return "\(v) (\(Trace.build))"
+  }
+}
+
+/// 저장된 토큰을 `POST /functions/v1/ingest/device` 로 보낸다. 세션(JWT)이 없으면 대기로 두고
+/// 로그인·앱 활성화 때(`register()` 재호출) 보낸다. 같은 (환경, 토큰)은 한 번만 보낸다(`force` 는 버튼용).
+actor DeviceRegistrar {
+  static let shared = DeviceRegistrar()
+  private var inFlight = false
+
+  func register(force: Bool = false) async {
+    guard let token = APNsDevice.token(), let env = APNsDevice.env() else { return }
+    guard force || APNsDevice.needsRegistration(), !inFlight, let cfg = SupabaseSession.config else { return }
+    inFlight = true
+    defer { inFlight = false }
+    guard let jwt = await SupabaseSession.shared.accessToken() else {
+      APNsDevice.setStatus("등록 대기: 로그인 필요")
+      PoCLog.append("device register queued: no session")
+      return
+    }
+    var r = URLRequest(url: cfg.url.appendingPathComponent("functions/v1/ingest/device")); r.httpMethod = "POST"
+    r.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
+    r.setValue(cfg.anonKey, forHTTPHeaderField: "apikey")
+    r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    let body: [String: String] = ["device_id": Trace.deviceID, "apns_token": token, "apns_env": env.rawValue, "build": PushRegistration.build]
+    r.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    let started = Date(), sha8 = Trace.sha8(token)
+    var status = -1, code = ""
+    do {
+      let (data, resp) = try await URLSession.shared.data(for: r)
+      status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+      code = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["error"] as? String ?? ""
+    } catch { code = "network_\((error as NSError).code)" }
+    let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+    if status == 200 {
+      APNsDevice.markRegistered(token: token, env: env)
+      APNsDevice.setStatus("등록됨 \(env.rawValue) · \(sha8)")
+      PoCLog.append("device registered env=\(env.rawValue) token_sha8=\(sha8)")
+      Trace.log("poc4.device_registered", ["token_sha8": sha8, "apns_env": env.rawValue, "distribution": PushRegistration.distribution,
+                                           "elapsed_ms": elapsed])
+    } else {
+      APNsDevice.setStatus("등록 실패 status=\(status) \(code)")
+      PoCLog.append("device register failed status=\(status) \(code)")
+      Trace.log("poc4.device_register_failed", ["status": status, "code": code, "apns_env": env.rawValue, "elapsed_ms": elapsed])
+    }
+  }
+}

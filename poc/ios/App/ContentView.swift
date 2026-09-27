@@ -14,6 +14,7 @@ struct ContentView: View {
   @State private var gmailBusy = false
   @State private var traceStatus = ""
   @State private var tracePassword = ""
+  @State private var pushStatus = ""
 
   var body: some View {
     NavigationStack {
@@ -24,6 +25,11 @@ struct ContentView: View {
           Button("업로드 flush") { Uploader.shared.flush(); refresh() }
           Button("10초 뒤 ADD_EVENT 로컬 알림") { NotificationActions.scheduleLocal(proposalId: "p-local-1", after: 10) }
           if !lastResult.isEmpty { Text("결과: \(lastResult)").font(.caption).foregroundStyle(.secondary) }
+        }
+        // PoC-4: APNs 토큰(마스킹) → ingest/device. 등록은 토큰을 다시 받고 저장된 토큰을 강제로 재전송한다
+        Section("푸시 (PoC-4)") {
+          Text(pushStatus).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("pushStatus")
+          Button("등록") { registerPush() }.accessibilityIdentifier("pushRegister")
         }
         // PoC-6: Google 로그인 → serverAuthCode → gmail-connect. 비밀번호는 `sim.sh gmail` 이 launch argument 로 넘긴다
         Section("Gmail (PoC-6)") {
@@ -93,6 +99,7 @@ struct ContentView: View {
   private func requestPermissions() {
     UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
       PoCLog.append("notif permission granted=\(granted) error=\(String(describing: error))")
+      if granted { Task { @MainActor in PushRegistration.registerRemote() } }
     }
     EKEventStore().requestFullAccessToEvents { granted, error in
       PoCLog.append("calendar permission granted=\(granted) error=\(String(describing: error))")
@@ -106,6 +113,8 @@ struct ContentView: View {
     logLines = PoCLog.tail(lines: 20)
     ingestCurrent = Uploader.base.absoluteString
     let pending = (try? CaptureQueue.shared().traceCount()) ?? -1
+    let token = APNsDevice.token().map(APNsDevice.masked) ?? "없음"
+    pushStatus = "토큰 \(token) · \(PushRegistration.env.rawValue)/\(PushRegistration.distribution) · \(APNsDevice.status() ?? "-")"
     Task {
       let session = await SupabaseSession.shared.hasSession
       traceStatus = "device \(Trace.deviceID.prefix(8)) · build \(Trace.build) · 대기 \(pending)건 · 세션 \(session ? "있음" : "없음")"
@@ -130,7 +139,15 @@ struct ContentView: View {
     Task {
       let ok = await SupabaseSession.shared.login(password: pw)
       PoCLog.append("trace login \(ok ? "ok" : "failed")")
-      if ok { Uploader.shared.flush() }
+      if ok { Uploader.shared.flush(); await DeviceRegistrar.shared.register() }
+      refresh()
+    }
+  }
+
+  private func registerPush() {
+    PushRegistration.registerRemote()
+    Task {
+      await DeviceRegistrar.shared.register(force: true)
       refresh()
     }
   }

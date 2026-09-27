@@ -7,6 +7,7 @@ import GoogleSignIn
 @main
 struct EruriPoCApp: App {
   private static let notificationDelegate = NotificationDelegate()
+  @UIApplicationDelegateAdaptor(PushDelegate.self) private var pushDelegate   // PoC-4 APNs 토큰 등록
   @Environment(\.scenePhase) private var scenePhase
 
   init() {
@@ -122,7 +123,10 @@ struct EruriPoCApp: App {
         .onOpenURL { url in _ = GIDSignIn.sharedInstance.handle(url) }   // PoC-6 Google 로그인 리디렉션
     }
     .onChange(of: scenePhase) { _, newPhase in
-      if newPhase == .active { ContactsLoader.refresh(); Uploader.shared.flush() }
+      if newPhase == .active {
+        ContactsLoader.refresh(); Uploader.shared.flush()
+        Task { await DeviceRegistrar.shared.register() }   // 미로그인으로 대기 중이던 토큰 등록
+      }
     }
   }
 }
