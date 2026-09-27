@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ERURI · 실기기 테스트 목록</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --color-paper: #f5f5f5; --color-paper-2: #ececec; --color-ink: #2d3142; --color-muted: #4f5d75;
+  --color-soft: #7a8399; --color-rule: rgba(45,49,66,0.12); --color-accent: #0f766e;
+  --color-accent-tint: rgba(15,118,110,0.08); --color-link: #4c1d95; --color-alert: #8a5a12;
+  --font-sans: 'Pretendard', 'Noto Sans KR', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'Noto Sans Mono CJK KR', ui-monospace, Menlo, monospace;
+}
+body { font-family: var(--font-sans); background: var(--color-paper); color: var(--color-ink); min-height: 100vh; padding: 3rem 2rem; }
+.container { max-width: 1200px; margin: 0 auto; }
+.header { margin-bottom: 2rem; }
+.header-eyebrow, .section-eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted); margin-bottom: 0.75rem; }
+h1 { font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem); font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 0.5rem; }
+h2 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 0.25rem; }
+.subtitle, .section-sub { font-size: 1rem; line-height: 1.55; color: var(--color-muted); max-width: 68ch; }
+.section { margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid var(--color-rule); }
+.diagram-container { overflow-x: auto; margin-top: 1.25rem; -webkit-overflow-scrolling: touch; }
+.diagram-container svg { width: 100%; min-width: 720px; display: block; }
+.scroll-hint { display: none; font-family: var(--font-mono); font-size: 0.66rem; color: var(--color-soft); margin-top: 0.5rem; }
+.cards { display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 1rem; margin-top: 1.5rem; }
+.card { background: #ffffff; border-radius: 6px; border: 1px solid var(--color-rule); padding: 1.25rem; }
+.card-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.875rem; padding-bottom: 0.875rem; border-bottom: 1px solid rgba(45,49,66,0.08); }
+.card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.card-dot.ink { background: var(--color-ink); } .card-dot.muted { background: var(--color-muted); }
+.card-dot.accent { background: var(--color-accent); } .card-dot.alert { background: var(--color-alert); }
+.card h3 { font-size: 0.875rem; font-weight: 600; }
+.card ul { list-style: none; color: var(--color-muted); font-size: 0.8125rem; line-height: 1.55; }
+.card li { margin-bottom: 0.35rem; padding-left: 0.875rem; position: relative; }
+.card li::before { content: '—'; position: absolute; left: 0; color: rgba(45,49,66,0.25); font-size: 0.75rem; }
+.card.check li::before { content: '□'; color: var(--color-accent); }
+.meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin-top: 1.5rem; border: 1px solid var(--color-rule); border-radius: 6px; background: #fff; }
+.meta div { padding: 0.9rem 1rem; border-right: 1px solid rgba(45,49,66,0.08); }
+.meta div:last-child { border-right: none; }
+.meta dt { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-soft); margin-bottom: 0.35rem; }
+.meta dd { font-size: 0.875rem; line-height: 1.45; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: rgba(45,49,66,0.05); padding: 0 0.25em; border-radius: 2px; overflow-wrap: anywhere; }
+pre { font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.55; background: #fff; border: 1px solid var(--color-rule); border-radius: 6px; padding: 0.9rem 1rem; overflow-x: auto; margin-top: 0.5rem; white-space: pre; }
+.flag { display: inline-block; font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.06em; padding: 0 0.35rem; border: 1px solid rgba(138,90,18,0.5); border-radius: 2px; color: var(--color-alert); background: rgba(138,90,18,0.06); margin-right: 0.2rem; white-space: nowrap; }
+.table-wrap { margin-top: 1.25rem; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; background: #fff; border: 1px solid var(--color-rule); border-radius: 6px; }
+th, td { text-align: left; padding: 0.55rem 0.65rem; border-bottom: 1px solid rgba(45,49,66,0.08); vertical-align: top; line-height: 1.5; }
+th { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-muted); font-weight: 500; background: var(--color-paper-2); position: sticky; top: 0; }
+table.tests { min-width: 1080px; }
+table.tests td.c-0 { width: 3rem; } table.tests td.c-1 { width: 5.5rem; font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-muted); white-space: nowrap; }
+table.tests td.c-2 { width: 9rem; font-weight: 600; } table.tests td.c-7 { width: 7.5rem; }
+.tid { font-family: var(--font-mono); font-weight: 600; color: var(--color-accent); }
+tr.block td { font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--color-soft); background: var(--color-paper); padding-top: 0.8rem; }
+.blank { font-family: var(--font-mono); font-size: 0.66rem; color: var(--color-soft); }
+.note { margin-top: 1rem; font-size: 0.8125rem; line-height: 1.6; color: var(--color-muted); max-width: 90ch; }
+.issues li { margin-bottom: 0.5rem; }
+.footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid rgba(45,49,66,0.10); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; color: var(--color-soft); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+@media (max-width: 900px) {
+  body { padding: 2rem 1rem; }
+  .cards { grid-template-columns: 1fr; }
+  .meta { grid-template-columns: 1fr 1fr; }
+  .meta div:nth-child(2) { border-right: none; }
+  .meta div:nth-child(-n+2) { border-bottom: 1px solid rgba(45,49,66,0.08); }
+  .scroll-hint { display: block; }
+}
+@media (max-width: 760px) {
+  table.tests { min-width: 0; border: none; background: transparent; }
+  table.tests thead { display: none; }
+  table.tests, table.tests tbody, table.tests tr, table.tests td { display: block; width: 100% !important; }
+  table.tests tr { background: #fff; border: 1px solid var(--color-rule); border-radius: 6px; margin-bottom: 0.75rem; padding: 0.35rem 0; }
+  table.tests tr.block { background: transparent; border: none; margin: 1.25rem 0 0.25rem; padding: 0; }
+  table.tests tr.block td { background: transparent; padding: 0; }
+  table.tests td { border-bottom: none; padding: 0.3rem 0.85rem; }
+  table.tests td[data-label]::before { content: attr(data-label); display: block; font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-soft); }
+  table.tests td.c-1 { white-space: normal; }
+  .meta { grid-template-columns: 1fr; }
+  .meta div { border-right: none; border-bottom: 1px solid rgba(45,49,66,0.08); }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <p class="header-eyebrow">Device Test List · 2026-09-27 · PoC-1 / 2 / 3 / 4 / 5 / 6 / 8 / 9</p>
+    <h1>실기기 테스트 목록 A–AJ</h1>
+    <p class="subtitle">iPhone 한 대로 지금 따라 하는 36개 항목. 한 항목은 한 화면에서 끝나고, 순서는 권한 → 등록 → 트리거 → 알림 → 공유 → 벤치마크다. 판정 원자료는 <code>poc_traces</code>로 올라오고 Mac은 조회만 한다. 절차의 자세한 설명은 <a href="2026-09-24-device-session.html">기존 세션 절차서</a>에 있다.</p>
+    <dl class="meta">
+      <div><dt>대상 빌드</dt><dd>TestFlight <b>ERURI PoC</b> 0.1.0 (202609271414)</dd></div>
+      <div><dt>계정</dt><dd>Apple ID official.picpal@gmail.com · 앱 로그인은 PoC 사용자(<code>POC_USER_PASSWORD</code>)</dd></div>
+      <div><dt>예상 소요</dt><dd>약 3시간 + ⌘U 벤치 시간 <span class="flag">추정</span> 기존 절차서 값, 원 문서엔 없음</dd></div>
+      <div><dt>네트워크</dt><dd>같은 Wi-Fi 불필요 — 서버는 호스팅, Mac은 조회용. <b>예외 AC–AE</b>: 목 서버가 Mac LAN이라 같은 Wi-Fi 필요 <span class="flag">확인 필요</span></dd></div>
+    </dl>
+    <div class="cards">
+      <div class="card check">
+        <p class="section-eyebrow">Before You Start</p>
+        <div class="card-header"><span class="card-dot accent"></span><h3>시작 전 체크 3개</h3></div>
+        <ul>
+          <li>설정 → Apple Intelligence 및 Siri 켜짐, 모델 다운로드 “완료” (T·AH. 다운로드 중이면 <code>modelNotReady</code>)</li>
+          <li>설정 → 알림 → 카카오톡·Instagram 미리보기 “항상” (I–O)</li>
+          <li>단축어 자동화마다 “실행 전 확인” 끔 = “즉시 실행” (G·H에서 설정, 토글 유무 자체가 기록 대상)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <p class="section-eyebrow">What You Need</p>
+        <div class="card-header"><span class="card-dot ink"></span><h3>준비물</h3></div>
+        <ul>
+          <li>iPhone(TestFlight 앱 설치됨), 기기 암호·Face ID 켜짐 (X)</li>
+          <li>두 번째 카톡·Instagram 계정, 테스트 발신 번호(본인 세컨폰·가족)</li>
+          <li>합성 이미지·URL·PDF, 합성 문구만 (실제 원문 금지, AGENTS §7)</li>
+          <li>Mac: deno + <code>scripts/sql.ts</code>(조회), 목 서버(AC–AE), 케이블·Xcode(AH만)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <p class="section-eyebrow">Check First</p>
+        <div class="card-header"><span class="card-dot alert"></span><h3>확인 필요 4건</h3></div>
+        <ul class="issues">
+          <li><b>F</b> 앱에 <code>ingest/device</code> 등록 코드가 없다 → 이 빌드로는 U–W 보류</li>
+          <li><b>AC–AE</b> 업로드는 Mac 목 서버(LAN) — 같은 Wi-Fi 필요</li>
+          <li><b>Z</b> 버튼 id <code>p-local-1</code> 고정 → 콜드 스타트 기대값이 <code>dup skip</code></li>
+          <li><b>AH·AI</b> ⌘U를 맨 끝이라 했지만 원 문서는 재부팅 BFU를 ⌘U 뒤에 둔다 → 원 문서 순서를 따름</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <p class="section-eyebrow">01 · Order &amp; Branches</p>
+    <h2>테스트 순서와 실패 시 분기</h2>
+    <p class="section-sub">위 줄은 왼쪽에서 오른쪽, 아래 줄은 오른쪽에서 왼쪽으로 읽는다. 결정은 하나다 — F에서 <code>devices</code> 행이 없으면 원격 푸시(U–W)를 건너뛰고 잠금 액션으로 간다. 트리거 뒤에 <code>poc_traces</code>가 0건이면 E(로그인)로 돌아간다.</p>
+    <div class="diagram-container">
+<svg viewBox="0 0 1000 464" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="device-test-flow-title device-test-flow-desc">
+<title id="device-test-flow-title">실기기 테스트 순서 A–AJ</title>
+<desc id="device-test-flow-desc">준비·권한에서 단축어 트리거, 원격 푸시, 잠금 액션, 공유·업로드, Gmail, 개발 설치와 재부팅을 거쳐 results.md 기록으로 끝나는 테스트 순서. 토큰 등록 행이 없으면 원격 푸시를 건너뛰고, trace가 0건이면 로그인으로 돌아간다.</desc>
+<defs><marker id="flow-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+<marker id="flow-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#0f766e"/></marker>
+<marker id="flow-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4c1d95"/></marker></defs>
+<rect width="100%" height="100%" fill="#f5f5f5"/>
+<line x1="200" y1="108" x2="280" y2="108" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#flow-arrow)"/>
+<line x1="440" y1="108" x2="536" y2="108" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#flow-arrow)"/>
+<line x1="672" y1="108" x2="760" y2="108" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#flow-arrow)"/>
+<path d="M 604,152 V 176 Q 604,184 612,184 H 792 Q 800,184 800,192 V 216" stroke="#4f5d75" stroke-width="1.2" fill="none" stroke-dasharray="5,4" marker-end="url(#flow-arrow)"/>
+<line x1="840" y1="136" x2="840" y2="216" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#flow-arrow)"/>
+<line x1="760" y1="244" x2="680" y2="244" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#flow-arrow)"/>
+<line x1="520" y1="244" x2="440" y2="244" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#flow-arrow)"/>
+<line x1="280" y1="244" x2="200" y2="244" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#flow-arrow)"/>
+<line x1="120" y1="272" x2="120" y2="336" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#flow-arrow)"/>
+<path d="M 360,136 V 168 Q 360,176 352,176 H 128 Q 120,176 120,168 V 136" stroke="#4f5d75" stroke-width="1.2" fill="none" stroke-dasharray="5,4" marker-end="url(#flow-arrow)"/>
+<rect x="700" y="88" width="32" height="12" rx="2" fill="#f5f5f5"/><text x="716" y="97" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.06em">있음</text>
+<rect x="668" y="164" width="64" height="12" rx="2" fill="#f5f5f5"/><text x="700" y="173" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.06em">없음 · 보류</text>
+<rect x="196" y="156" width="88" height="12" rx="2" fill="#f5f5f5"/><text x="240" y="165" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.06em">0건 · 재로그인</text>
+<rect x="40" y="80" width="160" height="56" rx="20" fill="#f5f5f5"/>
+<rect x="40" y="80" width="160" height="56" rx="20" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+<text x="120" y="98" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.12em">A–F</text>
+<text x="120" y="114" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">준비·권한</text>
+<text x="120" y="128" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">권한 4 · 로그인 · 토큰</text>
+<rect x="280" y="80" width="160" height="56" rx="6" fill="#f5f5f5"/>
+<rect x="280" y="80" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+<text x="360" y="98" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.12em">G–T</text>
+<text x="360" y="114" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">단축어 트리거</text>
+<text x="360" y="128" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">PoC-1 · 2 · 3</text>
+<polygon points="604,64 672,108 604,152 536,108" fill="#f5f5f5"/>
+<polygon points="604,64 672,108 604,152 536,108" fill="rgba(15,118,110,0.08)" stroke="#0f766e" stroke-width="1"/>
+<text x="604" y="96" fill="#0f766e" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.12em">F</text>
+<text x="604" y="112" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">devices 행?</text>
+<text x="604" y="126" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">PoC-4</text>
+<rect x="760" y="80" width="160" height="56" rx="6" fill="#f5f5f5"/>
+<rect x="760" y="80" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+<text x="840" y="98" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.12em">U–W</text>
+<text x="840" y="114" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">원격 푸시</text>
+<text x="840" y="128" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">PoC-4 · production</text>
+<rect x="760" y="216" width="160" height="56" rx="6" fill="#f5f5f5"/>
+<rect x="760" y="216" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+<text x="840" y="234" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.12em">X–Z</text>
+<text x="840" y="250" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">잠금 화면 액션</text>
+<text x="840" y="264" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">PoC-5 · 로컬 알림</text>
+<rect x="520" y="216" width="160" height="56" rx="6" fill="#f5f5f5"/>
+<rect x="520" y="216" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+<text x="600" y="234" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.12em">AA–AE</text>
+<text x="600" y="250" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">공유·업로드</text>
+<text x="600" y="264" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">PoC-8 · 9</text>
+<rect x="280" y="216" width="160" height="56" rx="6" fill="#f5f5f5"/>
+<rect x="280" y="216" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+<text x="360" y="234" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.12em">AF–AG</text>
+<text x="360" y="250" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">Gmail 웹훅</text>
+<text x="360" y="264" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">PoC-6</text>
+<rect x="40" y="216" width="160" height="56" rx="6" fill="#f5f5f5"/>
+<rect x="40" y="216" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+<text x="120" y="234" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.12em">AH–AI</text>
+<text x="120" y="250" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">⌘U → 재부팅</text>
+<text x="120" y="264" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">PoC-3 · PoC-2 BFU</text>
+<rect x="40" y="336" width="160" height="56" rx="20" fill="#f5f5f5"/>
+<rect x="40" y="336" width="160" height="56" rx="20" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+<text x="120" y="354" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.12em">AJ</text>
+<text x="120" y="370" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">results.md 기록</text>
+<text x="120" y="384" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">스펙 §14 동기화</text>
+<line x1="40" y1="416" x2="960" y2="416" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/><text x="40" y="440" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.14em">LEGEND</text>
+<line x1="120" y1="436" x2="160" y2="436" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#flow-arrow)"/>
+<text x="168" y="440" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">순서</text>
+<line x1="240" y1="436" x2="280" y2="436" stroke="#4f5d75" stroke-width="1.2" fill="none" stroke-dasharray="5,4" marker-end="url(#flow-arrow)"/>
+<text x="288" y="440" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">실패·보류 분기</text>
+<polygon points="420,428 432,436 420,444 408,436" fill="rgba(15,118,110,0.08)" stroke="#0f766e" stroke-width="1"/>
+<text x="440" y="440" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">판정을 가르는 분기</text>
+<rect x="576" y="428" width="32" height="16" rx="8" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+<text x="616" y="440" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">시작 · 끝</text>
+</svg>
+    </div>
+    <p class="scroll-hint">← 다이어그램은 옆으로 밀어 본다 →</p>
+  </div>
+
+  <div class="section">
+    <p class="section-eyebrow">02 · Swimlane</p>
+    <h2>트리거 한 번이 <code>poc_traces</code> 행이 되기까지</h2>
+    <p class="section-sub">본문은 기기를 떠나지 않는다. 앱은 길이·해시 8자·결과 코드·잠금·백그라운드 여부만 App Group에 모았다가 <b>앱을 열 때</b> 올린다. 그래서 매 항목 뒤에 앱을 한 번 열고 “대기 n건”이 0이 되는지 본다.</p>
+    <div class="diagram-container">
+<svg viewBox="0 0 1040 528" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="device-test-lane-title device-test-lane-desc">
+<title id="device-test-lane-title">트리거 한 번이 poc_traces 행이 되기까지</title>
+<desc id="device-test-lane-desc">사용자가 합성 카톡을 보내면 단축어 자동화가 CaptureIntent를 부르고, 앱이 결과를 App Group에 모았다가 앱을 열 때 ingest/trace로 올려 poc_traces 행이 되고, Mac이 scripts/sql.ts로 조회하는 흐름.</desc>
+<defs><marker id="lane-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+<marker id="lane-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#0f766e"/></marker>
+<marker id="lane-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4c1d95"/></marker></defs>
+<rect width="100%" height="100%" fill="#f5f5f5"/>
+<line x1="40" y1="64" x2="1000" y2="64" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+<line x1="40" y1="144" x2="1000" y2="144" stroke="rgba(45,49,66,0.10)" stroke-width="1"/>
+<line x1="40" y1="224" x2="1000" y2="224" stroke="rgba(45,49,66,0.10)" stroke-width="1"/>
+<line x1="40" y1="304" x2="1000" y2="304" stroke="rgba(45,49,66,0.10)" stroke-width="1"/>
+<line x1="40" y1="384" x2="1000" y2="384" stroke="rgba(45,49,66,0.10)" stroke-width="1"/>
+<line x1="40" y1="464" x2="1000" y2="464" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+<line x1="148" y1="64" x2="148" y2="464" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+<text x="48" y="108" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.08em">사용자</text>
+<text x="48" y="188" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.08em">iPhone 앱</text>
+<text x="48" y="268" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.08em">단축어 · iOS</text>
+<text x="48" y="348" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.08em">서버 · Supabase</text>
+<text x="48" y="428" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.08em">Mac · 조회</text>
+<path d="M 280,104 H 356 Q 364,104 364,112 V 240" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#lane-arrow)"/>
+<path d="M 424,264 H 500 Q 508,264 508,256 V 208" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#lane-arrow)"/>
+<line x1="568" y1="184" x2="592" y2="184" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#lane-arrow)"/>
+<line x1="712" y1="184" x2="736" y2="184" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#lane-arrow)"/>
+<line x1="796" y1="128" x2="796" y2="160" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#lane-arrow)"/>
+<path d="M 856,184 H 932 Q 940,184 940,192 V 320" stroke="#0f766e" stroke-width="1.4" fill="none" marker-end="url(#lane-arrow-accent)"/>
+<line x1="940" y1="368" x2="940" y2="400" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#lane-arrow)"/>
+<rect x="436" y="244" width="52" height="12" rx="2" fill="#f5f5f5"/><text x="462" y="253" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.06em">TEXT·APP</text>
+<rect x="868" y="256" width="64" height="12" rx="2" fill="#f5f5f5"/><text x="900" y="265" fill="#0f766e" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.06em">JWT · 202</text>
+<rect x="948" y="372" width="32" height="12" rx="2" fill="#f5f5f5"/><text x="964" y="381" fill="#7a8399" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle" letter-spacing="0.06em">조회</text>
+<rect x="160" y="80" width="120" height="48" rx="6" fill="#f5f5f5"/>
+<rect x="160" y="80" width="120" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+<text x="220" y="102" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">합성 카톡 발송</text>
+<text x="220" y="117" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">두 번째 계정</text>
+<rect x="304" y="240" width="120" height="48" rx="6" fill="#f5f5f5"/>
+<rect x="304" y="240" width="120" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+<text x="364" y="262" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">알림 자동화</text>
+<text x="364" y="277" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">즉시 실행</text>
+<rect x="448" y="160" width="120" height="48" rx="6" fill="#f5f5f5"/>
+<rect x="448" y="160" width="120" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+<text x="508" y="182" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">CaptureIntent</text>
+<text x="508" y="197" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">규칙 · FM 판정</text>
+<rect x="592" y="160" width="120" height="48" rx="6" fill="#f5f5f5"/>
+<rect x="592" y="160" width="120" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+<text x="652" y="182" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">trace 대기</text>
+<text x="652" y="197" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">App Group</text>
+<rect x="736" y="80" width="120" height="48" rx="6" fill="#f5f5f5"/>
+<rect x="736" y="80" width="120" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+<text x="796" y="102" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">앱 열기</text>
+<text x="796" y="117" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">대기 n건 → 0</text>
+<rect x="736" y="160" width="120" height="48" rx="6" fill="#f5f5f5"/>
+<rect x="736" y="160" width="120" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+<text x="796" y="182" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">POST 업로드</text>
+<text x="796" y="197" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">ingest/trace</text>
+<rect x="880" y="320" width="120" height="48" rx="6" fill="#f5f5f5"/>
+<rect x="880" y="320" width="120" height="48" rx="6" fill="rgba(15,118,110,0.08)" stroke="#0f766e" stroke-width="1"/>
+<text x="940" y="342" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">poc_traces 행</text>
+<text x="940" y="357" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">RLS · 자기 행만</text>
+<rect x="880" y="400" width="120" height="48" rx="6" fill="#f5f5f5"/>
+<rect x="880" y="400" width="120" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+<text x="940" y="422" fill="#2d3142" font-size="12" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif" text-anchor="middle">Q 조회</text>
+<text x="940" y="437" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle">scripts/sql.ts</text>
+<line x1="40" y1="480" x2="1000" y2="480" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/><text x="40" y="504" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.14em">LEGEND</text>
+<line x1="120" y1="500" x2="160" y2="500" stroke="#4f5d75" stroke-width="1.2" fill="none" marker-end="url(#lane-arrow)"/>
+<text x="168" y="504" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">흐름</text>
+<line x1="232" y1="500" x2="272" y2="500" stroke="#0f766e" stroke-width="1.4" fill="none" marker-end="url(#lane-arrow-accent)"/>
+<text x="280" y="504" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">기기 → 서버 넘김 (본문 없음, 길이·결과 코드만)</text>
+<rect x="600" y="492" width="32" height="16" rx="4" fill="rgba(15,118,110,0.08)" stroke="#0f766e" stroke-width="1"/>
+<text x="640" y="504" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace">판정 원자료</text>
+</svg>
+    </div>
+    <p class="scroll-hint">← 다이어그램은 옆으로 밀어 본다 →</p>
+  </div>
+
+  <div class="section">
+    <p class="section-eyebrow">03 · Test List</p>
+    <h2>테스트 목록 A–AJ (36개)</h2>
+    <p class="section-sub">“서버 확인”은 <code>poc_traces</code> 이벤트명·필드 또는 테이블·행이다. 값(본문·이름·토큰)은 적지 않고 길이·결과 코드·시각만 적는다. PoC-1 시나리오 7(iOS 27 기기)은 기기가 있을 때만 I·J를 반복한다.</p>
+<div class="table-wrap"><table class="tests">
+<thead><tr><th>ID</th><th>PoC</th><th>항목</th><th>사용자 동작</th><th>기대 결과</th><th>서버 확인</th><th>판정 기준</th><th>결과</th></tr></thead>
+<tbody>
+<tr class="block"><td colspan="8">준비 · 권한 · 등록</td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">A</span></td><td data-label="PoC" class="c-1">PoC-4·5</td><td data-label="항목" class="c-2">알림 권한</td><td data-label="사용자 동작" class="c-3">앱 → “권한 요청 (알림·캘린더·연락처)” → 첫 대화상자 “허용”</td><td data-label="기대 결과" class="c-4">앱 하단 poc.log에 <code>notif permission granted=true</code></td><td data-label="서버 확인" class="c-5">— (기기 로그만)</td><td data-label="판정 기준" class="c-6"><code>granted=true</code></td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">B</span></td><td data-label="PoC" class="c-1">PoC-5</td><td data-label="항목" class="c-2">캘린더 권한</td><td data-label="사용자 동작" class="c-3">이어서 뜨는 캘린더 대화상자 “허용”</td><td data-label="기대 결과" class="c-4">poc.log <code>calendar permission granted=true</code></td><td data-label="서버 확인" class="c-5">— (기기 로그만)</td><td data-label="판정 기준" class="c-6"><code>granted=true</code></td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">C</span></td><td data-label="PoC" class="c-1">PoC-1·2</td><td data-label="항목" class="c-2">연락처 권한 · 캐시</td><td data-label="사용자 동작" class="c-3">연락처 “허용” → 두 번째 카톡 계정 표시 이름과 테스트 발신 번호를 연락처에 저장 → 앱 다시 열기</td><td data-label="기대 결과" class="c-4">poc.log <code>contacts status=authorized names=&lt;n&gt;</code></td><td data-label="서버 확인" class="c-5">— (기기 로그만)</td><td data-label="판정 기준" class="c-6"><code>names&gt;0</code> (O·S의 전제)</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">D</span></td><td data-label="PoC" class="c-1">PoC-8·9</td><td data-label="항목" class="c-2">로컬 네트워크 권한</td><td data-label="사용자 동작" class="c-3">AC 첫 업로드 때 iOS 대화상자가 뜨면 “허용”. 앱·확장 중 어디서 떴는지 적는다</td><td data-label="기대 결과" class="c-4">대화상자 표시 여부와 주체</td><td data-label="서버 확인" class="c-5">목 서버 <code>/received</code>에 도착(AC)</td><td data-label="판정 기준" class="c-6">기록 <span class='flag'>확인 필요</span> 실측 전</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">E</span></td><td data-label="PoC" class="c-1">전체</td><td data-label="항목" class="c-2">PoC 사용자 로그인</td><td data-label="사용자 동작" class="c-3">trace 섹션에 PoC 사용자 비밀번호 입력 → “로그인”</td><td data-label="기대 결과" class="c-4">상태 줄 “세션 있음”, 이후 “대기 n건”이 0으로 줄어듦</td><td data-label="서버 확인" class="c-5"><code>poc_traces</code>에 이 <code>device_id</code> 행이 생김</td><td data-label="판정 기준" class="c-6">세션 있음. 없으면 이후 모든 서버 확인이 비어 있다</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">F</span></td><td data-label="PoC" class="c-1">PoC-4</td><td data-label="항목" class="c-2">APNs 토큰 등록 <code>ingest/device</code></td><td data-label="사용자 동작" class="c-3">알림 허용 뒤 앱 실행(등록은 앱이 실행 시 자동으로 보내는 계약)</td><td data-label="기대 결과" class="c-4">화면 변화 없음</td><td data-label="서버 확인" class="c-5"><code>devices</code> 행 · <code>apns_env=production</code> · <code>build</code></td><td data-label="판정 기준" class="c-6">행 1개·production. <span class='flag'>확인 필요</span> 현재 앱 코드에 등록 경로가 없다(계획서 Task 9 Step 4 미구현) → 행이 없으면 U–W 보류</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr class="block"><td colspan="8">단축어 트리거</td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">G</span></td><td data-label="PoC" class="c-1">PoC-1</td><td data-label="항목" class="c-2">알림 자동화 2개 (카톡·인스타)</td><td data-label="사용자 동작" class="c-3">단축어 → 자동화 → 새 자동화 → 알림 → 앱 카카오톡, 필터 없음 → 동작 “비서에 저장” → 알림 변수를 text·appName·title에 연결. Instagram으로 한 번 더</td><td data-label="기대 결과" class="c-4">자동화 목록에 2개. “즉시 실행” 토글 유무, 연결 가능한 변수 목록 스크린샷</td><td data-label="서버 확인" class="c-5">—</td><td data-label="판정 기준" class="c-6">기록(판정 아님): 토글 유무</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">H</span></td><td data-label="PoC" class="c-1">PoC-2</td><td data-label="항목" class="c-2">메시지 자동화</td><td data-label="사용자 동작" class="c-3">새 자동화 → 메시지 → 발신자 테스트 번호 → “즉시 실행”·“잠금 시 실행 허용” 켬 → “비서에 저장”: 발신자→sender, 본문→text, source <code>MESSAGES</code></td><td data-label="기대 결과" class="c-4">자동화 목록에 1개. 두 토글이 실제로 있는지·켜지는지</td><td data-label="서버 확인" class="c-5">—</td><td data-label="판정 기준" class="c-6">기록: 토글 유무</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">I</span></td><td data-label="PoC" class="c-1">PoC-1 #1</td><td data-label="항목" class="c-2">카톡 수신 · 잠금 해제</td><td data-label="사용자 동작" class="c-3">두 번째 계정에서 합성 카톡 1건(예: “[합성] 9월 25일 15시 예약 확정”) → 앱 열기</td><td data-label="기대 결과" class="c-4">확인 배너 여부, 큐 목록에 항목</td><td data-label="서버 확인" class="c-5"><code>poc1.intent_fired</code> · <code>app</code> · <code>title_len</code> · <code>text_len</code></td><td data-label="판정 기준" class="c-6"><b>통과 조건</b>: <code>text_len&gt;0</code>이고 <code>app</code>으로 앱 식별</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">J</span></td><td data-label="PoC" class="c-1">PoC-1 #2</td><td data-label="항목" class="c-2">카톡 수신 · 잠금 15초 후</td><td data-label="사용자 동작" class="c-3">화면 잠금 → 15초 이상 대기 → 같은 합성 카톡 → 해제 후 앱 열기</td><td data-label="기대 결과" class="c-4">자동화가 실행됐는지(큐 항목)</td><td data-label="서버 확인" class="c-5"><code>poc1.intent_fired</code> · <code>locked=true</code></td><td data-label="판정 기준" class="c-6">기록: 실행 여부·locked</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">K</span></td><td data-label="PoC" class="c-1">PoC-1 #3</td><td data-label="항목" class="c-2">미리보기 “잠금 해제 시”</td><td data-label="사용자 동작" class="c-3">설정 → 알림 → 카카오톡 → 미리보기 “잠금 해제 시” → J 반복 → 끝나면 “항상”으로 복구</td><td data-label="기대 결과" class="c-4">본문이 비었는지(자리표시자인지)</td><td data-label="서버 확인" class="c-5"><code>poc1.intent_fired</code> · <code>text_len</code></td><td data-label="판정 기준" class="c-6">기록: <code>text_len=0</code>이면 이 설정에선 PoC-1 가치 없음</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">L</span></td><td data-label="PoC" class="c-1">PoC-1 #4</td><td data-label="항목" class="c-2">묶음 알림 3건</td><td data-label="사용자 동작" class="c-3">5초 안에 합성 카톡 3건 연속</td><td data-label="기대 결과" class="c-4">큐에 항목 3개, 순서·중복</td><td data-label="서버 확인" class="c-5"><code>poc1.intent_fired</code> 3행</td><td data-label="판정 기준" class="c-6">기록: 3건 모두 개별 적재가 기대값</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">M</span></td><td data-label="PoC" class="c-1">PoC-1 #5</td><td data-label="항목" class="c-2">Instagram DM</td><td data-label="사용자 동작" class="c-3">두 번째 인스타 계정에서 합성 DM</td><td data-label="기대 결과" class="c-4">큐에 항목</td><td data-label="서버 확인" class="c-5"><code>poc1.intent_fired</code> · <code>app</code> · <code>title_len</code> · <code>text_len</code></td><td data-label="판정 기준" class="c-6">기록: 앱별 필드 구성(발신자명이 제목에 오는지)</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">N</span></td><td data-label="PoC" class="c-1">PoC-1 #6</td><td data-label="항목" class="c-2">필터 “주문”</td><td data-label="사용자 동작" class="c-3">카톡 자동화에 필터 “주문” 추가 → “주문” 없는 합성 카톡 → 끝나면 필터 제거</td><td data-label="기대 결과" class="c-4">큐 변화 없음</td><td data-label="서버 확인" class="c-5">새 <code>poc1.intent_fired</code> 행 없음</td><td data-label="판정 기준" class="c-6">트리거 미실행</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">O</span></td><td data-label="PoC" class="c-1">PoC-1 #8</td><td data-label="항목" class="c-2">연락처 발신 카톡</td><td data-label="사용자 동작" class="c-3">C에서 연락처에 저장한 두 번째 계정으로 합성 카톡</td><td data-label="기대 결과" class="c-4">큐에 없음</td><td data-label="서버 확인" class="c-5"><code>poc1.intent_fired</code> · <code>result=discarded:contact</code></td><td data-label="판정 기준" class="c-6">규칙 배선 확인(판정 기준 아님)</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">P</span></td><td data-label="PoC" class="c-1">PoC-2 #1</td><td data-label="항목" class="c-2">문자 수신 · 잠금 해제</td><td data-label="사용자 동작" class="c-3">테스트 번호로 합성 문자</td><td data-label="기대 결과" class="c-4">확인 없이 큐에 항목</td><td data-label="서버 확인" class="c-5"><code>poc2.intent_fired</code> · <code>sender_set</code> · <code>text_len</code></td><td data-label="판정 기준" class="c-6">무확인 실행</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">Q</span></td><td data-label="PoC" class="c-1">PoC-2 #2</td><td data-label="항목" class="c-2">문자 수신 · 잠금 15초 후</td><td data-label="사용자 동작" class="c-3">잠금 → 15초 이상 대기 → 합성 문자 → 해제 후 앱 열기</td><td data-label="기대 결과" class="c-4">큐에 항목</td><td data-label="서버 확인" class="c-5"><code>poc2.intent_fired</code> · <code>locked=true</code> · <code>result=queued:*</code></td><td data-label="판정 기준" class="c-6"><b>통과 조건</b>: 잠금 상태에서 확인 없이 발신자·본문 적재(<code>locked=true</code>)</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">R</span></td><td data-label="PoC" class="c-1">PoC-2 #4</td><td data-label="항목" class="c-2">OTP 문자</td><td data-label="사용자 동작" class="c-3">“[Web발신] 인증번호 123456” 형태의 합성 문자</td><td data-label="기대 결과" class="c-4">큐에 없음</td><td data-label="서버 확인" class="c-5"><code>poc2.intent_fired</code> · <code>result=discarded:otp</code></td><td data-label="판정 기준" class="c-6">OTP 폐기</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">S</span></td><td data-label="PoC" class="c-1">PoC-2 #5</td><td data-label="항목" class="c-2">연락처 번호 문자</td><td data-label="사용자 동작" class="c-3">C에서 연락처에 저장한 번호로 합성 문자</td><td data-label="기대 결과" class="c-4">큐에 없음</td><td data-label="서버 확인" class="c-5"><code>poc2.intent_fired</code> · <code>result=discarded:contact</code></td><td data-label="판정 기준" class="c-6">폐기. 안 나오면 <code>sender</code>가 이름이 아닌 번호로 오는지 기록</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">T</span></td><td data-label="PoC" class="c-1">PoC-3 BG</td><td data-label="항목" class="c-2">백그라운드 FM 10~20회</td><td data-label="사용자 동작" class="c-3">앱을 백그라운드에 두고 단축어 앱에서 “비서에 저장”을 본문을 채워 10~20회 짧은 간격으로 실행</td><td data-label="기대 결과" class="c-4">앱이 열리지 않고 매번 끝남</td><td data-label="서버 확인" class="c-5"><code>poc1.intent_fired</code> · <code>result</code> 분포(queued:fm / queued:rules / fm-error / fm-timeout) · <code>elapsed_ms</code>. poc.log <code>FM error rateLimited</code></td><td data-label="판정 기준" class="c-6">기록: rateLimited 빈도(판정 수치는 AH)</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr class="block"><td colspan="8">푸시 · 잠금 액션</td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">U</span></td><td data-label="PoC" class="c-1">PoC-4</td><td data-label="항목" class="c-2">원격 푸시 1회 · 앱 열림</td><td data-label="사용자 동작" class="c-3">Mac에서 <code>apns-send</code> {device_id, user_id, count 1, concurrency 1}</td><td data-label="기대 결과" class="c-4">배너 “PoC-4 / 합성 알림 1/1”</td><td data-label="서버 확인" class="c-5">응답 <code>ok: 1</code> · <code>byStatus {&quot;200&quot;: 1}</code> · <code>env</code> · <code>envRetries 0</code></td><td data-label="판정 기준" class="c-6">수신 확인. 선행: F</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">V</span></td><td data-label="PoC" class="c-1">PoC-4</td><td data-label="항목" class="c-2">원격 푸시 1회 · 앱 종료·잠금</td><td data-label="사용자 동작" class="c-3">앱 전환기에서 앱 종료 → 잠금 → U와 같은 발송</td><td data-label="기대 결과" class="c-4">잠금 화면에 배너</td><td data-label="서버 확인" class="c-5">U와 같음, 수신 시각</td><td data-label="판정 기준" class="c-6">수신. <code>envRetries&gt;0</code>이면 등록 환경이 빌드와 다름</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">W</span></td><td data-label="PoC" class="c-1">PoC-4</td><td data-label="항목" class="c-2">100회 동시 10 × 2</td><td data-label="사용자 동작" class="c-3">같은 명령에 <code>count: 100, concurrency: 10</code>, 두 번</td><td data-label="기대 결과" class="c-4">알림 100개씩(요약 설정 그대로 둬도 됨)</td><td data-label="서버 확인" class="c-5"><code>ok</code> · <code>byStatus</code> · <code>reasons</code> · <code>h2Errors</code> · <code>errors</code> · <code>ms.p50/p95</code></td><td data-label="판정 기준" class="c-6"><b>통과 조건</b>: 두 번 모두 성공률 ≥ 99%, <code>h2Errors 0</code></td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">X</span></td><td data-label="PoC" class="c-1">PoC-5</td><td data-label="항목" class="c-2">잠금 화면 액션 · 인증</td><td data-label="사용자 동작" class="c-3">“10초 뒤 ADD_EVENT 로컬 알림” → 즉시 잠금 → 배너 길게 눌러 “캘린더에 추가” → Face ID/암호</td><td data-label="기대 결과" class="c-4">인증 요구가 뜸, 앱은 열리지 않음, 캘린더에 “병원 예약” 1건</td><td data-label="서버 확인" class="c-5"><code>poc5.action_handled</code> · <code>result</code> · <code>bg=true</code> · <code>locked</code> · <code>auth</code>. poc.log <code>ADD ok p-local-1 … bg=true</code></td><td data-label="판정 기준" class="c-6"><b>통과 조건</b>: 앱을 열지 않고 1건만 생성(Y·Z 포함)</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">Y</span></td><td data-label="PoC" class="c-1">PoC-5</td><td data-label="항목" class="c-2">같은 알림 재탭</td><td data-label="사용자 동작" class="c-3">버튼을 다시 → 잠금 → 같은 액션</td><td data-label="기대 결과" class="c-4">캘린더 이벤트 수 그대로</td><td data-label="서버 확인" class="c-5"><code>poc5.action_handled</code> · <code>dup=true</code>. poc.log <code>ADD dup skip p-local-1 … unreported=1</code></td><td data-label="판정 기준" class="c-6">증가 0. unreported=1 이 “보고 실패 후 재탭”의 근거</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">Z</span></td><td data-label="PoC" class="c-1">PoC-5</td><td data-label="항목" class="c-2">콜드 스타트 액션</td><td data-label="사용자 동작" class="c-3">버튼 → 앱 전환기에서 위로 밀어 종료 → 잠금 → 액션</td><td data-label="기대 결과" class="c-4">앱 열리지 않음, 이벤트 수 그대로</td><td data-label="서버 확인" class="c-5"><code>poc5.action_handled</code> · <code>bg=true</code></td><td data-label="판정 기준" class="c-6"><span class='flag'>확인 필요</span> 버튼의 id가 <code>p-local-1</code> 고정이라 X 뒤에는 <code>dup skip</code>이 나온다(원 문서 기대값 <code>ADD ok</code>는 새 id 기준)</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr class="block"><td colspan="8">공유 · 업로드</td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">AA</span></td><td data-label="PoC" class="c-1">PoC-8</td><td data-label="항목" class="c-2">공유 시트 · 이미지</td><td data-label="사용자 동작" class="c-3">사진 앱에서 합성 이미지(청첩장·영수증 형태) → 공유 → ERURI 공유 확장 → 앱 열기</td><td data-label="기대 결과" class="c-4">큐에 [SHARE] 항목과 OCR 텍스트</td><td data-label="서버 확인" class="c-5"><code>poc8.share_received</code> · <code>type</code> · <code>result</code> · <code>ocr_len</code>. poc.log <code>ShareExtension file queued … type=image ocrLen=&lt;n&gt;</code></td><td data-label="판정 기준" class="c-6">App Group 영속화 + OCR 텍스트 저장(실기기 서명도 여기서 드러남)</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">AB</span></td><td data-label="PoC" class="c-1">PoC-8</td><td data-label="항목" class="c-2">공유 시트 · URL · PDF</td><td data-label="사용자 동작" class="c-3">합성 페이지 URL과 합성 PDF를 같은 확장으로 공유 → 앱 열기</td><td data-label="기대 결과" class="c-4">큐에 [SHARE] 항목 2개</td><td data-label="서버 확인" class="c-5"><code>poc8.share_received</code> · <code>type</code> · <code>result</code></td><td data-label="판정 기준" class="c-6">영속화. <span class='flag'>확인 필요</span> 절차 문서의 단계는 이미지뿐, URL·PDF는 판정 기준 문구에서 가져옴</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">AC</span></td><td data-label="PoC" class="c-1">PoC-8·9</td><td data-label="항목" class="c-2">업로드 flush</td><td data-label="사용자 동작" class="c-3">Mac에서 목 서버 실행 → 앱 “업로드 서버”에 Mac LAN IP:포트 저장 → “업로드 flush”</td><td data-label="기대 결과" class="c-4">poc.log <code>flush claimed N to=&lt;host&gt;:&lt;port&gt;</code> → <code>upload ok</code></td><td data-label="서버 확인" class="c-5"><code>poc9.upload_done</code> · <code>ok=true</code> · <code>bytes</code>, 목 서버 <code>/received</code>의 bytes</td><td data-label="판정 기준" class="c-6">bytes가 원본과 같고 같은 id가 한 번만</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">AD</span></td><td data-label="PoC" class="c-1">PoC-9</td><td data-label="항목" class="c-2">스와이프 종료 후 업로드</td><td data-label="사용자 동작" class="c-3">새 공유 직후 앱 전환기에서 스와이프 종료, 종료 시각 메모</td><td data-label="기대 결과" class="c-4">—</td><td data-label="서버 확인" class="c-5"><code>/received</code>의 <code>at</code> > 종료 시각(또는 미도착), <code>poc9.upload_done</code></td><td data-label="판정 기준" class="c-6">도착하거나, 안 오면 “강제 종료 시 취소”로 기록 후 재실행해 유실 0</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">AE</span></td><td data-label="PoC" class="c-1">PoC-8·9</td><td data-label="항목" class="c-2">비행기 모드 재시도</td><td data-label="사용자 동작" class="c-3">비행기 모드 켬 → 공유 → 앱 열기(flush 실패) → 해제 → 앱 다시 열기</td><td data-label="기대 결과" class="c-4">처음 <code>upload fail</code>, 다음에 <code>upload ok</code></td><td data-label="서버 확인" class="c-5"><code>poc9.upload_done</code> <code>ok=false</code>·<code>error_code</code> → <code>ok=true</code>, <code>/received</code> 같은 bytes</td><td data-label="판정 기준" class="c-6">오프라인 후 복구 유실 0</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr class="block"><td colspan="8">Gmail</td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">AF</span></td><td data-label="PoC" class="c-1">PoC-6</td><td data-label="항목" class="c-2">Gmail 연결 상태 확인</td><td data-label="사용자 동작" class="c-3">Mac에서 <code>connections</code>·<code>sync_states</code> 조회</td><td data-label="기대 결과" class="c-4">—</td><td data-label="서버 확인" class="c-5"><code>connections.status=active</code> · <code>expires_at</code>, <code>sync_states.watch_expires_at</code></td><td data-label="판정 기준" class="c-6">active·watch 만료 전. 아니면 앱 “재동의 연결” 후 다시</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">AG</span></td><td data-label="PoC" class="c-1">PoC-6</td><td data-label="항목" class="c-2">[PoC-6] 메일 웹훅 지연 5회</td><td data-label="사용자 동작" class="c-3">연결된 Gmail로 본인에게 제목 [PoC-6] 합성 메일 5통(간격을 두고), 수신 시각 메모</td><td data-label="기대 결과" class="c-4">—</td><td data-label="서버 확인" class="c-5"><code>jobs(kind=&#x27;gmail-sync&#x27;).created_at</code> − 수신 시각, 뒤이은 <code>items(source=&#x27;GMAIL&#x27;)</code></td><td data-label="판정 기준" class="c-6">5회 평균(스펙: push 1분 내 수신). 실측 중 호스팅 DB의 jobs 삭제 테스트 금지</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr class="block"><td colspan="8">개발 설치 · 재부팅</td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">AH</span></td><td data-label="PoC" class="c-1">PoC-3</td><td data-label="항목" class="c-2">FM 벤치마크 ⌘U</td><td data-label="사용자 동작" class="c-3">케이블 연결 → Xcode 대상 iPhone → EruriCoreTests/FMClassifierTests ⌘U → Debug navigator Memory 최대값</td><td data-label="기대 결과" class="c-4"><code>FM_BENCH</code> 로그 / App Group <code>fm_bench.txt</code></td><td data-label="서버 확인" class="c-5"><code>poc3.bench_done</code> · p95 · personal_pass · notice_drop · medical_drop · errors · timeouts</td><td data-label="판정 기준" class="c-6"><b>통과 조건</b>: p95 &lt; 3초, personalPass ≤ 2/100, noticeDrop ≤ 14/96. 개발 설치가 TestFlight 앱을 덮어써 토큰이 sandbox가 된다</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">AI</span></td><td data-label="PoC" class="c-1">PoC-2 #3</td><td data-label="항목" class="c-2">재부팅 BFU 문자</td><td data-label="사용자 동작" class="c-3">재부팅 전 앱 1회 실행 → 재부팅 → 잠금 해제 없이 합성 문자 → 해제 후 앱의 bfu.log 섹션</td><td data-label="기대 결과" class="c-4">bfu.log <code>CaptureIntent start textLen=… locked=true</code>와 뒤이은 <code>error</code> 유무</td><td data-label="서버 확인" class="c-5">서버 이벤트 없음 — bfu.log로 판독, poc.log에 없는지</td><td data-label="판정 기준" class="c-6">기록: start 없음 = 자동화 미실행, start+error = 실행됐지만 유실</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+<tr class="block"><td colspan="8">기록</td></tr>
+<tr><td data-label="ID" class="c-0"><span class="tid">AJ</span></td><td data-label="PoC" class="c-1">전체</td><td data-label="항목" class="c-2">results.md로 옮기기</td><td data-label="사용자 동작" class="c-3">Mac에서 세션 요약 쿼리 → results.md 판정 표·PoC별 상세·대기 목록과 스펙 §14 갱신 → poc_traces 정리</td><td data-label="기대 결과" class="c-4">—</td><td data-label="서버 확인" class="c-5">세션 요약 쿼리(§05)</td><td data-label="판정 기준" class="c-6">원문 값 없이 길이·결과 코드·시각만</td><td data-label="결과" class="c-7"><span class="blank">□ 통과 □ 부분 □ 실패 · 시각 ____</span></td></tr>
+</tbody></table></div>
+    <p class="note"><b>세션 밖 후속 (PoC-6, 달력 기준)</b> — 연결일 기준으로 따로 확인한다. 실측 중 호스팅 DB 테스트 데이터 초기화 금지.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>항목</th><th>확인</th><th>시점</th></tr></thead>
+      <tbody><tr><td>watch 갱신 (수동)</td><td><code>select gmail_enqueue_all(&#x27;gmail-watch&#x27;)</code> → <code>watch_expires_at</code> 갱신</td><td>세션 뒤 아무 때</td></tr><tr><td>watch 갱신 (cron)</td><td>다음 날 03:17 UTC cron 뒤 한 번 더</td><td>연결 다음 날</td></tr><tr><td>6일 만료 예고</td><td><code>select * from gmail_reauth_due()</code>에 <code>expiring</code></td><td>연결 6일째</td></tr><tr><td>8일 재인증</td><td>sync <code>skipped</code>, <code>connections.status = &#x27;reauth_required&#x27;</code>, <code>invalid_grant</code></td><td>연결 8일째</td></tr><tr><td>규칙 필터 메일</td><td>합성 OTP 메일은 items에 없음, 카드번호 메일은 1행(본문 복호화 금지)</td><td>AG와 같이 해도 됨</td></tr></tbody>
+    </table></div>
+  </div>
+
+  <div class="section">
+    <p class="section-eyebrow">04 · Coverage Map</p>
+    <h2>어떤 항목이 어떤 PoC 판정을 채우나</h2>
+    <p class="section-sub">세션 블록 여섯 개를 순서대로 쌓았다. 칩 하나가 “이 PoC 판정은 이 항목들로 채운다”는 뜻이다. AJ(기록)는 모든 PoC 행에 걸린다.</p>
+    <div class="diagram-container">
+<svg viewBox="0 0 1000 528" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="device-test-map-title device-test-map-desc">
+<title id="device-test-map-title">테스트 항목 ↔ PoC 판정 매핑</title>
+<desc id="device-test-map-desc">세션 블록 여섯 개가 위에서 아래 순서로 쌓이고, 각 블록 안에 어느 PoC 판정을 어떤 항목 ID가 채우는지 표시한다. 미검증 PoC-1·2의 통과 조건이 있는 단축어 트리거 블록이 초점이다.</desc>
+<rect width="100%" height="100%" fill="#f5f5f5"/>
+<text x="40" y="52" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.14em">시작</text>
+<line x1="60" y1="64" x2="60" y2="440" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+<polygon points="56,440 64,440 60,448" fill="#4f5d75"/>
+<text x="40" y="468" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.14em">끝 → AJ</text>
+<line x1="120" y1="64" x2="960" y2="64" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+<rect x="120" y="64" width="840" height="64" fill="#ffffff"/>
+<line x1="120" y1="128" x2="960" y2="128" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+<text x="136" y="100" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.14em">01</text>
+<text x="172" y="94" fill="#2d3142" font-size="16" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif">준비 · 권한 · 등록</text>
+<text x="172" y="112" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.06em">A–F</text>
+<rect x="400" y="84" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<text x="460" y="100" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-4</tspan>  A · F</text>
+<rect x="544" y="84" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<text x="604" y="100" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-5</tspan>  A · B</text>
+<rect x="688" y="84" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<text x="748" y="100" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-1·2</tspan>  C</text>
+<rect x="832" y="84" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<text x="892" y="100" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-8·9</tspan>  D</text>
+<rect x="120" y="128" width="840" height="64" fill="rgba(15,118,110,0.08)"/>
+<rect x="120" y="128" width="840" height="64" fill="none" stroke="#0f766e" stroke-width="1"/>
+<text x="136" y="164" fill="#0f766e" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.14em">02</text>
+<text x="172" y="158" fill="#2d3142" font-size="16" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif">단축어 트리거</text>
+<text x="172" y="176" fill="#0f766e" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.06em">G–T</text>
+<rect x="400" y="148" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(15,118,110,0.50)" stroke-width="0.8"/>
+<text x="460" y="164" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-1</tspan>  G · I–O</text>
+<rect x="544" y="148" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(15,118,110,0.50)" stroke-width="0.8"/>
+<text x="604" y="164" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-2</tspan>  H · P–S</text>
+<rect x="688" y="148" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(15,118,110,0.50)" stroke-width="0.8"/>
+<text x="748" y="164" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-3</tspan>  T</text>
+<rect x="120" y="192" width="840" height="64" fill="#ffffff"/>
+<line x1="120" y1="256" x2="960" y2="256" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+<text x="136" y="228" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.14em">03</text>
+<text x="172" y="222" fill="#2d3142" font-size="16" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif">푸시 · 잠금 액션</text>
+<text x="172" y="240" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.06em">U–Z</text>
+<rect x="400" y="212" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<text x="460" y="228" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-4</tspan>  U–W</text>
+<rect x="544" y="212" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<text x="604" y="228" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-5</tspan>  X–Z</text>
+<rect x="120" y="256" width="840" height="64" fill="#ececec"/>
+<line x1="120" y1="320" x2="960" y2="320" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+<text x="136" y="292" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.14em">04</text>
+<text x="172" y="286" fill="#2d3142" font-size="16" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif">공유 · 업로드</text>
+<text x="172" y="304" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.06em">AA–AE</text>
+<rect x="400" y="276" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<text x="460" y="292" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-8</tspan>  AA–AC · AE</text>
+<rect x="544" y="276" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<text x="604" y="292" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-9</tspan>  AC–AE</text>
+<rect x="120" y="320" width="840" height="64" fill="#ffffff"/>
+<line x1="120" y1="384" x2="960" y2="384" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+<text x="136" y="356" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.14em">05</text>
+<text x="172" y="350" fill="#2d3142" font-size="16" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif">Gmail</text>
+<text x="172" y="368" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.06em">AF–AG</text>
+<rect x="400" y="340" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<text x="460" y="356" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-6</tspan>  AF · AG</text>
+<rect x="120" y="384" width="840" height="64" fill="#ececec"/>
+<line x1="120" y1="448" x2="960" y2="448" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+<text x="136" y="420" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.14em">06</text>
+<text x="172" y="414" fill="#2d3142" font-size="16" font-weight="600" font-family="'Pretendard', 'Noto Sans KR', sans-serif">개발 설치 · 재부팅</text>
+<text x="172" y="432" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.06em">AH–AI</text>
+<rect x="400" y="404" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<text x="460" y="420" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-3</tspan>  AH</text>
+<rect x="544" y="404" width="120" height="24" rx="2" fill="#ffffff" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+<text x="604" y="420" fill="#2d3142" font-size="9" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" text-anchor="middle"><tspan font-weight="600">PoC-2</tspan>  AI</text>
+<text x="120" y="480" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Noto Sans Mono CJK KR', monospace" letter-spacing="0.14em">FOCAL · 02</text>
+<text x="216" y="480" fill="#4f5d75" font-size="12" font-family="'Pretendard', 'Noto Sans KR', sans-serif" font-style="italic">미검증 PoC-1·2의 통과 조건(I·Q)이 이 블록에 있다. PoC-7·10은 통과라 목록에 없다.</text>
+</svg>
+    </div>
+    <p class="scroll-hint">← 다이어그램은 옆으로 밀어 본다 →</p>
+  </div>
+
+  <div class="section">
+    <p class="section-eyebrow">05 · When It Fails</p>
+    <h2>실패 시 대처와 Mac 조회</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>증상 (항목)</th><th>흔한 원인</th><th>대처</th></tr></thead>
+      <tbody><tr><td>본문이 비어 온다 (I·J·M)</td><td>해당 앱 알림 미리보기가 “항상”이 아님</td><td>설정 → 알림 → 카카오톡·Instagram → 미리보기 “항상”. K 뒤에 복구했는지</td></tr><tr><td>잠금인데 <code>locked=false</code> (J·Q)</td><td>잠근 뒤 15초를 기다리지 않음</td><td>잠그고 15초 이상 기다린 뒤 발송. 잠근 직후 약 10초는 데이터 보호가 아직 풀려 있다</td></tr><tr><td>trace가 안 올라온다 (전 항목)</td><td>trace 세션 없음, 또는 앱을 열지 않음</td><td>앱 trace 섹션이 “세션 없음”이면 E 재실행. “대기 n건”이 줄지 않으면 네트워크와 <code>trace upload fail status=</code> 로그</td></tr><tr><td><code>devices</code> 행이 없다 · 푸시가 안 온다 (F·U–W)</td><td>앱에 등록 코드 없음(현재 코드), 또는 환경 불일치</td><td>등록 코드를 넣은 새 TestFlight 빌드 전엔 U–W 보류. 행이 있으면 <code>apns_env</code>가 production인지, 응답 <code>envRetries</code>·<code>reasons</code></td></tr><tr><td>업로드가 안 온다 (AC–AE)</td><td>업로드 서버 주소·로컬 네트워크 권한·방화벽·다른 Wi-Fi</td><td>앱 “업로드 서버” 값이 Mac LAN IP:포트인지, D 허용, Mac 방화벽에서 deno 허용, iPhone Safari로 <code>/received</code> 열어 도달 확인</td></tr></tbody>
+    </table></div>
+    <p class="note">Mac 조회는 <code>poc/server</code>에서 한다. 셸 함수 하나를 정의해 두고 세션 내내 쓴다. 토큰·본문 조회 금지(AGENTS §7).</p>
+    <pre>cd poc/server
+Q() { deno run --allow-net --allow-env --allow-read --env-file=.env scripts/sql.ts &quot;$@&quot;; }</pre>
+    <pre># 1. 세션 요약 — 이벤트별 건수·elapsed_ms p50/p95·잠금·백그라운드 건수 ($1·$2 = 세션 시작·끝, ISO)
+Q &quot;select event, count(*)::int n,
+     percentile_cont(0.5) within group (order by (fields-&gt;&gt;&#x27;elapsed_ms&#x27;)::numeric) p50_ms,
+     percentile_cont(0.95) within group (order by (fields-&gt;&gt;&#x27;elapsed_ms&#x27;)::numeric) p95_ms,
+     count(*) filter (where (fields-&gt;&gt;&#x27;locked&#x27;)::boolean)::int locked,
+     count(*) filter (where (fields-&gt;&gt;&#x27;bg&#x27;)::boolean)::int bg
+   from poc_traces where at between \$1 and \$2 group by event order by event&quot; \
+  &quot;&lt;세션 시작&gt;&quot; &quot;&lt;세션 끝&gt;&quot;</pre>
+    <pre># 2. 특정 이벤트 — 예: PoC-1 인텐트 발화 최근 20건 (I–O, T)
+Q &quot;select at, fields-&gt;&gt;&#x27;source&#x27; source, fields-&gt;&gt;&#x27;text_len&#x27; text_len, fields-&gt;&gt;&#x27;locked&#x27; locked
+   from poc_traces where event = &#x27;poc1.intent_fired&#x27; order by at desc limit 20&quot;</pre>
+    <pre># 3. 토큰 등록 확인 (F) — U–W 발송에 쓸 device_id
+Q &quot;select device_id, apns_env, build, last_seen_at from devices order by last_seen_at desc limit 3&quot;</pre>
+    <p class="note">세션 뒤 정리(판정 기록을 옮긴 뒤): <code>Q "delete from poc_traces where device_id = \$1" "&lt;device_id&gt;"</code>. results.md 근거 한 줄 형식은 기존 절차서 “Record” 절을 따른다.</p>
+  </div>
+
+  <div class="section">
+    <p class="section-eyebrow">06 · Appendix</p>
+    <h2>원 문서</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>구분</th><th>경로</th><th>이 목록에서 쓴 것</th></tr></thead>
+      <tbody><tr><td>판정표</td><td><code>docs/superpowers/poc/results.md</code></td><td>남은 실측 = 이 목록의 원천. 세션 뒤 갱신</td></tr><tr><td>PoC-1</td><td><code>docs/superpowers/poc/poc-1-notification-trigger.md</code></td><td>시나리오 1~8, poc.log 판독법</td></tr><tr><td>PoC-2</td><td><code>docs/superpowers/poc/poc-2-message-trigger.md</code></td><td>시나리오 1~5, BFU 판독</td></tr><tr><td>PoC-3</td><td><code>docs/superpowers/poc/poc-3-fm-classifier.md</code></td><td>픽스처 구성, FM_BENCH 형식</td></tr><tr><td>PoC-4</td><td><code>docs/superpowers/poc/poc-4-apns.md</code></td><td>기기 등록 계약, 발송 명령</td></tr><tr><td>PoC-5</td><td><code>docs/superpowers/poc/poc-5-notification-eventkit.md</code></td><td>시뮬레이터 실측 표, 기기 단계</td></tr><tr><td>PoC-6</td><td><code>docs/superpowers/poc/poc-6-gmail.md</code></td><td>iOS 연결 절차, 확인 쿼리, 달력 항목</td></tr><tr><td>PoC-8·9</td><td><code>docs/superpowers/poc/poc-8-9-share-upload.md</code></td><td>목 서버, 기기 단계 1~8</td></tr><tr><td>trace</td><td><code>docs/superpowers/poc/poc-traces.md</code></td><td>이벤트 계약, 금지 키, 조회 쿼리</td></tr><tr><td>절차서</td><td><code>docs/superpowers/reports/2026-09-24-device-session.html</code></td><td>기존 세션 절차(TestFlight 업로드, 목 서버, 기록란)</td></tr><tr><td>기준</td><td><code>docs/superpowers/specs/2026-09-22-assistant-design.md</code></td><td>§14 판정 기준·판정 현황, §16</td></tr></tbody>
+    </table></div>
+  </div>
+
+  <div class="footer">
+    <span>ERURI · Phase 0 · Device Test List</span>
+    <span>2026-09-27 · 원본 results.md (판정 2026-09-27)</span>
+  </div>
+</div>
+</body>
+</html>
