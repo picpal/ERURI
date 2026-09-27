@@ -1,0 +1,50 @@
+{"q":"에어팟 어디서 샀지","expect_ids":["c003","c118"],"from":null,"to":null}
+{"q":"에어팟 케이스 산 곳이 어디였더라","expect_ids":["c017"],"from":null,"to":null}
+{"q":"나이키 운동화 몇 사이즈로 주문했지","expect_ids":["c024","c318"],"from":null,"to":null}
+{"q":"한라봉 언제 시켰어","expect_ids":["c031"],"from":null,"to":null}
+{"q":"책상 배송 언제 와","expect_ids":["c045","c155"],"from":null,"to":null}
+{"q":"파친코 책 얼마 줬지","expect_ids":["c058","c256"],"from":null,"to":null}
+{"q":"다이슨 드라이기 가격 얼마였지","expect_ids":["c066","c233"],"from":null,"to":null}
+{"q":"무쇠 냄비 산 거 무슨 색이었지","expect_ids":["c072"],"from":null,"to":null}
+{"q":"캠핑 의자 몇 개 샀어","expect_ids":["c089"],"from":null,"to":null}
+{"q":"뮤지컬 공연 몇 시에 시작해","expect_ids":["c104"],"from":null,"to":null}
+{"q":"넷플릭스 한 달에 얼마 나가","expect_ids":["c127","c128"],"from":null,"to":null}
+{"q":"부산 호텔 체크인 날짜","expect_ids":["c141"],"from":null,"to":null}
+{"q":"치킨 뭐 시켰었지","expect_ids":["c162"],"from":null,"to":null}
+{"q":"성수동 식당 예약 몇 명으로 했지","expect_ids":["c176"],"from":null,"to":null}
+{"q":"영화 예매한 거 어느 극장이야","expect_ids":["c183","c180"],"from":null,"to":null}
+{"q":"청첩장 받은 결혼식 장소 어디야","expect_ids":["c197"],"from":null,"to":null}
+{"q":"선크림 뭐 샀더라","expect_ids":["c211"],"from":null,"to":null}
+{"q":"스타벅스 기프티콘 누가 보내줬지","expect_ids":["c226"],"from":null,"to":null}
+{"q":"강아지 예방접종 언제 가야 돼","expect_ids":["c263"],"from":null,"to":null}
+{"q":"머리 하러 가는 날 언제지","expect_ids":["c270"],"from":null,"to":null}
+{"q":"스케일링 예약 몇 시야","expect_ids":["c305"],"from":null,"to":null}
+{"q":"내시경 전날 몇 시부터 굶어야 해","expect_ids":["c312"],"from":null,"to":null}
+{"q":"경비실에 맡겨진 택배 뭐였지","expect_ids":["c318"],"from":null,"to":null}
+{"q":"무릎 진료 예약 어느 병원이야","expect_ids":["c334"],"from":null,"to":null}
+{"q":"레이저 토닝 몇 회차 남았지","expect_ids":["c368"],"from":null,"to":null}
+{"q":"친구가 추천해 준 카페 어디였지","expect_ids":["c384"],"from":null,"to":null}
+{"q":"엄마 생신 때 뭐 사 드렸지","expect_ids":["c391"],"from":null,"to":null}
+{"q":"동료 결혼식 축의금 얼마 했더라","expect_ids":["c398"],"from":null,"to":null}
+{"q":"차 어디에 세워 뒀지","expect_ids":["c419"],"from":null,"to":null}
+{"q":"영어 학원 무슨 요일에 가","expect_ids":["c426"],"from":null,"to":null}
+{"q":"7월에 주문한 책 뭐였지","expect_ids":["c058","c256"],"from":"2026-07-01T00:00:00+09:00","to":"2026-07-31T23:59:59+09:00"}
+{"q":"8월에 올리브영에서 뭐 샀지","expect_ids":["c215"],"from":"2026-08-01T00:00:00+09:00","to":"2026-08-31T23:59:59+09:00"}
+{"q":"9월 치과 예약 언제야","expect_ids":["c305"],"from":"2026-09-01T00:00:00+09:00","to":"2026-09-30T23:59:59+09:00"}
+{"q":"6월에 산 신발","expect_ids":["c024","c318"],"from":"2026-06-01T00:00:00+09:00","to":"2026-06-30T23:59:59+09:00"}
+{"q":"8월 넷플릭스 결제 금액","expect_ids":["c128"],"from":"2026-08-01T00:00:00+09:00","to":"2026-08-31T23:59:59+09:00"}
+{"q":"9월에 배달 시킨 음식","expect_ids":["c162"],"from":"2026-09-01T00:00:00+09:00","to":"2026-09-30T23:59:59+09:00"}
+{"q":"7월에 산 캠핑 용품","expect_ids":["c089"],"from":"2026-07-01T00:00:00+09:00","to":"2026-07-31T23:59:59+09:00"}
+{"q":"8월에 잡은 안과 상담","expect_ids":["c347"],"from":"2026-08-01T00:00:00+09:00","to":"2026-08-31T23:59:59+09:00"}
+{"q":"9월에 예매한 영화","expect_ids":["c183"],"from":"2026-09-01T00:00:00+09:00","to":"2026-09-30T23:59:59+09:00"}
+{"q":"8월에 다이슨 배송 완료됐어?","expect_ids":["c233"],"from":"2026-08-01T00:00:00+09:00","to":"2026-08-31T23:59:59+09:00"}
+{"q":"자동차 보험 갱신일 언제야","expect_ids":[],"from":null,"to":null}
+{"q":"비행기 표 몇 시 출발이야","expect_ids":[],"from":null,"to":null}
+{"q":"헬스장 PT 몇 시로 잡았지","expect_ids":[],"from":null,"to":null}
+{"q":"이사 업체 견적 얼마 받았지","expect_ids":[],"from":null,"to":null}
+{"q":"여권 만료일이 언제지","expect_ids":[],"from":null,"to":null}
+{"q":"주식 배당금 들어왔어?","expect_ids":[],"from":null,"to":null}
+{"q":"이번 달 전기요금 얼마 나왔어","expect_ids":[],"from":null,"to":null}
+{"q":"아이 피아노 학원비 결제했나","expect_ids":[],"from":null,"to":null}
+{"q":"와인 모임 장소 어디였지","expect_ids":[],"from":null,"to":null}
+{"q":"노트북 수리 맡긴 거 찾았나","expect_ids":[],"from":null,"to":null}
