@@ -1,14 +1,16 @@
 #!/bin/bash
 # TestFlight 업로드: Release archive → export(destination=upload). 사용: scripts/testflight.sh [빌드 번호]
-# 인증: keys/AuthKey_<KEY_ID>.p8 + keys/issuer-id(Issuer ID 한 줄)가 있으면 App Store Connect API 키,
-#       없으면 Xcode 에 로그인된 Apple 계정(-allowProvisioningUpdates). keys/ 는 gitignore, 내용은 출력하지 않는다.
+# 인증: 기본은 Xcode 에 로그인된 Apple 계정(-allowProvisioningUpdates). TF_AUTH=key 면 keys/AuthKey_<KEY_ID>.p8 +
+#       keys/issuer-id(Issuer ID 한 줄)의 App Store Connect API 키. keys/ 는 gitignore, 내용은 출력하지 않는다.
+#       09-27: API 키는 REST 조회(200)는 되지만 archive 의 자동 서명에서 "Authentication failed"(개발 프로파일 생성 거부)라 계정 방식으로 올렸다.
 # 멈출 오류: 인증 실패 → ASC API 키 필요 / "No suitable application records were found" → App Store Connect 앱 레코드 필요
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BUILD=${1:-$(date +%Y%m%d%H%M)}
 ARCHIVE=build/AssistantPoC.xcarchive
 AUTH=()
-KEY=$(ls keys/AuthKey_*.p8 2>/dev/null | head -1 || true)
+KEY=""
+[ "${TF_AUTH:-}" = key ] && KEY=$(ls keys/AuthKey_*.p8 2>/dev/null | head -1 || true)
 if [ -n "$KEY" ]; then
   [ -s keys/issuer-id ] || { echo "keys/issuer-id 없음 (App Store Connect → 사용자 및 액세스 → 키의 Issuer ID)"; exit 1; }
   KEY_ID=$(basename "$KEY" .p8); KEY_ID=${KEY_ID#AuthKey_}
