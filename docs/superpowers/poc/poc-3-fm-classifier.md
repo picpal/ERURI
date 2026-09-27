@@ -27,9 +27,9 @@ Error Domain=com.apple.UnifiedAssetFramework Code=5000
 
 ## 실기기에서 사용자가 할 일
 
-1. **Mac(시뮬레이터로 먼저 돌려볼 때)**: 시스템 설정 → Apple Intelligence 및 Siri → 켜기, 모델 다운로드 완료 확인. 그 뒤 `scripts/sim.sh test AssistantCoreTests/FMClassifierTests`로 벤치마크가 스킵되지 않는지 본다(시뮬레이터 수치는 참고용이지 판정 근거가 아니다).
+1. **Mac(시뮬레이터로 먼저 돌려볼 때)**: 시스템 설정 → Apple Intelligence 및 Siri → 켜기, 모델 다운로드 완료 확인. 그 뒤 `scripts/sim.sh test EruriCoreTests/FMClassifierTests`로 벤치마크가 스킵되지 않는지 본다(시뮬레이터 수치는 참고용이지 판정 근거가 아니다).
 2. **iPhone(판정)**: 설정 → Apple Intelligence 및 Siri에서 켜고 모델 다운로드 "완료"를 확인한다(다운로드 중이면 `modelNotReady`).
-3. Xcode에서 실기기를 대상으로 `⌘U`로 `AssistantCoreTests/FMClassifierTests`를 실행한다. `testBenchmark`가 스킵되면 사유(`FM unavailable: …` 또는 `생성 실패: <코드>`)를 기록한다.
+3. Xcode에서 실기기를 대상으로 `⌘U`로 `EruriCoreTests/FMClassifierTests`를 실행한다. `testBenchmark`가 스킵되면 사유(`FM unavailable: …` 또는 `생성 실패: <코드>`)를 기록한다.
 4. 끝까지 돌면 `FM_BENCH` 로그와 App Group의 `fm_bench.txt`를 기록한다. 형식: `p95=<초>s personalPass=<n>/100 noticeDrop=<n>/96 medicalDrop=<n>/4 errors=<n> timeouts=<n> personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21`. `medicalDrop`은 검진 결과 안내 4건(`expected: medical_result`)을 알림톡 집계와 따로 센 값이다. 행마다 새 세션이고, 에러·타임아웃은 폐기로 센다.
 5. **메모리**: 벤치마크 실행 중 Xcode Debug navigator의 Memory 게이지 최대값(또는 Instruments의 Foundation Models 템플릿)을 기록한다.
 6. **백그라운드 인텐트에서 FM**: 단축어 앱에서 "비서에 저장"을 본문을 채워 10~20회 짧은 간격으로 실행한다(앱은 백그라운드). `poc.log`에서 `FM error rateLimited` 빈도, `queued:fm`/`queued:rules` 비율, 지연(ms)을 기록한다. `rateLimited`는 공식 문서상 백그라운드에서만 난다.

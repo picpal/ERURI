@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>iOS 개인 비서 · 아키텍처 리포트</title>
+  <title>ERURI · 아키텍처 리포트</title>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -49,7 +49,7 @@
 
   <div class="header">
     <p class="header-eyebrow">Architecture Report · 2026-09-23</p>
-    <h1>iOS 개인 비서</h1>
+    <h1>ERURI — iOS 개인 비서</h1>
     <p class="subtitle">메일·문자·앱 알림·공유 항목을 하나의 개인 컨텍스트로 모아 일정을 제안하고, 출처와 함께 답하는 앱. 스펙 v3(Codex 2차 리뷰 반영) 기준의 구조·흐름·기능 목록.</p>
   </div>
 
@@ -60,7 +60,7 @@
     <p class="section-sub">iPhone은 iOS만 할 수 있는 일(수집·필터·EventKit·푸시 수신)을 맡고, 나머지 처리는 Supabase Edge Function이 담당한다. 두 액센트가 이 설계의 핵심 지점이다.</p>
     <div class="diagram-container">
       <svg viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arch-title arch-desc">
-        <title id="arch-title">iOS 개인 비서 시스템 아키텍처</title>
+        <title id="arch-title">ERURI 시스템 아키텍처</title>
         <desc id="arch-desc">iPhone의 App Intent와 공유 입력이 기기 필터·큐를 거쳐 Supabase Edge 워커로 전송되고, Gmail Pub/Sub도 같은 워커로 들어온다. 워커는 Postgres에 저장하고 APNs로 제안을 푸시하며, 앱은 알림 액션으로 EventKit에 쓰고 채팅은 chat 함수의 하이브리드 검색을 호출한다.</desc>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
@@ -636,7 +636,7 @@
   </div>
 
   <div class="footer">
-    <span>iOS 개인 비서 · Architecture Report · spec v3 (Codex 2차 리뷰 반영)</span>
+    <span>ERURI · Architecture Report · spec v3 (Codex 2차 리뷰 반영)</span>
     <span>2026-09-23</span>
   </div>
 </div>

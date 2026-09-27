@@ -2,6 +2,8 @@
 
 Claude Code는 `CLAUDE.md`의 `@AGENTS.md`로, Codex는 이 파일을 직접 읽는다. 사람과 에이전트 모두에게 적용된다.
 
+제품 이름은 **ERURI**(비서 앱). 저장소 폴더 `assistant`와 0단계 PoC 번들 ID `com.picpal.assistant.poc`·App Group `group.com.picpal.assistant`는 기존 등록 때문에 그대로 둔다. Xcode 타깃은 `EruriPoC`, 패키지는 `EruriCore`.
+
 ## 1. 문서 위치
 
 | 문서 | 경로 |

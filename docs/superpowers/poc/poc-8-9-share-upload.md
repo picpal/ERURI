@@ -3,10 +3,10 @@
 ## 시뮬레이터에서 확인한 것
 
 이 세션의 시뮬레이터(`assistant-poc`, UDID는 `poc/ios/.sim-udid`)에도 PoC-1/2/3/5와 동일하게 공유 시트에서
-"AssistantPoC" 확장을 탭하는 터치 자동화 도구(idb 등)가 없다. `simctl`에는 공유 시트를 열고 항목을 탭하는 명령이
+"EruriPoC" 확장을 탭하는 터치 자동화 도구(idb 등)가 없다. `simctl`에는 공유 시트를 열고 항목을 탭하는 명령이
 없어, 계획서 Step 4가 명시적으로 허용한 대로 **launch-argument 디버그 훅**으로 `ShareViewController`가 하는 것과
-동일한 `AssistantCore` 호출(파일을 App Group에 복사 → `OCR.recognize` → `CaptureQueue.enqueue`)을 App 프로세스에서
-직접 재현했다(`--poc-debug-share-image=<host 절대경로>`, `AssistantPoCApp.swift`). 공유 시트 UI는 이 세션에서
+동일한 `EruriCore` 호출(파일을 App Group에 복사 → `OCR.recognize` → `CaptureQueue.enqueue`)을 App 프로세스에서
+직접 재현했다(`--poc-debug-share-image=<host 절대경로>`, `EruriPoCApp.swift`). 공유 시트 UI는 이 세션에서
 자동화하지 못했고, 이후 재실측 (d)에서 XCUITest로 시뮬레이터 사진 앱의 공유 시트를 실제로 실행했다.
 
 목 서버는 계획서의 8787 포트가 이 머신에 30일째 떠 있는 무관한 `python -m http.server`에 점유돼 있어(작업과 무관한
@@ -47,7 +47,7 @@ Vision(`ko-KR`, `.accurate`)이 4줄 69자를 정확히 인식했다(원문 "청
 2. `SIMCTL_CHILD_INGEST_URL=http://localhost:8799 xcrun simctl launch`로 앱 실행(`init()`이 `Uploader.shared.flush()`를
    즉시 호출해 `PUT /upload/<id>` 백그라운드 업로드 태스크를 `resume()`).
 3. 런치 0.4초 뒤 `xcrun simctl terminate` 실행.
-4. **호스트 `ps aux`로 `AssistantPoC` 프로세스가 실제로 사라졌음을 직접 확인**(폴링, 300ms 간격, 앱을 다시 열지 않음).
+4. **호스트 `ps aux`로 `EruriPoC` 프로세스가 실제로 사라졌음을 직접 확인**(폴링, 300ms 간격, 앱을 다시 열지 않음).
 5. 목 서버 `/received`를 계속 폴링.
 
 실측 시각(모두 같은 머신 UTC):
@@ -61,7 +61,7 @@ Vision(`ko-KR`, `.accurate`)이 4줄 69자를 정확히 인식했다(원문 "청
 | 목 서버 `/received`에 파일 전체(29,120바이트, 원본과 일치) 도착 | **14:07:31.628** |
 
 프로세스가 완전히 죽은 시점(14:07:27.946)과 서버 도착 시점(14:07:31.628) 사이에 **3.68초**의 간극이 있다. 이 구간
-동안 시뮬레이터 프로세스 목록에 `AssistantPoC` 바이너리는 없었다(직접 확인). 즉 앱 프로세스가 살아있지 않은 상태에서
+동안 시뮬레이터 프로세스 목록에 `EruriPoC` 바이너리는 없었다(직접 확인). 즉 앱 프로세스가 살아있지 않은 상태에서
 `sharedContainerIdentifier`를 쓰는 background `URLSession`이 데이터를 계속 전송해 서버까지 정확한 바이트 수로
 도착시켰다 — **PoC-9의 핵심 주장(백그라운드 전송이 앱 생명주기와 무관하게 완료된다)을 시뮬레이터에서 직접 재현·측정했다.**
 
@@ -85,7 +85,7 @@ Vision(`ko-KR`, `.accurate`)이 4줄 69자를 정확히 인식했다(원문 "청
 
 XCUITest(`UITests/SimRemeasureUITests.testPhotosShareSheetRunsExtension`, `scripts/sim.sh uitest`)로 사진 앱을 조작했다.
 `xcrun simctl addmedia`로 합성 이미지("[합성] 합성치과 예약 안내 9월 25일 15:00 진료")를 넣고, 사진 앱 그리드
-(`Image`, identifier `PXGGridLayout-Info`) → 공유 버튼 → 공유 시트의 `shareCell` "Assistant PoC"를 탭했다.
+(`Image`, identifier `PXGGridLayout-Info`) → 공유 버튼 → 공유 시트의 `shareCell` "ERURI PoC"를 탭했다.
 확장 프로세스가 실제로 떠서 `poc.log`에 `ShareExtension file id=476CF7E4-… type=image ocrLen=43`(14:35:36Z)를 남겼고,
 큐에 `SHARE | inbox/476CF7E4-….jpg | ocrText 43자` 행이 생겼다. 이전 세션의 "도구 부재" 판단은 XCUITest로 해소됐다.
 시뮬레이터 결과이므로 `results.md` PoC-8 판정은 **부분**이다. 실기기 공유 시트(App Group 서명 포함) 확인이 남는다.
@@ -117,14 +117,14 @@ PDF는 OCR이 없어 규칙 대상 텍스트가 없으므로 그대로 영속화
 
 ## 실기기에서 사용자가 할 일
 
-1. iPhone(iOS 26+, iPhone 15 Pro 이상)에 Xcode로 `AssistantPoC`를 설치한다.
+1. iPhone(iOS 26+, iPhone 15 Pro 이상)에 Xcode로 `EruriPoC`를 설치한다.
 2. `deno run --allow-net --allow-env poc/server/mock-ingest.ts`를 개발 머신에서 실행하고 방화벽에서 해당 포트를 허용한다
    (8787이 점유돼 있으면 `MOCK_INGEST_PORT=<PORT>`를 앞에 붙인다).
 3. 앱 → "업로드 서버" 입력란에 `http://<MAC_IP>:<PORT>`를 입력하고 저장한다(실기기는 `localhost`가 자기 자신이므로 Mac의 LAN IP).
    저장값은 App Group에 남아 홈 화면에서 다시 열어도 유지된다. 스킴 환경변수 `INGEST_URL`은 저장값이 없을 때만 쓰인다.
    앱을 홈 화면에서 다시 열고 `poc.log`의 `ingest base=<url>`이 입력한 주소인지 확인한다.
    첫 업로드 때 iOS가 "로컬 네트워크" 권한 대화상자를 띄우면 허용하고, 대화상자가 떴는지(앱·확장 중 어디서) 기록한다.
-4. 사진 앱에서 합성 이미지(청첩장·영수증 형태, 실제 원문 금지)를 길게 눌러 공유 → "Assistant PoC" 확장을 탭한다. 앱을 열어
+4. 사진 앱에서 합성 이미지(청첩장·영수증 형태, 실제 원문 금지)를 길게 눌러 공유 → "ERURI PoC" 확장을 탭한다. 앱을 열어
    큐 화면에 `[SHARE]` 항목과 OCR 텍스트, `poc.log`에 `ShareExtension file queued id=<uuid> type=image ocrLen=<n>`이 보이는지 확인한다. 시뮬레이터에서는 (d)에서 확인했고, 실기기 확인이
    PoC-8 기기 부분의 남은 항목이다(App Group 서명이 실기기에서 통하는지도 여기서 드러난다).
 5. `poc.log`의 `flush claimed N to=<host>:<port>`가 Mac 주소인지 본다. "업로드 flush" 버튼을 누르거나 앱을 백그라운드→포그라운드 전환해 `/received`(개발 머신에서 `curl`)에 파일이
@@ -151,8 +151,8 @@ PDF는 OCR이 없어 규칙 대상 텍스트가 없으므로 그대로 영속화
 - **`Uploader`에 `@unchecked Sendable` 추가**: `URLSessionDelegate`/`URLSessionTaskDelegate`를 채택한 싱글턴이
   `lazy var session`으로 가변 상태를 갖고 있어 Swift 6에서 요구했다. 델리게이트 콜백이 여러 스레드에서 올 수 있지만
   내부 상태 변경은 `CaptureQueue`(자체 sqlite 직렬화)와 `PoCLog`(파일 append)로만 하므로 안전하다고 판단했다.
-- **`AssistantPoCApp.swift`에 `--poc-debug-share-image=<path>` 훅 추가**: 당시 공유 시트 UI 자동화 수단이 없어(이후 (d) XCUITest로 해소)
-  `ShareViewController`와 동일한 `AssistantCore` 호출을 App 프로세스에서 재현하기 위한, Task 4/5 패턴을 따른 디버그
+- **`EruriPoCApp.swift`에 `--poc-debug-share-image=<path>` 훅 추가**: 당시 공유 시트 UI 자동화 수단이 없어(이후 (d) XCUITest로 해소)
+  `ShareViewController`와 동일한 `EruriCore` 호출을 App 프로세스에서 재현하기 위한, Task 4/5 패턴을 따른 디버그
   훅. `AppInfo.plist`에 `NSAppTransportSecurity > NSAllowsLocalNetworking`을 추가해 시뮬레이터에서 `localhost`
   접근을 허용했다.
 - **`Uploader.flush()`의 중복 방지 부재(관찰)**: 오프라인 중 여러 번 `flush()`를 호출하면 같은 항목에 대해 매번

@@ -4,13 +4,13 @@
 
 ## 시뮬레이터에서 확인한 것 (2026-09-24, Opus 재검증 반영 후)
 
-- 빌드 산출물 `AssistantPoC.app/Metadata.appintents/extract.actionsdata`에 `CaptureIntent`(파라미터 text·appName·title·sender·source, supportedModes=background, authenticationPolicy=alwaysAllowed)와 App Shortcut "${applicationName}에 저장"이 등록돼 있다.
-- XCUITest(`UITests/SimRemeasureUITests.testShortcutsAppRunsCaptureIntent`)로 **단축어 앱 → 모든 단축어 → Assistant PoC › "비서에 저장"**을 탭했다. 앱을 열지 않고 `queued:rules` 다이얼로그가 떴고 `poc.log`에 `CaptureIntent queued:rules 541ms src=NOTIFICATION app=nil titleLen=-1 textLen=0 sender=nil locked=false`(14:32:51Z)가 남았다. 즉 시스템(단축어) 경로로 인텐트가 호출되고, 본문 기본값 `""` 덕분에 값을 묻지 않고 실행된다.
+- 빌드 산출물 `EruriPoC.app/Metadata.appintents/extract.actionsdata`에 `CaptureIntent`(파라미터 text·appName·title·sender·source, supportedModes=background, authenticationPolicy=alwaysAllowed)와 App Shortcut "${applicationName}에 저장"이 등록돼 있다.
+- XCUITest(`UITests/SimRemeasureUITests.testShortcutsAppRunsCaptureIntent`)로 **단축어 앱 → 모든 단축어 → ERURI PoC › "비서에 저장"**을 탭했다. 앱을 열지 않고 `queued:rules` 다이얼로그가 떴고 `poc.log`에 `CaptureIntent queued:rules 541ms src=NOTIFICATION app=nil titleLen=-1 textLen=0 sender=nil locked=false`(14:32:51Z)가 남았다. 즉 시스템(단축어) 경로로 인텐트가 호출되고, 본문 기본값 `""` 덕분에 값을 묻지 않고 실행된다.
 - 이것은 **수동 실행 경로**다. 알림 트리거 자동화·배너 여부·필드 매핑은 여전히 실기기에서만 판정한다.
 
 ## 준비
 
-1. iPhone(iOS 26+, iPhone 15 Pro 이상)에 `AssistantPoC`를 Xcode → Run(케이블 연결)으로 설치한다. `poc/ios/project.yml`의 서명 팀(`6626BYCJG4`, Automatic)이 실기기에도 그대로 적용된다.
+1. iPhone(iOS 26+, iPhone 15 Pro 이상)에 `EruriPoC`를 Xcode → Run(케이블 연결)으로 설치한다. `poc/ios/project.yml`의 서명 팀(`6626BYCJG4`, Automatic)이 실기기에도 그대로 적용된다.
 2. 설정 → 알림 → 카카오톡·Instagram → 미리보기를 "항상"으로 설정한다(잠금 상태에서도 본문이 보여야 시나리오 3을 시험할 수 있다).
 3. 단축어 앱 → 자동화 탭 → 새 자동화 → **알림** 선택 → 앱: 카카오톡, 필터: 없음. 같은 방법으로 **Instagram 자동화도 하나 더** 만든다(시나리오 5용).
    - "즉시 실행" 토글이 나타나는지 여부를 기록한다 (스펙 §문서 조사 결과 Notification 트리거는 공식적으로 "자동 실행 가능" 목록에 없어 미확인 상태).

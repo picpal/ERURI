@@ -2,7 +2,7 @@
 <html lang="ko">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>실기기 PoC 세션 절차</title>
+<title>ERURI 실기기 PoC 세션 절차</title>
 <style>
   :root{
     --page-bg:#e9e7e2;
@@ -691,7 +691,7 @@
   <!-- 01 COVER -->
   <section class="slide dark cover" id="cover">
     <div class="cover-top num">
-      <span>Phase 0 · PoC-1 / 2 / 3 / 4 / 5 / 8 / 9</span>
+      <span>ERURI · Phase 0 · PoC-1 / 2 / 3 / 4 / 5 / 8 / 9</span>
       <span>2026-09-24 · 갱신 09-27 · iOS 26</span>
     </div>
     <div>
@@ -785,7 +785,7 @@
       <div class="cell">
         <h4>iPhone 쪽</h4>
         <ol class="steps">
-          <li><span class="who">iPhone</span>TestFlight 앱 → Assistant PoC → 설치(최신 빌드 번호 기록)</li>
+          <li><span class="who">iPhone</span>TestFlight 앱 → ERURI PoC → 설치(최신 빌드 번호 기록)</li>
           <li><span class="who">iPhone</span>앱 실행 → "권한 요청 (알림·캘린더·연락처)" → 모두 허용</li>
           <li><span class="who">iPhone</span>trace 섹션에 PoC 사용자 비밀번호 입력 → "로그인" → 상태 줄 <code>세션 있음</code> 확인 (Trace 슬라이드)</li>
           <li><span class="who">iPhone</span>(PoC-3 ⌘U 때만) 케이블 연결 → "이 컴퓨터 신뢰", 설정 → 개인정보 보호 및 보안 → 개발자 모드 켜기 → 재시동</li>
@@ -799,7 +799,7 @@ cd poc/ios &amp;&amp; scripts/testflight.sh            <span class="c"># 빌드 
 
 <span class="c"># 2. App Store Connect → TestFlight 에서 빌드 처리 완료("테스트 가능")를 기다린다 (보통 수 분~수십 분)</span>
 
-<span class="c"># 3. PoC-3 ⌘U 전용: Xcode 에서 AssistantPoC 스킴 → 대상 기기 → ⌘U</span>
+<span class="c"># 3. PoC-3 ⌘U 전용: Xcode 에서 EruriPoC 스킴 → 대상 기기 → ⌘U</span>
 <span class="c">#    같은 번들 ID 개발 빌드가 TestFlight 앱을 덮어쓴다 → APNs 토큰이 sandbox 로 바뀐다.</span>
 <span class="c">#    그래서 PoC-3 ⌘U 는 PoC-4·5·8·9 뒤, 재부팅(BFU) 앞에 둔다 (Order 슬라이드)</span></pre>
         <p class="muted" style="font-size:13px; margin-top:10px;">개발 빌드가 TestFlight 앱을 덮어쓸 때 App Group 데이터(큐·<code>contacts.json</code>·trace 대기분)가 유지되는지는 <span class="need">확인 필요</span> — 덮어쓴 뒤 앱 화면의 큐 목록과 trace "대기 n건"을 한 번 본다.</p>
@@ -1079,7 +1079,7 @@ Q "select at, event, fields from poc_traces where at between \$1 and \$2 order b
         <h4>준비</h4>
         <ul>
           <li><span class="who">iPhone</span>Apple Intelligence 켜짐, 모델 다운로드 <b>"완료"</b></li>
-          <li><span class="who mac">Mac</span>Xcode 대상 = 실기기, 스킴 AssistantPoC (테스트 타깃 <code>AssistantCoreTests</code>). <b>개발 빌드가 TestFlight 앱을 덮어쓰므로 PoC-4·5·8·9 를 먼저 끝낸다</b></li>
+          <li><span class="who mac">Mac</span>Xcode 대상 = 실기기, 스킴 EruriPoC (테스트 타깃 <code>EruriCoreTests</code>). <b>개발 빌드가 TestFlight 앱을 덮어쓰므로 PoC-4·5·8·9 를 먼저 끝낸다</b></li>
           <li>시뮬레이터 결과는 참고용 — 호스트 Mac 이 <code>appleIntelligenceNotEnabled</code> 라 시뮬레이터 <code>availability()=available</code> 은 오표시였다</li>
           <li>픽스처: personal 100 (KakaoTalk 50·Instagram 29·iMessage 21), notice 100</li>
         </ul>
@@ -1087,7 +1087,7 @@ Q "select at, event, fields from poc_traces where at between \$1 and \$2 order b
       <div class="cell">
         <h4>실행 단계</h4>
         <ol class="steps">
-          <li><span class="who mac">Mac</span>⌘U 로 <code>AssistantCoreTests/FMClassifierTests</code> 실행 (Test navigator 에서 해당 클래스만)</li>
+          <li><span class="who mac">Mac</span>⌘U 로 <code>EruriCoreTests/FMClassifierTests</code> 실행 (Test navigator 에서 해당 클래스만)</li>
           <li><span class="who mac">Mac</span>실행 중 Debug navigator <b>Memory 게이지 최대값</b> 기록 (또는 Instruments Foundation Models 템플릿)</li>
           <li><span class="who mac">Mac</span><code>testBenchmark</code> 가 스킵되면 사유 기록: <code>FM unavailable: …</code> / <code>생성 실패: &lt;코드&gt;</code></li>
           <li><span class="who">iPhone</span>앱을 백그라운드로 두고 단축어 "비서에 저장"을 <b>본문을 채워 10~20회</b> 짧은 간격으로 실행 (TestFlight 빌드에서 PoC-1·2 직후에 해도 된다)</li>
@@ -1288,7 +1288,7 @@ console.log(r.status, await r.text());'</pre>
       <div class="cell">
         <h4>실행 단계</h4>
         <ol class="steps">
-          <li><span class="who">iPhone</span>사진 길게 눌러 공유 → "AssistantPoC" 확장 탭 → 앱에서 <code>[SHARE]</code> 항목·OCR 텍스트 확인</li>
+          <li><span class="who">iPhone</span>사진 길게 눌러 공유 → "EruriPoC" 확장 탭 → 앱에서 <code>[SHARE]</code> 항목·OCR 텍스트 확인</li>
           <li><span class="who">iPhone</span>"업로드 flush" 또는 백그라운드→포그라운드 → <span class="who mac">Mac</span><code>curl …/received</code></li>
           <li><span class="who">iPhone</span>새 공유 직후 앱 전환기에서 스와이프 종료 → <span class="who mac">Mac</span>몇 초~몇십 초 뒤 <code>/received</code>, 도착 시각이 종료 시각보다 뒤인지</li>
           <li><span class="who">iPhone</span>비행기 모드 → 공유 → 앱 열기 → flush 실패 확인 → 비행기 모드 해제 → 앱 다시 열기 → 재시도 성공, 같은 바이트 도착</li>

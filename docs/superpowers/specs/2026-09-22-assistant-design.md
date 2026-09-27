@@ -1,8 +1,10 @@
-# iOS 개인 비서 앱 설계 스펙
+# ERURI — iOS 개인 비서 앱 설계 스펙
 
 작성일: 2026-09-22 · 갱신: 2026-09-26 (AI 벤더 OpenAI 단일화) · 2026-09-24 (0단계 Task 1~7 실측 반영) · 상태: 초안(리뷰 대기) · 대상: iPhone 15 Pro 이상, iOS 26+, 한국
 
 ## 1. 목표
+
+제품 이름은 **ERURI**(비서 앱). 홈 화면 표시 이름 `ERURI`, 0단계 PoC 빌드는 `ERURI PoC`.
 
 메일·문자·앱 알림·공유한 이미지/URL/PDF·사용자 발화를 하나의 개인 컨텍스트로 모아,
 (1) 일정·할 일을 뽑아 잠금화면 알림 버튼 한 번으로 캘린더/미리알림에 등록하고,
@@ -349,11 +351,13 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 | 타깃 | 역할 |
 |---|---|
-| `Assistant` (앱) | 채팅, 보관함, 제안 리뷰, 연결·권한, 자동화 설치 가이드, EventKit, 알림 액션, CaptureIntent/AskIntent/QuickMemoryIntent |
+| `Eruri` (앱, 표시 이름 `ERURI`) | 채팅, 보관함, 제안 리뷰, 연결·권한, 자동화 설치 가이드, EventKit, 알림 액션, CaptureIntent/AskIntent/QuickMemoryIntent |
 | `ShareExtension` | 입력 수신 → 큐 |
 | `ControlExtension` (WidgetKit) | 컨트롤센터/액션버튼 "빠른 기억" 버튼(OpenIntent) |
-| `AssistantCore` (Swift Package) | 큐, 규칙 필터, FM 분류, API 클라이언트, 모델. 단위 테스트 대상 |
+| `EruriCore` (Swift Package) | 큐, 규칙 필터, FM 분류, API 클라이언트, 모델. 단위 테스트 대상 |
 | `supabase/` | 마이그레이션, Edge Functions(Deno/TS), 테스트 |
+
+1단계 제품 번들 ID 는 `com.picpal.eruri`, App Group `group.com.picpal.eruri` 로 새로 등록한다(0단계 PoC 는 이미 등록·TestFlight 배포된 `com.picpal.assistant.poc`·`group.com.picpal.assistant` 유지).
 
 ## 12. 개인정보
 
@@ -442,7 +446,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | PoC-9 | background URLSession from App Intent | 잠금·오프라인·앱 강제 종료 후 복구 시 전송 | 앱 재실행 포함 시 유실 0. 강제 종료 시 취소되는 것을 기록 | 앱 포그라운드 시 재시도만 |
 | PoC-10 | jobs 워커 | pg_cron → Edge worker, 임대 만료·중복 실행·5회 실패 | 같은 잡이 동시에 두 번 돌지 않고 dead 전환됨 | 단일 워커 직렬 처리 |
 
-기기 PoC는 앱 하나(`poc/ios`: 앱 + Share Extension + `AssistantCore` 패키지 + UI 테스트)에, 서버 PoC는 `poc/server`에 둔다. 결과는 `docs/superpowers/poc/`에 기록하고 판정의 원본은 `results.md`다. PoC 코드는 폐기 대상이며 제품 코드에 복사하지 않는다.
+기기 PoC는 앱 하나(`poc/ios`: 앱 + Share Extension + `EruriCore` 패키지 + UI 테스트)에, 서버 PoC는 `poc/server`에 둔다. 결과는 `docs/superpowers/poc/`에 기록하고 판정의 원본은 `results.md`다. PoC 코드는 폐기 대상이며 제품 코드에 복사하지 않는다.
 
 ### 판정 현황 (2026-09-27, 원본 `docs/superpowers/poc/results.md`)
 

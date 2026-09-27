@@ -33,7 +33,7 @@ seek→write라 동시 쓰기에서 서로 덮어썼다(호스트 재현: 200줄
 그래서 계획서 Step 7의 지시대로 **Task 4의 `--poc-debug-capture`와 같은 launch-argument 디버그 훅** 방식을 그대로 적용했다:
 
 - `NotificationDelegate.userNotificationCenter(_:didReceive:)`가 하던 일을 `NotificationActions.handleAdd(userInfo:)`로 분리했다. 델리게이트는 이 함수를 호출만 한다.
-- `AssistantPoCApp.init()`에 `--poc-debug-notification-action [--proposal-id=<id>]` 훅을 추가해, 실제 알림 액션 탭과 동일한 코드 경로(`handleAdd`)를 launch argument로 직접 호출한다.
+- `EruriPoCApp.init()`에 `--poc-debug-notification-action [--proposal-id=<id>]` 훅을 추가해, 실제 알림 액션 탭과 동일한 코드 경로(`handleAdd`)를 launch argument로 직접 호출한다.
 - 독립 검증용으로 `--poc-debug-count-events` 훅도 추가해, 우리 코드가 직접 쓴 로그가 아니라 `EKEventStore`에서 실제로 조회한 이벤트 개수를 `poc.log`에 남긴다.
 
 `xcrun simctl launch <udid> com.picpal.assistant.poc --poc-debug-notification-action --proposal-id=p-001`로 두 번 실행한 결과(`poc.log`, 매 실행은 `simctl terminate` 후 재실행 = 콜드 스타트):
@@ -54,7 +54,7 @@ seek→write라 동시 쓰기에서 서로 덮어썼다(호스트 재현: 200줄
 
 ## 실기기에서 사용자가 할 일
 
-1. iPhone(iOS 26+)에 Xcode로 `AssistantPoC`를 설치하고, 기기 암호(Face ID)가 켜져 있는지 확인한다.
+1. iPhone(iOS 26+)에 Xcode로 `EruriPoC`를 설치하고, 기기 암호(Face ID)가 켜져 있는지 확인한다.
 2. 앱 실행 → "권한 요청 (알림·캘린더·연락처)" → 세 대화상자 모두 허용.
 3. "10초 뒤 ADD_EVENT 로컬 알림" 버튼을 누르고 **즉시 화면을 잠근다.** (APNs·PoC-4 없이 된다.)
 4. 잠금 화면 배너를 길게 눌러 "캘린더에 추가" → Face ID/암호를 요구하는지 기록 → 인증 후 캘린더에 1건 생기는지, `poc.log`에 `ADD ok p-local-1 … bg=true`가 남는지 확인.
@@ -72,6 +72,6 @@ seek→write라 동시 쓰기에서 서로 덮어썼다(호스트 재현: 200줄
 
 - `NotificationDelegate` 내부에 인라인으로 있던 처리 로직을 `NotificationActions.handleAdd(userInfo:)`로 분리했다. 델리게이트가 하는 일은 동일하지만, 알림 배너 UI 없이도 launch-argument 훅에서 같은 함수를 직접 호출해 검증할 수 있게 하기 위함이다(계획서 Step 7의 "핸들러를 직접 호출해 검증" 지시를 실행하려면 필요한 최소 리팩터였다).
 - 계획서에 없던 `--poc-debug-count-events` 훅을 추가했다. 우리 코드가 남긴 로그만으로는 "정말 EventKit에 1건만 있는지"를 독립적으로 보증하지 못해서, `EKEventStore`에 직접 질의하는 별도 검증 경로를 넣었다.
-- Swift 6 엄격 동시성 오류는 발생하지 않았다(`AssistantPoC` 전체 빌드 성공). `UIApplication.shared.applicationState` 접근은 `await MainActor.run { ... }`로 감쌌다.
+- Swift 6 엄격 동시성 오류는 발생하지 않았다(`EruriPoC` 전체 빌드 성공). `UIApplication.shared.applicationState` 접근은 `await MainActor.run { ... }`로 감쌌다.
 
 - (재검증 반영) 처리 본체를 `AddEventGate` actor로 옮기고, 로컬 알림 예약·동시 탭·UI 테스트 경로를 추가했다. 델리게이트는 포그라운드에서도 배너를 띄운다(`willPresent` → `.banner`).

@@ -85,7 +85,7 @@ Automatic 서명이 Push Notifications capability를 프로비저닝 프로필�
 앱에 아래를 더한다(PoC 전용, 토큰은 로그로 내보낸다):
 
 ```swift
-// AssistantPoCApp.swift
+// EruriPoCApp.swift
 @UIApplicationDelegateAdaptor(PushDelegate.self) var pushDelegate
 
 final class PushDelegate: NSObject, UIApplicationDelegate {
