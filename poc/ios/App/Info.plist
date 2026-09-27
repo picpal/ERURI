@@ -9,8 +9,8 @@
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
   <key>UILaunchScreen</key><dict/>
   <key>UISupportedInterfaceOrientations</key>
   <array>
@@ -19,6 +19,9 @@
   <key>NSCalendarsFullAccessUsageDescription</key><string>PoC: 제안된 일정을 캘린더에 추가합니다.</string>
   <key>NSRemindersFullAccessUsageDescription</key><string>PoC: 할 일을 미리알림에 추가합니다.</string>
   <key>NSContactsUsageDescription</key><string>PoC: 연락처에 있는 발신자의 메시지를 제외합니다.</string>
+  <!-- 알림 권한은 Info.plist 키가 없다(requestAuthorization 대화상자). 업로드 서버가 Mac 의 LAN 주소라 로컬 네트워크 권한이 뜬다 -->
+  <key>NSLocalNetworkUsageDescription</key><string>PoC: 같은 네트워크의 개발용 업로드 서버로 수집 항목을 보냅니다.</string>
+  <key>ITSAppUsesNonExemptEncryption</key><false/>
   <key>UIBackgroundModes</key>
   <array>
     <string>remote-notification</string>

@@ -9,6 +9,9 @@ settings:
     DEVELOPMENT_TEAM: 6626BYCJG4
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "6.0"
+    # TestFlight: 앱·확장이 같은 버전을 쓴다. 빌드 번호는 scripts/testflight.sh 가 $(date +%Y%m%d%H%M) 으로 덮어쓴다
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: "1"
 packages:
   AssistantCore:
     path: Packages/AssistantCore
@@ -29,22 +32,33 @@ targets:
     configFiles:
       Debug: Config/Secrets.xcconfig
       Release: Config/Secrets.xcconfig
+    # 자동 서명(-allowProvisioningUpdates)이 App ID 에 켤 capability. 실제 값은 entitlements 파일
+    attributes:
+      SystemCapabilities:
+        com.apple.ApplicationGroups.iOS: { enabled: 1 }
+        com.apple.Push: { enabled: 1 }
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.picpal.assistant.poc
         CODE_SIGN_ENTITLEMENTS: App/App.entitlements
         INFOPLIST_FILE: App/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"   # iPhone 전용(xcodegen 타깃 기본값 "1,2" 를 덮는다. iPad 방향 요건 회피)
   ShareExtension:
     type: app-extension
     platform: iOS
     sources: [ShareExtension]
     dependencies:
       - package: AssistantCore
+    attributes:
+      SystemCapabilities:
+        com.apple.ApplicationGroups.iOS: { enabled: 1 }
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.picpal.assistant.poc.share
         CODE_SIGN_ENTITLEMENTS: ShareExtension/ShareExtension.entitlements
         INFOPLIST_FILE: ShareExtension/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
   AssistantCoreTests:
     type: bundle.unit-test
     platform: iOS
