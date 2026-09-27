@@ -5,3 +5,4 @@ poc/ios/.sim-udid
 .env
 poc/server/eval/images/
 poc/server/keys/
+poc/ios/keys/
