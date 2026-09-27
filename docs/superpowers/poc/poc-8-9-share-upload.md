@@ -169,3 +169,82 @@ PDF는 OCR이 없어 규칙 대상 텍스트가 없으므로 그대로 영속화
   **통과**. 호스트 프로세스 목록으로 앱이 죽어 있음을 직접 확인한 뒤 3.68초 후 정확한 바이트 수로 서버에 도착하는
   것을 실측했다.
 - 최종 판정은 `docs/superpowers/poc/results.md`(Task 13)에 반영했다.
+
+## PoC-8 서버 부분 (Task 12, 2026-09-27)
+
+### 구성
+
+- `_shared/extract.ts` `extractEvent(input)`: `gpt-6-luna`, Responses API, `text.format` json_schema `strict: true`, `store: false`,
+  reasoning `none`. 이미지는 `input_image`(data URL, detail high), PDF는 `input_file`(`file_data` data URL), 기기 OCR 텍스트가
+  있으면 같이 `input_text`로 넣는다. 오늘 날짜는 서울 기준으로 주입(계획서의 하드코딩 제거).
+- 정규화(서버, 결정적): 일시는 ISO 8601 `+09:00`(오프셋 없으면 서울 현지, 다른 오프셋은 변환, 날짜만이면 종일로 `YYYY-MM-DD`),
+  해석 불가 → null + `date`, 종료 < 시작 → 종료 버림 + `end`. 스키마에 **사실 플래그** `year_in_text`·`lunar`를 두고
+  (결과에는 남기지 않음) 연도 없음 → `year` + 연도를 "오늘 이후 가장 가까운 해"로 서버가 재계산, 음력 → `date`.
+- worker `extract` 잡: `items.storage_key` → Storage(`poc` 비공개 버킷) → `reserve_vision_call`(월 100건, 호출 전 예약,
+  한 문장 upsert로 동시 호출에도 초과 없음) → vision, **상한 초과 시 OCR 텍스트만**, OCR도 없으면 `needs_review`.
+  PDF 10MB 초과도 `needs_review`. 결과는 `save_event_fact`로 `facts`(event) + `proposals`(create_event) 한 트랜잭션,
+  같은 항목 재시도는 1건 유지. 토큰은 `usage_counters.extract_tokens`에 정산. 로그는 id·경로(vision/ocr)·유무·개수만.
+- worker `process` 잡(계획서 Step 3): 복호화된 텍스트만 `extractEvent({ ocrText })`에 넘기고 checkpoint `extracted`.
+- `vision-extract`(측정용): body `{ storagePath: 'poc/…', ocrText? }`, secret 키 호출만, `poc` 버킷만.
+- 마이그레이션 `0012_extract.sql`: `usage_counters`·`facts`·`proposals`, `insert_media_item`(extract 잡, 테스트는
+  `test:` lease_key), `worker_get_media`(소유 조건 + OCR 복호화 감사), `reserve_vision_call`, `add_extract_tokens`,
+  `save_event_fact`. worker는 secret 키 호출 본문에 `lease_prefix: 'test:…'`가 있으면 그 테스트 잡만 가져간다(cron은 본문 `{}`).
+- 테스트: `extract.test.ts` 16개(스키마 strict·요청 구성·정규화·연도/음력 플래그·잘림/거절·상한 폴백·needs_review·
+  vision-extract 권한), `extract-db.test.ts` 3개(호스팅 DB: 99→100→거부·동시 2건도 100 유지, vision→OCR 폴백 e2e,
+  fact·proposal 멱등, 소유자 외 거부). 전용 테스트 사용자·`test:` 태그만.
+
+### 합성 입력 (eval/images, git 제외, `eval/gen-images.py` → `make-pdf.sh` → `ocr.swift`)
+
+| 파일 | 형태 | 날짜 표기 | 정답 시작 | 기대 uncertain |
+|---|---|---|---|---|
+| 01-formal.png | 청첩장 카드 | 2026년 10월 17일 토요일 오후 1시 (+식사 12시 30분 방해) | 2026-10-17 13:00 | 없음 |
+| 02-mobile-slash.png | 모바일 청첩장 스크린샷 | 10/31(토) 11:30 (연도 없음) | 2026-10-31 11:30 | year |
+| 03-mobile-noon.png | 모바일 청첩장 스크린샷 | 11월 14일 토요일 낮 12시 (연도 없음) | 2026-11-14 12:00 | year |
+| 04-event-dot.png | 동창회 안내 | 2026. 12. 5.(토) 18:00 ~ 21:00 (+입금 마감 방해) | 2026-12-05 18:00, 종료 21:00 | 없음 |
+| 05-lunar.png | 칠순 잔치 | 2026년 음력 9월 14일 (토) 낮 12시 30분 | 양력 2026-10-24 12:30 | date |
+| 06-notice.pdf | 텍스트 PDF(가정통신문) | 2026년 11월 20일(금) 오전 10시 ~ 11시 30분 (+발행일·회신 기한 방해) | 2026-11-20 10:00, 종료 11:30 | 없음 |
+| 07-scan.pdf | 스캔형 2쪽 이미지 PDF | 2쪽: 2026년 12월 19일 토요일 오후 2시 30분 | 2026-12-19 14:30 | 없음 |
+
+OCR 텍스트는 macOS Vision(ko-KR, accurate, Share Extension과 같은 API)으로 만들었고 텍스트 PDF는 PDFKit 문자열.
+
+### 실측 (배포 `vision-extract`, 서울, 7파일 × 3회 × 모드, `eval/out/vision-20260927-r3.json`)
+
+| 모드 | 제목·시작·장소 모두 | uncertain 적중 | 오탐 uncertain | 호출 지연 p50 / p95 | 모델 p50 / p95 | 입력/출력 토큰 | 건당 비용 |
+|---|---|---|---|---|---|---|---|
+| vision + OCR (worker 기본 경로) | **21/21** | 21/21 | 0 | 1.95s / 2.53s | 1.42s / 2.06s | 3,814 / 82 | $0.00042 |
+| vision만 | 19/21 | 21/21 | 0 | 1.99s / 4.07s | 1.43s / 1.74s | 3,675 / 82 | $0.00041 |
+| OCR 텍스트만 (상한 초과 폴백) | **21/21** | 21/21 | 0 | 1.48s / 1.81s | 1.17s / 1.47s | 871 / 82 | $0.00013 |
+
+- 파일별(vision+OCR): 01~04·06·07 모두 제목·시작·장소·종료 3/3. 05 음력은 `date` 표시 3/3이지만 **양력 환산 정확 0/3**
+  (3회 모두 10-25, 하루 어긋남). vision만 2/3, OCR만 3/3 정확. 즉 음력 환산은 모델에 맡길 수 없고 `date` 표시로
+  REVIEW 경로에 보내는 것이 맞다.
+- vision만의 실패 2건은 07 스캔 PDF 제목을 혼주 부모 이름("윤태식·강동수 결혼식")으로 지은 것. 일시·장소는 맞다.
+  기기 OCR을 함께 넣으면 3/3.
+- 반복 개선 기록: r1(초기 지시문) vision+OCR 21/21이나 음력 `date` 표시 2/3·연도 `year` 표시 OCR 1/3, 모델이 종료가 없는
+  행사에 `end`를 넣어 "추가" 버튼이 막히는 문제 → 지시문 수정. r2(플래그 도입) `uncertain` 적중 100%, 그러나 연도 없는
+  03을 2027로 채운 1건 → r3(연도 서버 재계산) 해소.
+- 배포 worker 전 경로(`eval/run-worker-extract.ts`, 테스트 사용자·`test:` 태그): extract 잡 7/7 `done`·checkpoint
+  `proposed`(attempts 1), `facts` 7 + `proposals` 7(create_event), 시작 정답 또는 `date` 표시 7/7, `usage_counters`
+  vision_calls 7·extract_tokens 29,789(건당 약 4.3k). process 잡 3/3 `extracted`. 잡당 1.4~2.8초, 5잡 배치 9~11초
+  (cron `timeout_milliseconds` 5초보다 길지만 pg_net 응답 대기일 뿐 함수는 끝까지 실행). 끝난 뒤 이번 실행 행·파일 삭제,
+  배포 후 cron 틱 `succeeded`·HTTP 200.
+- 비용: vision 월 100건 상한 × $0.00042 ≈ **$0.04/월**(스펙 §13 추정 $0.01보다 약 4배, 토큰이 3k가 아니라 3.8~4.3k).
+
+### 판정
+
+- 서버 부분(스펙 §14 "날짜·장소·연도 추출 5/5"): **통과** — 청첩장·안내 7종(이미지 5, PDF 2) 제목·시작·장소
+  vision+OCR 21/21, 연도 없는 2종은 연도 맞고 `year` 표시 3/3. 단 음력 1종은 날짜를 확정하지 않고 `date`로 사용자
+  확인에 넘긴다(환산값은 하루 틀림). 대안(OCR 텍스트만)도 21/21.
+- PoC-8 전체는 기기 부분(실기기 공유 시트·오프라인 후 유실 0)이 남아 **부분**.
+
+### 계획서·스펙과 달라진 점 / 반영 필요
+
+- 스키마에 `year_in_text`·`lunar` 플래그 추가, 연도는 서버가 재계산(계획서 Step 1 스키마·"가장 가까운 미래 연도로 채워라"를
+  모델에 맡기던 부분). 스펙 §7 추출 절에 "uncertain은 서버가 사실 플래그로 결정" 반영 필요.
+- 음력 날짜: 스펙에 규칙 없음 → "음력은 `date` 표시로 REVIEW, 제품에서는 서버 음력 변환표로 환산" 추가 필요.
+- 계획서 Step 2는 "Storage `poc/` 버킷에 5종" — 실제로는 7종(PDF 2), `vision-extract`는 secret 키 전용.
+- 스펙 §8 `facts`·`proposals`·`usage_counters` 최소 컬럼만 생성. 재시도 시 vision 예약이 한 번 더 올라간다(상한 계산이
+  보수적), PDF 50페이지 검사는 미구현(10MB만).
+- 스펙 §13 vision 토큰 추정(건당 3k) → 실측 3.8~4.3k.
+- `process` 잡이 분류 없이 모든 텍스트 항목에 추출을 호출한다(계획서 Step 3 그대로). 스펙 §7 순서(분류 → discard 삭제 →
+  추출)와 다르므로 분류 단계 도입 전까지 실제 Gmail 항목도 추출 호출 1회가 추가된다.
