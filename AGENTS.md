@@ -102,3 +102,8 @@ herdr agent prompt codex-reviewer "Read .context/codex-review-N.prompt.md and fo
 - `.env`, `.context/`, `poc/ios/.sim-udid`, `poc/server/eval/images/`는 커밋하지 않는다.
 - 호스팅 DB 테스트는 자기가 만든 행만 지운다: 전용 테스트 사용자(`poc-test-<n>@example.com`, `tests/_testenv.ts`)와 실행 태그(`lease_key`·`idempotency_key`·`device_id` 접두 `test:<run>`)로 식별하고, `truncate`·조건 없는 `delete` 금지. 실측 데이터(`POC_USER_ID`의 items·jobs·connections)는 테스트가 만들거나 지우지 않는다. 전역 함수는 범위 인자(`claim_jobs(p_lease_prefix)`, `gmail_enqueue_all(p_user)`)로 좁힌다.
 - 비밀값은 `.env`와 `supabase secrets`에만. 코드·프롬프트 파일·커밋 메시지에 넣지 않는다.
+
+## 8. 버전 규칙 (사용자 지시 2026-09-27)
+
+- `MARKETING_VERSION` 의 **메이저는 사용자가 말하기 전까지 올리지 않는다**(현재 0.x). 기능 추가는 마이너, 수정은 패치만 올린다.
+- 빌드 번호(`CURRENT_PROJECT_VERSION`)는 업로드마다 `date +%Y%m%d%H%M`.
