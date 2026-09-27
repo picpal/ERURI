@@ -691,8 +691,8 @@
   <!-- 01 COVER -->
   <section class="slide dark cover" id="cover">
     <div class="cover-top num">
-      <span>Phase 0 · PoC-1 / 2 / 3 / 5 / 8 / 9</span>
-      <span>2026-09-24 · iOS 26</span>
+      <span>Phase 0 · PoC-1 / 2 / 3 / 4 / 5 / 8 / 9</span>
+      <span>2026-09-24 · 갱신 09-27 · iOS 26</span>
     </div>
     <div>
       <h1 class="display">Real Device<br>Session Runbook</h1>
@@ -706,8 +706,8 @@
     <h3 class="display" style="font-size:clamp(26px,4vw,38px);">Session Map</h3>
     <ol class="toc">
       <li><span class="no">01</span><span class="t">요약 · 확인 필요 항목 · 준비물</span><span class="d">Brief</span></li>
-      <li><span class="no">02</span><span class="t">Mac 사전 준비 — 실기기 빌드·설치, 목 서버</span><span class="d">Setup</span></li>
-      <li><span class="no">03</span><span class="t">PoC 별 절차 — 1 · 2 · 3 · 5 · 8+9</span><span class="d">Run</span></li>
+      <li><span class="no">02</span><span class="t">Mac 사전 준비 — TestFlight 설치, 목 서버, trace 조회</span><span class="d">Setup</span></li>
+      <li><span class="no">03</span><span class="t">PoC 별 절차 — 1 · 2 · 3 · 4 · 5 · 8+9</span><span class="d">Run</span></li>
       <li><span class="no">04</span><span class="t">실행 순서 권장안 · 실패 시 흔한 원인</span><span class="d">Order</span></li>
       <li><span class="no">05</span><span class="t">결과 기록 — results.md 갱신, 스펙 §16 반영</span><span class="d">Record</span></li>
       <li><span class="no">06</span><span class="t">부록 — 원 절차 문서 경로</span><span class="d">Appendix</span></li>
@@ -717,14 +717,15 @@
   <!-- 03 SUMMARY -->
   <section class="slide dark" id="summary">
     <p class="eyebrow">Summary</p>
-    <h3>이 세션이 끝나면 PoC-1·2·3·5가 "통과/실패"로 확정되고, PoC-8 기기 부분과 PoC-9 가 실기기에서 재확인된다.</h3>
-    <p class="muted" style="font-size:14px;">현재 판정표: PoC-1·2 미검증, PoC-3·5·8 부분, PoC-9 통과(시뮬레이터). 디버그 훅·시뮬레이터 대체는 "부분"이며 통과가 아니다(AGENTS §5-8).</p>
+    <h3>이 세션이 끝나면 PoC-1·2·3·4·5가 "통과/실패"로 확정되고, PoC-8 기기 부분과 PoC-9 가 실기기에서 재확인된다.</h3>
+    <p class="muted" style="font-size:14px;">현재 판정표(2026-09-27): 통과 3(PoC-7·9·10) · 부분 5(PoC-3·4·5·6·8) · 미검증 2(PoC-1·2). PoC-8 서버 추출은 통과했고 기기 부분만 남았다. 디버그 훅·시뮬레이터·가짜 토큰 대체는 "부분"이며 통과가 아니다(AGENTS §5-8).</p>
     <div class="split">
       <div>
         <h4>세션 목표</h4>
         <ul class="list">
           <li><span class="k num">＋</span><span><b>PoC-1·2</b> 단축어 알림·메시지 트리거가 본문·앱명·발신자를 <code>CaptureIntent</code>에 넘기는지, 잠금 중 무확인 실행되는지</span></li>
           <li><span class="k num">＋</span><span><b>PoC-3</b> 실기기 FM 벤치마크 p95·개인 대화 통과율·알림톡 폐기율, 메모리, 백그라운드 <code>rateLimited</code></span></li>
+          <li><span class="k num">＋</span><span><b>PoC-4</b> TestFlight 기기의 production APNs 토큰으로 실제 수신 1회, 100회 동시 10 성공률 ≥ 99%·h2 오류 0</span></li>
           <li><span class="k num">＋</span><span><b>PoC-5</b> 잠금 화면에서 <code>.authenticationRequired</code> 액션이 Face ID/암호 후 이벤트 1건만 쓰는지</span></li>
           <li><span class="k num">＋</span><span><b>PoC-8·9</b> 실기기 공유 시트 → 큐, 앱 종료·오프라인 후 업로드</span></li>
         </ul>
@@ -732,6 +733,12 @@
       <div>
         <h4>확인 필요 — 문서 간 불일치</h4>
         <p style="font-size:14px;">해소됨(2026-09-25).</p>
+        <h4 style="margin-top:18px;">09-27 변경</h4>
+        <ul class="list">
+          <li><span class="k num">—</span><span>설치는 <b>TestFlight</b>가 기본(Xcode 설치 대신). PoC-3 ⌘U 만 Xcode 개발 설치</span></li>
+          <li><span class="k num">—</span><span>관찰값은 기기 로그 대신 <code>poc_traces</code> 로 올라온다 → Mac 에서 조회해 기록란을 채운다</span></li>
+          <li><span class="k num">—</span><span>APNs 키를 Sandbox &amp; Production 키로 교체 → PoC-4 를 이 세션에 포함</span></li>
+        </ul>
       </div>
     </div>
     <blockquote class="callout">디버그 훅·시뮬레이터 결과는 "부분"이다. 실기기에서 재현·측정한 로그만 "통과"의 근거가 된다.<span class="src">AGENTS.md §5 — 실측 게이트</span></blockquote>
@@ -744,11 +751,13 @@
     <p class="muted" style="font-size:14px;">세션 시작 전에 전부 체크한다. 하나라도 빠지면 해당 PoC 는 "부분"에서 멈춘다.</p>
     <ul class="checks">
       <li><input type="checkbox" aria-label="기기"><span><b>iPhone 15 Pro 이상, iOS 26+</b>. 기기 암호(Face ID) 켜짐 — PoC-5 잠금 화면 인증에 필요</span></li>
-      <li><input type="checkbox" aria-label="케이블"><span><b>데이터 케이블</b> (Xcode Run·⌘U·Memory 게이지)</span></li>
+      <li><input type="checkbox" aria-label="TestFlight"><span><b>TestFlight 앱</b> 설치, App Store Connect 내부 테스터 초대 수락 — 최신 PoC 빌드가 "테스트 가능" 상태</span></li>
+      <li><input type="checkbox" aria-label="케이블"><span><b>데이터 케이블</b> (PoC-3 ⌘U·Memory 게이지 전용)</span></li>
       <li><input type="checkbox" aria-label="Apple ID"><span><b>Apple ID</b> — Xcode 계정에 팀 <code>6626BYCJG4</code> 로그인 (Automatic 서명)</span></li>
       <li><input type="checkbox" aria-label="Apple Intelligence"><span><b>Apple Intelligence 켜짐 + 모델 다운로드 "완료"</b> (설정 → Apple Intelligence 및 Siri). 다운로드 중이면 <code>modelNotReady</code></span></li>
       <li><input type="checkbox" aria-label="개발자 모드"><span><b>개발자 모드</b> 켜짐 (설정 → 개인정보 보호 및 보안)</span></li>
-      <li><input type="checkbox" aria-label="Xcode"><span><b>Xcode 26.3</b> + <code>xcodegen</code> (<code>project.yml</code> 의 <code>xcodeVersion</code>)</span></li>
+      <li><input type="checkbox" aria-label="Xcode"><span><b>Xcode 26.3</b> + <code>xcodegen</code> — TestFlight 업로드(<code>scripts/testflight.sh</code>)와 PoC-3 ⌘U 에 필요</span></li>
+      <li><input type="checkbox" aria-label="PoC 사용자"><span><b>PoC 사용자 비밀번호</b> (<code>poc/server/.env</code> 의 <code>POC_USER_PASSWORD</code>) — 앱에서 로그인해야 trace 가 서버로 올라간다. 값은 화면·기록에 남기지 않는다</span></li>
       <li><input type="checkbox" aria-label="Wi-Fi"><span><b>Mac·iPhone 같은 Wi-Fi</b> — 목 서버에 LAN IP 로 접근</span></li>
       <li><input type="checkbox" aria-label="목 서버"><span><b>Mac 에 deno + 목 서버</b> <code>poc/server/mock-ingest.ts</code>, 방화벽에서 포트 허용</span></li>
       <li><input type="checkbox" aria-label="카톡 인스타"><span><b>카카오톡·Instagram</b> 설치·로그인, 합성 문구를 보낼 <b>두 번째 계정</b></span></li>
@@ -762,41 +771,38 @@
   <section class="slide dark" id="build">
     <p class="eyebrow">02 · Mac Setup</p>
     <h3 class="display" style="font-size:clamp(26px,4vw,38px);">Build &amp; Install</h3>
+    <p class="muted" style="font-size:14px;">기본 경로는 <b>TestFlight 설치</b>다(2026-09-27 변경). 케이블·개발자 모드 없이 설치되고, TestFlight 빌드의 APNs 토큰은 <b>production</b> 이라 PoC-4 를 그대로 잰다. Xcode 개발 설치는 PoC-3 ⌘U 벤치마크에만 쓴다.</p>
     <div class="action-grid">
       <div class="cell">
         <h4>서명·번들</h4>
         <ul>
-          <li>팀 <code>6626BYCJG4</code>, <code>CODE_SIGN_STYLE: Automatic</code> — 실기기에도 그대로 적용</li>
+          <li>팀 <code>6626BYCJG4</code>, <code>CODE_SIGN_STYLE: Automatic</code>. 업로드 인증은 Xcode 에 로그인된 계정(기본). ASC API 키는 자동 서명 단계에서 거부돼 옵트인(<code>TF_AUTH=key</code>)</li>
           <li>앱 <code>com.picpal.assistant.poc</code>, 공유 확장 <code>com.picpal.assistant.poc.share</code></li>
           <li>App Group <code>group.com.picpal.assistant</code> — 시뮬레이터는 프로비저닝을 강제하지 않았다. <b>실기기 설치 때 처음 검증된다</b></li>
+          <li>APNs: TestFlight = production 토큰, Xcode 개발 설치 = sandbox 토큰. 서버 키는 두 환경 모두 인증됨(09-27 가짜 토큰 확인)</li>
         </ul>
       </div>
       <div class="cell">
         <h4>iPhone 쪽</h4>
         <ol class="steps">
-          <li><span class="who">iPhone</span>케이블 연결 → "이 컴퓨터 신뢰"</li>
-          <li><span class="who">iPhone</span>설정 → 개인정보 보호 및 보안 → 개발자 모드 켜기 → 재시동</li>
-          <li><span class="who">iPhone</span>첫 실행이 막히면 설정 → 일반 → VPN 및 기기 관리 → 개발자 앱 신뢰</li>
+          <li><span class="who">iPhone</span>TestFlight 앱 → Assistant PoC → 설치(최신 빌드 번호 기록)</li>
+          <li><span class="who">iPhone</span>앱 실행 → "권한 요청 (알림·캘린더·연락처)" → 모두 허용</li>
+          <li><span class="who">iPhone</span>trace 섹션에 PoC 사용자 비밀번호 입력 → "로그인" → 상태 줄 <code>세션 있음</code> 확인 (Trace 슬라이드)</li>
+          <li><span class="who">iPhone</span>(PoC-3 ⌘U 때만) 케이블 연결 → "이 컴퓨터 신뢰", 설정 → 개인정보 보호 및 보안 → 개발자 모드 켜기 → 재시동</li>
         </ol>
       </div>
       <div class="cell" style="grid-column:1 / -1; padding-right:0; border-left:0; padding-left:0;">
-        <h4>Mac — UDID·빌드·설치</h4>
-<pre><span class="c"># 1. 기기 UDID</span>
-xcrun devicectl list devices
+        <h4>Mac — TestFlight 업로드 (세션 전날)</h4>
+<pre><span class="c"># 1. 메모리 확인 후 Release archive → App Store Connect 업로드 (poc/ios)</span>
+vm_stat | grep -E 'free|compressor'
+cd poc/ios &amp;&amp; scripts/testflight.sh            <span class="c"># 빌드 번호 기본값 = 날짜시각</span>
 
-<span class="c"># 2. 프로젝트 생성 (poc/ios)</span>
-cd poc/ios &amp;&amp; scripts/sim.sh gen
+<span class="c"># 2. App Store Connect → TestFlight 에서 빌드 처리 완료("테스트 가능")를 기다린다 (보통 수 분~수십 분)</span>
 
-<span class="c"># 3-a. 권장: Xcode 에서 AssistantPoC 스킴 → 대상 기기 선택 → Run (⌘R)</span>
-<span class="c">#      업로드 서버 주소는 설치 후 앱 화면 "업로드 서버" 입력란에 저장 (다음 슬라이드)</span>
-
-<span class="c"># 3-b. 명령줄 대안 (sim.sh 의 build 와 같은 형태, destination 만 실기기)</span>
-xcodebuild -project AssistantPoC.xcodeproj -scheme AssistantPoC \
-  -destination 'platform=iOS,id=&lt;UDID&gt;' -derivedDataPath build \
-  -allowProvisioningUpdates build
-xcrun devicectl device install app --device &lt;UDID&gt; build/Build/Products/Debug-iphoneos/AssistantPoC.app
-xcrun devicectl device process launch --device &lt;UDID&gt; com.picpal.assistant.poc</pre>
-        <p class="muted" style="font-size:13px; margin-top:10px;">3-b 는 절차 문서에 없는 명령줄 경로다. 절차 문서가 지정한 방법은 Xcode Run. 업로드 서버 주소는 앱 화면 입력란에 저장하므로 3-b 로 띄워도 같다.</p>
+<span class="c"># 3. PoC-3 ⌘U 전용: Xcode 에서 AssistantPoC 스킴 → 대상 기기 → ⌘U</span>
+<span class="c">#    같은 번들 ID 개발 빌드가 TestFlight 앱을 덮어쓴다 → APNs 토큰이 sandbox 로 바뀐다.</span>
+<span class="c">#    그래서 PoC-3 ⌘U 는 PoC-4·5·8·9 뒤, 재부팅(BFU) 앞에 둔다 (Order 슬라이드)</span></pre>
+        <p class="muted" style="font-size:13px; margin-top:10px;">개발 빌드가 TestFlight 앱을 덮어쓸 때 App Group 데이터(큐·<code>contacts.json</code>·trace 대기분)가 유지되는지는 <span class="need">확인 필요</span> — 덮어쓴 뒤 앱 화면의 큐 목록과 trace "대기 n건"을 한 번 본다.</p>
       </div>
     </div>
   </section>
@@ -845,8 +851,49 @@ curl -s http://&lt;MAC_IP&gt;:&lt;PORT&gt;/received</pre>
     </div>
   </section>
 
+  <!-- 06b TRACES -->
+  <section class="slide dark" id="traces">
+    <p class="eyebrow">02 · Mac Setup</p>
+    <h3 class="display" style="font-size:clamp(26px,4vw,38px);">Traces &amp; Queries</h3>
+    <p class="muted" style="font-size:14px;">앱·공유 확장·인텐트가 관찰값을 App Group 에 쌓고, 앱이 열릴 때(또는 "업로드 flush") <code>POST ingest/trace</code> 로 올린다. 본문은 올라가지 않는다 — 길이·해시 8자·결과 코드·잠금·백그라운드·ms 뿐이다. 계약·금지 키는 <code>docs/superpowers/poc/poc-traces.md</code>.</p>
+<pre><span class="c"># Mac (poc/server). 세션 동안 이 셸을 열어 둔다</span>
+cd poc/server
+Q() { deno run --allow-net --allow-env --allow-read --env-file=.env scripts/sql.ts "$@"; }
+
+<span class="c"># 세션 요약: 이벤트별 건수·elapsed_ms p50/p95·잠금·백그라운드 건수 ($1·$2 = 세션 시작·끝, ISO)</span>
+Q "select event, count(*)::int n,
+     percentile_cont(0.5) within group (order by (fields->>'elapsed_ms')::numeric) p50_ms,
+     percentile_cont(0.95) within group (order by (fields->>'elapsed_ms')::numeric) p95_ms,
+     count(*) filter (where (fields->>'locked')::boolean)::int locked,
+     count(*) filter (where (fields->>'bg')::boolean)::int bg
+   from poc_traces where at between \$1 and \$2 group by event order by event" \
+  "&lt;세션 시작&gt;" "&lt;세션 끝&gt;"
+
+<span class="c"># 시간순 전체 (시나리오 번호를 시각으로 맞춘다)</span>
+Q "select at, event, fields from poc_traces where at between \$1 and \$2 order by at" "&lt;시작&gt;" "&lt;끝&gt;"</pre>
+    <div class="action-grid" style="margin-top:22px;">
+      <div class="cell">
+        <h4>이벤트</h4>
+        <ul>
+          <li><code>poc1.intent_fired</code> · <code>poc2.intent_fired</code> — 인텐트 1회(알림/메시지)</li>
+          <li><code>poc3.bench_done</code> — FM 벤치마크 요약 또는 스킵 사유</li>
+          <li><code>poc5.action_handled</code> — 알림 액션 처리</li>
+          <li><code>poc8.share_received</code> · <code>poc9.upload_done</code> — 공유·업로드</li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>주의</h4>
+        <ul>
+          <li>앱을 열어야 올라간다 — 시나리오마다 앱을 한 번 열고, 화면의 "대기 n건"이 0 이 되는지 본다</li>
+          <li>세션 시각(시작·끝)을 적어 둔다. 기록란의 시각은 <code>at</code>(기기 관찰 시각)</li>
+          <li>세션 뒤 정리: <code>Q "delete from poc_traces where device_id = \$1" "&lt;device_id&gt;"</code> (판정 기록을 옮긴 뒤)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
   <!-- 07 POC-1 -->
-  <section class="slide dark" id="poc-1">
+  <section class="slide" id="poc-1">
     <div class="action-head">
       <span class="bignum num">01</span>
       <div class="action-title">
@@ -934,10 +981,11 @@ curl -s http://&lt;MAC_IP&gt;:&lt;PORT&gt;/received</pre>
         </tbody>
       </table>
     </div>
+    <p class="muted" style="font-size:13px; margin-top:10px;">조회 (Mac, <code>poc/server</code>, <code>Q</code> 는 Trace 슬라이드): <code>Q "select at, fields-&gt;&gt;'app' app, fields-&gt;&gt;'title_len' title_len, fields-&gt;&gt;'text_len' text_len, fields-&gt;&gt;'locked' locked, fields-&gt;&gt;'bg' bg, fields-&gt;&gt;'result' result from poc_traces where event = 'poc1.intent_fired' and at &gt; now() - interval '3 hours' order by at"</code> — 기록란에는 이 결과의 값·시각을 옮긴다(본문은 애초에 올라오지 않는다).</p>
   </section>
 
   <!-- 08 POC-2 -->
-  <section class="slide" id="poc-2">
+  <section class="slide dark" id="poc-2">
     <div class="action-head">
       <span class="bignum num">02</span>
       <div class="action-title">
@@ -1013,10 +1061,11 @@ curl -s http://&lt;MAC_IP&gt;:&lt;PORT&gt;/received</pre>
         </tbody>
       </table>
     </div>
+    <p class="muted" style="font-size:13px; margin-top:10px;">조회 (Mac, <code>poc/server</code>, <code>Q</code> 는 Trace 슬라이드): <code>Q "select at, fields-&gt;&gt;'sender_set' sender_set, fields-&gt;&gt;'text_len' text_len, fields-&gt;&gt;'locked' locked, fields-&gt;&gt;'result' result from poc_traces where event = 'poc2.intent_fired' and at &gt; now() - interval '3 hours' order by at"</code>. BFU 는 앱의 <code>bfu.log</code> — 기록란에는 이 결과의 값·시각을 옮긴다(본문은 애초에 올라오지 않는다).</p>
   </section>
 
   <!-- 09 POC-3 -->
-  <section class="slide dark" id="poc-3">
+  <section class="slide" id="poc-3">
     <div class="action-head">
       <span class="bignum num">03</span>
       <div class="action-title">
@@ -1030,7 +1079,7 @@ curl -s http://&lt;MAC_IP&gt;:&lt;PORT&gt;/received</pre>
         <h4>준비</h4>
         <ul>
           <li><span class="who">iPhone</span>Apple Intelligence 켜짐, 모델 다운로드 <b>"완료"</b></li>
-          <li><span class="who mac">Mac</span>Xcode 대상 = 실기기, 스킴 AssistantPoC (테스트 타깃 <code>AssistantCoreTests</code>)</li>
+          <li><span class="who mac">Mac</span>Xcode 대상 = 실기기, 스킴 AssistantPoC (테스트 타깃 <code>AssistantCoreTests</code>). <b>개발 빌드가 TestFlight 앱을 덮어쓰므로 PoC-4·5·8·9 를 먼저 끝낸다</b></li>
           <li>시뮬레이터 결과는 참고용 — 호스트 Mac 이 <code>appleIntelligenceNotEnabled</code> 라 시뮬레이터 <code>availability()=available</code> 은 오표시였다</li>
           <li>픽스처: personal 100 (KakaoTalk 50·Instagram 29·iMessage 21), notice 100</li>
         </ul>
@@ -1041,7 +1090,7 @@ curl -s http://&lt;MAC_IP&gt;:&lt;PORT&gt;/received</pre>
           <li><span class="who mac">Mac</span>⌘U 로 <code>AssistantCoreTests/FMClassifierTests</code> 실행 (Test navigator 에서 해당 클래스만)</li>
           <li><span class="who mac">Mac</span>실행 중 Debug navigator <b>Memory 게이지 최대값</b> 기록 (또는 Instruments Foundation Models 템플릿)</li>
           <li><span class="who mac">Mac</span><code>testBenchmark</code> 가 스킵되면 사유 기록: <code>FM unavailable: …</code> / <code>생성 실패: &lt;코드&gt;</code></li>
-          <li><span class="who">iPhone</span>앱을 백그라운드로 두고 단축어 "비서에 저장"을 <b>본문을 채워 10~20회</b> 짧은 간격으로 실행</li>
+          <li><span class="who">iPhone</span>앱을 백그라운드로 두고 단축어 "비서에 저장"을 <b>본문을 채워 10~20회</b> 짧은 간격으로 실행 (TestFlight 빌드에서 PoC-1·2 직후에 해도 된다)</li>
         </ol>
       </div>
       <div class="cell">
@@ -1080,6 +1129,79 @@ personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
         </tbody>
       </table>
     </div>
+    <p class="muted" style="font-size:13px; margin-top:10px;">조회 (Mac, <code>poc/server</code>, <code>Q</code> 는 Trace 슬라이드): <code>Q "select at, fields from poc_traces where event = 'poc3.bench_done' order by at desc limit 3"</code> (p95_s·personal_pass·notice_drop·medical_drop·errors·timeouts). 백그라운드 10~20회는 <code>poc1.intent_fired</code> 의 <code>result</code> 에서 fm-error·fm-timeout 비율 — 기록란에는 이 결과의 값·시각을 옮긴다(본문은 애초에 올라오지 않는다).</p>
+  </section>
+
+  <!-- 09b POC-4 -->
+  <section class="slide dark" id="poc-4">
+    <div class="action-head">
+      <span class="bignum num">04</span>
+      <div class="action-title">
+        <p class="eyebrow">PoC-4 · 현재 부분 · Task 9</p>
+        <h2>Edge Function → APNs HTTP/2 실제 수신</h2>
+      </div>
+      <span class="tag">TestFlight · production</span>
+    </div>
+    <div class="action-grid">
+      <div class="cell">
+        <h4>준비</h4>
+        <ul>
+          <li>서버: h2 동작·100회 동시 1 은 가짜 토큰으로 이미 확인. APNs 키는 <b>Sandbox &amp; Production 키로 교체</b>(09-27), Edge secrets 반영 확인, secret <code>APNS_ENV=production</code></li>
+          <li>기기: <b>TestFlight 빌드</b>(production 토큰). 알림 권한 허용</li>
+          <li>앱의 토큰 등록 — <code>didRegisterForRemoteNotificationsWithDeviceToken</code> 에서 <code>POST ingest/device</code> <span class="need">확인 필요</span>: 09-27 기준 앱에 이 코드가 없다(계획서 Task 9 Step 4). 세션 전에 넣은 빌드를 올린다</li>
+          <li>PoC 사용자 로그인 상태(등록이 사용자 JWT 로 간다)</li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>실행 단계</h4>
+        <ol class="steps">
+          <li><span class="who">iPhone</span>앱 실행 → 토큰 등록(자동 또는 버튼) → <span class="who mac">Mac</span><code>devices</code> 에 행이 생겼는지</li>
+          <li><span class="who mac">Mac</span><code>apns-send</code> 1회 → <span class="who">iPhone</span>잠금 화면 "PoC-4 / 합성 알림 1/1"</li>
+          <li>앱 종료 상태·잠금 상태에서 각각 1회 더</li>
+          <li><span class="who mac">Mac</span><code>count: 100, concurrency: 10</code> × 2회 (알림 100개가 온다 — 요약 설정 그대로 둬도 된다)</li>
+        </ol>
+
+      </div>
+      <div class="cell">
+        <h4>관찰할 것</h4>
+        <ul>
+          <li>응답 <code>ok</code>·<code>byStatus</code>·<code>reasons</code>·<code>h2Errors</code>·<code>errors</code>·<code>ms.p50/p95</code>·<code>env</code>·<code>envRetries</code></li>
+          <li>1회: <code>byStatus {"200": 1}</code>, 기기 수신 시각</li>
+          <li><code>envRetries &gt; 0</code> 이면 등록된 <code>apns_env</code> 가 빌드와 다르다(TestFlight = production)</li>
+          <li>동시 10: 가짜 토큰에서 보인 <code>GOAWAY</code>·<code>dispatch task is gone</code> 가 실제 토큰에서도 나는지</li>
+        </ul>
+      </div>
+      <div class="cell">
+        <h4>판정 기준 (스펙 §14)</h4>
+        <ul>
+          <li><b>통과</b>: 100회(동시 10 포함) 성공률 <b class="num">≥ 99%</b>, h2 스트림 오류 <b class="num">0</b> — 2회 모두</li>
+          <li><b>연결 오류가 남으면</b>: 연결 오류 1회 재시도 코드를 넣고 재측정 → 그래도 남으면 Cloudflare Worker 릴레이(스펙 §3·§16)</li>
+          <li><code>400 BadDeviceToken</code> = 토큰·환경 불일치, <code>403 InvalidProviderToken</code> = Key ID·Team ID·.p8 확인</li>
+        </ul>
+      </div>
+    </div>
+    <p class="subh">발송 명령</p>
+<pre><span class="c"># Mac (poc/server). device_id·user_id 는 devices 조회 결과</span>
+Q "select device_id, apns_env, build, last_seen_at from devices order by last_seen_at desc limit 3"
+deno eval --env-file=.env '
+const r = await fetch(Deno.env.get("SUPABASE_URL") + "/functions/v1/apns-send", { method: "POST",
+  headers: { authorization: "Bearer " + Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"), "content-type": "application/json" },
+  body: JSON.stringify({ device_id: "&lt;device_id&gt;", user_id: Deno.env.get("POC_USER_ID"), count: 1, concurrency: 1 }) });
+console.log(r.status, await r.text());'</pre>
+    <p class="subh">기록란</p>
+    <div class="tablewrap rec" style="margin-top:12px;">
+      <table>
+        <thead><tr><th>단계</th><th>응답 (ok · byStatus · h2Errors · errors)</th><th>p50 / p95</th><th>수신 확인 · 시각</th><th>메모</th></tr></thead>
+        <tbody>
+          <tr><td>토큰 등록</td><td>devices 행 · apns_env</td><td>—</td><td></td><td></td></tr>
+          <tr><td>1회 (앱 열림)</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td>1회 (앱 종료·잠금)</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td>100회 동시 10 · 1차</td><td></td><td></td><td>—</td><td></td></tr>
+          <tr><td>100회 동시 10 · 2차</td><td></td><td></td><td>—</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" style="font-size:13px; margin-top:10px;">조회 (Mac, <code>poc/server</code>): <code>Q "select device_id, apns_env, build, last_seen_at from devices order by last_seen_at desc limit 3"</code> — 판정 원자료는 <code>apns-send</code> 응답 JSON 이다(trace 이벤트 없음). 절차 원본 <code>docs/superpowers/poc/poc-4-apns.md</code>.</p>
   </section>
 
   <!-- 10 POC-5 -->
@@ -1141,6 +1263,7 @@ personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
         </tbody>
       </table>
     </div>
+    <p class="muted" style="font-size:13px; margin-top:10px;">조회 (Mac, <code>poc/server</code>, <code>Q</code> 는 Trace 슬라이드): <code>Q "select at, fields-&gt;&gt;'result' result, fields-&gt;&gt;'dup' dup, fields-&gt;&gt;'auth' auth, fields-&gt;&gt;'bg' bg, fields-&gt;&gt;'locked' locked, fields-&gt;&gt;'elapsed_ms' ms from poc_traces where event = 'poc5.action_handled' order by at desc limit 10"</code> — 기록란에는 이 결과의 값·시각을 옮긴다(본문은 애초에 올라오지 않는다).</p>
   </section>
 
   <!-- 11 POC-8+9 -->
@@ -1148,7 +1271,7 @@ personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
     <div class="action-head">
       <span class="bignum num">08</span>
       <div class="action-title">
-        <p class="eyebrow">PoC-8 기기 부분 · 부분 / PoC-9 · 통과(시뮬) · Task 7</p>
+        <p class="eyebrow">PoC-8 기기 부분 · 부분 (서버 추출 통과) / PoC-9 · 통과(시뮬) · Task 7</p>
         <h2>공유 시트 → 큐 → 백그라운드 업로드</h2>
       </div>
       <span class="tag">Mock Server</span>
@@ -1185,7 +1308,7 @@ personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
         <ul>
           <li><b>PoC-8 기기 부분</b>: 공유가 App Group 에 영속화되고, 이미지는 OCR 텍스트가 큐에 함께 저장</li>
           <li><b>PoC-9</b>: 앱이 완전히 종료된 뒤에도 이미 시작된 background URLSession 전송이 서버에 도착. 스펙 §14: 앱 재실행 포함 시 유실 <b class="num">0</b>, 강제 종료 시 취소되는 것을 기록</li>
-          <li>오프라인 후 복구 유실 0 (스펙 PoC-8 의 5/5 추출은 서버 Task 12)</li>
+          <li>오프라인 후 복구 유실 0 (스펙 PoC-8 의 추출 5/5 는 서버 Task 12 에서 통과 — 합성 7종 vision+OCR 21/21)</li>
         </ul>
         <p style="font-size:13px; margin-top:8px;">단계 3 에서 도착하지 않으면 "실패"가 아니라 스펙 §14 문구대로 "강제 종료 시 취소"로 기록하고, 앱을 다시 열어 유실 0 을 확인한다. <code>simctl terminate</code> 와 스와이프 종료가 같은 조건인지는 이 결과로 판단한다 (절차 문서 사용자 단계 6).</p>
       </div>
@@ -1202,6 +1325,7 @@ personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
         </tbody>
       </table>
     </div>
+    <p class="muted" style="font-size:13px; margin-top:10px;">조회 (Mac, <code>poc/server</code>, <code>Q</code> 는 Trace 슬라이드): <code>Q "select at, event, fields-&gt;&gt;'type' type, fields-&gt;&gt;'result' result, fields-&gt;&gt;'ocr_len' ocr_len, fields-&gt;&gt;'ok' ok, fields-&gt;&gt;'bytes' bytes, fields-&gt;&gt;'bg' bg, fields-&gt;&gt;'error_code' err from poc_traces where event in ('poc8.share_received','poc9.upload_done') order by at desc limit 20"</code> + 목 서버 <code>/received</code> — 기록란에는 이 결과의 값·시각을 옮긴다(본문은 애초에 올라오지 않는다).</p>
   </section>
 
   <!-- 12 ORDER + TROUBLESHOOT -->
@@ -1209,15 +1333,17 @@ personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
     <p class="eyebrow">04 · Order</p>
     <h3 class="display" style="font-size:clamp(26px,4vw,38px);">Recommended Order</h3>
     <div class="flow">
-      <div class="flow-node"><h5>설치·권한</h5><p>알림·캘린더</p></div>
+      <div class="flow-node"><h5>TestFlight·권한</h5><p>설치 · 로그인</p></div>
       <div class="flow-arrow"></div>
-      <div class="flow-node"><h5>자동화 3개</h5><p>PoC-1 · PoC-2</p></div>
+      <div class="flow-node"><h5>자동화 3개</h5><p>PoC-1 · PoC-2 · BG FM</p></div>
       <div class="flow-arrow"></div>
-      <div class="flow-node"><h5>FM ⌘U</h5><p>PoC-3 + BG 10~20회</p></div>
+      <div class="flow-node"><h5>APNs</h5><p>PoC-4 production</p></div>
       <div class="flow-arrow"></div>
       <div class="flow-node"><h5>잠금 액션</h5><p>PoC-5 로컬 알림</p></div>
       <div class="flow-arrow"></div>
       <div class="flow-node"><h5>공유·종료 업로드</h5><p>PoC-8 · PoC-9</p></div>
+      <div class="flow-arrow"></div>
+      <div class="flow-node"><h5>FM ⌘U</h5><p>PoC-3 개발 설치</p></div>
       <div class="flow-arrow"></div>
       <div class="flow-node"><h5>재부팅 BFU</h5><p>PoC-2 시나리오 3</p></div>
     </div>
@@ -1225,12 +1351,13 @@ personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
       <div>
         <h4>이 순서인 이유</h4>
         <ul class="list">
-          <li><span class="k num">01</span><span><b>권한 먼저</b>: 알림·캘린더 대화상자를 한 번에 넘겨야 PoC-5 와 배너 관찰이 권한 문제로 섞이지 않는다.</span></li>
-          <li><span class="k num">02</span><span><b>자동화 다음</b>: 합성 메시지를 보내는 두 번째 계정·번호가 준비된 초반에 몰아서 한다. 앱 목록 변수 스크린샷도 이때.</span></li>
-          <li><span class="k num">03</span><span><b>FM 은 케이블 연결 중</b>: ⌘U·Memory 게이지가 Xcode 에 묶여 있다. 백그라운드 FM 10~20회는 단축어가 이미 만들어진 뒤라야 한다.</span></li>
-          <li><span class="k num">04</span><span><b>잠금 액션</b>: APNs 불필요, 앱 버튼만으로 된다. 잠금·해제 반복이 많아 FM 측정과 섞지 않는다.</span></li>
-          <li><span class="k num">05</span><span><b>공유·종료 업로드</b>: 목 서버·LAN IP 가 필요한 유일한 블록이라 뒤로 모은다.</span></li>
-          <li><span class="k num">06</span><span><b>재부팅은 맨 끝</b>: 기기 재시동이 Xcode 연결·앱 상태를 끊는다. 재부팅 전 앱 1회 실행으로 <code>bfu.log</code> 준비.</span></li>
+          <li><span class="k num">01</span><span><b>TestFlight·권한·로그인 먼저</b>: 알림·캘린더·연락처 대화상자를 한 번에 넘기고, trace 가 올라가는 상태(세션 있음)를 만든 뒤 시작한다.</span></li>
+          <li><span class="k num">02</span><span><b>자동화 다음</b>: 합성 메시지를 보내는 두 번째 계정·번호가 준비된 초반에 몰아서 한다. 앱 목록 변수 스크린샷도 이때. 단축어가 생겼으니 백그라운드 FM 10~20회도 여기서.</span></li>
+          <li><span class="k num">03</span><span><b>APNs 는 TestFlight 빌드일 때</b>: production 토큰이 필요하다. 개발 설치(⌘U) 뒤에는 sandbox 토큰이 된다.</span></li>
+          <li><span class="k num">04</span><span><b>잠금 액션</b>: APNs 불필요, 앱 버튼만으로 된다. 잠금·해제 반복이 많아 다른 측정과 섞지 않는다.</span></li>
+          <li><span class="k num">05</span><span><b>공유·종료 업로드</b>: 목 서버·LAN IP 가 필요한 블록이라 뒤로 모은다.</span></li>
+          <li><span class="k num">06</span><span><b>FM ⌘U 는 후반</b>: 같은 번들 ID 개발 빌드가 TestFlight 앱을 덮어쓴다. 케이블·Memory 게이지도 이때만.</span></li>
+          <li><span class="k num">07</span><span><b>재부팅은 맨 끝</b>: 기기 재시동이 Xcode 연결·앱 상태를 끊는다. 재부팅 전 앱 1회 실행으로 <code>bfu.log</code> 준비.</span></li>
         </ul>
       </div>
       <div>
@@ -1240,7 +1367,9 @@ personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
           <li><span class="k num">—</span><span><b>매번 확인 배너</b> → 자동화의 "즉시 실행"(실행 전 확인 끄기) 확인. 알림 트리거에 토글이 없으면 그 자체가 기록 대상.</span></li>
           <li><span class="k num">—</span><span><b>잠금인데 <code>locked=false</code></b> → 잠근 뒤 15초를 안 기다렸다.</span></li>
           <li><span class="k num">—</span><span><b>FM 벤치 스킵·<code>modelNotReady</code></b> → Apple Intelligence 모델 다운로드 "완료"까지 대기.</span></li>
-          <li><span class="k num">—</span><span><b>Run 이 안 된다·기기 안 보임</b> → 개발자 모드 켜기 후 재시동, 개발자 앱 신뢰.</span></li>
+          <li><span class="k num">—</span><span><b>Run·⌘U 가 안 된다·기기 안 보임</b> → 개발자 모드 켜기 후 재시동, 개발자 앱 신뢰.</span></li>
+          <li><span class="k num">—</span><span><b>trace 가 안 올라온다</b> → 앱 trace 섹션 "세션 없음"이면 PoC 사용자로 다시 로그인, "대기 n건"이 줄지 않으면 네트워크·<code>trace upload fail status=</code> 로그.</span></li>
+          <li><span class="k num">—</span><span><b>APNs 가 안 온다</b> → <code>devices.apns_env</code> 가 빌드와 같은지(TestFlight = production), 응답 <code>envRetries</code>·<code>reasons</code>.</span></li>
           <li><span class="k num">—</span><span><b>업로드가 안 온다</b> → 앱 "업로드 서버" 저장값이 Mac LAN IP:포트인지, 로컬 네트워크 권한, 방화벽, 같은 Wi-Fi.</span></li>
           <li><span class="k num">—</span><span><b>공유 확장·큐가 비어 있다</b> → App Group 프로비저닝 (실기기 첫 검증).</span></li>
         </ul>
@@ -1265,15 +1394,17 @@ personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
       </div>
       <div class="cell">
         <h4>근거 한 줄 형식 (기존 행 관례)</h4>
-<pre>실기기(iPhone &lt;모델&gt;, iOS &lt;버전&gt;, &lt;MM-DD&gt;): &lt;핵심 로그&gt;(&lt;hh:mm:ssZ&gt;),
-&lt;측정값&gt;. 남은 실측: &lt;없음|…&gt;. 절차 `poc-N-….md`</pre>
+<pre>실기기(iPhone &lt;모델&gt;, iOS &lt;버전&gt;, TestFlight &lt;빌드&gt;, &lt;MM-DD&gt;):
+&lt;trace 이벤트·결과 코드&gt;(&lt;at hh:mm:ssZ&gt;), &lt;측정값&gt;.
+남은 실측: &lt;없음|…&gt;. 절차 `poc-N-….md`</pre>
         <p style="font-size:13px; margin-top:8px;">원문 값은 적지 않는다 — 길이·형식·결과 코드·시각만. 갱신일 열은 세션 날짜.</p>
       </div>
       <div class="cell">
         <h4>갱신할 곳</h4>
         <ul>
-          <li>표의 PoC-1·2·3·5·8·9 행: 상태 · 근거 · 갱신일</li>
-          <li>"실기기 세션 대기 목록"에서 끝난 항목 제거</li>
+          <li>"판정" 표의 PoC-1·2·3·4·5·8·9 행: 상태 · 핵심 근거 · 남은 실측 · 근거 커밋 · 갱신일 — 스펙 §14 "판정 현황"도 같게</li>
+          <li>"PoC별 상세"에 측정값·시각(trace <code>at</code>)·조회 결과 요약</li>
+          <li>"실기기·장기 실측 대기"에서 끝난 항목 제거</li>
           <li>"참고" 절: 새로 드러난 제약 (예: App Group 실기기 서명 결과)</li>
         </ul>
       </div>
@@ -1287,7 +1418,7 @@ personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
         </ul>
       </div>
     </div>
-    <p class="muted" style="font-size:13px; margin-top:18px;">results.md 열 구성(PoC · 검증 대상 · 태스크 · 상태 · 근거/남은 실측 · 갱신일)은 계획서 Task 13 템플릿과 같다.</p>
+    <p class="muted" style="font-size:13px; margin-top:18px;">results.md 열 구성(PoC · 검증 대상 · 태스크 · 상태 · 핵심 근거 · 남은 실측 · 근거 커밋 · 갱신일, 09-27 재구성)은 계획서 Task 13 템플릿과 같다. 근거는 <code>poc_traces</code> 조회 결과(Trace 슬라이드)에서 옮긴다.</p>
   </section>
 
   <!-- 14 APPENDIX -->
@@ -1301,12 +1432,14 @@ personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
           <tr><td>PoC-1</td><td><code>docs/superpowers/poc/poc-1-notification-trigger.md</code></td><td>poc.log 판독법 원본</td></tr>
           <tr><td>PoC-2</td><td><code>docs/superpowers/poc/poc-2-message-trigger.md</code></td><td>BFU 판독</td></tr>
           <tr><td>PoC-3</td><td><code>docs/superpowers/poc/poc-3-fm-classifier.md</code></td><td>픽스처 구성·FM_BENCH 형식</td></tr>
+          <tr><td>PoC-4</td><td><code>docs/superpowers/poc/poc-4-apns.md</code></td><td>기기 등록 계약·발송 명령</td></tr>
           <tr><td>PoC-5</td><td><code>docs/superpowers/poc/poc-5-notification-eventkit.md</code></td><td>시뮬레이터 실측 표</td></tr>
           <tr><td>PoC-8·9</td><td><code>docs/superpowers/poc/poc-8-9-share-upload.md</code></td><td>포트 우회, SLOW_MS</td></tr>
-          <tr><td>판정표</td><td><code>docs/superpowers/poc/results.md</code></td><td>세션 후 갱신</td></tr>
+          <tr><td>trace</td><td><code>docs/superpowers/poc/poc-traces.md</code></td><td>이벤트 계약·조회 쿼리</td></tr>
+          <tr><td>판정표</td><td><code>docs/superpowers/poc/results.md</code></td><td>세션 후 갱신 ("실기기·장기 실측 대기")</td></tr>
           <tr><td>기준</td><td><code>docs/superpowers/specs/2026-09-22-assistant-design.md</code> §14 · §16</td><td>판정 문구 원본</td></tr>
           <tr><td>계획</td><td><code>docs/superpowers/plans/2026-09-23-phase0-poc.md</code> Task 13 · 사용자 수동 단계</td><td>스펙 갱신 규칙</td></tr>
-          <tr><td>빌드</td><td><code>poc/ios/project.yml</code> · <code>poc/ios/scripts/sim.sh</code></td><td>팀·번들·스킴</td></tr>
+          <tr><td>빌드</td><td><code>poc/ios/project.yml</code> · <code>poc/ios/scripts/testflight.sh</code> · <code>poc/ios/scripts/sim.sh</code></td><td>팀·번들·스킴, TestFlight 업로드</td></tr>
         </tbody>
       </table>
     </div>
@@ -1317,7 +1450,7 @@ personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
     <h2 class="display">Measure On Device.<br>Then Decide.</h2>
     <div class="foot num">
       <span>ERURI · Phase 0 PoC · Real-Device Session</span>
-      <span>2026-09-24</span>
+      <span>2026-09-24 · 갱신 09-27</span>
     </div>
   </section>
 </div>
@@ -1330,15 +1463,17 @@ personalPassByApp=Instagram=a/29,KakaoTalk=b/50,iMessage=c/21</pre>
     <li><a href="#checklist"><span class="no num">04</span><span class="t">Checklist</span></a></li>
     <li><a href="#build"><span class="no num">05</span><span class="t">Build</span></a></li>
     <li><a href="#server"><span class="no num">06</span><span class="t">Mock Server</span></a></li>
-    <li><a href="#poc-1"><span class="no num">07</span><span class="t">PoC-1</span></a></li>
-    <li><a href="#poc-2"><span class="no num">08</span><span class="t">PoC-2</span></a></li>
-    <li><a href="#poc-3"><span class="no num">09</span><span class="t">PoC-3</span></a></li>
-    <li><a href="#poc-5"><span class="no num">10</span><span class="t">PoC-5</span></a></li>
-    <li><a href="#poc-8-9"><span class="no num">11</span><span class="t">PoC-8/9</span></a></li>
-    <li><a href="#order"><span class="no num">12</span><span class="t">Order</span></a></li>
-    <li><a href="#record"><span class="no num">13</span><span class="t">Record</span></a></li>
-    <li><a href="#appendix"><span class="no num">14</span><span class="t">Appendix</span></a></li>
-    <li><a href="#closing"><span class="no num">15</span><span class="t">Closing</span></a></li>
+    <li><a href="#traces"><span class="no num">07</span><span class="t">Traces</span></a></li>
+    <li><a href="#poc-1"><span class="no num">08</span><span class="t">PoC-1</span></a></li>
+    <li><a href="#poc-2"><span class="no num">09</span><span class="t">PoC-2</span></a></li>
+    <li><a href="#poc-3"><span class="no num">10</span><span class="t">PoC-3</span></a></li>
+    <li><a href="#poc-4"><span class="no num">11</span><span class="t">PoC-4</span></a></li>
+    <li><a href="#poc-5"><span class="no num">12</span><span class="t">PoC-5</span></a></li>
+    <li><a href="#poc-8-9"><span class="no num">13</span><span class="t">PoC-8/9</span></a></li>
+    <li><a href="#order"><span class="no num">14</span><span class="t">Order</span></a></li>
+    <li><a href="#record"><span class="no num">15</span><span class="t">Record</span></a></li>
+    <li><a href="#appendix"><span class="no num">16</span><span class="t">Appendix</span></a></li>
+    <li><a href="#closing"><span class="no num">17</span><span class="t">Closing</span></a></li>
   </ol>
 </nav>
 

@@ -1,31 +1,88 @@
 # PoC 판정표
 
-상태: **통과** = 계획서 판정 기준을 실측으로 충족 · **부분** = 코드 경로만 확인(디버그 훅·시뮬레이터 대체) · **실패** · **미검증**. 다음 단계 진입 조건은 해당 PoC 가 **통과**인 것이다. 실기기 필요 항목은 실기기 세션 후 갱신한다.
+상태는 네 값만 쓴다: **통과** = 스펙 §14 판정 기준을 실측으로 충족 · **부분** = 코드 경로만 확인(디버그 훅·시뮬레이터·가짜 토큰 대체) 또는 판정 기준의 일부만 실측 · **실패** = 기준 미달(대안 채택) · **미검증** = 판정 기준 관련 실측 없음. 다음 단계 진입 조건은 해당 PoC가 **통과**인 것이다(AGENTS.md §5-8).
 
-| PoC | 검증 대상 | 태스크 | 상태 | 근거 / 남은 실측 | 갱신일 |
-|---|---|---|---|---|---|
-| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 시뮬레이터(재실측 09-24): `Metadata.appintents`에 CaptureIntent·App Shortcut 등록 확인, XCUITest로 **단축어 앱에서 수동 실행** 시 앱을 열지 않고 `CaptureIntent queued:rules … textLen=0 locked=false`(14:32:51Z). 이것은 인텐트 호출 경로일 뿐 판정 기준(알림 트리거로 본문·앱명 전달)은 아니다. 남은 실측: 실기기 알림 자동화 시나리오 1~8(`app=`·`textLen=` 로그, 시나리오 8은 연락처 발신 카톡 `discarded:contact`). 절차 `poc-1-notification-trigger.md` | 2026-09-24 |
-| PoC-2 | 단축어 Message 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 인텐트 호출 경로는 PoC-1과 같이 시뮬레이터에서 확인. 남은 실측: 실기기 메시지 자동화, 잠금 15초 후 수신 `locked=true`, BFU 수신은 `bfu.log`(보호 등급 none, 내용 없이 길이만)로 판독, OTP 문자 `discarded:otp`, 연락처 번호 문자 `discarded:contact`. 절차 `poc-2-message-trigger.md` | 2026-09-24 |
-| PoC-3 | Foundation Models 한국어 분류 200건 정확도·p95 | 5 | 부분 | 재실측 09-24: 호스트 Mac이 `appleIntelligenceNotEnabled`(macOS 26.5에서 직접 호출로 확인)라 시뮬레이터 `availability()=available`은 오표시, `respond`는 에셋 에러(`FM error other`). 수정본(호출마다 새 세션, enum 스키마, 제목 입력, 에러→폴백, 제시간 타임아웃)은 단위 테스트 통과, 앱 프로세스 `CaptureIntent.perform()`에서 Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error` 확인. 정확도·p95·메모리 수치 없음. 남은 실측: Mac Apple Intelligence 켜기(사용자) 또는 실기기 벤치마크, 메모리, 백그라운드 인텐트 `rateLimited` 빈도. 절차 `poc-3-fm-classifier.md` | 2026-09-24 |
-| PoC-4 | Edge Function → APNs HTTP/2 | 9 | 부분(서버 경로 실측 통과, 실기기 수신 미검증) | 09-26~27 가짜 기기 토큰으로 sandbox 발송: 로컬 deno 400 `BadDeviceToken`·`apns-id` 있음(1.1초 콜드/0.45초 웜), **배포 Edge `apns-send`(서울)** 400 `BadDeviceToken`·`apns-id` 있음(APNs 호출 0.7~0.87초), 동시 1로 100회 100/100 오류 0(p50 419ms). **h2 동작**: APNs는 HTTP/1.1을 연결 단계에서 거부(curl 대조군 000)하므로 Deno fetch가 h2로 협상한 것이다. 동시 10에서는 fetch 오류 10~18%(APNs가 BadDeviceToken 뒤 `GOAWAY`로 연결을 닫아 떠 있던 스트림 실패, `dispatch task is gone` 1~2건, 로컬 Deno도 같음) — 가짜 토큰 탓으로 보이며 판정 기준(동시 10, 성공 ≥99%, h2 오류 0)은 실기기 토큰으로 재측정. 첫 배포의 429 `TooManyProviderTokenUpdates`(98/100)는 JWT 동시 생성·isolate별 iat 때문이라 in-flight 공유 + 30분 경계 iat로 고쳐 0건. 다음 조치: 실기기 토큰 등록 → 1회 수신 → 100회 동시 10(절차 `poc-4-apns.md`). 연결 오류가 남으면 1회 재시도, 그래도 남으면 Cloudflare Worker 릴레이 | 2026-09-27 |
-| PoC-5 | 잠금화면 알림 액션 → 백그라운드 EventKit 멱등 쓰기 | 6 | 부분 | 재실측 09-24(XCUITest, 실제 배너·액션 탭, 로컬 알림): 백그라운드 `ADD ok … bg=true auth=3`(14:29:48Z), 같은 알림 재탭 `dup skip`(14:30:08Z), **앱 종료 후 액션 콜드 스타트** `bg=true`(14:31:00Z), 동시 두 번 탭 이벤트 +1만(14:32:23Z). 남은 실측: **잠금 화면**에서 `.authenticationRequired`의 Face ID/암호 요구와 쓰기 성공(시뮬레이터는 암호 없음), 보고 실패 후 재탭은 서버 연동 후. 절차 `poc-5-notification-eventkit.md` | 2026-09-24 |
-| PoC-6 | Gmail watch → Pub/Sub → history 동기화 | 10 | 부분(실계정 연결·백필·웹훅 1회·404 재동기화 실측, 반복·장기 항목 남음) | **실계정 실측 09-27(시뮬레이터 GoogleSignIn 8.0.0, 테스트 사용자 Gmail)**: `gmail-connect` 200·`refresh_token_stored=true`·`watch_expires_at` +7일(03:01Z), `connections` 1행 active·`expires_at` +7일·vault `gmail_rt:` 1개, `sync_states` 1행. 백필 85 ID → `items` GMAIL 76행(나머지는 규칙 폐기로 추정), `gmail-fetch` 1잡 67초, 429 없음, `content_enc` null 0. **웹훅 지연** `[PoC-6]` 메일 1통: Gmail 수신 03:06:50Z → Pub/Sub push → `gmail-sync` 잡 생성 03:06:57.8Z(**약 8초**). 그러나 sync는 백필이 만든 `process` 잡 37건 뒤 FIFO로 11분 대기(03:18 실행) — **백필이 증분 동기화를 굶긴다**(우선순위·레인 분리 필요). 이때 넣은 fetch 잡은 서버 pane의 호스팅 DB 테스트(`jobs.test.ts`의 `jobs` 전체 삭제, 03:18~03:19)로 지워진 것으로 보이고 커서는 이미 이동 → 메일 누락. **404 재동기화로 복구**: `cursor='1'` + `gmail_enqueue_for_account` → sync `resync` → fetch 4 ID → 새 행 1(`[PoC-6]` 제목 일치, 03:23:01Z), GMAIL 77행·`idempotency_key` 중복 0. 앱 쪽 이슈: 세분화 동의에서 Gmail 체크 누락 시 교환 후 403 → 서버 500(서버 `87673fe`에서 수정), 앱은 이제 권한 없으면 코드를 보내지 않음. 남은 실측: 웹훅 지연 5회 평균(테스트 DB 초기화 없이), watch 갱신, 6일/8일 재인증, 규칙 필터 OTP·카드 메일(절차 `poc-6-gmail.md`) | 2026-09-27 |
-| PoC-7 | 한국어 하이브리드 검색 Top-5 정확도 | 11 | 통과 | 09-27 합성 코퍼스 500·질문 50(무근거 10, 날짜 필터 10), 전용 테스트 사용자, 실제 사용자 데이터 임베딩 없음. **Top-5**: 하이브리드 + `text-embedding-3-large`(512차원) **38/40(95%)**(3회 37~38), small 31~33/40, 키워드 전용 32~34/40(원안 키워드 경로는 2/40이라 `0009`로 교체). 날짜 필터 오판 0. p95 하이브리드 검색 70~111ms(질의 임베딩 포함 약 280ms). **무근거 거절**(답변 단계 `gpt-6-sol` Structured Outputs + 서버 인용 대조): **10/10**(검색 단계 임계로는 최대 7/10이었음). **인용 검증**: 답한 36/36이 정답 문서 인용, 인용 정밀도 39/39, 검색 결과 밖 id 0. 정답 질문 거절 4/40(검색 누락 2, 검색됐으나 거절 2: "다이슨 드라이기"↔에어랩, "레이저 토닝 몇 회차 남았지"). 답변 p95 3.5초, 답변 평가 비용 약 $0.10. 결정: 임베딩 `text-embedding-3-large`. **실제 데이터 임베딩 활성화 조건 충족**(약관 보류는 2026-09-26 해제, 스펙 §16). 한계: 무근거 10문항, 합성 코퍼스(`poc-7-search.md`) | 2026-09-27 |
-| PoC-8 | 이미지·PDF → OCR/추출 → 일정 | 7, 12 | 부분(서버 추출 통과, 기기 실기기 남음) | **서버 부분(Task 12, 09-27, 통과)**: 합성 청첩장·안내 7종(이미지 5: 연도 없음 2·모바일 스크린샷 2·음력 1, PDF 2: 텍스트·스캔 2쪽)을 배포 `vision-extract`(`gpt-6-luna`, Structured Outputs strict, `store: false`)로 7×3회. 제목·시작·장소 **vision+OCR 21/21**, OCR만 21/21, vision만 19/21(스캔 PDF 제목에 혼주 이름). `uncertain` 적중 21/21·오탐 0(연도·음력은 스키마 플래그로 서버가 결정, 연도는 서버가 가장 가까운 미래 해로 재계산). 음력 1종은 양력 환산이 하루 틀려(10-25) 날짜를 확정하지 않고 `date`로 REVIEW. 지연 vision+OCR p50 1.95s·p95 2.53s(모델 1.42/2.06s), OCR만 1.48/1.81s. 건당 입력 3.8k·출력 82 토큰 $0.00042(월 100건 ≈ $0.04). 배포 worker `extract` 잡 7/7 `proposed`·facts/proposals 7건·`usage_counters` 반영, `process` 3/3 `extracted`, 월 100건 상한→OCR 폴백·멱등은 호스팅 DB 테스트로 고정. 기기 부분(시뮬레이터, 09-24): 사진 앱 → 공유 시트 → 확장 실행, `ShareExtension file … ocrLen=43`·큐 `SHARE` 행. 남은 실측: 실기기 공유 시트 → 큐·업로드(App Group 서명), 오프라인 후 복구 유실 0(대기 목록). 절차 `poc-8-9-share-upload.md` | 2026-09-27 |
-| PoC-9 | 앱 종료 후 background URLSession 업로드 완료 | 7 | 통과 | 호스트 `ps aux`로 앱 프로세스 완전 종료 확인(14:07:27.946) 후 3.68초 뒤 목 서버에 정확한 바이트 수로 도착(14:07:31.628) 실측. 실기기 회귀 확인은 대기 목록. 절차 `poc-8-9-share-upload.md` | 2026-09-24 |
-| PoC-10 | jobs 큐 lease/재시도/dead 처리 | 8 | 통과 | 호스팅 프로젝트 `assistant-poc`(서울) 실측. 같은 lease_key 2건 동시 클레임 시 1건만(deno 테스트), pg_cron 매분 → worker로 `unknown` 잡 5회 후 `dead`·attempts=5, 변조 암호문 잡 5회 후 `dead`(last_error=`decrypt failed`, 본문 없음). **재실측 09-26(임대 180초 + 30초 하트비트, `6ca66d8`)**: `sleep` 90초 잡 클레임 후 65초에 두 번째 워커 호출 → `claimed: 0`, 65초 시점 임대 잔여 177초(하트비트 약 32·62초에 연장), 최종 `done` attempts=1. 이전 임대 60초에서는 같은 조건에서 재클레임·중복 실행(attempts=2)이었다. 남은 확인(판정 기준 밖): Edge wall-clock 150초를 넘겨 강제 종료된 잡의 임대 만료 후 재클레임, 24시간 일시정지 없음(시나리오 7). 상세는 아래 "PoC-10 실측" | 2026-09-26 |
+이 표는 스펙 §14 "판정 현황"과 **같은 내용**이다(표를 고칠 때 둘 다 고친다). 행이 길어지는 측정값·시각·로그는 아래 "PoC별 상세"에 둔다.
 
-## 실기기 세션 대기 목록
+## 판정 (2026-09-27)
 
-PoC-1, PoC-2, PoC-3, PoC-5, PoC-8(기기 부분), PoC-9. 한 세션에서 순서대로 진행: 설치 → 권한(알림·캘린더·연락처) → 단축어 자동화 3개(카톡 알림·인스타 알림·메시지) → FM 벤치마크(⌘U, 메모리 게이지 기록) → 단축어로 백그라운드 FM 10~20회 → 잠금 화면 로컬 알림 액션(APNs 불필요, Face ID 요구 기록) → 공유·업로드 → 재부팅 후 BFU 문자 수신.
+| PoC | 검증 대상 | 태스크 | 상태 | 핵심 근거 | 남은 실측 | 근거 커밋 | 갱신일 |
+|---|---|---|---|---|---|---|---|
+| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 시뮬레이터: CaptureIntent·App Shortcut 등록, 단축어 앱 **수동** 실행 시 앱을 열지 않고 인텐트 실행(판정 기준인 알림 트리거 아님). 연락처 규칙 배선(합성 연락처 `discarded:contact`) | 실기기 알림 자동화 시나리오 1~8: 본문·앱명 전달(`text_len`·`app`), 배너·잠금·미리보기·묶음 기록 | `964cfea` `0d2a293` `affe7e9` `cf6dd12` | 2026-09-24 |
+| PoC-2 | 단축어 Message 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 인텐트 호출 경로만(PoC-1과 같음) | 실기기 메시지 자동화: 잠금 15초 후 `locked=true` 적재, BFU 수신, OTP `discarded:otp`, 연락처 번호 `discarded:contact` | `964cfea` `affe7e9` `cf6dd12` | 2026-09-24 |
+| PoC-3 | Foundation Models 한국어 분류 200건 정확도·p95 | 5 | 부분 | 폴백 경로(Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error`)·새 세션·enum 스키마·타임아웃 단위 테스트. 호스트 Mac Apple Intelligence 꺼짐으로 수치 없음 | 실기기 200건 p95·개인 대화 통과율·알림톡 폐기율, 메모리, 백그라운드 `rateLimited` 빈도 | `b1f3248` `0d2a293` `affe7e9` | 2026-09-24 |
+| PoC-4 | Edge Function → APNs HTTP/2 | 9 | 부분 | h2 동작(가짜 토큰 sandbox `400 BadDeviceToken`+`apns-id`, HTTP/1.1 대조군 거부), Edge 서울 100회 동시 1 100/100 p50 419ms, JWT 429 수정. 기기별 `apns_env`·환경 불일치 1회 재시도, APNs 키 Sandbox & Production으로 교체 | 앱 토큰 등록(`ingest/device`) 구현 → TestFlight 기기 production 1회 수신 → 100회 동시 10 × 2(성공률 ≥ 99%, h2 오류 0) | `e2552b5` `40d83cc` | 2026-09-27 |
+| PoC-5 | 잠금화면 알림 액션 → 백그라운드 EventKit 멱등 쓰기 | 6 | 부분 | XCUITest(실제 배너·액션 탭, 로컬 알림): 백그라운드 쓰기 `bg=true`, 재탭 `dup skip`, 앱 종료 후 콜드 스타트, 동시 두 번 탭 이벤트 +1 | 실기기 잠금 화면 `.authenticationRequired` 인증 후 1건. 보고 실패 후 재탭은 서버 연동 후 | `0e89279` `0d2a293` | 2026-09-24 |
+| PoC-6 | Gmail watch → Pub/Sub → history 동기화 | 10 | 부분 | 실계정: 연결·watch +7일, 백필 85 ID → 76행·429 없음·`content_enc` null 0, 웹훅 약 8초(1회), 404 재동기화로 누락 1건 복구·중복 0 | 웹훅 지연 5회 평균, watch 갱신(수동+다음 날 cron), 6일 `expiring`·8일 `invalid_grant`, 규칙 필터 OTP·카드 메일. 백필이 증분 동기화를 굶기는 문제(스펙 §16) | `ea6c762` `87673fe` `cdd7c79` | 2026-09-27 |
+| PoC-7 | 한국어 하이브리드 검색 Top-5 정확도 | 11 | 통과 | 합성 500건·질문 50: 하이브리드 + `text-embedding-3-large`(512) Top-5 38/40(95%), 무근거 거절 10/10, 인용 36/36·정밀도 39/39, 날짜 필터 오판 0, 검색 p95 70~111ms | — (1a에서 실데이터 검색 평가) | `4c00aa7` `cf786bb` `9e8ab9f` | 2026-09-27 |
+| PoC-8 | 이미지·PDF → OCR/추출 → 일정 | 7, 12 | 부분 | 서버: 합성 7종(이미지 5·PDF 2) vision+OCR 21/21, OCR만 21/21, `uncertain` 21/21, p50 1.95s·p95 2.53s, 건당 $0.00042, worker extract 7/7. 기기(시뮬레이터): 사진 앱 공유 시트 → 확장 `ocrLen=43`·큐 `SHARE` 행 | 실기기 공유 시트 → 큐·업로드(App Group 서명), 오프라인 후 복구 유실 0 | `f28814d` `0d2a293` `affe7e9` `7f533f1` | 2026-09-27 |
+| PoC-9 | 앱 종료 후 background URLSession 업로드 완료 | 7 | 통과 | 앱 프로세스 종료를 `ps`로 확인한 뒤 3.68초 후 목 서버에 정확한 바이트 수로 도착 | — (실기기 회귀: 스와이프 종료·비행기 모드) | `f28814d` | 2026-09-24 |
+| PoC-10 | jobs 큐 lease/재시도/dead 처리 | 8 | 통과 | 같은 lease_key 동시 클레임 1건, 5회 실패 후 `dead`, 임대 180초+하트비트로 90초 잡 재클레임 0·attempts 1, 복호화 p50 0.7ms·p95 56ms | — (판정 기준 밖: 150초 강제 종료 잡 재클레임, 24시간 활동 유지) | `2d9a45a` `6ca66d8` | 2026-09-26 |
 
-PoC-8·9 실기기 항목(절차 `poc-8-9-share-upload.md` "실기기에서 사용자가 할 일"):
+**집계: 통과 3(PoC-7·9·10) · 부분 5(PoC-3·4·5·6·8) · 실패 0 · 미검증 2(PoC-1·2).** 부분·미검증 7건과 PoC-9 실기기 회귀는 아래 "실기기·장기 실측 대기"(8개 PoC)로 넘어간다.
 
-- 목 서버 LAN 접속: Mac에서 목 서버 실행, 앱 "업로드 서버" 입력란에 `http://<MAC_IP>:<PORT>` 저장, 앱 재실행 후 `poc.log`의 `ingest base=<url>` 확인, iPhone Safari로 `/received` 도달 확인. 로컬 네트워크 권한 대화상자가 뜨는지 기록.
-- 실기기 사진 앱 공유 시트 → Assistant PoC 확장 → 큐 `SHARE` 행·OCR 텍스트(App Group 서명이 실기기에서 통하는지 포함).
-- flush → 목 서버 `PUT /upload/<id>` 도착, 바이트 수 일치.
-- 공유 직후 앱 전환기에서 강제 종료 → 도착 여부와 시각(스펙 §14 PoC-9: 강제 종료 시 취소되면 그대로 기록), 앱 재실행 후 업로드로 유실 0.
-- 비행기 모드 공유 → 복구 후 재시도 성공, 유실 0.
+## 실기기·장기 실측 대기
+
+한 번의 실기기 세션(절차 `docs/superpowers/reports/2026-09-24-device-session.html`)과 달력에 걸친 Gmail 관찰로 나눈다. 관찰값은 `poc_traces`로 올라오므로(절차 `poc-traces.md`) Mac에서 `scripts/sql.ts`로 조회해 판정한다.
+
+| PoC | 남은 실측 | 필요한 것 | 판정 근거 | 절차 |
+|---|---|---|---|---|
+| PoC-1 | **신규 실측**: 카톡·인스타 알림 자동화 시나리오 1~8 | 실기기, 두 번째 카톡·인스타 계정, 연락처 1건 | `poc1.intent_fired`의 `app_set`·`text_len`·`locked`·`result` | `poc-1-notification-trigger.md` |
+| PoC-2 | **신규 실측**: 메시지 시나리오 1~5(잠금 15초 후, BFU, OTP, 연락처 번호) | 실기기, 테스트 발신 번호, 재부팅 | `poc2.intent_fired`, BFU는 `bfu.log` | `poc-2-message-trigger.md` |
+| PoC-3 | **신규 실측**: FM 200건 p95·통과율·폐기율, 메모리, 백그라운드 10~20회 `rateLimited` | 실기기 + Xcode ⌘U(케이블·개발 설치), Apple Intelligence 모델 다운로드 완료 | `FM_BENCH`/`fm_bench.txt`, `poc3.bench_done`, 백그라운드는 `poc1.intent_fired`의 `result` | `poc-3-fm-classifier.md` |
+| PoC-4 | **production 수신·동시 10**: 앱 토큰 등록 → 1회 수신(잠금·앱 종료) → 100회 동시 10 × 2 | 앱의 `ingest/device` 등록 코드(계획서 Task 9 Step 4, 미구현), TestFlight 설치 기기 | `apns-send` 응답 `ok`·`byStatus`·`h2Errors`, `devices` 행 | `poc-4-apns.md` |
+| PoC-5 | **신규 실측**: 잠금 화면 `.authenticationRequired` 액션 → Face ID/암호 → 1건 | 실기기, 기기 암호 | `poc5.action_handled`의 `result`·`dup`·`bg`·`locked` | `poc-5-notification-eventkit.md` |
+| PoC-6 | **반복 항목**: 웹훅 지연 5회 평균, watch 갱신 2회(수동·cron), 6일 `expiring`, 8일 `invalid_grant`→`reauth_required`, 규칙 필터 OTP·카드 메일 | 연결 후 8일(달력), 실측 중 테스트 DB 초기화 금지 | `sync_states`·`connections`·`jobs`, `gmail_reauth_due()` | `poc-6-gmail.md` |
+| PoC-8 | **실기기 회귀**: 사진 공유 시트 → 큐·OCR, 업로드 바이트 일치, 비행기 모드 후 유실 0 | 실기기, 목 서버(LAN) | `poc8.share_received`, `poc9.upload_done`, 목 서버 `/received` | `poc-8-9-share-upload.md` |
+| PoC-9 | **실기기 회귀**: 공유 직후 스와이프 종료 → 도착 또는 취소 기록, 재실행 후 유실 0 | 위와 같음 | `poc9.upload_done`, `/received`의 `at` | `poc-8-9-share-upload.md` |
+
+권장 순서(한 세션): TestFlight 설치 → 권한·PoC 사용자 로그인 → 단축어 자동화 3개(PoC-1·2)와 백그라운드 FM 10~20회 → PoC-4 토큰 등록·발송(production) → 잠금 화면 로컬 알림 액션(PoC-5) → 공유·업로드(PoC-8·9) → FM ⌘U 벤치마크(PoC-3, 케이블·개발 설치가 TestFlight 앱을 덮어쓰므로 후반) → 재부팅 BFU(PoC-2 시나리오 3). PoC-6은 세션과 별개로 연결일 기준 6일·8일째에 확인한다.
+
+## PoC별 상세
+
+표의 "핵심 근거"를 뒷받침하는 측정값·시각·로그 원본이다(이전 판정표의 "근거 / 남은 실측" 열을 그대로 옮겼다).
+
+### PoC-1 단축어 Notification 트리거 → CaptureIntent 자동 실행 (갱신 2026-09-24)
+
+시뮬레이터(재실측 09-24): `Metadata.appintents`에 CaptureIntent·App Shortcut 등록 확인, XCUITest로 **단축어 앱에서 수동 실행** 시 앱을 열지 않고 `CaptureIntent queued:rules … textLen=0 locked=false`(14:32:51Z). 이것은 인텐트 호출 경로일 뿐 판정 기준(알림 트리거로 본문·앱명 전달)은 아니다. 남은 실측: 실기기 알림 자동화 시나리오 1~8(`app=`·`textLen=` 로그, 시나리오 8은 연락처 발신 카톡 `discarded:contact`). 절차 `poc-1-notification-trigger.md`
+
+### PoC-2 단축어 Message 트리거 → CaptureIntent 자동 실행 (갱신 2026-09-24)
+
+인텐트 호출 경로는 PoC-1과 같이 시뮬레이터에서 확인. 남은 실측: 실기기 메시지 자동화, 잠금 15초 후 수신 `locked=true`, BFU 수신은 `bfu.log`(보호 등급 none, 내용 없이 길이만)로 판독, OTP 문자 `discarded:otp`, 연락처 번호 문자 `discarded:contact`. 절차 `poc-2-message-trigger.md`
+
+### PoC-3 Foundation Models 한국어 분류 200건 정확도·p95 (갱신 2026-09-24)
+
+재실측 09-24: 호스트 Mac이 `appleIntelligenceNotEnabled`(macOS 26.5에서 직접 호출로 확인)라 시뮬레이터 `availability()=available`은 오표시, `respond`는 에셋 에러(`FM error other`). 수정본(호출마다 새 세션, enum 스키마, 제목 입력, 에러→폴백, 제시간 타임아웃)은 단위 테스트 통과, 앱 프로세스 `CaptureIntent.perform()`에서 Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error` 확인. 정확도·p95·메모리 수치 없음. 남은 실측: Mac Apple Intelligence 켜기(사용자) 또는 실기기 벤치마크, 메모리, 백그라운드 인텐트 `rateLimited` 빈도. 절차 `poc-3-fm-classifier.md`
+
+### PoC-4 Edge Function → APNs HTTP/2 (갱신 2026-09-27)
+
+09-26~27 가짜 기기 토큰으로 sandbox 발송: 로컬 deno 400 `BadDeviceToken`·`apns-id` 있음(1.1초 콜드/0.45초 웜), **배포 Edge `apns-send`(서울)** 400 `BadDeviceToken`·`apns-id` 있음(APNs 호출 0.7~0.87초), 동시 1로 100회 100/100 오류 0(p50 419ms). **h2 동작**: APNs는 HTTP/1.1을 연결 단계에서 거부(curl 대조군 000)하므로 Deno fetch가 h2로 협상한 것이다. 동시 10에서는 fetch 오류 10~18%(APNs가 BadDeviceToken 뒤 `GOAWAY`로 연결을 닫아 떠 있던 스트림 실패, `dispatch task is gone` 1~2건, 로컬 Deno도 같음) — 가짜 토큰 탓으로 보이며 판정 기준(동시 10, 성공 ≥99%, h2 오류 0)은 실기기 토큰으로 재측정. 첫 배포의 429 `TooManyProviderTokenUpdates`(98/100)는 JWT 동시 생성·isolate별 iat 때문이라 in-flight 공유 + 30분 경계 iat로 고쳐 0건. 다음 조치: 실기기 토큰 등록 → 1회 수신 → 100회 동시 10(절차 `poc-4-apns.md`). 연결 오류가 남으면 1회 재시도, 그래도 남으면 Cloudflare Worker 릴레이
+
+**기기별 환경(09-27, `40d83cc`)**: TestFlight·App Store 빌드는 production 토큰이라 `devices(apns_env)`(`0011_devices.sql`)와 `ingest/device` 등록 경로를 두고, 발송은 기기 환경을 쓰며 `BadDeviceToken`/`BadEnvironmentToken`이면 반대 환경으로 1회 재시도한다. 가짜 토큰 실측에서 production 호스트가 기존 키를 `403 BadEnvironmentKeyInToken`으로 거부해(Sandbox 전용 키) **APNs 키를 Sandbox & Production 키로 교체**했다(2026-09-27. 세션 출력 노출 뒤 13:15에 한 번 더 교체 — 스펙 §16 "0단계 운영 기록"). Edge secrets `APNS_KEY_ID`·`APNS_P8`이 현재 `.p8`과 같은지 해시로 대조했다(값 출력 없음). 교체 키 확인(가짜 토큰, 배포 `apns-send`): production·sandbox 모두 `400 BadDeviceToken`(403 `BadEnvironmentKeyInToken` 없음) → 키가 두 환경에서 인증된다. 실제 수신은 실기기 토큰이 있어야 하고, 앱의 토큰 등록 코드는 미구현(계획서 Task 9 Step 4).
+
+### PoC-5 잠금화면 알림 액션 → 백그라운드 EventKit 멱등 쓰기 (갱신 2026-09-24)
+
+재실측 09-24(XCUITest, 실제 배너·액션 탭, 로컬 알림): 백그라운드 `ADD ok … bg=true auth=3`(14:29:48Z), 같은 알림 재탭 `dup skip`(14:30:08Z), **앱 종료 후 액션 콜드 스타트** `bg=true`(14:31:00Z), 동시 두 번 탭 이벤트 +1만(14:32:23Z). 남은 실측: **잠금 화면**에서 `.authenticationRequired`의 Face ID/암호 요구와 쓰기 성공(시뮬레이터는 암호 없음), 보고 실패 후 재탭은 서버 연동 후. 절차 `poc-5-notification-eventkit.md`
+
+### PoC-6 Gmail watch → Pub/Sub → history 동기화 (갱신 2026-09-27)
+
+**실계정 실측 09-27(시뮬레이터 GoogleSignIn 8.0.0, 테스트 사용자 Gmail)**: `gmail-connect` 200·`refresh_token_stored=true`·`watch_expires_at` +7일(03:01Z), `connections` 1행 active·`expires_at` +7일·vault `gmail_rt:` 1개, `sync_states` 1행. 백필 85 ID → `items` GMAIL 76행(나머지는 규칙 폐기로 추정), `gmail-fetch` 1잡 67초, 429 없음, `content_enc` null 0. **웹훅 지연** `[PoC-6]` 메일 1통: Gmail 수신 03:06:50Z → Pub/Sub push → `gmail-sync` 잡 생성 03:06:57.8Z(**약 8초**). 그러나 sync는 백필이 만든 `process` 잡 37건 뒤 FIFO로 11분 대기(03:18 실행) — **백필이 증분 동기화를 굶긴다**(우선순위·레인 분리 필요). 이때 넣은 fetch 잡은 서버 pane의 호스팅 DB 테스트(`jobs.test.ts`의 `jobs` 전체 삭제, 03:18~03:19)로 지워진 것으로 보이고 커서는 이미 이동 → 메일 누락. **404 재동기화로 복구**: `cursor='1'` + `gmail_enqueue_for_account` → sync `resync` → fetch 4 ID → 새 행 1(`[PoC-6]` 제목 일치, 03:23:01Z), GMAIL 77행·`idempotency_key` 중복 0. 앱 쪽 이슈: 세분화 동의에서 Gmail 체크 누락 시 교환 후 403 → 서버 500(서버 `87673fe`에서 수정), 앱은 이제 권한 없으면 코드를 보내지 않음. 남은 실측: 웹훅 지연 5회 평균(테스트 DB 초기화 없이), watch 갱신, 6일/8일 재인증, 규칙 필터 OTP·카드 메일(절차 `poc-6-gmail.md`)
+
+### PoC-7 한국어 하이브리드 검색 Top-5 정확도 (갱신 2026-09-27)
+
+09-27 합성 코퍼스 500·질문 50(무근거 10, 날짜 필터 10), 전용 테스트 사용자, 실제 사용자 데이터 임베딩 없음. **Top-5**: 하이브리드 + `text-embedding-3-large`(512차원) **38/40(95%)**(3회 37~38), small 31~33/40, 키워드 전용 32~34/40(원안 키워드 경로는 2/40이라 `0009`로 교체). 날짜 필터 오판 0. p95 하이브리드 검색 70~111ms(질의 임베딩 포함 약 280ms). **무근거 거절**(답변 단계 `gpt-6-sol` Structured Outputs + 서버 인용 대조): **10/10**(검색 단계 임계로는 최대 7/10이었음). **인용 검증**: 답한 36/36이 정답 문서 인용, 인용 정밀도 39/39, 검색 결과 밖 id 0. 정답 질문 거절 4/40(검색 누락 2, 검색됐으나 거절 2: "다이슨 드라이기"↔에어랩, "레이저 토닝 몇 회차 남았지"). 답변 p95 3.5초, 답변 평가 비용 약 $0.10. 결정: 임베딩 `text-embedding-3-large`. **실제 데이터 임베딩 활성화 조건 충족**(약관 보류는 2026-09-26 해제, 스펙 §16). 한계: 무근거 10문항, 합성 코퍼스(`poc-7-search.md`)
+
+### PoC-8 이미지·PDF → OCR/추출 → 일정 (갱신 2026-09-27)
+
+**서버 부분(Task 12, 09-27, 통과)**: 합성 청첩장·안내 7종(이미지 5: 연도 없음 2·모바일 스크린샷 2·음력 1, PDF 2: 텍스트·스캔 2쪽)을 배포 `vision-extract`(`gpt-6-luna`, Structured Outputs strict, `store: false`)로 7×3회. 제목·시작·장소 **vision+OCR 21/21**, OCR만 21/21, vision만 19/21(스캔 PDF 제목에 혼주 이름). `uncertain` 적중 21/21·오탐 0(연도·음력은 스키마 플래그로 서버가 결정, 연도는 서버가 가장 가까운 미래 해로 재계산). 음력 1종은 양력 환산이 하루 틀려(10-25) 날짜를 확정하지 않고 `date`로 REVIEW. 지연 vision+OCR p50 1.95s·p95 2.53s(모델 1.42/2.06s), OCR만 1.48/1.81s. 건당 입력 3.8k·출력 82 토큰 $0.00042(월 100건 ≈ $0.04). 배포 worker `extract` 잡 7/7 `proposed`·facts/proposals 7건·`usage_counters` 반영, `process` 3/3 `extracted`, 월 100건 상한→OCR 폴백·멱등은 호스팅 DB 테스트로 고정. 기기 부분(시뮬레이터, 09-24): 사진 앱 → 공유 시트 → 확장 실행, `ShareExtension file … ocrLen=43`·큐 `SHARE` 행. 남은 실측: 실기기 공유 시트 → 큐·업로드(App Group 서명), 오프라인 후 복구 유실 0(대기 목록). 절차 `poc-8-9-share-upload.md`
+
+### PoC-9 앱 종료 후 background URLSession 업로드 완료 (갱신 2026-09-24)
+
+호스트 `ps aux`로 앱 프로세스 완전 종료 확인(14:07:27.946) 후 3.68초 뒤 목 서버에 정확한 바이트 수로 도착(14:07:31.628) 실측. 실기기 회귀 확인은 대기 목록. 절차 `poc-8-9-share-upload.md`
+
+### PoC-10 jobs 큐 lease/재시도/dead 처리 (갱신 2026-09-26)
+
+호스팅 프로젝트 `assistant-poc`(서울) 실측. 같은 lease_key 2건 동시 클레임 시 1건만(deno 테스트), pg_cron 매분 → worker로 `unknown` 잡 5회 후 `dead`·attempts=5, 변조 암호문 잡 5회 후 `dead`(last_error=`decrypt failed`, 본문 없음). **재실측 09-26(임대 180초 + 30초 하트비트, `6ca66d8`)**: `sleep` 90초 잡 클레임 후 65초에 두 번째 워커 호출 → `claimed: 0`, 65초 시점 임대 잔여 177초(하트비트 약 32·62초에 연장), 최종 `done` attempts=1. 이전 임대 60초에서는 같은 조건에서 재클레임·중복 실행(attempts=2)이었다. 남은 확인(판정 기준 밖): Edge wall-clock 150초를 넘겨 강제 종료된 잡의 임대 만료 후 재클레임, 24시간 일시정지 없음(시나리오 7). 상세는 아래 "PoC-10 실측"
 
 ## PoC-10 실측 (2026-09-26, Task 8)
 

@@ -58,11 +58,11 @@ Outlook, Android, Mac 허브, 카카오톡 개인 대화 수집, App Store 공�
 | Gmail 테스트 모드 | 검증됨. 테스트 사용자 100명, **동의 7일 후 만료** | 본인 사용 중엔 7일마다 재연결. 지인 확대 전 앱 검증 + CASA(추정 $500~4,500, 2~6주) 결정 |
 | Gmail 쿼터 | 검증됨. **분당** 사용자 6,000 유닛 (`messages.get` 20) | 백필 배치 분당 250건 이하 |
 | Gmail watch | 검증됨. 7일 내 갱신, historyId 404 시 전체 재동기화 | pg_cron 일 1회 watch 갱신. 404 시 마지막 성공 커서 시각부터 `messages.list(after:)`로 재동기화 (§7) |
-| Supabase gte-small 임베딩 | 검증됨, 그러나 **영어 전용** | OpenAI `text-embedding-3-small`로 교체 |
+| Supabase gte-small 임베딩 | 검증됨, 그러나 **영어 전용** | OpenAI 임베딩으로 교체. PoC-7 결과 `text-embedding-3-large`(`dimensions: 512`) 채택(2026-09-27, §2) |
 | OpenAI 모델·가격 (2026-09-26, developers.openai.com/api/docs/pricing · /api/docs/models/gpt-6-luna · /api/docs/models/gpt-6-sol) | 검증됨. `gpt-6-luna` $0.10/$0.01(캐시)/$0.50, `gpt-6-sol` $2.00/$0.20/$10.00 (1M 토큰 입력/캐시 입력/출력). 둘 다 Responses·Chat Completions, Structured Outputs, 이미지 입력, reasoning effort `none`~`max`(기본 `medium`) 지원. 스냅샷은 별칭과 같은 ID 하나뿐 | 분류·추출 `gpt-6-luna`(effort `none`), 채팅 `gpt-6-sol`(effort `low`). `gpt-6-astra`는 `none` 미지원·$10/$50이라 제외 |
 | Structured Outputs (2026-09-26, /api/docs/guides/structured-outputs) | 검증됨. Responses API 권장, `text: { format: { type: "json_schema", name, schema, strict: true } }`. strict는 모든 객체 `additionalProperties: false`, 모든 필드 `required`, nullable은 `["string","null"]`, `pattern`·`default` 미지원. 거절은 `refusal` 콘텐츠, 잘림은 `status = incomplete` | 스키마는 strict 규칙으로 작성. 거절·잘림은 파싱하지 않고 잡 실패 처리 |
 | 이미지·PDF 입력 (2026-09-26, /api/docs/guides/images-vision · /api/docs/guides/pdf-files) | 검증됨. `input_image`(data URL, PNG·JPEG·WEBP·GIF), `input_file`(`file_data` data URL, 파일당 50MB). PDF는 텍스트+페이지 이미지로 처리 | PoC-8 vision을 같은 모델로. 스펙 PDF 상한(10MB·50페이지)이 더 좁아 그대로 둔다 |
-| OpenAI 임베딩 (2026-09-26, /api/docs/guides/embeddings · /api/docs/models/text-embedding-3-small · /api/reference/resources/embeddings/methods/create) | 검증됨. 기본 1536차원, `dimensions`로 축소(3세대 모델만), 출력 길이 1 정규화, 입력당 8,192토큰·요청당 30만 토큰·배열 2,048개, $0.02/1M. **한국어·다국어 성능 수치는 공식 문서에 없음** | `dimensions: 512`로 기존 `vector(512)` 유지. 한국어 품질은 PoC-7에서 판정, 미달 시 `text-embedding-3-large`(`dimensions: 512`, $0.13/1M) |
+| OpenAI 임베딩 (2026-09-26, /api/docs/guides/embeddings · /api/docs/models/text-embedding-3-small · /api/reference/resources/embeddings/methods/create) | 검증됨. 기본 1536차원, `dimensions`로 축소(3세대 모델만), 출력 길이 1 정규화, 입력당 8,192토큰·요청당 30만 토큰·배열 2,048개, $0.02/1M. **한국어·다국어 성능 수치는 공식 문서에 없음** | `dimensions: 512`로 기존 `vector(512)` 유지. PoC-7(2026-09-27, 합성 500건) 하이브리드 Top-5 small 31~33/40, large 38/40 → **`text-embedding-3-large`(`dimensions: 512`, $0.13/1M) 채택** |
 | OpenAI API 데이터 정책 (2026-09-26, /api/docs/guides/your-data) | 검증됨. API 입력은 기본 학습 미사용(2023-03-01부터, 옵트인 시에만). 남용 모니터링 로그 최대 30일. Responses API는 `store` 기본값으로 애플리케이션 상태 30일 보관. ZDR·수정 남용 모니터링은 OpenAI 사전 승인 필요. `/v1/responses`·`/v1/embeddings` 모두 ZDR 대상. 이미지는 CSAM 분류기 탐지 시 ZDR이어도 보관 | §12 통제 3 갱신, 임베딩 약관 보류 해제(§16). 모든 Responses 호출에 `store: false` |
 | Deno에서 OpenAI SDK (2026-09-26, github.com/openai/openai-node) | 검증됨. Deno 1.28+ 지원, `import OpenAI from "npm:openai"`. 기본 타임아웃 10분·재시도 2회(`timeout`·`maxRetries` 옵션). 현재 npm 최신 7.23.0 | `npm:openai@7`, Edge 벽시계 150초에 맞춰 `timeout: 60_000`, `maxRetries: 1` |
 | Edge Function에서 APNs HTTP/2 (0단계 실측 2026-09-27) | **h2 동작 확인.** sandbox에 가짜 토큰으로 `400 BadDeviceToken` + `apns-id`(APNs는 HTTP/1.1을 연결 단계에서 거부), Edge 서울 100회 동시 1 → 100/100 p50 419ms. 동시 10은 가짜 토큰 탓 `GOAWAY` 오류가 섞여 실기기 토큰으로 재확인 대기 | Edge에서 직접 발송. JWT는 in-flight 공유 + 30분 경계 iat(동시 생성 시 `429 TooManyProviderTokenUpdates`), 연결 오류(`GOAWAY`) 1회 재시도. Cloudflare Worker 릴레이는 보류(동시 10 재측정 실패 시) |
@@ -224,17 +224,29 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   → 재분류 (gpt-6-luna, effort none, ≤200 토큰 Structured Outputs JSON): event|task|purchase|subscription|reference|discard|medical_result
       medical_result·personal 경계는 §6 분류 라벨 정의와 같다. device_filter = "rules" 항목은 기기 FM 판정이 없으므로 여기서 처음 분류된다
       discard·medical_result → items DELETE, 감사 로그에 사유 코드만. 이 단계 전에는 다른 외부 전송 없음
+      **0단계 예외(2026-09-27 결정)**: PoC worker는 분류 단계가 없고 `process` 잡이 복호화한 텍스트 전부에 추출을 1회 호출한다
+      (계획서 Task 12 Step 3, 추출값은 저장하지 않고 유무·개수만 로그). 분류는 1a에서 도입하고 순서는 위(분류 → 삭제 → 추출)를 따른다.
+      근거: 분류도 같은 공급자·약관(§12 통제 3, `store: false`)으로 항목당 1회 전송하므로 노출 범위가 같고, 0단계에는 discard 삭제가
+      원래 없어 보관 상태도 같다. PoC 코드는 폐기 대상이라 순서를 맞추려고 고치지 않는다
   → 추출 (gpt-6-luna, Responses API `text.format` json_schema strict. `store: false`)
-      event: title, start, end, allDay, location, tz, evidence, uncertain[]  (예: year, ampm, end, tz)
+      event: title, start, end, allDay, location, tz, evidence, uncertain[]  (예: year, ampm, end, tz, date, location)
+      uncertain은 모델 판단이 아니라 서버가 정한다(0단계 PoC-8 실측: 모델의 uncertain 표시가 반복마다 흔들림). 스키마에 사실 플래그
+      (`year_in_text`, `lunar`)를 두고 서버가 year·date를 채운다. 연도 표기가 없으면 연도를 "오늘(서울) 이후 가장 가까운 해"로 서버가
+      다시 계산한다(모델이 내년으로 채운 사례). 일시는 ISO 8601 +09:00로 정규화하고 해석 불가·종료 < 시작은 null + date/end.
+      **음력 날짜는 확정하지 않는다**: 모델 환산이 하루씩 틀려(10-24 → 10-25) date를 넣어 REVIEW로 보낸다. 제품에서 자동 환산이 필요하면
+      서버 음력 변환표(한국천문연구원 기준)로 한다. 종료 시각이 문서에 없으면 end는 null이고 uncertain에 넣지 않는다
       task: title, due, evidence, uncertain[]
       purchase: merchant, product[], ordered_at, amount, currency, order_no, status, recurrence?, evidence
   → 이미지/PDF: gpt-6-luna vision(`input_image`·`input_file`). 월 상한 100건(usage_counters). 초과 시 기기에서 같이 올라온 OCR 텍스트 사용
+      기기 OCR 텍스트가 있으면 이미지·PDF와 함께 넣는다(0단계 실측 vision+OCR 21/21, vision만 19/21 — 스캔 PDF 제목 오류).
+      건당 입력 3.8~4.3k 토큰, 약 $0.00042, 지연 p50 1.95s·p95 2.53s(PoC-8). 상한은 호출 전 예약(`reserve_vision_call`, 한 문장 upsert)
       PDF: 10MB·50페이지 초과, 암호화, 파싱 실패 → "앱에서 확인" 상태로 두고 푸시
   → URL: 허용 스킴 http(s)만, 사설·루프백 IP 차단, 리디렉션 3회, 응답 2MB·10초 제한, 텍스트 MIME만
       본문 추출 실패(HTML 파싱 오류·JS 전용) → "스크린샷 공유 요청" 푸시. 짧은 정상 문서는 그대로 저장
   → 연결: purchases는 (merchant, order_no) 복합 키. 없으면 (merchant, amount, ordered_at ±1일)로 후보 제시
       취소·변경 문구 → 기존 fact status = cancelled/superseded, 새 fact에 supersedes_id
-  → 청크(512자) → item_chunks. 임베딩(`text-embedding-3-small`, 512차원)은 PoC-7 통과 전까지 생성하지 않고 embedding = null로 둔다(§16)
+  → 청크(512자) → item_chunks. 임베딩 `text-embedding-3-large`(`dimensions: 512`). 활성화 조건(PoC-7 통과)은 2026-09-27 충족,
+      worker 연결은 1a에서 한다. 그 전까지 실제 데이터의 embedding은 null(검색은 키워드 경로, §16)
   → proposals INSERT (event/task). uncertain 비어 있을 때만 잠금화면 "추가" 버튼 노출,
       아니면 REVIEW 카테고리로 앱에서 확인 유도
   → 백필(occurred_at이 수집 시각보다 3일 이상 과거)에서 나온 제안은 푸시하지 않고 보관함에만 표시
@@ -277,7 +289,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | `jobs` | kind, payload, lease_key, leased_until, attempts, status(queued/running/done/dead), checkpoint | 영속 작업 큐 |
 | `utterances` | text, embedding, said_at, source(chat/siri/quick), kind(statement/question/correction) | 사용자 발화 전체 기록 |
 | `memories` | text, embedding, utterance_id, status(active/retracted), supersedes_id | "기억해줘" 또는 gpt-6-luna가 statement로 판정한 것만. 정정 발화는 이전 memory를 retracted 처리 |
-| `devices` | apns_token, environment, last_seen_at | |
+| `devices` | device_id(unique with user_id), apns_token, apns_env(sandbox/production), build, last_seen_at | 개발 설치 = sandbox, TestFlight·App Store = production 토큰. 발송은 기기 환경으로, 환경 불일치 응답이면 반대 환경 1회 재시도. 0단계 `0011_devices.sql`과 일치 |
 | `usage_counters` | month, vision_calls, extract_tokens, chat_tokens, reserved_krw | 비용 상한. 호출 전 예약, 후 정산 |
 
 ### 삭제·만료 정책 (두 가지를 분리)
@@ -395,18 +407,18 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 | 항목 | 가정 | 비용 |
 |---|---|---|
-가격 근거: developers.openai.com/api/docs/pricing (2026-09-26, 1M 토큰당, Standard). `gpt-6-luna` 입력 $0.10·출력 $0.50, `gpt-6-sol` 입력 $2.00·캐시 입력 $0.20·출력 $10.00, `text-embedding-3-small` $0.02, `text-embedding-3-large` $0.13(2026-09-27 결정 근거 단가).
+가격 근거: developers.openai.com/api/docs/pricing (2026-09-26, 1M 토큰당, Standard). `gpt-6-luna` 입력 $0.10·출력 $0.50, `gpt-6-sol` 입력 $2.00·캐시 입력 $0.20·출력 $10.00, `text-embedding-3-large` $0.13(채택, 2026-09-27), `text-embedding-3-small` $0.02(비교용). 2026-09-27 OpenAI 전환 후 재검산.
 
 | 항목 | 가정 | 비용 |
 |---|---|---|
-| gpt-6-luna 분류·추출 | 일 60건 × 입력 1.5k + 출력 0.3k 토큰 → 월 입력 2.7M, 출력 0.54M | 약 $0.5 |
-| gpt-6-sol 채팅 | 일 10회 × 입력 6k(시스템 1k 캐시)/출력 0.5k + reasoning low 0.5k → 월 입력 1.8M(캐시 0.3M), 출력 0.3M | 약 $6 |
-| Vision (gpt-6-luna) | 월 30건 × 입력 약 3k(이미지·PDF 페이지) + 출력 0.3k | 약 $0.01 |
-| 임베딩 `text-embedding-3-large` (512차원) | 월 3M 토큰 | 약 $0.39 |
+| gpt-6-luna 분류·추출 | 일 60건 × 입력 1.5k + 출력 0.3k 토큰 → 월 입력 2.7M($0.27), 출력 0.54M($0.27) | 약 $0.54 |
+| gpt-6-sol 채팅 | 일 10회 × 입력 6k(시스템 1k 캐시)/출력 0.5k + reasoning low 0.5k → 월 입력 1.5M($3.00)·캐시 0.3M($0.06), 출력 0.3M($3.00). **상한 추정**: PoC-7 합성 평가 실측은 질문당 입력 약 0.7k·출력 약 0.06k(약 $0.002, 월 약 $0.6)였으나 실제 메일 청크는 합성 문서보다 길어 추정을 유지 | 약 $6.06 (실측 기준 약 $0.6) |
+| Vision (gpt-6-luna) | 월 30건 × 입력 약 4k(PoC-8 실측 3.8~4.3k, 기기 OCR 포함) + 출력 약 0.1k → 건당 $0.00042. 월 상한 100건이면 $0.04 | 약 $0.013 |
+| 임베딩 `text-embedding-3-large` (512차원) | 월 3M 토큰 × $0.13 | 약 $0.39 |
 | Supabase | 무료 | $0 |
-| 합계 | | 약 $6.9 ≈ 0.95만원 |
+| 합계 | | 약 $7.0 ≈ 0.96만원 (채팅 실측 기준이면 약 $1.5) |
 
-채팅이 비용의 90%다. 기존 Anthropic+Voyage 추정(약 $9)보다 싸지만 상한과 여유가 없으므로 다음 통제를 둔다. reasoning 토큰은 출력 단가로 청구되므로 채팅은 effort `low`, 분류·추출은 `none`으로 고정한다.
+채팅이 비용의 약 87%다(상한 추정 기준). 기존 Anthropic+Voyage 추정(약 $9)보다 싸지만 상한과 여유가 없으므로 다음 통제를 둔다. reasoning 토큰은 출력 단가로 청구되므로 채팅은 effort `low`, 분류·추출은 `none`으로 고정한다.
 
 - 호출 전 `usage_counters.reserved_krw`에 예상 비용을 예약하고, 월 상한(기본 1만원) 초과 예약은 거부한다. 응답 후 실제 토큰으로 정산한다.
 - 80% 도달: 채팅 gpt-6-sol → gpt-6-luna 강등, vision → OCR 텍스트. 100% 도달: 추출·채팅 중단, 수집만 계속(jobs는 queued 유지). 앱에 잔여 예산 표시.
@@ -434,27 +446,31 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 ### 판정 현황 (2026-09-27, 원본 `docs/superpowers/poc/results.md`)
 
-| # | 상태 | 시뮬레이터에서 확인한 것 (부분 검증) | 실기기·외부 자원이 필요한 남은 실측 |
-|---|---|---|---|
-| PoC-1 | 미검증 | CaptureIntent·App Shortcut 등록(`Metadata.appintents`), 단축어 앱에서 수동 실행 시 앱을 열지 않고 인텐트 실행(XCUITest). 알림 트리거가 아닌 호출 경로 확인일 뿐 | **실기기**: 알림 자동화 시나리오 1~7, `app=`·`textLen=` 로그로 본문·앱명 전달 판정. 연락처에 저장한 계정에서 보낸 카톡 → `discarded:contact` |
-| PoC-2 | 미검증 | 인텐트 호출 경로(PoC-1과 같음) | **실기기**: 메시지 자동화, 잠금 15초 후 수신 `locked=true`, BFU 수신(`bfu.log`, 길이만), OTP 문자 `discarded:otp`, 연락처 번호 문자 `discarded:contact` |
-| PoC-3 | 부분 | 폴백 경로(앱 프로세스에서 Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error`), 새 세션·enum 스키마·타임아웃 단위 테스트. 호스트 Mac Apple Intelligence 꺼짐으로 `respond` 에셋 오류, 정확도·p95 수치 없음 | **실기기**(또는 사용자가 Mac Apple Intelligence 켠 뒤 시뮬레이터 참고치): 200건 정확도·p95·메모리, 백그라운드 `rateLimited` 빈도 |
-| PoC-4 | 부분 | 서버 경로(2026-09-27): 로컬·Edge에서 sandbox `400 BadDeviceToken` + `apns-id`, h2 동작, Edge 100회 동시 1 100/100 p50 419ms. JWT 429 수정 | **실기기 토큰**: 1회 수신, 100회 동시 10 성공률 ≥ 99%·h2 오류 0 (절차 `poc-4-apns.md`) |
-| PoC-5 | 부분 | 실제 배너·액션 탭(XCUITest, 로컬 알림): 백그라운드 쓰기 `bg=true`, 재탭 `dup skip`, 앱 종료 후 콜드 스타트, 동시 두 번 탭 이벤트 +1 | **실기기**: 잠금 화면에서 `.authenticationRequired`의 Face ID/암호 요구와 쓰기 성공. 보고 실패 후 재탭은 서버 연동 후 |
-| PoC-6 | 부분 | 서버 경로(2026-09-27): 모의 API 테스트(history 병합, 404 재동기화, `invalid_grant` → `reauth_required`, watch 갱신, 규칙 필터 → 암호화 → 저장, OIDC 검증), DB 테스트(cron 적재, 재인증 대상, vault 토큰 소유자 한정), 배포 후 거부 경로 401·400·502 | Push 구독·`PUBSUB_PUSH_SA_EMAIL`, iOS GoogleSignIn 연결, 백필·웹훅 지연·404 재동기화 누락 0·watch 갱신·6일/8일 재인증 (절차 `poc-6-gmail.md`) |
-| PoC-7 | 미검증 | — | Supabase·OpenAI 키(합성 코퍼스) |
-| PoC-8 | 부분 | 기기 부분: 사진 앱 → 공유 시트 → 확장 실행, OCR 텍스트와 `SHARE` 큐 행(합성 이미지) | 서버 부분(Task 12): vision 추출 5/5, 오프라인 후 유실 0 |
-| PoC-9 | **통과** | 앱 프로세스 완전 종료 확인 후 3.68초 뒤 목 서버에 정확한 바이트 수로 도착 | — (시뮬레이터 실측이 판정 기준을 그대로 재현) |
-| PoC-10 | 통과 | 2026-09-26 호스팅 실측: 동시 클레임 1건, 5회 실패 후 dead, lease 180초+하트비트로 92초 잡 attempts=1, decrypt p50 0.7ms/p95 56ms | — |
+`results.md` "판정" 표와 같은 내용이다. 측정 원본은 `results.md` "PoC별 상세", 남은 실측의 필요 조건·판정 근거(`poc_traces` 이벤트)는 `results.md` "실기기·장기 실측 대기"에 있다.
 
-실기기 세션 한 번에 PoC-1·2·3·5를 순서대로 진행한다: 설치 → 권한 → 단축어 자동화 3개(카톡 알림·인스타 알림·메시지) → FM 벤치마크(메모리 게이지 기록) → 단축어로 백그라운드 FM 10~20회 → 잠금 화면 로컬 알림 액션 → 재부팅 후 BFU 문자 수신.
+| PoC | 검증 대상 | 태스크 | 상태 | 핵심 근거 | 남은 실측 | 근거 커밋 | 갱신일 |
+|---|---|---|---|---|---|---|---|
+| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 시뮬레이터: CaptureIntent·App Shortcut 등록, 단축어 앱 **수동** 실행 시 앱을 열지 않고 인텐트 실행(판정 기준인 알림 트리거 아님). 연락처 규칙 배선(합성 연락처 `discarded:contact`) | 실기기 알림 자동화 시나리오 1~8: 본문·앱명 전달(`text_len`·`app`), 배너·잠금·미리보기·묶음 기록 | `964cfea` `0d2a293` `affe7e9` `cf6dd12` | 2026-09-24 |
+| PoC-2 | 단축어 Message 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 인텐트 호출 경로만(PoC-1과 같음) | 실기기 메시지 자동화: 잠금 15초 후 `locked=true` 적재, BFU 수신, OTP `discarded:otp`, 연락처 번호 `discarded:contact` | `964cfea` `affe7e9` `cf6dd12` | 2026-09-24 |
+| PoC-3 | Foundation Models 한국어 분류 200건 정확도·p95 | 5 | 부분 | 폴백 경로(Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error`)·새 세션·enum 스키마·타임아웃 단위 테스트. 호스트 Mac Apple Intelligence 꺼짐으로 수치 없음 | 실기기 200건 p95·개인 대화 통과율·알림톡 폐기율, 메모리, 백그라운드 `rateLimited` 빈도 | `b1f3248` `0d2a293` `affe7e9` | 2026-09-24 |
+| PoC-4 | Edge Function → APNs HTTP/2 | 9 | 부분 | h2 동작(가짜 토큰 sandbox `400 BadDeviceToken`+`apns-id`, HTTP/1.1 대조군 거부), Edge 서울 100회 동시 1 100/100 p50 419ms, JWT 429 수정. 기기별 `apns_env`·환경 불일치 1회 재시도, APNs 키 Sandbox & Production으로 교체 | 앱 토큰 등록(`ingest/device`) 구현 → TestFlight 기기 production 1회 수신 → 100회 동시 10 × 2(성공률 ≥ 99%, h2 오류 0) | `e2552b5` `40d83cc` | 2026-09-27 |
+| PoC-5 | 잠금화면 알림 액션 → 백그라운드 EventKit 멱등 쓰기 | 6 | 부분 | XCUITest(실제 배너·액션 탭, 로컬 알림): 백그라운드 쓰기 `bg=true`, 재탭 `dup skip`, 앱 종료 후 콜드 스타트, 동시 두 번 탭 이벤트 +1 | 실기기 잠금 화면 `.authenticationRequired` 인증 후 1건. 보고 실패 후 재탭은 서버 연동 후 | `0e89279` `0d2a293` | 2026-09-24 |
+| PoC-6 | Gmail watch → Pub/Sub → history 동기화 | 10 | 부분 | 실계정: 연결·watch +7일, 백필 85 ID → 76행·429 없음·`content_enc` null 0, 웹훅 약 8초(1회), 404 재동기화로 누락 1건 복구·중복 0 | 웹훅 지연 5회 평균, watch 갱신(수동+다음 날 cron), 6일 `expiring`·8일 `invalid_grant`, 규칙 필터 OTP·카드 메일. 백필이 증분 동기화를 굶기는 문제(스펙 §16) | `ea6c762` `87673fe` `cdd7c79` | 2026-09-27 |
+| PoC-7 | 한국어 하이브리드 검색 Top-5 정확도 | 11 | 통과 | 합성 500건·질문 50: 하이브리드 + `text-embedding-3-large`(512) Top-5 38/40(95%), 무근거 거절 10/10, 인용 36/36·정밀도 39/39, 날짜 필터 오판 0, 검색 p95 70~111ms | — (1a에서 실데이터 검색 평가) | `4c00aa7` `cf786bb` `9e8ab9f` | 2026-09-27 |
+| PoC-8 | 이미지·PDF → OCR/추출 → 일정 | 7, 12 | 부분 | 서버: 합성 7종(이미지 5·PDF 2) vision+OCR 21/21, OCR만 21/21, `uncertain` 21/21, p50 1.95s·p95 2.53s, 건당 $0.00042, worker extract 7/7. 기기(시뮬레이터): 사진 앱 공유 시트 → 확장 `ocrLen=43`·큐 `SHARE` 행 | 실기기 공유 시트 → 큐·업로드(App Group 서명), 오프라인 후 복구 유실 0 | `f28814d` `0d2a293` `affe7e9` `7f533f1` | 2026-09-27 |
+| PoC-9 | 앱 종료 후 background URLSession 업로드 완료 | 7 | 통과 | 앱 프로세스 종료를 `ps`로 확인한 뒤 3.68초 후 목 서버에 정확한 바이트 수로 도착 | — (실기기 회귀: 스와이프 종료·비행기 모드) | `f28814d` | 2026-09-24 |
+| PoC-10 | jobs 큐 lease/재시도/dead 처리 | 8 | 통과 | 같은 lease_key 동시 클레임 1건, 5회 실패 후 `dead`, 임대 180초+하트비트로 90초 잡 재클레임 0·attempts 1, 복호화 p50 0.7ms·p95 56ms | — (판정 기준 밖: 150초 강제 종료 잡 재클레임, 24시간 활동 유지) | `2d9a45a` `6ca66d8` | 2026-09-26 |
+
+**집계: 통과 3(PoC-7·9·10) · 부분 5(PoC-3·4·5·6·8) · 실패 0 · 미검증 2(PoC-1·2).** 부분·미검증 7건과 PoC-9 실기기 회귀는 아래 "실기기·장기 실측 대기"(8개 PoC)로 넘어간다.
+
+실기기 세션 한 번에 PoC-1·2·3·4·5·8·9를 진행한다: TestFlight 설치 → 권한·PoC 사용자 로그인 → 단축어 자동화 3개(카톡 알림·인스타 알림·메시지)와 백그라운드 FM 10~20회 → APNs 토큰 등록·발송(production 토큰) → 잠금 화면 로컬 알림 액션 → 공유·업로드 → FM ⌘U(메모리 게이지. 개발 설치가 TestFlight 앱을 덮어써 sandbox 토큰이 되므로 후반) → 재부팅 후 BFU 문자 수신. PoC-6 반복 항목은 연결일 기준 6일·8일째에 따로 확인한다.
 
 ## 15. 단계 계획
 
 | 단계 | 범위 | 완료 기준 |
 |---|---|---|
 | 0 | PoC-1~10 | 판정표 작성, 스펙 갱신 |
-| 1a | Supabase 스키마·RLS·Auth·jobs, Gmail 동기화(복구 포함), ingest/worker/chat Edge, 앱 채팅·보관함, Share(텍스트·URL), 보관·삭제 잡 | **검색 평가 통과**(§9 지표). 메일·공유 텍스트를 채팅으로 다시 찾고 출처가 검증됨 |
+| 1a | Supabase 스키마·RLS·Auth·jobs(잡 종류별 우선순위 — 백필이 증분 동기화를 막지 않게, §16), Gmail 동기화(복구 포함), ingest/worker/chat Edge, worker 분류 단계(§7 0단계 예외 해제)·임베딩(`text-embedding-3-large` 512) 연결, 앱 채팅·보관함, Share(텍스트·URL), 보관·삭제 잡 | **검색 평가 통과**(§9 지표). 메일·공유 텍스트를 채팅으로 다시 찾고 출처가 검증됨 |
 | 1b | 추출·proposals, notify Edge(APNs), EventKit + 알림 액션(멱등) | 메일에서 뽑은 일정을 잠금화면 버튼으로 캘린더에 1건만 넣음 |
 | 2 | Message/Notification 트리거 + 기기 필터, 자동화 설치 가이드, 이미지·PDF vision + OCR, purchases 추출·질문 | 알림톡 주문이 구매 이력에 쌓이고 "어디서 샀지" 답변 |
 | 3 | Siri·빠른 기억, 구독 추적, TestFlight | 지인이 가이드만으로 셋업 완료 |
@@ -483,21 +499,30 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 - 서버를 완전히 없애는 변형: Gmail을 Apple Mail에 추가하고 Shortcuts **Email 트리거**(무확인 자동 실행 목록에 있음)로 수집. 지연 15분 이상, 트리거가 본문을 넘기는지 미확인.
 - 잃는 것: 폰이 꺼진 동안의 처리, 기기 간 공유, 서버 측 검색 품질 튜닝. 전환 비용: §7 파이프라인 대부분을 Swift로 재작성.
 
-- **알림 트리거 배너 탭**: 사용자가 알림마다 탭해야 하면 편의성이 크게 떨어진다. PoC-1 결과에 따라 2단계 범위를 재조정한다.
-- **임베딩 보류 → 약관 사유 해제 (2026-09-26)**: 벤더를 OpenAI로 바꾸며 학습 미사용·보관 30일(남용 모니터링)을 공식 문서로 확인했고, 임베딩은 분류와 같은 공급자·약관이라 새 전송처가 아니다(§12 통제 3). 남은 활성화 조건은 **PoC-7 통과(합성 코퍼스, 하이브리드 경로)** 하나다. 그 전까지 실제 사용자 데이터의 `embedding`은 null, 검색은 키워드 경로. PoC-7 평가는 여전히 합성 코퍼스로만 한다.
+### 미결 리스크 (2026-09-27)
+
+- **알림 트리거 배너 탭**: 사용자가 알림마다 탭해야 하면 편의성이 크게 떨어진다. PoC-1(실기기) 결과에 따라 2단계 범위를 재조정한다.
+- **백필이 증분 동기화를 굶긴다** (PoC-6 실측 2026-09-27): `jobs`가 생성 순 FIFO라 백필이 만든 `process` 잡 37건 뒤에 웹훅의 `gmail-sync`가 11분 대기했다. 1a에서 잡 종류별 우선순위(또는 `gmail-sync`·`notify` 전용 레인)를 둔다. 백필 잡은 사용자당 동시 1개로 제한.
 - **OpenAI 30일 보관**: ZDR은 사전 승인제라 본인 사용 단계에서는 남용 모니터링 30일 보관을 수용한다. 지인 확대 시 ZDR 신청, 거절되면 처리방침에 명시.
-- **인용 검증의 한계**: OpenAI에는 문서 인용 기능이 없어 인용은 모델이 JSON에 적은 `source_item_ids`다. 서버는 id가 검색 결과에 있는지만 확인하므로 "있는 문서를 잘못 인용"은 막지 못한다. PoC-7·1a 검색 평가의 인용 정확도 지표로 측정하고, 미달 시 문장-문서 대조(gpt-6-luna 재검증) 단계를 추가한다.
-- **Edge 복호화 비용**: 워커가 건마다 AES-GCM 복호화하므로 CPU 2초 제한 안에서 배치 크기를 정해야 한다. PoC-10에 항목 추가.
-- **Gmail 7일 재인증**: 테스트 모드 refresh token 만료(`connections.expires_at`) 24시간 전 푸시로 완화. 본인 사용 기간엔 감수. 지인 확대 시점에 앱 검증 비용을 결정한다.
-- **APNs from Deno**: h2 동작 확인(2026-09-27, sandbox `400 BadDeviceToken` + `apns-id`, Edge 서울 100회 동시 1 100/100 p50 419ms). 동시 10은 가짜 토큰에 대한 APNs `GOAWAY`로 스트림 오류 10~18%·`dispatch task is gone` 1~2건이 섞여(로컬 Deno도 같음) 실기기 토큰으로 재확인 대기. 남으면 연결 오류 1회 재시도, 그래도 남으면 Cloudflare Worker 릴레이. 그 전까지 대안 보류. PoC-4.
-- **임베딩 한국어 품질**: `text-embedding-3-small` 가격($0.02/1M)은 확인, 한국어·다국어 성능 수치는 공식 문서에 없다. PoC-7(합성 코퍼스)에서 판정하고 미달 시 `text-embedding-3-large`(`dimensions: 512`)로 재평가.
+- **인용 검증의 한계**: OpenAI에는 문서 인용 기능이 없어 인용은 모델이 JSON에 적은 `source_item_ids`다. 서버는 id가 검색 결과에 있는지만 확인하므로 "있는 문서를 잘못 인용"은 구조적으로 막지 못한다. PoC-7 합성 평가에서는 인용 36/36·정밀도 39/39였다. 1a 실데이터 검색 평가에서 다시 재고, 미달 시 문장-문서 대조(gpt-6-luna 재검증) 단계를 추가한다.
+- **음력 날짜** (PoC-8 실측): 모델의 음력→양력 환산이 하루씩 틀린다. 음력 표기는 `uncertain: date`로 REVIEW에 보낸다(§7). 자동 환산은 서버 변환표로만.
+- **0단계 worker의 분류 생략**: §7 "0단계 예외". 1a 진입 조건에 "분류 → discard 삭제 → 추출 순서" 포함.
+- **Gmail 7일 재인증**: 테스트 모드 refresh token 만료(`connections.expires_at`) 24시간 전 푸시로 완화. 본인 사용 기간엔 감수. 지인 확대 시점에 앱 검증 비용을 결정한다. 6일·8일 동작은 PoC-6 반복 항목.
 - **모델 ID 수명**: `gpt-6-luna`·`gpt-6-sol`은 별칭과 스냅샷이 같은 ID 하나뿐이다. 날짜 고정 스냅샷이 나오면 제품 코드에서는 스냅샷으로 고정한다.
 - **Supabase 무료 티어 500MB**: 1인 1년 원문이면 충분하나 이미지 포함 시 Storage 1GB 상한 감시.
 - **Foundation Models 가용성**: Apple Intelligence 꺼진 기기는 규칙 필터만(카톡·인스타 폐기, 그 외 서버 분류). 지인 확대 시 안내 필요.
-- **시뮬레이터 FM 가용성이 호스트 Mac 설정에 종속**: 시뮬레이터는 호스트 Mac의 모델을 쓴다. 호스트가 Apple Intelligence 꺼짐(`appleIntelligenceNotEnabled`, macOS 26.5에서 직접 호출로 확인)이면 시뮬레이터 `respond`는 에셋 오류를 낸다. 그런데 시뮬레이터 `availability()`는 **`available`로 오표시**한다. 따라서 시뮬레이터 FM 결과는 판정 근거가 아니고, 가용성은 1건 사전 점검(§6)으로 판단하며, PoC-3 수치는 실기기에서 잰다. 시뮬레이터로 참고치를 보려면 사용자가 Mac의 Apple Intelligence를 켜고 모델 다운로드를 마쳐야 한다.
+- **시뮬레이터 FM 가용성이 호스트 Mac 설정에 종속**: 시뮬레이터는 호스트 Mac의 모델을 쓴다. 호스트가 Apple Intelligence 꺼짐(`appleIntelligenceNotEnabled`, macOS 26.5에서 직접 호출로 확인)이면 시뮬레이터 `respond`는 에셋 오류를 내는데 `availability()`는 **`available`로 오표시**한다. 따라서 시뮬레이터 FM 결과는 판정 근거가 아니고, 가용성은 1건 사전 점검(§6)으로 판단하며, PoC-3 수치는 실기기에서 잰다.
 - **FM 백그라운드 `rateLimited`**: 백그라운드 인텐트에서만 나는 에러다. 폴백으로 흡수되지만 빈도가 높으면 카톡·인스타 항목이 대량 폐기된다. PoC-3 실기기에서 빈도를 재고, 높으면 카톡 경로의 폴백 정책을 다시 정한다.
 - **예약 확인번호 오탐**: "예약 확인번호 58213"이 든 병원·식당 예약 안내는 OTP 규칙으로 폐기된다(§6 알려진 한계). 2단계에서 `otp` 사유 코드 비율을 보고 재검토한다.
-- **연락처 규칙**: 앱이 연락처 이름을 App Group에 캐시하고 인텐트가 `sender`·`title`과 비교하도록 배선했다. 시뮬레이터 실측 완료(합성 연락처, 결과는 `results.md`). 실기기 카톡·문자에서의 확인은 PoC-1/2에서 한다.
+- **연락처 규칙**: 앱이 연락처 이름을 App Group에 캐시하고 인텐트가 `sender`·`title`과 비교하도록 배선했다. 시뮬레이터 실측 완료(합성 연락처, `results.md` 참고). 실기기 카톡·문자에서의 확인은 PoC-1/2에서 한다.
+
+### 해소된 리스크
+
+- **임베딩 보류 — 해소 (2026-09-27, PoC-7 통과, `9e8ab9f`)**: 약관 사유는 2026-09-26 OpenAI 데이터 정책 확인(학습 미사용·남용 모니터링 30일, 임베딩은 분류와 같은 공급자·약관이라 새 전송처가 아님, §12 통제 3)으로 먼저 풀렸고, 남은 조건인 PoC-7(합성 코퍼스, 하이브리드 경로)이 통과했다. 실제 데이터 임베딩은 1a worker에서 연결한다.
+- **임베딩 한국어 품질 — 해소 (2026-09-27, PoC-7)**: 공식 문서에 한국어 수치가 없어 합성 평가로 판정했다. 하이브리드 Top-5 `text-embedding-3-small` 31~33/40, `text-embedding-3-large`(`dimensions: 512`) 38/40 → large 채택(§2).
+- **APNs from Deno (h2) — 해소 (2026-09-27, `e2552b5`)**: Deno `fetch`가 HTTP/2로 협상한다(sandbox 가짜 토큰 `400 BadDeviceToken` + `apns-id`, HTTP/1.1 대조군은 연결 거부). Edge 서울 100회 동시 1 → 100/100 p50 419ms. JWT 동시 생성 429는 in-flight 공유 + 30분 경계 iat로 고쳤다. 남은 것은 리스크가 아니라 PoC-4 판정 실측(실기기 토큰 100회 동시 10, 가짜 토큰에서 보인 `GOAWAY` 스트림 오류가 실제 토큰에서도 나는지)이다. 나면 연결 오류 1회 재시도, 그래도 남으면 Cloudflare Worker 릴레이.
+- **jobs 임대 만료로 중복 실행 — 해소 (2026-09-26, PoC-10, `6ca66d8`)**: 임대 60초에서 90초 잡이 65초에 재클레임돼 두 번 실행됐다. 임대 180초(Edge wall-clock 150초보다 김) + 30초 하트비트로 재클레임 0건·attempts 1(§7).
+- **Edge 복호화 비용 — 해소 (2026-09-26, PoC-10)**: 건당 AES-GCM 복호화 p50 0.7ms·p95 56ms(격리 인스턴스 첫 호출의 키 조회 포함), CPU 1ms 미만이라 CPU 2초 한도는 배치 크기를 제약하지 않는다. `p_limit` 5 유지, 늘릴 때는 cron `timeout_milliseconds`·wall-clock 기준.
 
 ### 0단계 Opus 재검증 반영 (2026-09-24, Task 1~7)
 
@@ -514,3 +539,9 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 | 3 | §6 연락처 규칙: 목록 캐시, `sender`+`title` 비교, 공백·호칭("님"/"씨") 정규화 | `RuleFilter()`를 연락처 없이 생성, `sender` 정확 일치만 비교 | 앱 실행 시 연락처 이름을 App Group에 캐시하고 인텐트가 읽는다(0단계 계획 Task 4 Step 6). **완료 (affe7e9)**: `ContactNames`, 공백 전부 제거·끝 "님"/"씨" 제거, `sender`·`title` 비교 |
 | 4 | §6 라벨 정의: 검진 결과 준비 안내 = `medical_result` | FM 픽스처 4건("건강검진 결과가 준비되었습니다")이 `expected: notice`, `@Guide` 설명에 결과 안내 경계가 없다 | 4건을 `medical_result`로 바꾸고 벤치마크 집계(개인 대화 통과율·알림톡 폐기율)에서 따로 센다. `@Guide`에 경계 문구 추가. **완료 (affe7e9)**: 픽스처 personal 100·notice 96·medical_result 4, `medicalDrop=x/4` |
 | 5 | §10: 기록 없을 때 EventKit 표식 조회로 복구 | 표식(`ev.url`)은 넣지만 저장 전 조회는 없다 | PoC에서는 허용. 1b 제품 코드에서 구현 |
+
+### 0단계 운영 기록 (규칙 위반과 조치)
+
+- 2026-09-27 03:18: 서버 pane의 호스팅 DB 테스트(`jobs.test.ts`)가 `jobs`를 조건 없이 지워 PoC-6 실측 중이던 fetch 잡이 사라졌다(메일 1건 누락, 404 재동기화로 복구). 조치: 전용 테스트 사용자·실행 태그로 자기 행만 지우고 전역 함수에 범위 인자(`0010_test_scope.sql`, `cf786bb`), AGENTS.md §7에 규칙 추가.
+- 2026-09-27: Task 11 검색 평가(deno)가 다른 pane의 시뮬레이터 빌드와 겹쳐 돌았다(AGENTS.md §6 "시뮬레이터 빌드와 deno 테스트를 동시에 돌리지 않는다" 위반). 조치: 서버 태스크 지시문에 deno 테스트 전 `pgrep -x xcodebuild` 확인을 넣었다.
+- 2026-09-27: Task 12에서 `.env`를 셸로 `source`하다 파싱 오류 메시지에 APNs `.p8` 개인키 일부가 에이전트 세션 출력에 찍혔다(커밋·외부 전송 없음). 조치: 키를 새로 발급해 교체(13:15, Edge secrets 반영을 해시로 대조), `.env`는 셸로 읽지 않고 `deno --env-file` 또는 필요한 한 값만 추출한다.

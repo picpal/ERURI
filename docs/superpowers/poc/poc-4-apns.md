@@ -69,13 +69,15 @@ content-type: application/json
 | `apns-send` device_id(production) 1회 | **403 `BadEnvironmentKeyInToken`**, `apns-id` 있음, 0.8초 |
 | `apns-send` token(기본 `APNS_ENV=production`) | 403 `BadEnvironmentKeyInToken` |
 
-**현재 `.p8` 키(`APNS_KEY_ID`)는 Sandbox 전용이다.** production 호스트가 키 단계에서 거부하므로 TestFlight 설치 기기로는 푸시가 가지 않는다.
+**(해소, 2026-09-27) 당시 `.p8` 키(`APNS_KEY_ID`)는 Sandbox 전용이었다.** 이후 Sandbox & Production 키로 교체했고(세션 출력 노출 뒤 13:15 재교체), 교체 키로 가짜 토큰 발송 시 production·sandbox 모두 `400 BadDeviceToken`(403 없음)이라 두 환경에서 인증된다. Edge secrets `APNS_KEY_ID`·`APNS_P8`은 현재 `.p8`과 해시로 대조해 일치. 아래는 교체 전 기록이다. production 호스트가 키 단계에서 거부하므로 TestFlight 설치 기기로는 푸시가 가지 않는다.
 조치(사용자): developer.apple.com → Keys에서 APNs 키를 **Sandbox & Production**(또는 Production)으로 새로 만든다. 그다음 `poc/server/keys/`에 `.p8`을 두고 `.env`의 `APNS_KEY_ID`·`APNS_P8`을 바꾼 뒤, secrets `APNS_KEY_ID`·`APNS_P8`을 다시 설정한다(에이전트가 `.p8` 원문으로 등록).
 그 전까지 Xcode 개발 설치(sandbox)로 실측하려면 `APNS_ENV=sandbox`로 되돌리거나 기기를 `apns_env: "sandbox"`로 등록한다.
 
 ## 실기기에서 할 일 (사용자)
 
 ### 1. 앱에 토큰 등록 추가 (구현 필요, 계획서 Task 9 Step 4)
+
+> 2026-09-27 갱신: 토큰은 `poc.log` 대신 위 "기기 등록 계약"대로 `POST ingest/device`로 보낸다(TestFlight 빌드는 `apns_env: "production"`). 발송은 `apns-send`에 `{ device_id, user_id }`. 앱 쪽 등록 코드는 아직 없다. 아래 코드는 토큰을 얻는 부분의 원안이다.
 
 `App.entitlements`에 `aps-environment = development`가 이미 있다. 개발 서명(Xcode 설치)이면 토큰은 **sandbox** 용이다.
 Automatic 서명이 Push Notifications capability를 프로비저닝 프로필에 넣는지 설치 때 확인한다.
