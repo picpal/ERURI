@@ -1,9 +1,9 @@
 import { assert, assertEquals } from "jsr:@std/assert";
-import { createClient } from "npm:@supabase/supabase-js@2";
-import { encrypt, SERVER_AUTH, toBytea } from "../functions/_shared/crypto.ts";
+import { encrypt, toBytea } from "../functions/_shared/crypto.ts";
 import { embed, embedStats, toPgVector } from "../functions/_shared/embeddings.ts";
-const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, SERVER_AUTH);
-const USER = Deno.env.get("POC_USER_ID")!;
+import { RUN, service as sb, testUser } from "./_testenv.ts";
+// 전용 테스트 사용자만 쓴다(실측 사용자 데이터 보호)
+const USER = (await testUser()).id;
 type Hit = { item_id: string; chunk_id: string; score: number; sem_sim: number | null; kw_score: number | null };
 
 // 스펙 §16: 임베딩은 합성 문구에만 호출한다
@@ -19,7 +19,7 @@ Deno.test("embed returns 512-dim unit vectors in input order and counts tokens (
 
 async function seed(text: string, embedding: number[] | null) {
   const { data: itemId, error } = await sb.rpc("insert_item", { p_user: USER, p_source: "SHARE",
-    p_idempotency_key: "search-test:" + crypto.randomUUID(), p_sender: null, p_title: "합성",
+    p_idempotency_key: `${RUN}:search:${crypto.randomUUID()}`, p_sender: null, p_title: "합성",
     p_content_enc: toBytea(await encrypt(USER, text)), p_occurred_at: new Date().toISOString(), p_enqueue: false });
   assertEquals(error, null);
   const c = await sb.from("item_chunks").insert({ item_id: itemId, user_id: USER, chunk_index: 0, text,

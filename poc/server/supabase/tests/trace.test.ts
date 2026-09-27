@@ -1,6 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { SERVER_AUTH } from "../functions/_shared/crypto.ts";
+import { RUN, service, testUser } from "./_testenv.ts";
 import { handleTrace, isTracePath, MAX_TRACES, type TraceDeps, type TraceRow } from "../functions/ingest/trace.ts";
 
 // ── 순수: 허용·거부 경로 ────────────────────────────────────────────
@@ -93,28 +94,22 @@ Deno.test("bad batches → 400: not an array, empty, over the limit, bad event n
 // ── DB: RLS (호스팅, db push 후) ──────────────────────────────────
 
 const URL_ = Deno.env.get("SUPABASE_URL")!;
-const service = createClient(URL_, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, SERVER_AUTH);
 
 Deno.test("RLS: a user inserts and reads only own poc_traces rows; anon can do neither", async () => {
   const user = createClient(URL_, Deno.env.get("SUPABASE_ANON_KEY")!, SERVER_AUTH);
-  const { error: se } = await user.auth.signInWithPassword({ email: "poc-user@example.com", password: Deno.env.get("POC_USER_PASSWORD")! });
+  const [t1, t2] = [await testUser(1), await testUser(2)];            // 전용 테스트 사용자 두 명(실측 사용자 미사용)
+  const { error: se } = await user.auth.signInWithPassword({ email: t1.email, password: t1.password });
   assertEquals(se, null);
-  const me = Deno.env.get("POC_USER_ID")!;
-  const dev = "test-" + crypto.randomUUID();
+  const me = t1.id;
+  const dev = `${RUN}:${crypto.randomUUID()}`;
   const own = await user.from("poc_traces").insert({ user_id: me, device_id: dev, event: "poc0.test", fields: { n: 1 }, at: new Date().toISOString() });
   assertEquals(own.error, null);
-  const other = await user.from("poc_traces").insert({ user_id: crypto.randomUUID(), device_id: dev, event: "poc0.test", fields: {}, at: new Date().toISOString() });
+  const other = await user.from("poc_traces").insert({ user_id: t2.id, device_id: dev, event: "poc0.test", fields: {}, at: new Date().toISOString() });
   assertEquals(other.error?.code, "42501");                            // RLS 위반
+  // 다른 사용자 행(service로 삽입)은 보이지 않는다
+  await service.from("poc_traces").insert({ user_id: t2.id, device_id: dev, event: "poc0.test", fields: {}, at: new Date().toISOString() });
   const { data: seen } = await user.from("poc_traces").select("user_id, event").eq("device_id", dev);
   assertEquals(seen, [{ user_id: me, event: "poc0.test" }]);
-  // 다른 사용자 행(service로 삽입)은 보이지 않는다
-  const { data: authUsers } = await service.auth.admin.listUsers();
-  const someoneElse = authUsers.users.find((u) => u.id !== me);
-  if (someoneElse) {
-    await service.from("poc_traces").insert({ user_id: someoneElse.id, device_id: dev, event: "poc0.test", fields: {}, at: new Date().toISOString() });
-    const { data: again } = await user.from("poc_traces").select("user_id").eq("device_id", dev);
-    assert(again!.every((r) => r.user_id === me));
-  }
   const anon = createClient(URL_, Deno.env.get("SUPABASE_ANON_KEY")!, SERVER_AUTH);
   const anonIns = await anon.from("poc_traces").insert({ user_id: me, device_id: dev, event: "poc0.test", fields: {}, at: new Date().toISOString() });
   assert(anonIns.error !== null);

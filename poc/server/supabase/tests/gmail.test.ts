@@ -1,8 +1,6 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 import { stub } from "jsr:@std/testing/mock";
-import { createClient } from "npm:@supabase/supabase-js@2";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type KeyLike, SignJWT } from "npm:jose@5";
-import { SERVER_AUTH } from "../functions/_shared/crypto.ts";
 import {
   collectNewMessageIds, type GmailApi, type GmailClient, GmailHttpError, type GmailMessage, gmailToItem, plainText, ReauthRequired,
   refreshAccessToken,
@@ -11,6 +9,7 @@ import { gmailFetch, type GmailJobDeps, gmailSync, gmailWatch, type RpcClient } 
 import { type ConnectDeps, handleConnect } from "../functions/gmail-connect/handler.ts";
 import { handleWebhook, verifyPubSubToken } from "../functions/gmail-webhook/handler.ts";
 import type { Job } from "../functions/_shared/job.ts";
+import { RUN, service as sb, testUser } from "./_testenv.ts";
 
 const b64 = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
@@ -353,37 +352,36 @@ Deno.test("gmail-webhook: 401 on failed verification; otherwise enqueue by email
 });
 
 // ── DB (호스팅, db push 후. 워커 cron 정지 상태에서) ─────────────────
+// 전용 테스트 사용자(_testenv)만 쓰고 자기가 만든 연결·잡만 지운다. 실측 연결(POC_USER_ID)은 건드리지 않는다
 
-const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, SERVER_AUTH);
-const POC_USER = Deno.env.get("POC_USER_ID")!;
-
-Deno.test("daily watch cron enqueues one gmail-watch per active connection only", async () => {
-  await sb.from("jobs").delete().eq("kind", "gmail-watch");
+Deno.test("daily watch cron enqueues one gmail-watch per active connection only (scoped to the test user)", async () => {
+  const me = (await testUser()).id;
   const { data: conns } = await sb.from("connections").insert([
-    { user_id: POC_USER, provider: "gmail", account_ref: `a-${crypto.randomUUID()}@example.com`, status: "active" },
-    { user_id: POC_USER, provider: "gmail", account_ref: `r-${crypto.randomUUID()}@example.com`, status: "reauth_required" },
+    { user_id: me, provider: "gmail", account_ref: `${RUN}-a-${crypto.randomUUID()}@example.com`, status: "active" },
+    { user_id: me, provider: "gmail", account_ref: `${RUN}-r-${crypto.randomUUID()}@example.com`, status: "reauth_required" },
   ]).select("id, status");
-  const { count: active } = await sb.from("connections").select("*", { count: "exact", head: true }).eq("status", "active");
-  const first = await sb.rpc("gmail_enqueue_all", { p_kind: "gmail-watch" });
-  const second = await sb.rpc("gmail_enqueue_all", { p_kind: "gmail-watch" });   // 대기 중이면 중복 적재 안 함
+  const { count: active } = await sb.from("connections").select("*", { count: "exact", head: true }).eq("user_id", me).eq("status", "active");
+  const first = await sb.rpc("gmail_enqueue_all", { p_kind: "gmail-watch", p_user: me });
+  const second = await sb.rpc("gmail_enqueue_all", { p_kind: "gmail-watch", p_user: me });   // 대기 중이면 중복 적재 안 함
   assertEquals(first.data, active);
   assertEquals(second.data, 0);
   const reauth = conns!.find((c) => c.status === "reauth_required")!;
   const { count } = await sb.from("jobs").select("*", { count: "exact", head: true }).eq("lease_key", "gmail:" + reauth.id);
   assertEquals(count, 0);
   assert(active! >= 1);
-  await sb.from("jobs").delete().eq("kind", "gmail-watch");
+  await sb.from("jobs").delete().in("lease_key", conns!.map((c) => "gmail:" + c.id));
   await sb.from("connections").delete().in("id", conns!.map((c) => c.id));
 });
 
 Deno.test("gmail_reauth_due lists expiring (<24h) and invalid_grant connections only", async () => {
+  const me = (await testUser()).id;
   const inHours = (h: number) => new Date(Date.now() + h * 3600_000).toISOString();
   const { data: conns } = await sb.from("connections").insert([
-    { user_id: POC_USER, provider: "gmail", account_ref: `soon-${crypto.randomUUID()}@example.com`, status: "active", expires_at: inHours(3) },
-    { user_id: POC_USER, provider: "gmail", account_ref: `later-${crypto.randomUUID()}@example.com`, status: "active", expires_at: inHours(72) },
-    { user_id: POC_USER, provider: "gmail", account_ref: `bad-${crypto.randomUUID()}@example.com`, status: "reauth_required", expires_at: inHours(72) },
+    { user_id: me, provider: "gmail", account_ref: `${RUN}-soon-${crypto.randomUUID()}@example.com`, status: "active", expires_at: inHours(3) },
+    { user_id: me, provider: "gmail", account_ref: `${RUN}-later-${crypto.randomUUID()}@example.com`, status: "active", expires_at: inHours(72) },
+    { user_id: me, provider: "gmail", account_ref: `${RUN}-bad-${crypto.randomUUID()}@example.com`, status: "reauth_required", expires_at: inHours(72) },
   ]).select("id, account_ref");
-  const { data } = await sb.rpc("gmail_reauth_due");
+  const { data } = await sb.rpc("gmail_reauth_due");                 // 읽기만(전역). 판정은 테스트 연결만 본다
   const due = new Map((data as { connection_id: string; reason: string }[]).map((r) => [r.connection_id, r.reason]));
   const [soon, later, bad] = conns!;
   assertEquals(due.get(soon.id), "expiring");
@@ -393,16 +391,17 @@ Deno.test("gmail_reauth_due lists expiring (<24h) and invalid_grant connections 
 });
 
 Deno.test("gmail_save_connection keeps the refresh token in vault, readable only for the owner; webhook enqueue dedups", async () => {
-  const account = `v-${crypto.randomUUID()}@example.com`;
+  const me = (await testUser()).id;
+  const account = `${RUN}-v-${crypto.randomUUID()}@example.com`;
   const rt = "synthetic-refresh-" + crypto.randomUUID();
-  const { data: id, error } = await sb.rpc("gmail_save_connection", { p_user: POC_USER, p_account_ref: account, p_refresh_token: rt, p_history_id: "100" });
+  const { data: id, error } = await sb.rpc("gmail_save_connection", { p_user: me, p_account_ref: account, p_refresh_token: rt, p_history_id: "100" });
   assertEquals(error, null);
-  assertEquals((await sb.rpc("gmail_get_refresh_token", { p_user: POC_USER, p_connection: id })).data, rt);
+  assertEquals((await sb.rpc("gmail_get_refresh_token", { p_user: me, p_connection: id })).data, rt);
   assertEquals((await sb.rpc("gmail_get_refresh_token", { p_user: crypto.randomUUID(), p_connection: id })).data, null);
   // 재연결에서 Google이 refresh token을 주지 않으면(null) 기존 값 유지, 커서만 갱신
-  await sb.rpc("gmail_save_connection", { p_user: POC_USER, p_account_ref: account, p_refresh_token: null, p_history_id: "200" });
-  assertEquals((await sb.rpc("gmail_get_refresh_token", { p_user: POC_USER, p_connection: id })).data, rt);
-  assertEquals((await sb.rpc("gmail_state", { p_user: POC_USER, p_connection: id })).data[0].cursor, "200");
+  await sb.rpc("gmail_save_connection", { p_user: me, p_account_ref: account, p_refresh_token: null, p_history_id: "200" });
+  assertEquals((await sb.rpc("gmail_get_refresh_token", { p_user: me, p_connection: id })).data, rt);
+  assertEquals((await sb.rpc("gmail_state", { p_user: me, p_connection: id })).data[0].cursor, "200");
   const { data: conn } = await sb.from("connections").select("expires_at").eq("id", id).single();
   assert(Date.parse(conn!.expires_at) > Date.now() + 6.9 * 86400_000);         // 테스트 모드 refresh token 7일
   // 다른 사용자가 같은 계정을 연결하면 거부
@@ -411,7 +410,7 @@ Deno.test("gmail_save_connection keeps the refresh token in vault, readable only
   // 웹훅 적재: 처음 1건, 대기 중이면 null, 모르는 계정 null
   const a = await sb.rpc("gmail_enqueue_for_account", { p_account_ref: account });
   const b = await sb.rpc("gmail_enqueue_for_account", { p_account_ref: account });
-  const c = await sb.rpc("gmail_enqueue_for_account", { p_account_ref: "nobody@example.com" });
+  const c = await sb.rpc("gmail_enqueue_for_account", { p_account_ref: `${RUN}-nobody@example.com` });
   assertEquals(typeof a.data, "string");
   assertEquals([b.data, c.data], [null, null]);
   await sb.from("jobs").delete().eq("lease_key", "gmail:" + id);

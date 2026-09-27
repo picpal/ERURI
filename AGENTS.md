@@ -98,4 +98,5 @@ herdr agent prompt codex-reviewer "Read .context/codex-review-N.prompt.md and fo
 - 대시보드 SQL 편집기나 로그로 `items.content_enc`를 복호화해 보지 않는다. 디버깅은 `item_id`·상태·오류 코드로만.
 - 테스트 데이터는 합성 문구를 쓴다. 실제 메일·문자 원문을 픽스처에 넣지 않는다.
 - `.env`, `.context/`, `poc/ios/.sim-udid`, `poc/server/eval/images/`는 커밋하지 않는다.
+- 호스팅 DB 테스트는 자기가 만든 행만 지운다: 전용 테스트 사용자(`poc-test-<n>@example.com`, `tests/_testenv.ts`)와 실행 태그(`lease_key`·`idempotency_key`·`device_id` 접두 `test:<run>`)로 식별하고, `truncate`·조건 없는 `delete` 금지. 실측 데이터(`POC_USER_ID`의 items·jobs·connections)는 테스트가 만들거나 지우지 않는다. 전역 함수는 범위 인자(`claim_jobs(p_lease_prefix)`, `gmail_enqueue_all(p_user)`)로 좁힌다.
 - 비밀값은 `.env`와 `supabase secrets`에만. 코드·프롬프트 파일·커밋 메시지에 넣지 않는다.
