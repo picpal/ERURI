@@ -41,4 +41,4 @@ if ! xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist scrip
   echo "EXPORT/UPLOAD FAILED (build/export.log)"; exit 1
 fi
 grep -E "Upload succeeded|Uploaded|EXPORT SUCCEEDED" build/export.log | sort -u
-echo "uploaded build=$BUILD version=0.1.0 — App Store Connect 에서 Processing 후 TestFlight 에 나타난다"
+echo "uploaded build=$BUILD version=$(grep MARKETING_VERSION project.yml | awk "{print \$2}") — App Store Connect 에서 Processing 후 TestFlight 에 나타난다"

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UserNotifications
 import EventKit
 import EruriCore
@@ -13,7 +14,10 @@ struct ContentView: View {
   @State private var gmailResult: String = ""
   @State private var gmailBusy = false
   @State private var traceStatus = ""
-  @State private var tracePassword = ""
+  @State private var accountEmail = ""
+  @State private var accountPassword = ""
+  @State private var accountStatus = ""
+  @State private var diagCopied = false
   @State private var pushStatus = ""
 
   var body: some View {
@@ -37,22 +41,33 @@ struct ContentView: View {
           Button("재동의 연결 (disconnect 후)") { connectGmail(forceConsent: true) }.disabled(gmailBusy)
             .accessibilityIdentifier("gmailReconsent")
           if !gmailResult.isEmpty {
-            Text(gmailResult).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("gmailResult")
+            Text(gmailResult).font(.caption).foregroundStyle(gmailResult.hasPrefix("Gmail 연결 실패") ? .red : .secondary)
+              .accessibilityIdentifier("gmailResult")
           }
         }
-        // PoC 추적 이벤트 → ingest/trace. 업로드 토글은 두지 않는다(PoC 빌드 전용). 실기기는 여기서 한 번 로그인한다
-        Section("추적 (PoC)") {
+        // PoC 계정(Supabase 사용자). 큐 업로드·trace·기기 등록·Gmail 연결이 이 세션을 쓴다. 이메일·비밀번호는 Keychain(이 기기 전용)
+        Section("PoC 계정") {
+          Text(accountStatus).font(.caption).foregroundStyle(accountStatus.hasPrefix("로그인 실패") ? .red : .secondary).accessibilityIdentifier("accountStatus")
           Text(traceStatus).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("traceStatus")
-          SecureField("PoC 사용자 비밀번호", text: $tracePassword).textContentType(.password).accessibilityIdentifier("tracePassword")
-          Button("로그인") { traceLogin() }.disabled(tracePassword.isEmpty).accessibilityIdentifier("traceLogin")
+          TextField("이메일", text: $accountEmail)
+            .keyboardType(.emailAddress).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
+            .accessibilityIdentifier("accountEmail")
+          SecureField("비밀번호", text: $accountPassword).textContentType(.password).accessibilityIdentifier("tracePassword")
+          Button("로그인") { accountLogin() }.disabled(accountEmail.isEmpty || accountPassword.isEmpty)
+            .accessibilityIdentifier("traceLogin")
+          Button("로그아웃 (저장된 계정 삭제)", role: .destructive) { accountLogout() }
         }
-                // 업로드 서버 주소. App Group 에 저장돼 홈 화면에서 다시 열어도 유지된다.
+        // 업로드 서버 주소. App Group 에 저장돼 홈 화면에서 다시 열어도 유지된다. 비워 두면 빌드 기본값(Release: Supabase)
         Section("업로드 서버") {
-          TextField("http://<MAC_IP>:<PORT>", text: $ingestURL)
+          TextField("https://<host>/functions/v1 또는 http://<MAC_IP>:<PORT>", text: $ingestURL)
             .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
             .accessibilityIdentifier("ingestURLField")
           Button("저장") { saveIngestURL() }.accessibilityIdentifier("ingestURLSave")
+          Button("기본값으로 (\(IngestSettings.fallback.host() ?? "-"))") { resetIngestURL() }.accessibilityIdentifier("ingestURLReset")
           Text("현재: \(ingestCurrent)").font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("ingestURLCurrent")
+        }
+        Section("진단") {
+          Button(diagCopied ? "복사됨" : "진단 정보 복사") { copyDiagnostics() }.accessibilityIdentifier("copyDiagnostics")
         }
         Section("큐 (\(items.count)건)") {
           if items.isEmpty {
@@ -120,6 +135,44 @@ struct ContentView: View {
       traceStatus = "device \(Trace.deviceID.prefix(8)) · build \(Trace.build) · 대기 \(pending)건 · 세션 \(session ? "있음" : "없음")"
     }
     if ingestURL.isEmpty { ingestURL = ingestCurrent }
+    let stored = Keychain.get(.email)
+    accountStatus = stored.map { "저장된 계정: \(Self.maskEmail($0))" } ?? "저장된 계정 없음"
+    if accountEmail.isEmpty { accountEmail = stored ?? "" }
+  }
+
+  private static func maskEmail(_ s: String) -> String {
+    guard let at = s.firstIndex(of: "@") else { return "***" }
+    return String(s[..<at].prefix(2)) + "***" + String(s[at...])
+  }
+
+  private func resetIngestURL() {
+    IngestSettings.reset()
+    PoCLog.append("ingest url reset \(Uploader.base.absoluteString)")
+    ingestURL = Uploader.base.absoluteString
+    refresh()
+    Uploader.shared.flush()
+  }
+
+  /// 붙여넣기용 진단 정보. 비밀번호·토큰·본문·메일 주소 없음(오류 줄은 코드·상태만 남도록 로그가 이미 설계돼 있다).
+  private func copyDiagnostics() {
+    Task {
+      let session = await SupabaseSession.shared.hasSession
+      let sessionErr = await SupabaseSession.shared.lastError ?? "-"
+      let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
+      let errors = PoCLog.tail(lines: 200).filter { $0.range(of: "fail|error|실패|skipped|missing|rejected", options: .regularExpression) != nil }
+        .suffix(3)
+      let lines = [
+        "ERURI PoC \(version) (\(Trace.build)) · iOS \(UIDevice.current.systemVersion)",
+        "upload=\(Uploader.base.host() ?? "-") · session=\(session ? "yes" : "no") · account=\(Keychain.get(.email) == nil ? "no" : "yes")",
+        "gmail_last_error=\(GmailConnect.lastError ?? "-") · session_last_error=\(sessionErr)",
+        "push=\(pushStatus)",
+        "--- 최근 오류 ---",
+      ] + errors
+      UIPasteboard.general.string = lines.joined(separator: "\n")
+      diagCopied = true
+      try? await Task.sleep(for: .seconds(2))
+      diagCopied = false
+    }
   }
 
   private func saveIngestURL() {
@@ -133,13 +186,22 @@ struct ContentView: View {
     Uploader.shared.flush()
   }
 
-  private func traceLogin() {
-    let pw = tracePassword
-    tracePassword = ""
+  private func accountLogin() {
+    let email = accountEmail, pw = accountPassword
+    accountPassword = ""
     Task {
-      let ok = await SupabaseSession.shared.login(password: pw)
-      PoCLog.append("trace login \(ok ? "ok" : "failed")")
+      let ok = await SupabaseSession.shared.login(email: email, password: pw)
+      PoCLog.append("account login \(ok ? "ok" : "failed \(await SupabaseSession.shared.lastError ?? "-")")")
       if ok { Uploader.shared.flush(); await DeviceRegistrar.shared.register() }
+      refresh()
+      if !ok { accountStatus = "로그인 실패: \(await SupabaseSession.shared.lastError ?? "-")" }
+    }
+  }
+
+  private func accountLogout() {
+    Task {
+      await SupabaseSession.shared.logout()
+      accountEmail = ""
       refresh()
     }
   }

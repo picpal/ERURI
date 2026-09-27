@@ -112,4 +112,14 @@ final class IngestSettingsTests: XCTestCase {
     XCTAssertTrue(IngestSettings.set("  http://192.168.0.5:9000  ", defaults: d))
     XCTAssertEqual(IngestSettings.url(defaults: d).absoluteString, "http://192.168.0.5:9000")
   }
+  // Release 빌드는 Info.plist 기본값(Supabase functions/v1)을 쓰고, 초기화하면 저장값 대신 기본값으로 돌아간다
+  func testBuildFallbackAndReset() {
+    let d = makeDefaults(), release = URL(string: "https://example.supabase.co/functions/v1")!
+    XCTAssertEqual(IngestSettings.url(defaults: d, fallback: release), release)
+    XCTAssertTrue(IngestSettings.set("http://localhost:8787", defaults: d))
+    XCTAssertEqual(IngestSettings.url(defaults: d, fallback: release).absoluteString, "http://localhost:8787")
+    IngestSettings.reset(defaults: d)
+    XCTAssertEqual(IngestSettings.url(defaults: d, fallback: release), release)
+    XCTAssertEqual(IngestSettings.fallback.absoluteString, "http://localhost:8787")   // 테스트 호스트는 Debug 구성
+  }
 }

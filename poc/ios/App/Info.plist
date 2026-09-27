@@ -38,6 +38,7 @@
   </array>
   <key>PocSupabaseHost</key><string>$(POC_SUPABASE_HOST)</string>
   <key>PocSupabaseAnonKey</key><string>$(POC_SUPABASE_ANON_KEY)</string>
+  <key>PocIngestDefaultURL</key><string>$(POC_INGEST_DEFAULT_URL)</string>
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsLocalNetworking</key><true/>

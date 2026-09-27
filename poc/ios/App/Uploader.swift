@@ -1,4 +1,5 @@
 import Foundation
+import os
 import EruriCore
 
 /// 가변 상태가 없어 컴파일러 검사로 Sendable 이다(`@unchecked` 불필요). 세션 delegate 는 별도 객체로 분리했다.
@@ -16,17 +17,37 @@ final class Uploader: Sendable {
 
   /// claim 이 lease 를 걸어 가져가므로 init·scenePhase 의 연속 flush 나 다른 프로세스가 같은 항목을 두 번 올리지 않는다.
   /// lease 만료 전 완료·실패 콜백이 markSent/markFailed 로 상태를 덮어쓴다.
+  /// 업로드 서버가 Supabase(Release 기본값)면 `ingest` 가 사용자 JWT·apikey 를 요구한다. 로컬 mock 은 헤더 없이 받는다.
   func flush() {
     Task { await TraceUploader.shared.flush() }
-    guard let q = try? CaptureQueue.shared(), let items = try? q.claim(limit: 20) else { return }
     let base = Self.base
+    if let cfg = SupabaseSession.config, base.host() == cfg.url.host() {
+      Task {
+        guard let token = await SupabaseSession.shared.accessToken() else { Self.warnNoSession(); return }
+        self.send(base: base, headers: ["Authorization": "Bearer \(token)", "apikey": cfg.anonKey])
+      }
+    } else {
+      send(base: base, headers: [:])
+    }
+  }
+
+  private static let warned = OSAllocatedUnfairLock(initialState: false)
+  private static func warnNoSession() {
+    guard !warned.withLock({ let w = $0; $0 = true; return w }) else { return }
+    PoCLog.append("flush skipped: no session (설정 화면 PoC 계정 로그인 필요)")
+  }
+
+  private func send(base: URL, headers: [String: String]) {
+    guard let q = try? CaptureQueue.shared(), let items = try? q.claim(limit: 20) else { return }
     if !items.isEmpty { PoCLog.append("flush claimed \(items.count) to=\(base.host() ?? "-"):\(base.port ?? 0)") }
     for it in items {
       if let rel = it.localFile, let container = try? AppGroup.containerURL() {
         var r = URLRequest(url: base.appendingPathComponent("upload/\(it.id)")); r.httpMethod = "PUT"
+        headers.forEach { r.setValue($1, forHTTPHeaderField: $0) }
         let t = session.uploadTask(with: r, fromFile: container.appendingPathComponent(rel)); t.taskDescription = it.id; t.resume()
       } else {
         var r = URLRequest(url: base.appendingPathComponent("ingest")); r.httpMethod = "POST"
+        headers.forEach { r.setValue($1, forHTTPHeaderField: $0) }
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         guard let body = try? JSONEncoder().encode(it) else { continue }
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(it.id + ".json")
