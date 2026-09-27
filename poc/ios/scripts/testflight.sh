@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BUILD=${1:-$(date +%Y%m%d%H%M)}
-ARCHIVE=build/AssistantPoC.xcarchive
+ARCHIVE=build/EruriPoC.xcarchive
 AUTH=()
 KEY=""
 [ "${TF_AUTH:-}" = key ] && KEY=$(ls keys/AuthKey_*.p8 2>/dev/null | head -1 || true)
@@ -27,7 +27,7 @@ rm -rf "$ARCHIVE" build/export
 mkdir -p build
 
 echo "archive build=$BUILD"
-if ! xcodebuild -project AssistantPoC.xcodeproj -scheme AssistantPoC -configuration Release \
+if ! xcodebuild -project EruriPoC.xcodeproj -scheme EruriPoC -configuration Release \
      -destination 'generic/platform=iOS' -archivePath "$ARCHIVE" -derivedDataPath build/archive-dd \
      -allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} CURRENT_PROJECT_VERSION="$BUILD" archive > build/archive.log 2>&1; then
   grep -E "error:|No Accounts|No profiles|requires a provisioning" build/archive.log | sort -u | head -20

@@ -1,7 +1,7 @@
 import Foundation
 import Security
 import UIKit
-import AssistantCore
+import EruriCore
 
 /// PoC 사용자(`poc-user@example.com`) Supabase 세션. trace 업로드(`ingest/trace`)에 사용자 JWT 가 필요하다.
 /// 첫 로그인: 시뮬레이터는 launch argument `--poc-user-password=`(sim.sh gmail), 실기기(TestFlight)는 디버그 화면의 비밀번호 칸.

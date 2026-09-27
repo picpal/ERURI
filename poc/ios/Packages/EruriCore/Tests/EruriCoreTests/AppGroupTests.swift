@@ -1,5 +1,5 @@
 import XCTest
-@testable import AssistantCore
+@testable import EruriCore
 final class AppGroupTests: XCTestCase {
   func testContainerExists() throws {
     let url = try AppGroup.containerURL()

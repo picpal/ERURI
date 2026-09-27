@@ -1,5 +1,5 @@
 import XCTest
-@testable import AssistantCore
+@testable import EruriCore
 
 final class TraceTests: XCTestCase {
   func tempQueue() throws -> CaptureQueue {

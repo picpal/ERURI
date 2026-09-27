@@ -1,5 +1,5 @@
 import Contacts
-import AssistantCore
+import EruriCore
 
 /// 연락처 이름을 읽어 App Group 캐시(`ContactNames`)에 저장한다. 앱 실행·포그라운드 복귀 때 호출.
 /// 권한이 없으면 빈 집합을 저장해 연락처 규칙 없이 동작하고, 상태만 로그에 남긴다(이름은 남기지 않음).

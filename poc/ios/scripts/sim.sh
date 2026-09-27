@@ -18,11 +18,11 @@ case "${1:-}" in
     } > Config/Secrets.xcconfig
     echo "wrote Config/Secrets.xcconfig" ;;
   gen)   [ -f Config/Secrets.xcconfig ] || "$0" config; xcodegen generate ;;
-  build) xcodebuild -project AssistantPoC.xcodeproj -scheme AssistantPoC -destination "$DEST" -derivedDataPath build build 2>&1 | tail -20 ;;
-  test)  xcodebuild -project AssistantPoC.xcodeproj -scheme AssistantPoC -destination "$DEST" -derivedDataPath build test ${2:+-only-testing:"$2"} 2>&1 | grep -E "Test Case|passed|failed|error:" ;;
-  uitest) xcodebuild -project AssistantPoC.xcodeproj -scheme AssistantPoCUI -destination "$DEST" -derivedDataPath build test ${2:+-only-testing:"$2"} 2>&1 | grep -E "Test Case|passed|failed|error:|POC_UI" ;;
+  build) xcodebuild -project EruriPoC.xcodeproj -scheme EruriPoC -destination "$DEST" -derivedDataPath build build 2>&1 | tail -20 ;;
+  test)  xcodebuild -project EruriPoC.xcodeproj -scheme EruriPoC -destination "$DEST" -derivedDataPath build test ${2:+-only-testing:"$2"} 2>&1 | grep -E "Test Case|passed|failed|error:" ;;
+  uitest) xcodebuild -project EruriPoC.xcodeproj -scheme EruriPoCUI -destination "$DEST" -derivedDataPath build test ${2:+-only-testing:"$2"} 2>&1 | grep -E "Test Case|passed|failed|error:|POC_UI" ;;
   log)   cat "$(xcrun simctl get_app_container "$UDID" com.picpal.assistant.poc group.com.picpal.assistant)/poc.log" | tail -${2:-40} ;;
-  install) xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/AssistantPoC.app ;;
+  install) xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/EruriPoC.app ;;
   launch) xcrun simctl launch "$UDID" com.picpal.assistant.poc "${@:2}" ;;
   # PoC-6: 비밀번호는 앱 코드에 넣지 않고 launch argument 로만 넘긴다. 출력하지 않는다
   gmail) PW=$(grep '^POC_USER_PASSWORD=' ../server/.env | cut -d= -f2-)

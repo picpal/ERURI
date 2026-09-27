@@ -1,5 +1,5 @@
 import XCTest
-@testable import AssistantCore
+@testable import EruriCore
 final class FMClassifierTests: XCTestCase {
   struct Row: Decodable { let app: String; let title: String?; let text: String; let expected: String }
 

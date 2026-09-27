@@ -1,5 +1,5 @@
 import XCTest
-@testable import AssistantCore
+@testable import EruriCore
 final class CapturePipelineTests: XCTestCase {
   func testNoticeQueued() throws {
     let q = try CaptureQueue(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))

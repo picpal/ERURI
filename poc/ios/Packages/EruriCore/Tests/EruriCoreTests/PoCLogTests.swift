@@ -1,5 +1,5 @@
 import XCTest
-@testable import AssistantCore
+@testable import EruriCore
 final class PoCLogTests: XCTestCase {
   // 재실측 중 발견: 동시 액션 두 건의 로그 한 줄이 사라졌다(seek→write 경쟁). O_APPEND 는 줄을 잃지 않아야 한다.
   func testConcurrentAppendsKeepEveryLine() throws {

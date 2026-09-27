@@ -1,5 +1,5 @@
 import XCTest
-@testable import AssistantCore
+@testable import EruriCore
 final class RuleFilterTests: XCTestCase {
   let f = RuleFilter(contactNames: ["김민수"])
   func testOTPDiscarded() {

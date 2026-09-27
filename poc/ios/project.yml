@@ -1,4 +1,4 @@
-name: AssistantPoC
+name: EruriPoC
 options:
   bundleIdPrefix: com.picpal.assistant
   deploymentTarget:
@@ -13,18 +13,18 @@ settings:
     MARKETING_VERSION: 0.1.0
     CURRENT_PROJECT_VERSION: "1"
 packages:
-  AssistantCore:
-    path: Packages/AssistantCore
+  EruriCore:
+    path: Packages/EruriCore
   GoogleSignIn:
     url: https://github.com/google/GoogleSignIn-iOS
     majorVersion: 8.0.0
 targets:
-  AssistantPoC:
+  EruriPoC:
     type: application
     platform: iOS
     sources: [App]
     dependencies:
-      - package: AssistantCore
+      - package: EruriCore
       - package: GoogleSignIn
         product: GoogleSignIn
       - target: ShareExtension
@@ -49,7 +49,7 @@ targets:
     platform: iOS
     sources: [ShareExtension]
     dependencies:
-      - package: AssistantCore
+      - package: EruriCore
     attributes:
       SystemCapabilities:
         com.apple.ApplicationGroups.iOS: { enabled: 1 }
@@ -59,37 +59,37 @@ targets:
         CODE_SIGN_ENTITLEMENTS: ShareExtension/ShareExtension.entitlements
         INFOPLIST_FILE: ShareExtension/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
-  AssistantCoreTests:
+  EruriCoreTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [Packages/AssistantCore/Tests/AssistantCoreTests]
+    sources: [Packages/EruriCore/Tests/EruriCoreTests]
     dependencies:
-      - package: AssistantCore
-      - target: AssistantPoC
+      - package: EruriCore
+      - target: EruriPoC
     settings:
       base:
-        TEST_HOST: $(BUILT_PRODUCTS_DIR)/AssistantPoC.app/AssistantPoC
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/EruriPoC.app/EruriPoC
         BUNDLE_LOADER: $(TEST_HOST)
         GENERATE_INFOPLIST_FILE: YES
   # 시뮬레이터 재실측용: 알림 권한 대화상자·배너 액션·단축어 앱·사진 공유 시트를 springboard 로 조작한다
-  AssistantPoCUITests:
+  EruriPoCUITests:
     type: bundle.ui-testing
     platform: iOS
     sources: [UITests]
     dependencies:
-      - target: AssistantPoC
+      - target: EruriPoC
     settings:
       base:
-        TEST_TARGET_NAME: AssistantPoC
+        TEST_TARGET_NAME: EruriPoC
         GENERATE_INFOPLIST_FILE: YES
 schemes:
-  AssistantPoC:
+  EruriPoC:
     build:
-      targets: { AssistantPoC: all, ShareExtension: all, AssistantCoreTests: [test] }
+      targets: { EruriPoC: all, ShareExtension: all, EruriCoreTests: [test] }
     test:
-      targets: [AssistantCoreTests]
-  AssistantPoCUI:
+      targets: [EruriCoreTests]
+  EruriPoCUI:
     build:
-      targets: { AssistantPoC: all, ShareExtension: all, AssistantPoCUITests: [test] }
+      targets: { EruriPoC: all, ShareExtension: all, EruriPoCUITests: [test] }
     test:
-      targets: [AssistantPoCUITests]
+      targets: [EruriPoCUITests]

@@ -1,5 +1,5 @@
 import XCTest
-@testable import AssistantCore
+@testable import EruriCore
 final class ExecutionsTests: XCTestCase {
   func make() throws -> Executions { try Executions(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)) }
   func testRecordThenExisting() throws {

@@ -1,7 +1,7 @@
 import UserNotifications
 import EventKit
 import UIKit
-import AssistantCore
+import EruriCore
 
 enum NotificationActions {
   static let category = "ADD_EVENT"

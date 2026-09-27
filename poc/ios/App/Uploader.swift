@@ -1,5 +1,5 @@
 import Foundation
-import AssistantCore
+import EruriCore
 
 /// 가변 상태가 없어 컴파일러 검사로 Sendable 이다(`@unchecked` 불필요). 세션 delegate 는 별도 객체로 분리했다.
 final class Uploader: Sendable {

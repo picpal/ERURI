@@ -1,6 +1,6 @@
 import AppIntents
 import UIKit
-import AssistantCore
+import EruriCore
 
 struct CaptureIntent: AppIntent {
   static let title: LocalizedStringResource = "비서에 저장"

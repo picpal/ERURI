@@ -1,6 +1,6 @@
 import UIKit
 import UniformTypeIdentifiers
-import AssistantCore
+import EruriCore
 
 final class ShareViewController: UIViewController {
   override func viewDidLoad() {

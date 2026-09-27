@@ -132,9 +132,9 @@ final class SimRemeasureUITests: XCTestCase {
     share.tap()
     sleep(2)
     shot("share-sheet")
-    // 공유 시트 앱 행: identifier 'shareCell', 표시 이름 "Assistant PoC"
-    let ext = photos.cells.matching(NSPredicate(format: "identifier == 'shareCell' AND label == 'Assistant PoC'")).firstMatch
-    XCTAssertTrue(ext.waitForExistence(timeout: 5), "공유 시트에 Assistant PoC 확장이 없음")
+    // 공유 시트 앱 행: identifier 'shareCell', 표시 이름 "ERURI PoC"
+    let ext = photos.cells.matching(NSPredicate(format: "identifier == 'shareCell' AND label == 'ERURI PoC'")).firstMatch
+    XCTAssertTrue(ext.waitForExistence(timeout: 5), "공유 시트에 ERURI PoC 확장이 없음")
     ext.tap()
     sleep(8)
     shot("after-share")
@@ -159,7 +159,7 @@ final class SimRemeasureUITests: XCTestCase {
     app.terminate()
     // 홈 화면 아이콘으로 다시 연다(Xcode·launchEnvironment 없이)
     XCUIDevice.shared.press(.home)
-    let icon = springboard.icons["Assistant PoC"]
+    let icon = springboard.icons["ERURI PoC"]
     XCTAssertTrue(icon.waitForExistence(timeout: 10), "홈 화면 아이콘 없음")
     for _ in 0..<6 where !icon.isHittable { springboard.swipeLeft(); sleep(1) }   // 앱 아이콘이 뒤쪽 홈 페이지에 있을 수 있다
     shot("home-icon")

@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 import GoogleSignIn
-import AssistantCore
+import EruriCore
 
 /// PoC-6: Google 로그인 → serverAuthCode → `POST /functions/v1/gmail-connect`.
 /// 계약은 docs/superpowers/poc/poc-6-gmail.md. 앱에는 공개 가능 값(클라이언트 ID·Supabase 호스트·publishable 키)만 있고,

@@ -1,11 +1,11 @@
 import SwiftUI
 import UserNotifications
 import EventKit
-import AssistantCore
+import EruriCore
 import GoogleSignIn
 
 @main
-struct AssistantPoCApp: App {
+struct EruriPoCApp: App {
   private static let notificationDelegate = NotificationDelegate()
   @Environment(\.scenePhase) private var scenePhase
 
@@ -97,7 +97,7 @@ struct AssistantPoCApp: App {
     }
 
     // 시뮬레이터에 공유 시트를 탭할 자동화 도구가 없어, ShareViewController 가 하는 것과
-    // 동일한 AssistantCore 호출(OCR -> 규칙 필터 -> 통과 시 파일 영속화 -> CaptureQueue.enqueue)을 launch argument 로 직접
+    // 동일한 EruriCore 호출(OCR -> 규칙 필터 -> 통과 시 파일 영속화 -> CaptureQueue.enqueue)을 launch argument 로 직접
     // 재현하는 훅. `--poc-debug-share-image=<host absolute path>`.
     let shareImagePrefix = "--poc-debug-share-image="
     if let arg = CommandLine.arguments.first(where: { $0.hasPrefix(shareImagePrefix) }) {

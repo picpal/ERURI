@@ -1,7 +1,7 @@
 import SwiftUI
 import UserNotifications
 import EventKit
-import AssistantCore
+import EruriCore
 
 struct ContentView: View {
   @State private var items: [CaptureItem] = []
@@ -74,7 +74,7 @@ struct ContentView: View {
           ForEach(bfuLines, id: \.self) { line in Text(line).font(.system(.caption, design: .monospaced)) }
         }
       }
-      .navigationTitle("Assistant PoC")
+      .navigationTitle("ERURI PoC")
       .toolbar {
         ToolbarItem(placement: .navigationBarTrailing) {
           Button("새로고침") { refresh() }
