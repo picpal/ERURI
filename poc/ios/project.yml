@@ -12,6 +12,9 @@ settings:
 packages:
   AssistantCore:
     path: Packages/AssistantCore
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    majorVersion: 8.0.0
 targets:
   AssistantPoC:
     type: application
@@ -19,7 +22,13 @@ targets:
     sources: [App]
     dependencies:
       - package: AssistantCore
+      - package: GoogleSignIn
+        product: GoogleSignIn
       - target: ShareExtension
+    # PoC-6: GID_* ·POC_SUPABASE_* (sim.sh config 가 poc/server/.env 에서 생성, gitignore)
+    configFiles:
+      Debug: Config/Secrets.xcconfig
+      Release: Config/Secrets.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.picpal.assistant.poc

@@ -23,6 +23,18 @@
   <array>
     <string>remote-notification</string>
   </array>
+  <!-- PoC-6 Google Sign-In: 값은 Config/Secrets.xcconfig (sim.sh config) -->
+  <key>GIDClientID</key><string>$(GID_CLIENT_ID)</string>
+  <key>GIDServerClientID</key><string>$(GID_SERVER_CLIENT_ID)</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLSchemes</key>
+      <array><string>$(GID_REVERSED_CLIENT_ID)</string></array>
+    </dict>
+  </array>
+  <key>PocSupabaseHost</key><string>$(POC_SUPABASE_HOST)</string>
+  <key>PocSupabaseAnonKey</key><string>$(POC_SUPABASE_ANON_KEY)</string>
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsLocalNetworking</key><true/>

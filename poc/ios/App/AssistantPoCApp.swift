@@ -2,6 +2,7 @@ import SwiftUI
 import UserNotifications
 import EventKit
 import AssistantCore
+import GoogleSignIn
 
 @main
 struct AssistantPoCApp: App {
@@ -113,6 +114,7 @@ struct AssistantPoCApp: App {
   var body: some Scene {
     WindowGroup {
       ContentView()
+        .onOpenURL { url in _ = GIDSignIn.sharedInstance.handle(url) }   // PoC-6 Google 로그인 리디렉션
     }
     .onChange(of: scenePhase) { _, newPhase in
       if newPhase == .active { ContactsLoader.refresh(); Uploader.shared.flush() }

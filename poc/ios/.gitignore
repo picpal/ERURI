@@ -1,0 +1,2 @@
+# sim.sh config 가 poc/server/.env 에서 만든다. 공개 가능 값(클라이언트 ID·publishable 키)이지만 저장소에는 두지 않는다
+Config/Secrets.xcconfig

@@ -94,11 +94,51 @@ content-type: application/json
 
 서버는 교환(Web 클라이언트, `redirect_uri=""`) → 토큰 응답 `scope`에 `gmail.readonly` 확인 → `profile` → 저장(refresh token은 vault, 커서 = profile `historyId`) → `watch`(프로모션 라벨 제외) → 90일 백필(`newer_than:90d -category:promotions`) `gmail-fetch` 잡 → `gmail-sync` 잡 순으로 처리한다. 백필 본문은 워커가 분당 약 250통으로 가져온다.
 
+## iOS 연결 절차 (실제, 2026-09-27)
+
+앱 쪽은 `poc/ios/App/GoogleSignIn.swift`(`GmailConnect.run`)와 디버그 화면의 "Gmail (PoC-6)" 섹션.
+
+```bash
+cd poc/ios
+./scripts/sim.sh config      # poc/server/.env → Config/Secrets.xcconfig (gitignore). 클라이언트 ID 2개·Supabase 호스트·publishable 키만
+./scripts/sim.sh gen && ./scripts/sim.sh build && ./scripts/sim.sh install
+./scripts/sim.sh gmail --poc-gmail-connect           # 비밀번호는 launch argument 로만. 앱이 바로 흐름을 시작한다
+./scripts/sim.sh gmail --poc-gmail-connect=consent   # disconnect 후 동의 화면을 다시 거친다(refresh token 재발급)
+./scripts/sim.sh log 10
+```
+
+1. 앱이 Supabase 비밀번호 로그인을 먼저 한다(Google 시트에서 사람이 시간을 쓰므로). 시트가 1시간 넘게 떠 있으면 토큰이 만료돼 첫 `gmail-connect`가 401 → 앱이 재로그인 후 같은 코드로 한 번 재시도한다(게이트웨이 401이라 코드는 소비되지 않음, 실측 확인).
+2. "계속" → Google 로그인 → **세분화된 동의 화면에서 "Gmail 읽기" 체크박스를 켠다.** 빼면 교환은 성공하지만 서버의 `profile`이 403 → 코드만 소비된다(첫 시도에서 500으로 실측, 서버 `87673fe`에서 오류 매핑 수정). 앱은 `grantedScopes`에 `gmail.readonly`가 없으면 코드를 보내지 않고 `scope_not_granted`를 남긴다 → "재동의 연결".
+3. `poc.log`에 `gmail connect 200 … refresh_token_stored=true watch_expires_at=… backfill_messages=…`(계정은 앞 2글자만). 재연결은 같은 `connection_id`를 갱신한다(중복 행 없음).
+
+확인 쿼리(`poc/server`에서 `deno run --allow-net --allow-env --allow-read --env-file=.env scripts/sql.ts "<sql>"`, 토큰·본문 조회 금지):
+
+```sql
+select id, status, expires_at, (select count(*) from vault.secrets v where v.name = 'gmail_rt:' || c.id) rt from connections c;
+select connection_id, last_success_at, watch_expires_at from sync_states;
+select kind, status, created_at, updated_at, checkpoint from jobs where kind like 'gmail%' order by created_at;
+select count(*), count(*) filter (where content_enc is null) from items where source = 'GMAIL';
+select jobname, status, start_time from cron.job_run_details join cron.job using (jobid) order by start_time desc limit 5;  -- 워커 cron
+select created, status_code, left(content::text, 200) from net._http_response order by created desc limit 5;             -- 워커 응답(claimed 수)
+```
+
+## 실측 결과 (2026-09-27)
+
+| 항목 | 결과 |
+|---|---|
+| 연결 | 200, `refresh_token_stored=true`, `watch_expires_at` = 연결 +7일, `connections` active·`expires_at` +7일·vault 토큰 1개, `sync_states` 1행 |
+| 백필 | 90일 85 ID(1페이지) → `items` 76행, `gmail-fetch` 1잡 03:01:50→03:02:57(67초), 429 없음, `content_enc` null 0 |
+| 웹훅 지연(1회) | `[PoC-6]` 메일 Gmail 수신 03:06:50Z → `gmail-sync` 잡 생성 03:06:57.8Z, **약 8초**. Push 구독·OIDC 검증 동작 |
+| 큐 대기 | 백필이 만든 `process` 잡 76건(워커 분당 5건)이 FIFO로 앞서 sync가 **11분** 대기(03:18 실행). 증분 동기화 지연 목표를 지키려면 잡 우선순위 또는 kind별 레인이 필요 |
+| 유실과 복구 | 03:18 sync가 커서를 옮긴 직후 호스팅 DB에서 테스트(`tests/jobs.test.ts`가 `jobs` 전체 삭제)가 돌아 fetch 잡이 사라진 것으로 보임 → 메일 누락. `cursor='1'` → `gmail_enqueue_for_account` → `resync`(4 ID) → 새 행 1(`[PoC-6]` 제목), GMAIL 77행·`idempotency_key` 중복 0 |
+
+교훈: 호스팅 DB에서 `jobs`를 지우는 테스트는 실측 중에 돌리지 않는다(또는 테스트가 자기 행만 지우게 한다). 웹훅 지연 5회 평균은 이 조건에서 다시 잰다.
+
 ## 실계정 절차 초안 (iOS 연동 후)
 
 GoogleSignIn은 시뮬레이터에서도 동작하므로(웹 인증 세션) 연결·동기화 실측은 **시뮬레이터로 가능**하다. 푸시(Pub/Sub → webhook)는 서버 경로라 기기와 무관하다.
 
-1. 구독 생성·`PUBSUB_PUSH_SA_EMAIL` 등록(위). 앱에서 Supabase 로그인 → Google 로그인 → `gmail-connect` 200. 응답의 `watch_expires_at`이 약 7일 뒤인지, `refresh_token_stored: true`인지 기록.
+1. ~~구독 생성·`PUBSUB_PUSH_SA_EMAIL` 등록~~(09-27 완료, 웹훅 동작 확인). 앱 연결은 위 "iOS 연결 절차"(09-27 완료). 응답의 `watch_expires_at`이 약 7일 뒤인지, `refresh_token_stored: true`인지 기록.
 2. 백필: `backfill_messages`와 완료 시각(`select count(*), max(captured_at) from items where source='GMAIL'`), `gmail-fetch` 잡 상태(`select status, count(*) from jobs where kind='gmail-fetch' group by 1`), 429 여부(`last_error`). 본문 암호화 확인: `select count(*) filter (where content_enc is null) from items where source='GMAIL'` = 0 (복호화해 보지 않는다).
 3. 본인에게 합성 메일 5통 → 발송 시각과 `jobs(kind='gmail-sync').created_at` 차이(웹훅 지연), 그 뒤 `items` 생성까지(워커 cron 1분 주기 포함).
 4. 404 재동기화: `update sync_states set cursor = '1' where connection_id = '<id>'` → 다음 sync에서 `mode: "resync"`(잡 `checkpoint = 'resync'`), 누락 0(직전 24시간 Gmail 메시지 ID와 `items.idempotency_key = 'gmail:<id>'` 비교).

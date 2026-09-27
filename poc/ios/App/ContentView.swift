@@ -10,6 +10,8 @@ struct ContentView: View {
   @State private var lastResult: String = ""
   @State private var ingestURL: String = ""
   @State private var ingestCurrent: String = ""
+  @State private var gmailResult: String = ""
+  @State private var gmailBusy = false
 
   var body: some View {
     NavigationStack {
@@ -20,6 +22,15 @@ struct ContentView: View {
           Button("업로드 flush") { Uploader.shared.flush(); refresh() }
           Button("10초 뒤 ADD_EVENT 로컬 알림") { NotificationActions.scheduleLocal(proposalId: "p-local-1", after: 10) }
           if !lastResult.isEmpty { Text("결과: \(lastResult)").font(.caption).foregroundStyle(.secondary) }
+        }
+        // PoC-6: Google 로그인 → serverAuthCode → gmail-connect. 비밀번호는 `sim.sh gmail` 이 launch argument 로 넘긴다
+        Section("Gmail (PoC-6)") {
+          Button("Gmail 연결") { connectGmail(forceConsent: false) }.disabled(gmailBusy).accessibilityIdentifier("gmailConnect")
+          Button("재동의 연결 (disconnect 후)") { connectGmail(forceConsent: true) }.disabled(gmailBusy)
+            .accessibilityIdentifier("gmailReconsent")
+          if !gmailResult.isEmpty {
+            Text(gmailResult).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("gmailResult")
+          }
         }
         // 업로드 서버 주소. App Group 에 저장돼 홈 화면에서 다시 열어도 유지된다.
         Section("업로드 서버") {
@@ -61,7 +72,13 @@ struct ContentView: View {
           Button("새로고침") { refresh() }
         }
       }
-      .onAppear { refresh() }
+      .onAppear {
+        refresh()
+        // `sim.sh gmail --poc-gmail-connect[=consent]`: 버튼 탭 없이 같은 흐름을 시작한다(Google 시트의 로그인·동의는 사람이 한다)
+        if let arg = CommandLine.arguments.first(where: { $0.hasPrefix("--poc-gmail-connect") }), !gmailBusy, gmailResult.isEmpty {
+          connectGmail(forceConsent: arg.hasSuffix("=consent"))
+        }
+      }
     }
   }
 
@@ -92,6 +109,16 @@ struct ContentView: View {
     }
     refresh()
     Uploader.shared.flush()
+  }
+
+  private func connectGmail(forceConsent: Bool) {
+    gmailBusy = true
+    gmailResult = "진행 중…"
+    Task {
+      gmailResult = await GmailConnect.run(forceConsent: forceConsent)
+      gmailBusy = false
+      refresh()
+    }
   }
 
   private func runDebugCapture() {
