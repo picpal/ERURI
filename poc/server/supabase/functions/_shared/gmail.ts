@@ -4,13 +4,18 @@ import { applyRules } from "./rules.ts";
 const G = "https://gmail.googleapis.com/gmail/v1/users/me";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 export class ReauthRequired extends Error {}
+// Gmail API가 2xx가 아닌 상태를 돌려줌. 메시지는 "<호출> <상태>"만(토큰·본문 없음)
+export class GmailHttpError extends Error {
+  constructor(readonly call: string, readonly status: number) { super(`${call} ${status}`); this.name = "GmailHttpError"; }
+}
+export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 
 // OAuth 코드 교환·갱신은 Web 클라이언트(시크릿 보유)로 한다. iOS는 serverClientID = Web 클라이언트 ID로 serverAuthCode를 받는다
 function webClient() {
   return { client_id: Deno.env.get("GOOGLE_WEB_CLIENT_ID") ?? "", client_secret: Deno.env.get("GOOGLE_CLIENT_SECRET") ?? "" };
 }
 
-export type TokenResponse = { access_token: string; refresh_token?: string; expires_in: number };
+export type TokenResponse = { access_token: string; refresh_token?: string; expires_in: number; scope?: string };
 export async function exchangeCode(code: string): Promise<TokenResponse> {
   const r = await fetch(TOKEN_URL, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ code, ...webClient(), grant_type: "authorization_code", redirect_uri: "" }) });
@@ -19,6 +24,13 @@ export async function exchangeCode(code: string): Promise<TokenResponse> {
     throw new Error("token exchange " + r.status + " " + (j.error ?? ""));
   }
   return await r.json() as TokenResponse;
+}
+// 토큰(보통 refresh token) 폐기. 같은 동의(grant)의 토큰이 모두 무효가 되고 다음 로그인에서 동의 화면이 다시 뜬다
+export async function revokeToken(token: string): Promise<void> {
+  const r = await fetch("https://oauth2.googleapis.com/revoke", { method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token }) });
+  await r.body?.cancel();
+  if (!r.ok) throw new Error("revoke " + r.status);
 }
 export async function refreshAccessToken(refreshToken: string): Promise<string> {
   const r = await fetch(TOKEN_URL, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -34,19 +46,19 @@ export async function watch(accessToken: string, topic: string) {
   const r = await fetch(`${G}/watch`, { method: "POST",
     headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
     body: JSON.stringify({ topicName: topic, labelFilterBehavior: "EXCLUDE", labelIds: ["CATEGORY_PROMOTIONS"] }) });
-  if (!r.ok) throw new Error("watch " + r.status);
+  if (!r.ok) { await r.body?.cancel(); throw new GmailHttpError("watch", r.status); }
   return await r.json() as { historyId: string; expiration: string };   // expiration: epoch ms 문자열, 약 7일 뒤
 }
 export async function profile(accessToken: string) {
   const r = await fetch(`${G}/profile`, { headers: { authorization: `Bearer ${accessToken}` } });
-  if (!r.ok) throw new Error("profile " + r.status);
+  if (!r.ok) { await r.body?.cancel(); throw new GmailHttpError("profile", r.status); }
   return await r.json() as { emailAddress: string; historyId: string };
 }
 export async function listMessageIds(accessToken: string, q: string, pageToken?: string) {
   const u = new URL(`${G}/messages`); u.searchParams.set("q", q); u.searchParams.set("maxResults", "100");
   if (pageToken) u.searchParams.set("pageToken", pageToken);
   const r = await fetch(u, { headers: { authorization: `Bearer ${accessToken}` } });
-  if (!r.ok) throw new Error("messages.list " + r.status);
+  if (!r.ok) { await r.body?.cancel(); throw new GmailHttpError("messages.list", r.status); }
   return await r.json() as { messages?: { id: string }[]; nextPageToken?: string };
 }
 type HistoryPage = { history?: { messagesAdded?: { message: { id: string } }[] }[]; nextPageToken?: string; historyId: string };
@@ -55,14 +67,14 @@ export async function history(accessToken: string, startHistoryId: string, pageT
   if (pageToken) u.searchParams.set("pageToken", pageToken);
   const r = await fetch(u, { headers: { authorization: `Bearer ${accessToken}` } });
   if (r.status === 404) { await r.body?.cancel(); return { notFound: true }; }
-  if (!r.ok) throw new Error("history " + r.status);
+  if (!r.ok) { await r.body?.cancel(); throw new GmailHttpError("history", r.status); }
   return await r.json() as HistoryPage;
 }
 type Part = { mimeType?: string; filename?: string; headers?: { name: string; value: string }[]; body?: { data?: string; attachmentId?: string }; parts?: Part[] };
 export type GmailMessage = { id: string; internalDate: string; labelIds?: string[]; payload?: Part };
 export async function getMessage(accessToken: string, id: string) {
   const r = await fetch(`${G}/messages/${encodeURIComponent(id)}?format=full`, { headers: { authorization: `Bearer ${accessToken}` } });
-  if (!r.ok) throw new Error("messages.get " + r.status);
+  if (!r.ok) { await r.body?.cancel(); throw new GmailHttpError("messages.get", r.status); }
   return await r.json() as GmailMessage;
 }
 

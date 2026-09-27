@@ -4,7 +4,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type KeyLike, SignJWT } from "npm:jose@5";
 import { SERVER_AUTH } from "../functions/_shared/crypto.ts";
 import {
-  collectNewMessageIds, type GmailApi, type GmailClient, type GmailMessage, gmailToItem, plainText, ReauthRequired, refreshAccessToken,
+  collectNewMessageIds, type GmailApi, type GmailClient, GmailHttpError, type GmailMessage, gmailToItem, plainText, ReauthRequired,
+  refreshAccessToken,
 } from "../functions/_shared/gmail.ts";
 import { gmailFetch, type GmailJobDeps, gmailSync, gmailWatch, type RpcClient } from "../functions/_shared/gmail-jobs.ts";
 import { type ConnectDeps, handleConnect } from "../functions/gmail-connect/handler.ts";
@@ -182,25 +183,34 @@ Deno.test("gmail-watch: renews watch on the topic and stores the new expiration"
 
 // ── 모의 API: gmail-connect ───────────────────────────────────────
 
-function connectDeps(o: { user?: string | null; refreshToken?: string | null; saveError?: string } = {}) {
+const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+type Stage = "profile" | "watch" | "list";
+function connectDeps(o: { user?: string | null; refreshToken?: string | null; saveError?: string; scope?: string;
+  fail?: { stage: Stage; status: number }; rpcThrows?: boolean } = {}) {
   const calls: string[] = [];
   const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
+  const revoked: string[] = [];
+  const maybeFail = (stage: Stage) => { if (o.fail?.stage === stage) throw new GmailHttpError(stage, o.fail.status); };
   const d: ConnectDeps = {
     authUser: async (t) => (t === "user-jwt" ? (o.user === undefined ? USER : o.user) : null),
-    exchange: async (code) => { calls.push("exchange:" + code); return { access_token: "at", refresh_token: o.refreshToken === undefined ? "rt" : o.refreshToken ?? undefined, expires_in: 3600 }; },
+    exchange: async (code) => { calls.push("exchange:" + code); return { access_token: "at", refresh_token: o.refreshToken === undefined ? "rt" : o.refreshToken ?? undefined,
+      expires_in: 3600, scope: o.scope ?? `openid ${GMAIL_SCOPE} https://www.googleapis.com/auth/userinfo.email` }; },
+    revoke: async (token) => { revoked.push(token); },
     api: () => ({
-      profile: async () => { calls.push("profile"); return { emailAddress: "poc@example.com", historyId: "400" }; },
-      watch: async () => { calls.push("watch"); return { historyId: "500", expiration: "1790600000000" }; },
-      listMessageIds: async (q, p) => { calls.push("list:" + q + ":" + (p ?? "")); return p ? { messages: [{ id: "m3" }] } : { messages: [{ id: "m1" }, { id: "m2" }], nextPageToken: "1" }; },
+      profile: async () => { calls.push("profile"); maybeFail("profile"); return { emailAddress: "poc@example.com", historyId: "400" }; },
+      watch: async () => { calls.push("watch"); maybeFail("watch"); return { historyId: "500", expiration: "1790600000000" }; },
+      listMessageIds: async (q, p) => { calls.push("list:" + q + ":" + (p ?? "")); maybeFail("list");
+        return p ? { messages: [{ id: "m3" }] } : { messages: [{ id: "m1" }, { id: "m2" }], nextPageToken: "1" }; },
     }),
     rpc: { rpc: (fn, args = {}) => {
       rpcCalls.push({ fn, args });
+      if (o.rpcThrows) throw new Error("connection reset rt=secret-refresh-token");
       if (fn === "gmail_save_connection" && o.saveError) return Promise.resolve({ data: null, error: { code: o.saveError } });
       return Promise.resolve({ data: fn === "gmail_save_connection" ? CONN : null, error: null });
     } },
     topic: () => "projects/p/topics/gmail-push",
   };
-  return { d, calls, rpcCalls };
+  return { d, calls, rpcCalls, revoked };
 }
 const connectReq = (body: unknown, token: string | null = "user-jwt") => new Request("http://x/gmail-connect", {
   method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
@@ -218,25 +228,82 @@ Deno.test("gmail-connect: 400 without code", async () => {
   assertEquals((await handleConnect(connectReq({ code: "" }), d)).status, 400);
 });
 
-Deno.test("gmail-connect: exchange → profile → watch → save(vault) → watch expiry → backfill fetch jobs → sync job", async () => {
-  const { d, calls, rpcCalls } = connectDeps();
+Deno.test("gmail-connect: exchange → scope check → profile → save(vault) → watch → watch expiry → backfill fetch jobs → sync job", async () => {
+  const { d, calls, rpcCalls, revoked } = connectDeps();
   const r = await handleConnect(connectReq({ code: "auth-code" }), d);
   assertEquals(r.status, 200);
   assertEquals(await r.json(), { connection_id: CONN, account: "poc@example.com", refresh_token_stored: true,
     watch_expires_at: new Date(1790600000000).toISOString(), backfill_pages: 2, backfill_messages: 3 });
   assertEquals(calls, ["exchange:auth-code", "profile", "watch", "list:newer_than:90d -category:promotions:", "list:newer_than:90d -category:promotions:1"]);
   assertEquals(rpcCalls.map((c) => c.fn), ["gmail_save_connection", "gmail_update", "enqueue_job", "enqueue_job", "gmail_enqueue_for_account"]);
-  assertEquals(rpcCalls[0].args, { p_user: USER, p_account_ref: "poc@example.com", p_refresh_token: "rt", p_history_id: "500" });
+  // watch 전에 저장한다: 커서는 profile의 historyId(watch 이후 도착분도 history가 받는다)
+  assertEquals(rpcCalls[0].args, { p_user: USER, p_account_ref: "poc@example.com", p_refresh_token: "rt", p_history_id: "400" });
   assertEquals(rpcCalls[2].args.p_payload, { connection_id: CONN, ids: ["m1", "m2"] });
+  assertEquals(revoked, []);
 });
 
-Deno.test("gmail-connect: no refresh token from Google is reported; account linked to another user → 409", async () => {
+Deno.test("gmail-connect: no refresh token from Google is reported; account linked to another user → 409 and the new token is revoked", async () => {
   const noRt = connectDeps({ refreshToken: null });
   const r = await handleConnect(connectReq({ code: "c" }), noRt.d);
   assertEquals((await r.json()).refresh_token_stored, false);
   assertEquals(noRt.rpcCalls[0].args.p_refresh_token, null);
   const taken = connectDeps({ saveError: "P0001" });
-  assertEquals((await handleConnect(connectReq({ code: "c" }), taken.d)).status, 409);
+  const t = await handleConnect(connectReq({ code: "c" }), taken.d);
+  assertEquals([t.status, await t.json()], [409, { error: "account_linked_to_another_user" }]);
+  assertEquals(taken.revoked, ["rt"]);
+});
+
+Deno.test("gmail-connect: gmail.readonly not granted → 403 gmail_scope_missing, refresh token revoked, nothing stored or called", async () => {
+  const c = connectDeps({ scope: "openid https://www.googleapis.com/auth/userinfo.email" });
+  const r = await handleConnect(connectReq({ code: "c" }), c.d);
+  assertEquals([r.status, await r.json()], [403, { error: "gmail_scope_missing" }]);
+  assertEquals(c.revoked, ["rt"]);
+  assertEquals(c.calls, ["exchange:c"]);
+  assertEquals(c.rpcCalls, []);
+  // refresh token을 받지 못했으면 폐기할 것이 없다
+  const noRt = connectDeps({ scope: "openid", refreshToken: null });
+  assertEquals((await handleConnect(connectReq({ code: "c" }), noRt.d)).status, 403);
+  assertEquals(noRt.revoked, []);
+});
+
+Deno.test("gmail-connect: profile fails before save → mapped error, token revoked (not stored)", async () => {
+  for (const [status, http, code] of [[401, 401, "gmail_unauthorized"], [403, 403, "gmail_forbidden"], [429, 429, "gmail_rate_limited"], [503, 502, "gmail_upstream"]] as const) {
+    const c = connectDeps({ fail: { stage: "profile", status } });
+    const r = await handleConnect(connectReq({ code: "c" }), c.d);
+    assertEquals([r.status, await r.json()], [http, { error: code }]);
+    assertEquals(c.rpcCalls, []);
+    assertEquals(c.revoked, ["rt"]);
+  }
+});
+
+Deno.test("gmail-connect: watch/list fail after save → mapped error, token kept; 401/403 mark reauth_required, 429/5xx keep active", async () => {
+  const cases = [["watch", 401, 401, "gmail_unauthorized", "reauth_required"], ["watch", 403, 403, "gmail_forbidden", "reauth_required"],
+                 ["watch", 429, 429, "gmail_rate_limited", null], ["list", 500, 502, "gmail_upstream", null], ["list", 403, 403, "gmail_forbidden", "reauth_required"]] as const;
+  for (const [stage, status, http, code, mark] of cases) {
+    const c = connectDeps({ fail: { stage, status } });
+    const r = await handleConnect(connectReq({ code: "c" }), c.d);
+    assertEquals([r.status, await r.json()], [http, { error: code }], `${stage} ${status}`);
+    assertEquals(c.rpcCalls[0].fn, "gmail_save_connection");
+    assertEquals(c.revoked, []);                                       // 저장된 토큰은 폐기하지 않는다
+    const statusUpdates = c.rpcCalls.filter((x) => x.fn === "gmail_update" && "p_status" in x.args);
+    assertEquals(statusUpdates.map((x) => x.args.p_status), mark ? [mark] : []);
+    if (mark) assertEquals(statusUpdates[0].args.p_connection, CONN);
+  }
+});
+
+Deno.test("gmail-connect: unexpected exception → 500 internal with request_id, log line without tokens", async () => {
+  const lines: string[] = [];
+  using _log = stub(console, "log", (...a: unknown[]) => { lines.push(a.map(String).join(" ")); });
+  const c = connectDeps({ rpcThrows: true });
+  const r = await handleConnect(connectReq({ code: "c" }), c.d);
+  const body = await r.json();
+  assertEquals(r.status, 500);
+  assertEquals(body.error, "internal");
+  assert(/^[0-9a-f-]{36}$/.test(body.request_id));
+  assertEquals(c.revoked, ["rt"]);                                     // 저장 전 실패라 폐기
+  const out = lines.join("\n");
+  assert(out.includes(body.request_id));
+  assert(!out.includes("secret-refresh-token") && !out.includes("rt=") && !out.includes("auth-code"));
 });
 
 // ── 모의: gmail-webhook OIDC ─────────────────────────────────────

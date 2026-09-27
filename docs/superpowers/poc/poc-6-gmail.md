@@ -10,7 +10,7 @@
 | worker 잡 | `gmail-sync`(history → 404면 `last_success_at - 1일`부터 `messages.list(after:)` 재동기화, 잡을 다 넣은 뒤 커서 이동), `gmail-fetch`(50통/잡, 240ms 간격, 서버 규칙 필터 → `encrypt` → `insert_item`), `gmail-watch`(watch 갱신·`watch_expires_at`). lease_key `gmail:<connection_id>`. `invalid_grant`면 `reauth_required`로 바꾸고 잡은 `skipped`로 끝냄 |
 | Edge 함수 | `gmail-connect`(JWT 검증), `gmail-webhook`(`verify_jwt = false`, Google OIDC 검증), `worker` |
 | secrets | `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GMAIL_PUBSUB_TOPIC` 등록. **`PUBSUB_PUSH_SA_EMAIL` 미등록**(없으면 webhook은 모든 요청을 401로 거부) |
-| 테스트 | `tests/gmail.test.ts` 19개(모의 API 16 + DB 3), 전체 66개 통과 |
+| 테스트 | `tests/gmail.test.ts` 23개(모의 API 20 + DB 3), 전체 70개 통과 (2026-09-27 오류 처리 수정 후) |
 
 실측(배포 후):
 
@@ -73,11 +73,26 @@ content-type: application/json
 | 200 | `{"connection_id","account","refresh_token_stored","watch_expires_at","backfill_pages","backfill_messages"}` | 연결 성공. `refresh_token_stored: false`면 Google이 refresh token을 주지 않은 것(이전 동의가 남음) → `GIDSignIn.sharedInstance.disconnect()` 후 다시 로그인해 동의 화면을 거친다. 이 상태로 두면 이후 잡이 `skipped` |
 | 400 | `{"error":"missing_code"}` / `{"error":"bad_json"}` | 요청 형식 |
 | 401 | 빈 본문 또는 `{"code":"UNAUTHORIZED_…"}` | Supabase 세션 없음·만료 → 재로그인 |
+| 403 | `{"error":"gmail_scope_missing"}` | Google 로그인에서 **Gmail 읽기 범위를 체크하지 않음**. 서버가 받은 refresh token을 폐기했으므로 다시 로그인하면 동의 화면이 뜬다 → 범위 체크 안내 후 재시도 |
+| 401 | `{"error":"gmail_unauthorized"}` | Gmail API가 401. 본문이 있다는 점으로 세션 401과 구분한다 → 재로그인(Google) |
+| 403 | `{"error":"gmail_forbidden"}` | Gmail API가 403(범위·계정 정책·API 비활성) → 재로그인(Google)·설정 확인 |
+| 429 | `{"error":"gmail_rate_limited"}` | Gmail 한도 → 잠시 뒤 재시도 |
+| 502 | `{"error":"gmail_upstream"}` | Gmail 5xx 등 → 잠시 뒤 재시도 |
 | 409 | `{"error":"account_linked_to_another_user"}` | 같은 Gmail이 다른 사용자에 연결됨 |
 | 502 | `{"error":"token_exchange_failed"}` | 코드 만료·재사용, 또는 `serverClientID`가 Web 클라이언트가 아님 |
 | 500 | `{"error":"save_failed"}` / `{"error":"enqueue_failed"}` | 서버 오류(재시도 가능) |
+| 500 | `{"error":"internal","request_id":"<uuid>"}` | 처리되지 않은 예외. 로그에 같은 `request_id`로 단계(`stage`)·오류 이름만 남는다 |
 
-서버는 교환(Web 클라이언트, `redirect_uri=""`) → `profile` → `watch`(프로모션 라벨 제외) → 저장 → 90일 백필(`newer_than:90d -category:promotions`) `gmail-fetch` 잡 → `gmail-sync` 잡 순으로 처리한다. 백필 본문은 워커가 분당 약 250통으로 가져온다.
+`gmail_*` 오류와 refresh token 처리(2026-09-27 수정, iOS 실측에서 범위 미체크 코드로 **오류 코드 없는 500 + refresh token 유실** 발견):
+
+| 실패 시점 | refresh token | 연결 상태 |
+|---|---|---|
+| 범위 확인(`gmail_scope_missing`), `profile` 실패, 409, 저장 전 예외 | 받은 것이 있으면 Google `revoke`로 폐기(저장하지 않음) | 만들지 않음 |
+| 저장 뒤 `watch`·백필 목록 실패 | vault에 그대로 둔다 | 401·403 → `reauth_required`(워커 잡 `skipped`), 429·5xx → `active` 유지(일일 `gmail-watch`·6시간 `gmail-sync` cron이 복구) |
+
+재시도는 새 로그인(새 `serverAuthCode`)으로 한다. 재로그인에서 refresh token이 다시 오지 않아도(`refresh_token_stored: false`) vault의 기존 토큰이 유지되고 연결은 `active`로 돌아온다.
+
+서버는 교환(Web 클라이언트, `redirect_uri=""`) → 토큰 응답 `scope`에 `gmail.readonly` 확인 → `profile` → 저장(refresh token은 vault, 커서 = profile `historyId`) → `watch`(프로모션 라벨 제외) → 90일 백필(`newer_than:90d -category:promotions`) `gmail-fetch` 잡 → `gmail-sync` 잡 순으로 처리한다. 백필 본문은 워커가 분당 약 250통으로 가져온다.
 
 ## 실계정 절차 초안 (iOS 연동 후)
 
