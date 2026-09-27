@@ -12,6 +12,8 @@ struct ContentView: View {
   @State private var ingestCurrent: String = ""
   @State private var gmailResult: String = ""
   @State private var gmailBusy = false
+  @State private var traceStatus = ""
+  @State private var tracePassword = ""
 
   var body: some View {
     NavigationStack {
@@ -32,7 +34,13 @@ struct ContentView: View {
             Text(gmailResult).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("gmailResult")
           }
         }
-        // 업로드 서버 주소. App Group 에 저장돼 홈 화면에서 다시 열어도 유지된다.
+        // PoC 추적 이벤트 → ingest/trace. 업로드 토글은 두지 않는다(PoC 빌드 전용). 실기기는 여기서 한 번 로그인한다
+        Section("추적 (PoC)") {
+          Text(traceStatus).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("traceStatus")
+          SecureField("PoC 사용자 비밀번호", text: $tracePassword).textContentType(.password).accessibilityIdentifier("tracePassword")
+          Button("로그인") { traceLogin() }.disabled(tracePassword.isEmpty).accessibilityIdentifier("traceLogin")
+        }
+                // 업로드 서버 주소. App Group 에 저장돼 홈 화면에서 다시 열어도 유지된다.
         Section("업로드 서버") {
           TextField("http://<MAC_IP>:<PORT>", text: $ingestURL)
             .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -97,6 +105,11 @@ struct ContentView: View {
     bfuLines = BFULog.tail(lines: 10)
     logLines = PoCLog.tail(lines: 20)
     ingestCurrent = Uploader.base.absoluteString
+    let pending = (try? CaptureQueue.shared().traceCount()) ?? -1
+    Task {
+      let session = await SupabaseSession.shared.hasSession
+      traceStatus = "device \(Trace.deviceID.prefix(8)) · build \(Trace.build) · 대기 \(pending)건 · 세션 \(session ? "있음" : "없음")"
+    }
     if ingestURL.isEmpty { ingestURL = ingestCurrent }
   }
 
@@ -109,6 +122,17 @@ struct ContentView: View {
     }
     refresh()
     Uploader.shared.flush()
+  }
+
+  private func traceLogin() {
+    let pw = tracePassword
+    tracePassword = ""
+    Task {
+      let ok = await SupabaseSession.shared.login(password: pw)
+      PoCLog.append("trace login \(ok ? "ok" : "failed")")
+      if ok { Uploader.shared.flush() }
+      refresh()
+    }
   }
 
   private func connectGmail(forceConsent: Bool) {

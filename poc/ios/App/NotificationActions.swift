@@ -13,14 +13,21 @@ enum NotificationActions {
   }
 
   static func handleAdd(userInfo: [AnyHashable: Any]) async {
+    let started = Date()
     guard let pid = userInfo["proposal_id"] as? String, let title = userInfo["title"] as? String,
           let startISO = userInfo["start"] as? String, let start = ISO8601DateFormatter().date(from: startISO) else {
       PoCLog.append("ADD invalid payload keys=\(userInfo.keys.map { "\($0)" }.sorted())")
+      Trace.log("poc5.action_handled", ["result": "invalid_payload"])
       return
     }
     let line = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, start: start))
-    let bg = await MainActor.run { UIApplication.shared.applicationState == .background }
-    PoCLog.append("\(line) bg=\(bg) auth=\(EKEventStore.authorizationStatus(for: .event).rawValue)")
+    let (locked, bg) = await AppState.snapshot()
+    let auth = EKEventStore.authorizationStatus(for: .event).rawValue
+    PoCLog.append("\(line) bg=\(bg) auth=\(auth)")
+    // PoC-5 판정 필드: 백그라운드 실행·권한·중복 여부(제안 제목은 보내지 않는다)
+    let result = line.hasPrefix("ADD ok") ? "ok" : line.hasPrefix("ADD dup") ? "dup" : "fail"
+    Trace.log("poc5.action_handled", ["result": result, "dup": result == "dup", "proposal_id": pid, "auth": auth,
+                                      "bg": bg, "locked": locked, "elapsed_ms": Int(Date().timeIntervalSince(started) * 1000)])
   }
 
   /// PoC-5 실측용 로컬 알림(APNs 없이 배너·액션 경로를 탄다)

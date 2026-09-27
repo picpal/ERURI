@@ -32,6 +32,8 @@ public final class CaptureQueue {
     try exec("PRAGMA synchronous=NORMAL")
     try exec("CREATE TABLE IF NOT EXISTS queue(id TEXT PRIMARY KEY, payload BLOB NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL, next_attempt_at REAL NOT NULL DEFAULT 0)")
     try? exec("ALTER TABLE queue ADD COLUMN next_attempt_at REAL NOT NULL DEFAULT 0")   // 이전 스키마 파일 이관
+    // PoC 추적 이벤트(`Trace`)도 같은 큐·재시도 규칙을 쓰되 kind 로 나눠 캡처 업로드와 섞이지 않게 한다
+    try? exec("ALTER TABLE queue ADD COLUMN kind TEXT NOT NULL DEFAULT 'capture'")
     // 잠금 중에도 접근 가능해야 함: 첫 잠금 해제 후 보호 등급 (-wal/-shm 은 컨테이너 기본 등급이 같다)
     try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
   }
@@ -52,7 +54,7 @@ public final class CaptureQueue {
   }
   /// 지금 보낼 수 있는 항목(백오프·lease 가 끝난 것). 조회만 하고 선점하지 않는다.
   public func pending(limit: Int, now: Date = Date()) throws -> [CaptureItem] {
-    try select("SELECT payload, attempts FROM queue WHERE next_attempt_at <= ? ORDER BY created_at, rowid LIMIT ?") { s in
+    try select("SELECT payload, attempts FROM queue WHERE kind = 'capture' AND next_attempt_at <= ? ORDER BY created_at, rowid LIMIT ?") { s in
       sqlite3_bind_double(s, 1, now.timeIntervalSince1970); sqlite3_bind_int(s, 2, Int32(limit))
     }
   }
@@ -60,7 +62,7 @@ public final class CaptureQueue {
   public func claim(limit: Int, now: Date = Date()) throws -> [CaptureItem] {
     let items = try select("""
       UPDATE queue SET next_attempt_at = ?1
-      WHERE id IN (SELECT id FROM queue WHERE next_attempt_at <= ?2 ORDER BY created_at, rowid LIMIT ?3)
+      WHERE id IN (SELECT id FROM queue WHERE kind = 'capture' AND next_attempt_at <= ?2 ORDER BY created_at, rowid LIMIT ?3)
       RETURNING payload, attempts
       """) { s in
       sqlite3_bind_double(s, 1, now.timeIntervalSince1970 + Self.lease)
@@ -77,6 +79,49 @@ public final class CaptureQueue {
       sqlite3_bind_double(s, 1, now.timeIntervalSince1970); sqlite3_bind_text(s, 2, id, -1, Self.transient)
     }
   }
+
+  // MARK: - PoC 추적 이벤트 (kind = 'trace', payload 는 `Trace.payload` 가 만든 JSON 객체)
+
+  public func enqueueTrace(id: String, payload: Data, at: Date) throws {
+    try run("INSERT OR IGNORE INTO queue(id,payload,attempts,created_at,kind) VALUES(?,?,0,?,'trace')") { s in
+      sqlite3_bind_text(s, 1, id, -1, Self.transient)
+      payload.withUnsafeBytes { sqlite3_bind_blob(s, 2, $0.baseAddress, Int32(payload.count), Self.transient) }
+      sqlite3_bind_double(s, 3, at.timeIntervalSince1970)
+    }
+  }
+  /// claim 과 같은 lease 규칙으로 trace 를 가져온다(ingest/trace 한 배치 최대 200건).
+  public func claimTraces(limit: Int, now: Date = Date()) throws -> [(id: String, payload: Data)] {
+    var s: OpaquePointer?
+    let sql = """
+      UPDATE queue SET next_attempt_at = ?1
+      WHERE id IN (SELECT id FROM queue WHERE kind = 'trace' AND next_attempt_at <= ?2 ORDER BY created_at, rowid LIMIT ?3)
+      RETURNING id, payload, created_at
+      """
+    guard sqlite3_prepare_v2(db, sql, -1, &s, nil) == SQLITE_OK, let st = s else { throw Error.sqlite(msg) }
+    defer { sqlite3_finalize(st) }
+    sqlite3_bind_double(st, 1, now.timeIntervalSince1970 + Self.lease)
+    sqlite3_bind_double(st, 2, now.timeIntervalSince1970); sqlite3_bind_int(st, 3, Int32(limit))
+    var out: [(id: String, payload: Data, at: Double)] = []
+    var rc = sqlite3_step(st)
+    while rc == SQLITE_ROW {
+      let id = String(cString: sqlite3_column_text(st, 0))
+      let len = Int(sqlite3_column_bytes(st, 1))
+      let data = sqlite3_column_blob(st, 1).map { Data(bytes: $0, count: len) } ?? Data()
+      out.append((id, data, sqlite3_column_double(st, 2)))
+      rc = sqlite3_step(st)
+    }
+    guard rc == SQLITE_DONE else { throw Error.sqlite(msg) }
+    return out.sorted { $0.at < $1.at }.map { ($0.id, $0.payload) }   // RETURNING 순서는 보장되지 않는다
+  }
+  public func traceCount() throws -> Int {
+    var s: OpaquePointer?
+    guard sqlite3_prepare_v2(db, "SELECT count(*) FROM queue WHERE kind = 'trace'", -1, &s, nil) == SQLITE_OK, let st = s else { throw Error.sqlite(msg) }
+    defer { sqlite3_finalize(st) }
+    guard sqlite3_step(st) == SQLITE_ROW else { throw Error.sqlite(msg) }
+    return Int(sqlite3_column_int(st, 0))
+  }
+  public func markSent(ids: [String]) throws { for id in ids { try markSent(id: id) } }
+  public func markFailed(ids: [String], now: Date = Date()) throws { for id in ids { try markFailed(id: id, now: now) } }
 
   /// 테스트 전용: 디코딩 불가 행(poison row) 재현
   func insertRawForTesting(id: String, payload: Data, createdAt: Double) throws {

@@ -14,6 +14,10 @@ struct AssistantPoCApp: App {
     UNUserNotificationCenter.current().delegate = Self.notificationDelegate
     BFULog.prepare()
     IngestSettings.seed(from: ProcessInfo.processInfo.environment)   // 저장값이 없을 때만 스킴 INGEST_URL 을 초기값으로
+    // 시뮬레이터 실측용: `--poc-ingest-url=<url>` 로 업로드 서버 주소를 바꾼다(설정 화면 저장과 같은 경로)
+    if let v = CommandLine.arguments.first(where: { $0.hasPrefix("--poc-ingest-url=") }) {
+      IngestSettings.set(String(v.dropFirst("--poc-ingest-url=".count)))
+    }
     PoCLog.append("ingest base=\(Uploader.base.absoluteString)")
     Uploader.shared.flush()
 
@@ -71,12 +75,13 @@ struct AssistantPoCApp: App {
         CommandLine.arguments.first(where: { $0.hasPrefix(prefix) }).map { String($0.dropFirst(prefix.count)) }
       }
       let title = value("--poc-debug-title=") ?? "합성병원", sender = value("--poc-debug-sender=")
+      let source = value("--poc-debug-source=") ?? "NOTIFICATION"   // MESSAGES 면 poc2.intent_fired
       Task {
         // 앱 실행 직후라 scenePhase 갱신보다 먼저 돌 수 있어 연락처 캐시를 동기로 한 번 채운다
         await ContactsLoader.refreshNow()
         let intent = CaptureIntent()
         intent.text = "[합성] 9월 25일 15:00 진료 예약이 확정되었습니다"
-        intent.appName = app; intent.title = title; intent.sender = sender; intent.source = "NOTIFICATION"
+        intent.appName = app; intent.title = title; intent.sender = sender; intent.source = source
         do { _ = try await intent.perform() } catch { PoCLog.append("DebugCaptureIntent error:\(type(of: error))") }
       }
     }

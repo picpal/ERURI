@@ -18,6 +18,12 @@ final class ShareViewController: UIViewController {
     }
     for item in items {
       for p in item.attachments ?? [] {
+        let started = Date()
+        // PoC-8 판정 필드: 확장이 받은 형식·결과·OCR/본문 길이. 확장에서는 UIApplication 을 쓸 수 없어 locked·bg 는 넣지 않는다
+        func trace(_ type: String, _ result: String, _ extra: [String: Any] = [:]) {
+          Trace.log("poc8.share_received", ["source": "SHARE", "type": type, "result": result,
+                                            "elapsed_ms": Int(Date().timeIntervalSince(started) * 1000)].merging(extra) { a, _ in a })
+        }
         do {
           if p.hasItemConformingToTypeIdentifier(UTType.image.identifier) || p.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
             let isPDF = p.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
@@ -30,15 +36,21 @@ final class ShareViewController: UIViewController {
               return try ShareInbox.persist(tmp, id: id, ext: isPDF ? "pdf" : "jpg")
             }
             PoCLog.append("ShareExtension file \(result) id=\(savedId) type=\(isPDF ? "pdf" : "image") ocrLen=\(ocr.count)")
+            trace(isPDF ? "pdf" : "image", result, ["ocr_len": ocr.count, "item_id": savedId])
           } else if p.hasItemConformingToTypeIdentifier(UTType.url.identifier),
                     let url = try await p.loadItem(forTypeIdentifier: UTType.url.identifier) as? URL {
-            PoCLog.append("ShareExtension url \(try pipeline.handleShare(text: url.absoluteString))")
+            let result = try pipeline.handleShare(text: url.absoluteString)
+            PoCLog.append("ShareExtension url \(result)")
+            trace("url", result, ["text_len": url.absoluteString.count])
           } else if p.hasItemConformingToTypeIdentifier(UTType.plainText.identifier),
                     let s = try await p.loadItem(forTypeIdentifier: UTType.plainText.identifier) as? String {
-            PoCLog.append("ShareExtension text \(try pipeline.handleShare(text: s))")
+            let result = try pipeline.handleShare(text: s)
+            PoCLog.append("ShareExtension text \(result)")
+            trace("text", result, ["text_len": s.count, "text_sha8": Trace.sha8(s)])
           }
         } catch {
           PoCLog.append("ShareExtension error \(type(of: error))")
+          trace("-", "error:\(type(of: error))")
         }
       }
     }

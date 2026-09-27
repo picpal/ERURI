@@ -56,14 +56,20 @@ final class FMClassifierTests: XCTestCase {
   }
 
   func testBenchmark() async throws {
-    try XCTSkipUnless(FMClassifier.availability() == "available", "FM unavailable: \(FMClassifier.availability())")
+    if FMClassifier.availability() != "available" {
+      Trace.log("poc3.bench_done", ["skipped": "unavailable", "availability": FMClassifier.availability()])
+      throw XCTSkip("FM unavailable: \(FMClassifier.availability())")
+    }
     let url = Bundle(for: Self.self).url(forResource: "notifications", withExtension: "json")!
     let rows = try JSONDecoder().decode([Row].self, from: Data(contentsOf: url))
     let c = FMClassifier()
     // 시뮬레이터에서는 availability()가 "available"이어도 모델 에셋이 없어 respond()가 실패한다.
     // 200건을 돌리기 전에 한 번 찔러보고, 에러면 에러 종류를 사유로 스킵한다.
     let probe = await c.classifyDetailed(text: "사전 점검용 텍스트입니다", appName: nil, timeout: .seconds(30))
-    if case .error(let code) = probe { throw XCTSkip("availability()==available 이지만 생성 실패: \(code)") }
+    if case .error(let code) = probe {
+      Trace.log("poc3.bench_done", ["skipped": "probe_error", "error": "\(code)", "availability": FMClassifier.availability()])
+      throw XCTSkip("availability()==available 이지만 생성 실패: \(code)")
+    }
     var personalPassed = 0, noticeDropped = 0, personalTotal = 0, noticeTotal = 0, errors = 0, timeouts = 0
     var medicalDropped = 0, medicalTotal = 0   // 검진 결과 준비 안내: 폐기(≠notice)가 정답. 두 비율과 분리해 센다
     var personalByApp: [String: (pass: Int, total: Int)] = [:]
@@ -90,6 +96,11 @@ final class FMClassifierTests: XCTestCase {
     let report = "p95=\(p95)s personalPass=\(personalPassed)/\(personalTotal) noticeDrop=\(noticeDropped)/\(noticeTotal) medicalDrop=\(medicalDropped)/\(medicalTotal) errors=\(errors) timeouts=\(timeouts) personalPassByApp=\(byApp)"
     print("FM_BENCH", report)
     try report.write(to: AppGroup.containerURL().appendingPathComponent("fm_bench.txt"), atomically: true, encoding: .utf8)
+    // PoC-3 판정값을 서버로(앱이 다음 flush 에 올린다). 단언보다 먼저 남겨 실패한 벤치도 기록되게 한다
+    Trace.log("poc3.bench_done", ["p95_s": p95, "personal_pass": personalPassed, "personal_total": personalTotal,
+                                  "notice_drop": noticeDropped, "notice_total": noticeTotal, "medical_drop": medicalDropped,
+                                  "medical_total": medicalTotal, "errors": errors, "timeouts": timeouts, "n": latencies.count,
+                                  "availability": FMClassifier.availability()])
     XCTAssertLessThan(p95, 3.0)
     XCTAssertLessThanOrEqual(Double(personalPassed) / Double(personalTotal), 0.02)
     XCTAssertLessThanOrEqual(Double(noticeDropped) / Double(noticeTotal), 0.15)

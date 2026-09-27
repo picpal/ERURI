@@ -17,19 +17,30 @@ struct CaptureIntent: AppIntent {
 
   func perform() async throws -> some IntentResult & ProvidesDialog {
     let started = Date()
-    let locked = await MainActor.run { UIApplication.shared.isProtectedDataAvailable == false }
+    let (locked, bg) = await AppState.snapshot()
     // PoC-1/2 판정용 필드 메타. 값은 남기지 않고 존재·길이만 남긴다(AGENTS §7)
     let meta = "src=\(source) app=\(appName ?? "nil") titleLen=\(title?.count ?? -1) textLen=\(text.count) sender=\(sender == nil ? "nil" : "set") locked=\(locked)"
     BFULog.append("CaptureIntent start textLen=\(text.count) locked=\(locked)")
     do {
       let result = try await runPipeline()
       PoCLog.append("CaptureIntent \(result) \(Int(Date().timeIntervalSince(started) * 1000))ms \(meta)")
+      trace(result: result, started: started, locked: locked, bg: bg)
       return .result(dialog: "\(result)")
     } catch {
       PoCLog.append("CaptureIntent error \(type(of: error)) \(meta)")
       BFULog.append("CaptureIntent error \(type(of: error)) textLen=\(text.count)")
+      trace(result: "error:\(type(of: error))", started: started, locked: locked, bg: bg)
       throw error
     }
+  }
+
+  /// PoC-1(알림)/PoC-2(메시지) 판정 필드: 앱명·제목·본문·발신자가 도착했는지와 길이만. 원문은 보내지 않는다
+  private func trace(result: String, started: Date, locked: Bool, bg: Bool) {
+    Trace.log(source == "MESSAGES" ? "poc2.intent_fired" : "poc1.intent_fired", [
+      "source": source, "app": appName ?? "", "app_set": appName != nil, "title_len": title?.count ?? -1,
+      "text_len": text.count, "text_sha8": Trace.sha8(text), "sender_set": sender != nil, "sender_len": sender?.count ?? -1,
+      "result": result, "elapsed_ms": Int(Date().timeIntervalSince(started) * 1000), "locked": locked, "bg": bg,
+    ])
   }
 
   /// 반환: "queued:<fm|rules>" 또는 "discarded:<reason>"
