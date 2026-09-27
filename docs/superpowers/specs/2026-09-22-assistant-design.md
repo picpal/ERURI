@@ -41,7 +41,7 @@ Outlook, Android, Mac 허브, 카카오톡 개인 대화 수집, App Store 공�
 | 진입점 | 채팅, Share, 푸시, Siri 질문, 액션버튼/컨트롤센터 빠른 기억 | 사용자 확정 |
 | 비용 | 월 1만원. 기기 Foundation Models → OpenAI `gpt-6-luna` 분류·추출 → `gpt-6-sol` 채팅 | 사용자 확정. 벤더는 2026-09-26 Anthropic+Voyage → OpenAI 단일로 교체(사용자 결정) |
 | AI 벤더 | OpenAI 단일. 키 `OPENAI_API_KEY` 하나. Responses API(`/v1/responses`) + Structured Outputs(`text.format` json_schema, `strict: true`), 모든 호출 `store: false` | 키·약관·청구 한 곳. §3 검증 표 |
-| 임베딩 | OpenAI `text-embedding-3-small`, `dimensions: 512` | Supabase 내장 gte-small은 영어 전용. `vector(512)` 스키마 유지, HNSW 2000차원 한도 안 |
+| 임베딩 | OpenAI `text-embedding-3-large`, `dimensions: 512` (2026-09-27 결정) | Supabase 내장 gte-small은 영어 전용. PoC-7 합성 평가 하이브리드 Top-5가 large 38/40 vs small 31~33/40이고, 1인 사용량에서 가격 차이(1M 토큰당 $0.13 vs $0.02)는 월 수십 원 수준. `vector(512)` 스키마 유지, HNSW 2000차원 한도 안 |
 
 ## 3. 공식 문서 검증 결과 (2026-09-22)
 
@@ -309,7 +309,9 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
         추출 파이프라인(§7)을 다시 거친다
 ```
 
-- 한국어 키워드는 PostgreSQL `simple` 설정으로는 형태소가 안 잘리므로 pg_trgm 유사도를 함께 쓴다.
+- 임베딩은 `text-embedding-3-large`(`dimensions: 512`)로 한다(§2, PoC-7).
+- 한국어 키워드는 PostgreSQL `simple` 설정으로는 형태소가 안 잘린다. `plainto_tsquery`의 전체 어절 AND와 문서 전체 trigram 유사도는 PoC-7에서 Top-5 2/40이었다. 그래서 질문 어절(질문어 제외)을 끝 1~2글자를 뗀 형태까지 부분 문자열로 맞추고, 어절별 IDF 합으로 순위를 매겨 RRF에 합친다(`hybrid_search` 0009, 키워드 전용 32~34/40).
+- 무근거 거절과 인용은 **답변 단계**에서 판정한다. 검색 점수 임계로는 거절이 최대 7/10이고 정답 오거절이 함께 났다(PoC-7). 답변 모델은 `{answer, source_item_ids[], refused}`를 출력한다. 서버는 인용 id를 이번 검색 결과와 대조하고, 없는 id를 지운 뒤 근거가 0개면 거절로 강제한다. 합성 평가 결과: 무근거 거절 10/10, 답한 36/36이 정답 문서 인용, 환각 id 0.
 - 검색 품질 평가는 **1단계 완료 기준**에 포함한다(§15). 지표: 정답 포함(Top-5 ≥ 90%, 질문 50개), 무근거 질문 거절률, 취소·정정 반영, 인용 정확도, 날짜 필터 오판.
 - 수집된 메일·웹·알림 안의 지시문은 데이터로만 취급한다. 검색 결과는 `<document>` 블록으로 감싸 user 턴에 넣고 시스템 프롬프트는 고정해 앞에 두어 OpenAI 자동 프롬프트 캐시(캐시 입력 단가 1/10)에 걸리게 한다. 도구 호출 권한은 chat 함수에 없다(읽기 전용).
 - 모든 발화는 `utterances`에 기록하되, 사실로 검색되는 것은 `memories`(statement 판정 또는 "기억해줘")뿐이다. "아니 그거 안 샀어" 같은 정정은 이전 memory를 retracted로 바꾼다.
@@ -393,16 +395,16 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 | 항목 | 가정 | 비용 |
 |---|---|---|
-가격 근거: developers.openai.com/api/docs/pricing (2026-09-26, 1M 토큰당, Standard). `gpt-6-luna` 입력 $0.10·출력 $0.50, `gpt-6-sol` 입력 $2.00·캐시 입력 $0.20·출력 $10.00, `text-embedding-3-small` $0.02.
+가격 근거: developers.openai.com/api/docs/pricing (2026-09-26, 1M 토큰당, Standard). `gpt-6-luna` 입력 $0.10·출력 $0.50, `gpt-6-sol` 입력 $2.00·캐시 입력 $0.20·출력 $10.00, `text-embedding-3-small` $0.02, `text-embedding-3-large` $0.13(2026-09-27 결정 근거 단가).
 
 | 항목 | 가정 | 비용 |
 |---|---|---|
 | gpt-6-luna 분류·추출 | 일 60건 × 입력 1.5k + 출력 0.3k 토큰 → 월 입력 2.7M, 출력 0.54M | 약 $0.5 |
 | gpt-6-sol 채팅 | 일 10회 × 입력 6k(시스템 1k 캐시)/출력 0.5k + reasoning low 0.5k → 월 입력 1.8M(캐시 0.3M), 출력 0.3M | 약 $6 |
 | Vision (gpt-6-luna) | 월 30건 × 입력 약 3k(이미지·PDF 페이지) + 출력 0.3k | 약 $0.01 |
-| 임베딩 `text-embedding-3-small` | 월 3M 토큰 | 약 $0.06 |
+| 임베딩 `text-embedding-3-large` (512차원) | 월 3M 토큰 | 약 $0.39 |
 | Supabase | 무료 | $0 |
-| 합계 | | 약 $6.6 ≈ 0.9만원 |
+| 합계 | | 약 $6.9 ≈ 0.95만원 |
 
 채팅이 비용의 90%다. 기존 Anthropic+Voyage 추정(약 $9)보다 싸지만 상한과 여유가 없으므로 다음 통제를 둔다. reasoning 토큰은 출력 단가로 청구되므로 채팅은 effort `low`, 분류·추출은 `none`으로 고정한다.
 

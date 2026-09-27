@@ -1,7 +1,7 @@
 // 스펙 §12 통제 3·§16: 실제 사용자 데이터 임베딩은 PoC-7 통과 후. 그 전에는 합성 코퍼스(eval)에만 호출한다
 import { openai } from "./openai.ts";
 
-export const EMBED_MODEL = Deno.env.get("EMBED_MODEL") ?? "text-embedding-3-small";   // 평가 대안: text-embedding-3-large
+export const EMBED_MODEL = Deno.env.get("EMBED_MODEL") ?? "text-embedding-3-large";   // PoC-7 결정(2026-09-27): large 38/40 vs small 31~33/40
 export const EMBED_DIMENSIONS = 512;                                                     // item_chunks.embedding vector(512)
 export const embedStats = { calls: 0, tokens: 0 };                                       // 비용 기록용
 

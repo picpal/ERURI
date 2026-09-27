@@ -1,11 +1,12 @@
 // PoC-7 한국어 하이브리드 검색 평가(합성 코퍼스만, 스펙 §16). 워커 cron을 멈춘 상태에서 실행한다.
 // deno run --allow-net --allow-env --allow-read --allow-write --env-file=.env eval/run-search-eval.ts [--chunk 512] [--label base] [--cleanup]
-//   EMBED_MODEL=text-embedding-3-large 로 모델 대안을 잰다(dimensions 512 유지)
+//   기본 모델 text-embedding-3-large(2026-09-27 결정). EMBED_MODEL=text-embedding-3-small 로 비교 가능(dimensions 512 유지)
 // 코퍼스 적재: encrypt → insert_item(p_enqueue false, 'eval:<id>') → item_chunks(청크 N자) + embedding(배치 64).
 // 질문: (a) 키워드 전용 hybrid_search(p_embedding null), (b) 하이브리드 embed(q) → hybrid_search. Top-5.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { encrypt, SERVER_AUTH, toBytea } from "../supabase/functions/_shared/crypto.ts";
 import { EMBED_MODEL, embed, embedStats, toPgVector } from "../supabase/functions/_shared/embeddings.ts";
+import { testUser } from "../supabase/tests/_testenv.ts";
 
 type Doc = { id: string; source: string; occurred_at: string; text: string };
 type Question = { q: string; expect_ids: string[]; from: string | null; to: string | null };
@@ -19,7 +20,8 @@ const CLEANUP_ONLY = Deno.args.includes("--cleanup");
 const TOP = 5;
 
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, SERVER_AUTH);
-const USER = Deno.env.get("POC_USER_ID")!;
+// 평가 데이터는 전용 테스트 사용자(poc-test-1)에 둔다. 실측 사용자(POC_USER_ID)의 데이터는 건드리지 않는다(AGENTS.md §7)
+const USER = (await testUser(1)).id;
 const readJsonl = async <T>(f: string) => (await Deno.readTextFile(new URL(f, import.meta.url))).trim().split("\n").map((l) => JSON.parse(l) as T);
 
 async function cleanup() {

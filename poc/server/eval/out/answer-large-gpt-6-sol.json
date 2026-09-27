@@ -1,0 +1,1095 @@
+{
+ "summary": {
+  "label": "answer-large-gpt-6-sol",
+  "embed_model": "text-embedding-3-large",
+  "chat_model": "gpt-6-sol",
+  "questions": 50,
+  "no_evidence_refused": "10/10",
+  "no_evidence_forced": 0,
+  "evidence_answered": "36/40",
+  "evidence_refused_when_retrieved": "2/38",
+  "evidence_not_retrieved": 2,
+  "citation_hit": "36/36",
+  "citation_exact": "36/36",
+  "citation_precision": "39/39",
+  "dropped_ids_total": 0,
+  "latency_ms": {
+   "p50": 2194,
+   "p95": 3548
+  },
+  "tokens": {
+   "input": 34626,
+   "cached": 0,
+   "output": 3161,
+   "reasoning": 94,
+   "embedding": 815
+  },
+  "cost_usd": 0.101
+ },
+ "perQuestion": [
+  {
+   "q": "에어팟 어디서 샀지",
+   "expect": [
+    "c003",
+    "c118"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c003",
+    "c118"
+   ],
+   "hits": [
+    "c118",
+    "c003",
+    "c017",
+    "c233",
+    "c024"
+   ],
+   "retrieved": true,
+   "answer": "에어팟 프로 2세대는 쿠팡에서 샀어요. 다만 7월 10일에 반품 접수가 완료됐어요.",
+   "ms": 3548
+  },
+  {
+   "q": "에어팟 케이스 산 곳이 어디였더라",
+   "expect": [
+    "c017"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c017"
+   ],
+   "hits": [
+    "c017",
+    "c003",
+    "c422",
+    "c318",
+    "c389"
+   ],
+   "retrieved": true,
+   "answer": "에어팟 케이스는 11번가에서 구매하셨어요. 판매자는 합성케이스샵입니다.",
+   "ms": 2726
+  },
+  {
+   "q": "나이키 운동화 몇 사이즈로 주문했지",
+   "expect": [
+    "c024",
+    "c318"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c024"
+   ],
+   "hits": [
+    "c024",
+    "c318",
+    "c035",
+    "c145",
+    "c032"
+   ],
+   "retrieved": true,
+   "answer": "나이키 에어포스 1 운동화는 270mm로 주문했어요.",
+   "ms": 2669
+  },
+  {
+   "q": "한라봉 언제 시켰어",
+   "expect": [
+    "c031"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c031"
+   ],
+   "hits": [
+    "c031",
+    "c443",
+    "c430",
+    "c431",
+    "c387"
+   ],
+   "retrieved": true,
+   "answer": "한라봉은 2026년 9월 5일에 주문했어요.",
+   "ms": 3512
+  },
+  {
+   "q": "책상 배송 언제 와",
+   "expect": [
+    "c045",
+    "c155"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c155",
+    "c045"
+   ],
+   "hits": [
+    "c155",
+    "c045",
+    "c256",
+    "c396",
+    "c440"
+   ],
+   "retrieved": true,
+   "answer": "책상은 9월 20일 배송 예정이었고, 설치 기사님은 이날 오후 1~3시에 방문 예정이었습니다. 오늘(9월 27일) 기준 실제 배송 완료 여부는 문서에서 확인되지 않습니다.",
+   "ms": 3687
+  },
+  {
+   "q": "파친코 책 얼마 줬지",
+   "expect": [
+    "c058",
+    "c256"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c058"
+   ],
+   "hits": [
+    "c058",
+    "c256",
+    "c210",
+    "c231",
+    "c061"
+   ],
+   "retrieved": true,
+   "answer": "파친코 1·2 세트는 31,500원이었어요.",
+   "ms": 2091
+  },
+  {
+   "q": "다이슨 드라이기 가격 얼마였지",
+   "expect": [
+    "c066",
+    "c233"
+   ],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c233",
+    "c066",
+    "c230",
+    "c278",
+    "c201"
+   ],
+   "retrieved": true,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 2020
+  },
+  {
+   "q": "무쇠 냄비 산 거 무슨 색이었지",
+   "expect": [
+    "c072"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c072"
+   ],
+   "hits": [
+    "c072",
+    "c394",
+    "c288",
+    "c417",
+    "c397"
+   ],
+   "retrieved": true,
+   "answer": "체리 레드 색이었어요.",
+   "ms": 2100
+  },
+  {
+   "q": "캠핑 의자 몇 개 샀어",
+   "expect": [
+    "c089"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c089"
+   ],
+   "hits": [
+    "c089",
+    "c091",
+    "c090",
+    "c046",
+    "c010"
+   ],
+   "retrieved": true,
+   "answer": "캠핑 의자 2개 샀어.",
+   "ms": 1929
+  },
+  {
+   "q": "뮤지컬 공연 몇 시에 시작해",
+   "expect": [
+    "c104"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c104"
+   ],
+   "hits": [
+    "c104",
+    "c430",
+    "c431",
+    "c387",
+    "c443"
+   ],
+   "retrieved": true,
+   "answer": "뮤지컬 ‹레미제라블›은 10월 11일 오후 7시 30분에 시작해요.",
+   "ms": 2215
+  },
+  {
+   "q": "넷플릭스 한 달에 얼마 나가",
+   "expect": [
+    "c127",
+    "c128"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c127"
+   ],
+   "hits": [
+    "c127",
+    "c433",
+    "c128",
+    "c133",
+    "c241"
+   ],
+   "retrieved": true,
+   "answer": "넷플릭스 스탠다드 멤버십은 한 달에 13,500원 나가요.",
+   "ms": 2268
+  },
+  {
+   "q": "부산 호텔 체크인 날짜",
+   "expect": [
+    "c141"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c141"
+   ],
+   "hits": [
+    "c141",
+    "c320",
+    "c359",
+    "c090",
+    "c441"
+   ],
+   "retrieved": true,
+   "answer": "부산 해운대 합성오션호텔 체크인은 2026년 10월 3일(토) 오후 3시입니다.",
+   "ms": 2719
+  },
+  {
+   "q": "치킨 뭐 시켰었지",
+   "expect": [
+    "c162"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c162"
+   ],
+   "hits": [
+    "c162",
+    "c255",
+    "c248",
+    "c438",
+    "c424"
+   ],
+   "retrieved": true,
+   "answer": "9월 12일 교촌치킨 합정점에서 허니콤보와 치즈볼, 콜라 1.25L를 시켰어요.",
+   "ms": 2105
+  },
+  {
+   "q": "성수동 식당 예약 몇 명으로 했지",
+   "expect": [
+    "c176"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c176"
+   ],
+   "hits": [
+    "c176",
+    "c384",
+    "c141",
+    "c303",
+    "c270"
+   ],
+   "retrieved": true,
+   "answer": "성수동 식당 ‘오프레코드’는 4명으로 예약했어요.",
+   "ms": 2000
+  },
+  {
+   "q": "영화 예매한 거 어느 극장이야",
+   "expect": [
+    "c183",
+    "c180"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c183",
+    "c180"
+   ],
+   "hits": [
+    "c183",
+    "c104",
+    "c180",
+    "c176",
+    "c419"
+   ],
+   "retrieved": true,
+   "answer": "영화 예매 내역은 9월 13일 ‹합성의 밤›이 CGV 용산아이파크몰, 7월 26일 ‹합성 탐정›이 CGV 왕십리예요.",
+   "ms": 3191
+  },
+  {
+   "q": "청첩장 받은 결혼식 장소 어디야",
+   "expect": [
+    "c197"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c197"
+   ],
+   "hits": [
+    "c197",
+    "c398",
+    "c176",
+    "c320",
+    "c090"
+   ],
+   "retrieved": true,
+   "answer": "청첩장에 적힌 결혼식 장소는 더채플앳청담 3층 루체홀입니다.",
+   "ms": 2134
+  },
+  {
+   "q": "선크림 뭐 샀더라",
+   "expect": [
+    "c211"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c211"
+   ],
+   "hits": [
+    "c211",
+    "c215",
+    "c041",
+    "c384",
+    "c422"
+   ],
+   "retrieved": true,
+   "answer": "라운드랩 자작나무 수분 선크림 50ml 2개(1+1 기획)를 샀어요.",
+   "ms": 2242
+  },
+  {
+   "q": "스타벅스 기프티콘 누가 보내줬지",
+   "expect": [
+    "c226"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c226"
+   ],
+   "hits": [
+    "c226",
+    "c233",
+    "c354",
+    "c066",
+    "c225"
+   ],
+   "retrieved": true,
+   "answer": "박민지님이 보내줬어요.",
+   "ms": 2227
+  },
+  {
+   "q": "강아지 예방접종 언제 가야 돼",
+   "expect": [
+    "c263"
+   ],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c138",
+    "c251",
+    "c174",
+    "c245",
+    "c304"
+   ],
+   "retrieved": false,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 1967
+  },
+  {
+   "q": "머리 하러 가는 날 언제지",
+   "expect": [
+    "c270"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c270"
+   ],
+   "hits": [
+    "c270",
+    "c381",
+    "c305",
+    "c303",
+    "c441"
+   ],
+   "retrieved": true,
+   "answer": "머리 예약은 2026년 9월 6일 오후 3시였어요. 오늘 기준으로는 이미 지난 일정입니다.",
+   "ms": 2841
+  },
+  {
+   "q": "스케일링 예약 몇 시야",
+   "expect": [
+    "c305"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c305"
+   ],
+   "hits": [
+    "c305",
+    "c176",
+    "c303",
+    "c368",
+    "c270"
+   ],
+   "retrieved": true,
+   "answer": "스케일링 예약은 9월 16일 오후 2시였어요. 예약 시간 10분 전 도착 안내가 있습니다.",
+   "ms": 2523
+  },
+  {
+   "q": "내시경 전날 몇 시부터 굶어야 해",
+   "expect": [
+    "c312"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c312"
+   ],
+   "hits": [
+    "c312",
+    "c263",
+    "c308",
+    "c363",
+    "c361"
+   ],
+   "retrieved": true,
+   "answer": "위내시경 전날인 10월 6일 밤 9시 이후부터 금식하세요. 물은 자정까지 마실 수 있습니다.",
+   "ms": 2342
+  },
+  {
+   "q": "경비실에 맡겨진 택배 뭐였지",
+   "expect": [
+    "c318"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c318"
+   ],
+   "hits": [
+    "c251",
+    "c318",
+    "c416",
+    "c234",
+    "c231"
+   ],
+   "retrieved": true,
+   "answer": "경비실에 맡겨진 택배는 무신사에서 주문한 나이키 에어포스 1 운동화였어요.",
+   "ms": 2022
+  },
+  {
+   "q": "무릎 진료 예약 어느 병원이야",
+   "expect": [
+    "c334"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c334"
+   ],
+   "hits": [
+    "c334",
+    "c176",
+    "c347",
+    "c312",
+    "c303"
+   ],
+   "retrieved": true,
+   "answer": "무릎 진료 예약은 합성세브란스병원 정형외과입니다.",
+   "ms": 3729
+  },
+  {
+   "q": "레이저 토닝 몇 회차 남았지",
+   "expect": [
+    "c368"
+   ],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c368",
+    "c384",
+    "c347",
+    "c097",
+    "c381"
+   ],
+   "retrieved": true,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 1529
+  },
+  {
+   "q": "친구가 추천해 준 카페 어디였지",
+   "expect": [
+    "c384"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c384"
+   ],
+   "hits": [
+    "c384",
+    "c487",
+    "c491",
+    "c497",
+    "c226"
+   ],
+   "retrieved": true,
+   "answer": "수진이가 추천해 준 곳은 성수동 ‘카페 레이어드’야. 스콘이 맛있대.",
+   "ms": 2420
+  },
+  {
+   "q": "엄마 생신 때 뭐 사 드렸지",
+   "expect": [
+    "c391"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c391"
+   ],
+   "hits": [
+    "c391",
+    "c355",
+    "c439",
+    "c383",
+    "c411"
+   ],
+   "retrieved": true,
+   "answer": "엄마 생신 선물로 설화수 윤조에센스를 사 드렸어요.",
+   "ms": 1994
+  },
+  {
+   "q": "동료 결혼식 축의금 얼마 했더라",
+   "expect": [
+    "c398"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c398"
+   ],
+   "hits": [
+    "c398",
+    "c197",
+    "c230",
+    "c133",
+    "c269"
+   ],
+   "retrieved": true,
+   "answer": "회사 동료 결혼식 축의금으로 10만 원 냈어요.",
+   "ms": 2097
+  },
+  {
+   "q": "차 어디에 세워 뒀지",
+   "expect": [
+    "c419"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c419"
+   ],
+   "hits": [
+    "c419",
+    "c335",
+    "c363",
+    "c301",
+    "c348"
+   ],
+   "retrieved": true,
+   "answer": "9월 21일에 지하 3층 C-12 구역에 주차했다고 남겼어요.",
+   "ms": 2384
+  },
+  {
+   "q": "영어 학원 무슨 요일에 가",
+   "expect": [
+    "c426"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c426"
+   ],
+   "hits": [
+    "c426",
+    "c381",
+    "c416",
+    "c432",
+    "c402"
+   ],
+   "retrieved": true,
+   "answer": "영어 학원은 화요일과 목요일에 가요.",
+   "ms": 2869
+  },
+  {
+   "q": "7월에 주문한 책 뭐였지",
+   "expect": [
+    "c058",
+    "c256"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c058"
+   ],
+   "hits": [
+    "c058",
+    "c046",
+    "c135",
+    "c019",
+    "c115"
+   ],
+   "retrieved": true,
+   "answer": "7월에 주문한 책은 이민진의 『파친코 1·2 세트』 개정판이에요.",
+   "ms": 2869
+  },
+  {
+   "q": "8월에 올리브영에서 뭐 샀지",
+   "expect": [
+    "c215"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c215"
+   ],
+   "hits": [
+    "c215",
+    "c010",
+    "c095",
+    "c034",
+    "c129"
+   ],
+   "retrieved": true,
+   "answer": "8월에 올리브영에서 토리든 다이브인 저분자 히알루론산 세럼 50ml 1개를 19,800원에 샀어요.",
+   "ms": 2092
+  },
+  {
+   "q": "9월 치과 예약 언제야",
+   "expect": [
+    "c305"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c305"
+   ],
+   "hits": [
+    "c305",
+    "c312",
+    "c368",
+    "c176",
+    "c334"
+   ],
+   "retrieved": true,
+   "answer": "9월 치과 예약은 서울치과 스케일링으로, 9월 16일 오후 2시였어요. 예약 시간 10분 전 도착 안내가 있었습니다.",
+   "ms": 2716
+  },
+  {
+   "q": "6월에 산 신발",
+   "expect": [
+    "c024",
+    "c318"
+   ],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c492",
+    "c359",
+    "c358",
+    "c459",
+    "c149"
+   ],
+   "retrieved": false,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 1802
+  },
+  {
+   "q": "8월 넷플릭스 결제 금액",
+   "expect": [
+    "c128"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c128"
+   ],
+   "hits": [
+    "c133",
+    "c128",
+    "c010",
+    "c151",
+    "c066"
+   ],
+   "retrieved": true,
+   "answer": "8월 넷플릭스 결제 금액은 13,500원입니다.",
+   "ms": 2042
+  },
+  {
+   "q": "9월에 배달 시킨 음식",
+   "expect": [
+    "c162"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c162"
+   ],
+   "hits": [
+    "c326",
+    "c336",
+    "c162",
+    "c341",
+    "c323"
+   ],
+   "retrieved": true,
+   "answer": "9월 12일 배달의민족에서 교촌치킨 합정점의 허니콤보, 치즈볼, 콜라 1.25L를 주문했습니다.",
+   "ms": 2194
+  },
+  {
+   "q": "7월에 산 캠핑 용품",
+   "expect": [
+    "c089"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c089"
+   ],
+   "hits": [
+    "c089",
+    "c096",
+    "c121",
+    "c320",
+    "c105"
+   ],
+   "retrieved": true,
+   "answer": "7월에 헬리녹스 체어원 캠핑 의자 블랙 2개를 총 278,000원에 구매했습니다.",
+   "ms": 2222
+  },
+  {
+   "q": "8월에 잡은 안과 상담",
+   "expect": [
+    "c347"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c347"
+   ],
+   "hits": [
+    "c347",
+    "c466",
+    "c494",
+    "c133",
+    "c498"
+   ],
+   "retrieved": true,
+   "answer": "8월에 잡은 안과 상담은 밝은눈안과의 시력교정(라식·라섹) 상담으로, 2026년 8월 29일(토) 오후 4시에 예약되어 있었습니다. 안내에는 렌즈를 1주일 전부터 빼 달라고 되어 있습니다.",
+   "ms": 2576
+  },
+  {
+   "q": "9월에 예매한 영화",
+   "expect": [
+    "c183"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c183"
+   ],
+   "hits": [
+    "c183",
+    "c127",
+    "c461",
+    "c094",
+    "c007"
+   ],
+   "retrieved": true,
+   "answer": "9월에 예매한 영화는 ‹합성의 밤›입니다. 9월 13일 오후 9시 20분 CGV 용산아이파크몰 IMAX관에서 관람하는 2매를 예매했습니다.",
+   "ms": 2203
+  },
+  {
+   "q": "8월에 다이슨 배송 완료됐어?",
+   "expect": [
+    "c233"
+   ],
+   "refused": false,
+   "forced": false,
+   "dropped": 0,
+   "cited": [
+    "c233"
+   ],
+   "hits": [
+    "c233",
+    "c066",
+    "c353",
+    "c356",
+    "c041"
+   ],
+   "retrieved": true,
+   "answer": "네, 다이슨 에어랩 멀티 스타일러는 8월 4일 배송 완료되어 문 앞에 놓였다고 안내됐어요.",
+   "ms": 2506
+  },
+  {
+   "q": "자동차 보험 갱신일 언제야",
+   "expect": [],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c381",
+    "c113",
+    "c115",
+    "c335",
+    "c117"
+   ],
+   "retrieved": false,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 2157
+  },
+  {
+   "q": "비행기 표 몇 시 출발이야",
+   "expect": [],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c163",
+    "c294",
+    "c276",
+    "c202",
+    "c193"
+   ],
+   "retrieved": false,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 1873
+  },
+  {
+   "q": "헬스장 PT 몇 시로 잡았지",
+   "expect": [],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c387",
+    "c443",
+    "c431",
+    "c430",
+    "c419"
+   ],
+   "retrieved": false,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 1619
+  },
+  {
+   "q": "이사 업체 견적 얼마 받았지",
+   "expect": [],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c278",
+    "c412",
+    "c267",
+    "c094",
+    "c201"
+   ],
+   "retrieved": false,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 1582
+  },
+  {
+   "q": "여권 만료일이 언제지",
+   "expect": [],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c241",
+    "c128",
+    "c492",
+    "c461",
+    "c127"
+   ],
+   "retrieved": false,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 2566
+  },
+  {
+   "q": "주식 배당금 들어왔어?",
+   "expect": [],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c195",
+    "c186",
+    "c182",
+    "c190",
+    "c261"
+   ],
+   "retrieved": false,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 1602
+  },
+  {
+   "q": "이번 달 전기요금 얼마 나왔어",
+   "expect": [],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c190",
+    "c186",
+    "c269",
+    "c127",
+    "c068"
+   ],
+   "retrieved": false,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 1544
+  },
+  {
+   "q": "아이 피아노 학원비 결제했나",
+   "expect": [],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c278",
+    "c190",
+    "c426",
+    "c269",
+    "c133"
+   ],
+   "retrieved": false,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 1574
+  },
+  {
+   "q": "와인 모임 장소 어디였지",
+   "expect": [],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c176",
+    "c288",
+    "c384",
+    "c419",
+    "c398"
+   ],
+   "retrieved": false,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 1743
+  },
+  {
+   "q": "노트북 수리 맡긴 거 찾았나",
+   "expect": [],
+   "refused": true,
+   "forced": false,
+   "dropped": 0,
+   "cited": [],
+   "hits": [
+    "c396",
+    "c440",
+    "c410",
+    "c118",
+    "c003"
+   ],
+   "retrieved": false,
+   "answer": "저장된 정보에서 확인되지 않음",
+   "ms": 1469
+  }
+ ]
+}
