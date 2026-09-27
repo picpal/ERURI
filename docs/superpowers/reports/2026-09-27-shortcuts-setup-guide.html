@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ERURI 단축어 설정 가이드</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --color-paper: #f5f5f5; --color-paper-2: #ececec; --color-card: #ffffff; --color-ink: #2d3142; --color-muted: #4f5d75;
+  --color-soft: #7a8399; --color-rule: rgba(45,49,66,0.12); --color-rule-2: rgba(45,49,66,0.08); --color-accent: #0f766e;
+  --color-accent-tint: rgba(15,118,110,0.08); --color-alert: #8a5a12; --color-alert-tint: rgba(138,90,18,0.06);
+  --phone-frame: #2d3142; --phone-screen: #f2f2f7; --phone-cell: #ffffff; --phone-text: #1c1c1e; --phone-sub: #8e8e93; --phone-blue: #007aff; --phone-green: #34c759;
+  --font-sans: 'Pretendard', 'Noto Sans KR', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'Noto Sans Mono CJK KR', ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-paper: #15171e; --color-paper-2: #1d2029; --color-card: #1b1e27; --color-ink: #e6e8ee; --color-muted: #aab2c5;
+    --color-soft: #7f889c; --color-rule: rgba(230,232,238,0.14); --color-rule-2: rgba(230,232,238,0.08); --color-accent: #3fbfb2;
+    --color-accent-tint: rgba(63,191,178,0.10); --color-alert: #e0a84a; --color-alert-tint: rgba(224,168,74,0.08);
+    --phone-frame: #55596a; --phone-screen: #000000; --phone-cell: #1c1c1e; --phone-text: #f2f2f7; --phone-sub: #8e8e93; --phone-blue: #0a84ff; --phone-green: #30d158;
+  }
+}
+:root[data-theme="dark"] {
+  --color-paper: #15171e; --color-paper-2: #1d2029; --color-card: #1b1e27; --color-ink: #e6e8ee; --color-muted: #aab2c5;
+  --color-soft: #7f889c; --color-rule: rgba(230,232,238,0.14); --color-rule-2: rgba(230,232,238,0.08); --color-accent: #3fbfb2;
+  --color-accent-tint: rgba(63,191,178,0.10); --color-alert: #e0a84a; --color-alert-tint: rgba(224,168,74,0.08);
+  --phone-frame: #55596a; --phone-screen: #000000; --phone-cell: #1c1c1e; --phone-text: #f2f2f7; --phone-sub: #8e8e93; --phone-blue: #0a84ff; --phone-green: #30d158;
+}
+body { font-family: var(--font-sans); background: var(--color-paper); color: var(--color-ink); min-height: 100vh; padding: 3rem 2rem; }
+.container { max-width: 1100px; margin: 0 auto; }
+.header { margin-bottom: 2rem; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted); margin-bottom: 0.75rem; }
+h1 { font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem); font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 0.6rem; }
+h2 { font-size: 1.3rem; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 0.4rem; }
+h3 { font-size: 1rem; font-weight: 600; margin: 2rem 0 0.4rem; }
+p, li { line-height: 1.7; }
+.subtitle, .section-sub { font-size: 1rem; line-height: 1.65; color: var(--color-muted); max-width: 70ch; }
+.section { margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid var(--color-rule); }
+.meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 1.5rem; border: 1px solid var(--color-rule); border-radius: 6px; background: var(--color-card); }
+.meta div { padding: 0.9rem 1rem; border-right: 1px solid var(--color-rule-2); }
+.meta div:last-child { border-right: none; }
+.meta dt { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-soft); margin-bottom: 0.35rem; }
+.meta dd { font-size: 0.875rem; line-height: 1.45; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--color-rule-2); padding: 0 0.25em; border-radius: 2px; overflow-wrap: anywhere; }
+.ui { font-weight: 600; color: var(--color-accent); white-space: nowrap; }
+.ui::before { content: '「'; color: var(--color-soft); font-weight: 400; } .ui::after { content: '」'; color: var(--color-soft); font-weight: 400; }
+.term { border-bottom: 1px dotted var(--color-soft); }
+.gloss { display: inline; font-size: 0.8em; color: var(--color-soft); }
+.gloss::before { content: '— '; }
+.flag { display: inline-block; font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.04em; padding: 0 0.35rem; border: 1px solid var(--color-alert); border-radius: 2px; color: var(--color-alert); background: var(--color-alert-tint); white-space: nowrap; vertical-align: 1px; }
+.flag.ok { border-color: var(--color-accent); color: var(--color-accent); background: var(--color-accent-tint); }
+.callout { margin-top: 1rem; padding: 0.9rem 1rem; border-left: 3px solid var(--color-accent); background: var(--color-accent-tint); border-radius: 0 6px 6px 0; font-size: 0.9rem; line-height: 1.65; max-width: 80ch; }
+.callout.warn { border-left-color: var(--color-alert); background: var(--color-alert-tint); }
+.callout b { font-weight: 600; }
+ol.plain, ul.plain { margin: 0.75rem 0 0 1.25rem; font-size: 0.93rem; max-width: 80ch; }
+ol.plain li, ul.plain li { margin-bottom: 0.35rem; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1.25rem; }
+.card { background: var(--color-card); border-radius: 6px; border: 1px solid var(--color-rule); padding: 1.1rem 1.2rem; font-size: 0.9rem; }
+.card h4 { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.5rem; }
+.card p { color: var(--color-muted); font-size: 0.85rem; }
+
+/* 단계: 모형 + 3열 표 */
+.step { display: grid; grid-template-columns: 200px 1fr; gap: 1.5rem; align-items: start; margin-top: 1.5rem; padding: 1.25rem; background: var(--color-card); border: 1px solid var(--color-rule); border-radius: 8px; }
+.step-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem; }
+.badge { flex-shrink: 0; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--color-accent); color: #fff; font-family: var(--font-mono); font-size: 0.8rem; font-weight: 600; display: grid; place-items: center; }
+.step-title { font-weight: 600; font-size: 1rem; }
+table.see { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+table.see th { font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-soft); font-weight: 500; text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--color-rule); width: 33%; }
+table.see td { padding: 0.55rem 0.5rem; vertical-align: top; line-height: 1.6; border-bottom: 1px solid var(--color-rule-2); }
+table.see tr:last-child td { border-bottom: none; }
+.step-note { margin-top: 0.6rem; font-size: 0.8rem; color: var(--color-muted); line-height: 1.6; }
+
+/* iPhone 모형 */
+.mock { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
+.phone { width: 180px; height: 360px; border-radius: 28px; border: 6px solid var(--phone-frame); background: var(--phone-screen); color: var(--phone-text); position: relative; overflow: hidden; font-size: 10px; line-height: 1.35; box-shadow: 0 1px 0 var(--color-rule); }
+.phone::before { content: ''; position: absolute; top: 6px; left: 50%; transform: translateX(-50%); width: 54px; height: 15px; background: #000; border-radius: 10px; z-index: 2; }
+.phone .status { height: 26px; }
+.phone .nav { display: flex; justify-content: space-between; align-items: center; padding: 2px 10px 4px; color: var(--phone-blue); font-size: 10px; min-height: 18px; }
+.phone .nav b { color: var(--phone-text); font-weight: 600; }
+.phone .big { font-size: 17px; font-weight: 700; padding: 2px 10px 6px; }
+.phone .label { color: var(--phone-sub); font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 12px 3px; }
+.phone .group { background: var(--phone-cell); margin: 0 8px 6px; border-radius: 8px; overflow: hidden; }
+.phone .row { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 0.5px solid rgba(142,142,147,0.3); min-height: 24px; }
+.phone .row:last-child { border-bottom: none; }
+.phone .row .sub { color: var(--phone-sub); }
+.phone .row .val { color: var(--phone-blue); }
+.phone .search { margin: 2px 8px 6px; background: rgba(142,142,147,0.18); border-radius: 7px; padding: 5px 8px; color: var(--phone-sub); }
+.phone .action { margin: 4px 8px; background: var(--phone-cell); border-radius: 9px; padding: 7px 8px; }
+.phone .action .t { font-weight: 600; margin-bottom: 3px; }
+.phone .pill { display: inline-block; background: rgba(0,122,255,0.14); color: var(--phone-blue); border-radius: 5px; padding: 0 4px; margin: 1px 0; }
+.phone .btn { display: block; margin: 6px 8px; text-align: center; background: var(--phone-blue); color: #fff; border-radius: 8px; padding: 6px; font-weight: 600; }
+.phone .tabs { position: absolute; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-around; padding: 6px 4px 12px; background: var(--phone-cell); border-top: 0.5px solid rgba(142,142,147,0.3); color: var(--phone-sub); font-size: 8.5px; }
+.phone .tabs .on { color: var(--phone-blue); font-weight: 600; }
+.phone .tile { display: inline-block; width: 74px; height: 54px; margin: 4px 0 0 8px; border-radius: 10px; background: #5e5ce6; color: #fff; padding: 6px; font-weight: 600; font-size: 9px; vertical-align: top; }
+.phone .tile.plain { background: rgba(142,142,147,0.25); color: var(--phone-sub); }
+.phone .tog { width: 22px; height: 13px; border-radius: 7px; background: rgba(142,142,147,0.4); position: relative; flex-shrink: 0; }
+.phone .tog::after { content: ''; position: absolute; top: 1.5px; left: 1.5px; width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+.phone .tog.on { background: var(--phone-green); } .phone .tog.on::after { left: 10.5px; }
+.phone .radio { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--phone-sub); flex-shrink: 0; }
+.phone .radio.on { border-color: var(--phone-blue); background: radial-gradient(circle, var(--phone-blue) 45%, transparent 50%); }
+.phone .bubble { margin: 8px; background: var(--phone-cell); border-radius: 12px; padding: 8px; }
+.phone .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--phone-cell); border-radius: 12px 12px 0 0; padding: 8px 0 14px; box-shadow: 0 -2px 10px rgba(0,0,0,0.15); }
+.phone .tap { outline: 2px solid #ff3b30; outline-offset: 1px; border-radius: 6px; position: relative; }
+.phone .tap::after { content: '탭'; position: absolute; right: -2px; top: -9px; background: #ff3b30; color: #fff; font-size: 7.5px; font-weight: 700; padding: 0 3px; border-radius: 3px; }
+.mock-cap { font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.08em; color: var(--color-soft); text-align: center; }
+
+.table-wrap { margin-top: 1.25rem; overflow-x: auto; }
+table.grid { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: var(--color-card); border: 1px solid var(--color-rule); border-radius: 6px; }
+table.grid th, table.grid td { text-align: left; padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--color-rule-2); vertical-align: top; line-height: 1.55; }
+table.grid th { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-muted); font-weight: 500; background: var(--color-paper-2); }
+details.faq { margin-top: 0.75rem; background: var(--color-card); border: 1px solid var(--color-rule); border-radius: 6px; padding: 0.85rem 1rem; max-width: 85ch; }
+details.faq summary { cursor: pointer; font-weight: 600; font-size: 0.95rem; }
+details.faq p { margin-top: 0.6rem; font-size: 0.9rem; color: var(--color-muted); }
+.toc { margin-top: 1.5rem; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.toc a { font-size: 0.8rem; color: var(--color-ink); text-decoration: none; border: 1px solid var(--color-rule); border-radius: 999px; padding: 0.25rem 0.7rem; background: var(--color-card); }
+.toc a:hover { border-color: var(--color-accent); color: var(--color-accent); }
+.footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--color-rule); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; color: var(--color-soft); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+
+@media (max-width: 900px) {
+  body { padding: 2rem 1rem; }
+  .cards { grid-template-columns: 1fr; }
+  .meta { grid-template-columns: 1fr 1fr; }
+  .meta div:nth-child(2) { border-right: none; }
+  .meta div:nth-child(-n+2) { border-bottom: 1px solid var(--color-rule-2); }
+}
+@media (max-width: 640px) {
+  .step { grid-template-columns: 1fr; padding: 1rem; }
+  table.see thead { display: none; }
+  table.see, table.see tbody, table.see tr, table.see td { display: block; width: 100%; }
+  table.see tr { padding: 0.4rem 0; border-bottom: 1px solid var(--color-rule-2); }
+  table.see td { border: none; padding: 0.2rem 0; }
+  table.see td[data-label]::before { content: attr(data-label); display: block; font-family: var(--font-mono); font-size: 0.58rem; letter-spacing: 0.12em; color: var(--color-soft); }
+  .meta { grid-template-columns: 1fr; }
+  .meta div { border-right: none; border-bottom: 1px solid var(--color-rule-2); }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<header class="header">
+  <div class="eyebrow">ERURI · 설정 안내 · 2026-09-27</div>
+  <h1>단축어 설정 가이드<br>문자·카톡·인스타 알림을 ERURI 로 보내기</h1>
+  <p class="subtitle">iPhone 을 처음 써 보는 분도 따라 할 수 있게 한 단계씩 적었습니다. 전체 20~30분. 한 번만 해 두면 이후로는 손댈 일이 거의 없습니다.</p>
+  <dl class="meta">
+    <div><dt>대상</dt><dd>iPhone 15 Pro 이상, iOS 26</dd></div>
+    <div><dt>앱</dt><dd>ERURI PoC (TestFlight)</dd></div>
+    <div><dt>만드는 것</dt><dd>단축어 1개 + 자동화 3개</dd></div>
+    <div><dt>문구 근거</dt><dd>Apple 단축어 사용 설명서(iOS 26, 한국어)</dd></div>
+  </dl>
+  <div class="callout warn" style="margin-top:1.25rem"><b>그림에 대해.</b> 이 문서의 iPhone 그림은 모두 <b>모형</b>입니다(실제 화면 캡처가 아니라 CSS 로 그린 것). 버튼 위치·색은 실제와 다를 수 있습니다. 버튼 이름 옆 표시의 뜻:
+    <span class="flag ok">Apple 문서</span> Apple 공식 설명서에 그 문구가 있음 ·
+    <span class="flag ok">앱 코드</span> ERURI 앱 코드에 그 이름으로 정해져 있음 ·
+    <span class="flag">비슷한 이름</span> 공식 문서로 확인 못 함, 화면에서 비슷한 이름을 찾으세요.
+    아직 실기기에서 직접 눌러 확인한 항목은 없습니다(실기기 확인 후 <span class="flag ok">확인됨</span>으로 바꿉니다).</div>
+  <nav class="toc">
+    <a href="#why">왜 필요한가</a><a href="#prep">준비물</a><a href="#part1">1부 단축어</a><a href="#part1-2">1-2부 공유 링크</a>
+    <a href="#part2">2부 자동화</a><a href="#check">확인하기</a><a href="#faq">자주 묻는 질문</a><a href="#todo">확인 필요</a>
+  </nav>
+</header>
+
+<!-- 1 -->
+<section class="section" id="why">
+  <div class="eyebrow">00 · 이유</div>
+  <h2>왜 이 설정이 필요한가</h2>
+  <p class="section-sub">ERURI 는 문자·카톡 알림 속 예약·배송·결제 소식을 모아 정리해 주는 비서입니다. 그런데 iOS 는 다른 앱의 문자나 알림을 앱이 몰래 읽지 못하게 막아 두었고, 앱이 대신 설정을 만들어 줄 수도 없습니다. 그래서 iPhone 기본 앱인 <b>단축어</b>에서 "이런 알림이 오면 ERURI 에 넘겨라" 라는 규칙을 <b>사용자가 직접</b> 한 번 만들어야 합니다.</p>
+</section>
+
+<!-- 2 -->
+<section class="section" id="prep">
+  <div class="eyebrow">01 · 준비</div>
+  <h2>준비물</h2>
+  <div class="cards">
+    <div class="card"><h4>① ERURI PoC 설치</h4><p>초대 메일의 링크로 <b>TestFlight</b><span class="gloss">Apple 의 시험판 앱 배포 앱</span>를 설치하고, TestFlight 안에서 ERURI PoC 를 <span class="ui">설치</span>합니다. 설치 후 ERURI 를 <b>한 번 열어</b> 두세요. 열어야 단축어 앱이 ERURI 의 동작을 알아봅니다.</p></div>
+    <div class="card"><h4>② 알림 허용</h4><p>ERURI 를 처음 열 때 뜨는 알림 권한 창에서 <span class="ui">허용</span>. 놓쳤다면 설정 → 알림 → ERURI PoC → 알림 허용 켜기. 앱 안 <span class="ui">권한 요청 (알림·캘린더·연락처)</span> 버튼<span class="flag ok">앱 코드</span>으로 다시 요청할 수도 있습니다.</p></div>
+    <div class="card"><h4>③ 단축어 앱</h4><p>홈 화면에 보라·분홍색 겹친 사각형 아이콘 <b>단축어</b>가 있어야 합니다. 없으면 App Store 에서 "단축어" 를 검색해 다시 받으세요(Apple 이 만든 무료 앱).</p></div>
+  </div>
+  <div class="callout">카카오톡·Instagram 알림도 받으려면 설정 → 알림 → 카카오톡(또는 Instagram) → <b>미리 보기 표시</b>를 "항상" 으로 두세요<span class="flag">비슷한 이름</span>. 미리 보기가 꺼져 있으면 알림 속 글이 비어서 ERURI 가 읽을 게 없습니다.</div>
+</section>
+
+<!-- 3 -->
+<section class="section" id="part1">
+  <div class="eyebrow">02 · 1부 (한 번만)</div>
+  <h2>1부: "ERURI 저장" 단축어 만들기</h2>
+  <p class="section-sub"><span class="term">단축어</span><span class="gloss">버튼 하나로 여러 동작을 차례로 실행하는 작은 프로그램</span>. 여기서 만드는 단축어는 "받은 글을 ERURI 에 넘겨라" 한 가지 일만 합니다. 뒤의 카카오톡·Instagram 자동화가 이 단축어를 불러 씁니다.</p>
+
+  <div class="step">
+    <div class="mock"><div class="phone"><div class="status"></div>
+      <div class="nav"><span></span><span class="tap">＋</span></div>
+      <div class="big">단축어</div>
+      <div class="search">검색</div>
+      <span class="tile">예시 단축어</span><span class="tile plain">…</span>
+      <div class="tabs"><span class="on">단축어</span><span>자동화</span><span>갤러리</span></div>
+    </div><div class="mock-cap">모형 · 단축어 탭</div></div>
+    <div>
+      <div class="step-head"><span class="badge">1</span><span class="step-title">단축어 앱을 열고 새 단축어 만들기</span></div>
+      <table class="see"><thead><tr><th>화면에 보이는 것</th><th>누를 것</th><th>누른 뒤 보이는 것</th></tr></thead><tbody>
+        <tr><td data-label="화면에 보이는 것">단축어 앱 첫 화면. 아래에 <span class="ui">단축어</span> <span class="ui">자동화</span> <span class="ui">갤러리</span> 탭</td>
+            <td data-label="누를 것">아래 <span class="ui">단축어</span> 탭 → 오른쪽 위 <b>＋</b> <span class="flag ok">Apple 문서</span></td>
+            <td data-label="누른 뒤 보이는 것">제목 없는 빈 단축어 편집 화면(<span class="term">단축어 편집기</span><span class="gloss">동작을 쌓는 화면</span>)</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="mock"><div class="phone"><div class="status"></div>
+      <div class="nav"><span>취소</span><b>새로운 단축어 ⌄</b><span>완료</span></div>
+      <div class="action" style="margin-top:14px;text-align:center;color:var(--phone-sub)">동작을 추가하여<br>단축어를 만드십시오</div>
+      <div class="search tap" style="position:absolute;left:0;right:0;bottom:26px">🔍 ERURI</div>
+      <div class="group" style="position:absolute;left:0;right:0;bottom:56px"><div class="row"><span>▢ ERURI PoC</span></div><div class="row"><span><b>비서에 저장</b></span></div></div>
+    </div><div class="mock-cap">모형 · 동작 검색</div></div>
+    <div>
+      <div class="step-head"><span class="badge">2</span><span class="step-title">"비서에 저장" 동작 넣기</span></div>
+      <table class="see"><thead><tr><th>화면에 보이는 것</th><th>누를 것</th><th>누른 뒤 보이는 것</th></tr></thead><tbody>
+        <tr><td data-label="화면에 보이는 것">빈 편집 화면, 아래쪽에 검색 칸</td>
+            <td data-label="누를 것"><span class="ui">동작 추가</span><span class="flag ok">Apple 문서</span> 또는 아래 검색 칸을 탭하고 <code>ERURI</code> 입력 (안 나오면 <code>비서에 저장</code>)</td>
+            <td data-label="누른 뒤 보이는 것">검색 결과에 앱 <b>ERURI PoC</b><span class="flag">비슷한 이름</span> 과 그 아래 동작 <b>비서에 저장</b><span class="flag ok">앱 코드</span></td></tr>
+        <tr><td data-label="화면에 보이는 것">검색 결과의 <b>비서에 저장</b></td>
+            <td data-label="누를 것"><b>비서에 저장</b> 을 탭</td>
+            <td data-label="누른 뒤 보이는 것">편집 화면에 "비서에 저장" 카드가 한 장 생김</td></tr>
+      </tbody></table>
+      <p class="step-note">검색해도 안 나오면 ERURI 앱을 한 번 열었다 닫고 다시 검색하세요. 그래도 없으면 iPhone 을 재시동합니다.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="mock"><div class="phone"><div class="status"></div>
+      <div class="nav"><span>취소</span><b>ERURI 저장 ⌄</b><span>완료</span></div>
+      <div class="action" style="margin-top:10px"><div class="t">비서에 저장</div>
+        본문 <span class="pill tap">단축어 입력</span><br>
+        <span style="color:var(--phone-sub)">⌄ 앱 이름 · 제목 · 발신자 · 출처</span></div>
+      <div class="sheet"><div class="label">변수 선택</div><div class="group"><div class="row"><span>단축어 입력</span></div><div class="row"><span>현재 날짜</span></div><div class="row"><span>클립보드</span></div></div></div>
+    </div><div class="mock-cap">모형 · 파라미터 연결</div></div>
+    <div>
+      <div class="step-head"><span class="badge">3</span><span class="step-title">"본문" 칸을 단축어 입력으로 연결</span></div>
+      <table class="see"><thead><tr><th>화면에 보이는 것</th><th>누를 것</th><th>누른 뒤 보이는 것</th></tr></thead><tbody>
+        <tr><td data-label="화면에 보이는 것">"비서에 저장" 카드에 <b>본문</b> 칸<span class="flag ok">앱 코드</span>. 화살표(⌄)를 펼치면 <b>앱 이름 · 제목 · 발신자 · 출처</b><span class="flag ok">앱 코드</span></td>
+            <td data-label="누를 것"><b>본문</b> 칸을 탭 → 키보드 위 변수 목록에서 <b>단축어 입력</b><span class="flag">비슷한 이름</span></td>
+            <td data-label="누른 뒤 보이는 것">본문 칸에 파란 알약 모양 <code>단축어 입력</code>. 맨 위에 "입력 받기" 줄이 자동으로 생길 수 있음<span class="flag">비슷한 이름</span></td></tr>
+        <tr><td data-label="화면에 보이는 것">나머지 칸 <b>앱 이름 · 제목 · 발신자</b></td>
+            <td data-label="누를 것">비워 둡니다</td>
+            <td data-label="누른 뒤 보이는 것">—</td></tr>
+        <tr><td data-label="화면에 보이는 것"><b>출처</b> 칸 (기본값 <code>NOTIFICATION</code>)<span class="flag ok">앱 코드</span></td>
+            <td data-label="누를 것">건드리지 않습니다</td>
+            <td data-label="누른 뒤 보이는 것">알림에서 온 글로 기록됨</td></tr>
+      </tbody></table>
+      <p class="step-note"><span class="term">단축어 입력</span><span class="gloss">이 단축어를 부른 쪽(자동화)이 건네준 내용, 여기서는 알림 글</span>. 알림 한 건 전체가 본문으로 들어가고, 앱 이름·제목을 따로 나누는 일은 ERURI 서버가 합니다. 알림에서 앱 이름·제목을 따로 꺼낼 수 있는지는 아직 실기기에서 확인하지 못했습니다(<a href="#todo">확인 필요</a> 3).</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="mock"><div class="phone"><div class="status"></div>
+      <div class="nav"><span>취소</span><b class="tap">새로운 단축어 ⌄</b><span>완료</span></div>
+      <div class="group" style="margin-top:8px"><div class="row tap"><span>이름 변경</span></div><div class="row"><span>아이콘 선택</span></div><div class="row"><span>파일 내보내기</span></div></div>
+      <div class="bubble">이름: <b>ERURI 저장</b></div>
+    </div><div class="mock-cap">모형 · 이름 지정</div></div>
+    <div>
+      <div class="step-head"><span class="badge">4</span><span class="step-title">이름을 "ERURI 저장" 으로 바꾸고 완료</span></div>
+      <table class="see"><thead><tr><th>화면에 보이는 것</th><th>누를 것</th><th>누른 뒤 보이는 것</th></tr></thead><tbody>
+        <tr><td data-label="화면에 보이는 것">맨 위 가운데 <b>새로운 단축어 ⌄</b></td>
+            <td data-label="누를 것">그 제목을 탭 → <span class="ui">이름 변경</span><span class="flag ok">Apple 문서</span> → <code>ERURI 저장</code> 입력 → 키보드의 완료</td>
+            <td data-label="누른 뒤 보이는 것">제목이 "ERURI 저장" 으로 바뀜</td></tr>
+        <tr><td data-label="화면에 보이는 것">오른쪽 위 <span class="ui">완료</span></td>
+            <td data-label="누를 것"><span class="ui">완료</span><span class="flag ok">Apple 문서</span></td>
+            <td data-label="누른 뒤 보이는 것">단축어 탭에 "ERURI 저장" 타일이 생김. 1부 끝</td></tr>
+      </tbody></table>
+      <p class="step-note">이름은 정확히 <code>ERURI 저장</code> 으로 해 주세요. 2부에서 이 이름으로 찾습니다.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="section" id="part1-2">
+  <div class="eyebrow">03 · 1-2부 (선택)</div>
+  <h2>1-2부: 공유 링크 만들기</h2>
+  <p class="section-sub">가족·지인에게 1부를 대신 해 주고 싶을 때만 합니다. 받는 사람은 링크를 눌러 "ERURI 저장" 단축어를 그대로 받습니다.</p>
+
+  <div class="step">
+    <div class="mock"><div class="phone"><div class="status"></div>
+      <div class="nav"><span>완료</span><b>ERURI 저장 ⌄</b><span class="tap">⇪</span></div>
+      <div class="action"><div class="t">비서에 저장</div>본문 <span class="pill">단축어 입력</span></div>
+      <div class="sheet"><div class="group"><div class="row tap"><span>iCloud 링크 복사</span></div><div class="row"><span>메시지</span></div><div class="row"><span>Mail</span></div></div></div>
+    </div><div class="mock-cap">모형 · 공유</div></div>
+    <div>
+      <div class="step-head"><span class="badge">1</span><span class="step-title">보내는 사람: 링크 복사</span></div>
+      <table class="see"><thead><tr><th>화면에 보이는 것</th><th>누를 것</th><th>누른 뒤 보이는 것</th></tr></thead><tbody>
+        <tr><td data-label="화면에 보이는 것">단축어 탭의 "ERURI 저장" 타일</td>
+            <td data-label="누를 것">타일의 <b>…</b> 를 탭해 편집기를 연 뒤 공유 버튼(⇪)<span class="flag ok">Apple 문서</span>. 또는 타일을 길게 눌러 <span class="ui">공유</span><span class="flag">비슷한 이름</span></td>
+            <td data-label="누른 뒤 보이는 것">공유 목록</td></tr>
+        <tr><td data-label="화면에 보이는 것">공유 목록</td>
+            <td data-label="누를 것"><span class="ui">iCloud 링크 복사</span> → <span class="ui">링크 복사하기</span><span class="flag ok">Apple 문서</span></td>
+            <td data-label="누른 뒤 보이는 것">링크가 복사됨. 메시지나 카톡에 붙여넣어 보냄</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="mock"><div class="phone"><div class="status"></div>
+      <div class="nav"><span></span><b>단축어 추가</b><span></span></div>
+      <div class="bubble" style="text-align:center"><div class="tile" style="margin:0 auto 6px;display:block">ERURI 저장</div>이 단축어가 수행하는 작업<br><span style="color:var(--phone-sub)">비서에 저장</span></div>
+      <span class="btn tap">단축어 가져오기</span>
+    </div><div class="mock-cap">모형 · 받는 사람</div></div>
+    <div>
+      <div class="step-head"><span class="badge">2</span><span class="step-title">받는 사람: 링크 누르고 가져오기 (2단계)</span></div>
+      <table class="see"><thead><tr><th>화면에 보이는 것</th><th>누를 것</th><th>누른 뒤 보이는 것</th></tr></thead><tbody>
+        <tr><td data-label="화면에 보이는 것">받은 메시지 속 <code>icloud.com/shortcuts/…</code> 링크</td>
+            <td data-label="누를 것">링크 탭</td>
+            <td data-label="누른 뒤 보이는 것">단축어 앱이 열리고 단축어 설명이 보임</td></tr>
+        <tr><td data-label="화면에 보이는 것">설명 화면 아래 버튼</td>
+            <td data-label="누를 것"><span class="ui">단축어 가져오기</span><span class="flag ok">Apple 문서</span></td>
+            <td data-label="누른 뒤 보이는 것">내 단축어 목록에 "ERURI 저장" 이 추가됨</td></tr>
+      </tbody></table>
+      <div class="callout warn" style="margin-top:0.8rem">받는 사람도 <b>ERURI PoC 를 먼저 설치하고 한 번 열어 둬야</b> 합니다. 앱이 없으면 "비서에 저장" 동작이 비어 보입니다<span class="flag">비슷한 이름</span>. 그리고 <b>2부 자동화는 링크로 전달되지 않습니다.</b> 자동화는 기기마다 따로 만드는 것이라(Apple 문서: "다른 기기에는 동기화되지 않습니다"), 받는 사람도 아래 2부를 직접 해야 합니다.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="section" id="part2">
+  <div class="eyebrow">04 · 2부 (앱마다 한 번)</div>
+  <h2>2부: 자동화 만들기</h2>
+  <p class="section-sub"><span class="term">자동화</span><span class="gloss">"○○ 가 일어나면 △△ 를 해라" 라는 규칙. 사람이 누르지 않아도 iPhone 이 알아서 실행</span>. 문자·카카오톡·Instagram 세 가지를 각각 만듭니다. 필요한 것만 만들어도 됩니다.</p>
+  <div class="callout warn"><b>공유 링크로 단축어를 받은 사람도 이 2부는 직접 해야 합니다.</b> 자동화는 링크로 옮겨지지 않습니다.</div>
+
+  <h3>공통: 자동 실행 스위치 이해하기</h3>
+  <div class="table-wrap"><table class="grid">
+    <thead><tr><th>스위치·선택지</th><th>뜻</th><th>권장</th></tr></thead>
+    <tbody>
+      <tr><td><b>즉시 실행</b><span class="flag">비슷한 이름</span><br><small>Apple 문서 표기: ‘실행 전에 묻기’ 끄기 → ‘묻지 않음’</small></td><td>알림이 올 때마다 "실행할까요?" 를 묻지 않고 바로 실행</td><td><b>켜기 / 선택</b></td></tr>
+      <tr><td><b>확인 후 실행</b><span class="flag">비슷한 이름</span></td><td>실행 전에 배너가 떠서 사람이 한 번 눌러야 실행</td><td>선택 안 함 (단, 알림 자동화는 이것만 가능할 수 있음)</td></tr>
+      <tr><td><b>실행 시 알림</b><span class="flag">비슷한 이름</span></td><td>자동화가 돌 때마다 "자동화 실행 중" 알림을 띄움</td><td><b>끄기</b> (알림이 두 배로 쌓임)</td></tr>
+      <tr><td><b>이 자동화 활성화</b><span class="flag ok">Apple 문서</span></td><td>자동화 전체를 켜고 끄는 스위치</td><td><b>켜기</b></td></tr>
+      <tr><td>잠금 상태 실행</td><td>화면이 잠겨 있어도 실행되는지. <b>따로 스위치가 있다는 공식 설명은 없습니다.</b> "즉시 실행" 으로 두면 잠금 중에도 돈다고 예상하지만 실기기 확인 전입니다</td><td>스위치가 보이면 <b>켜기</b></td></tr>
+    </tbody>
+  </table></div>
+  <p class="step-note">Apple 문서의 "자동으로 실행할 수 있는 자동화" 목록에 <b>메시지</b>는 있고 <b>알림</b>은 없습니다. 그래서 카카오톡·Instagram(알림) 자동화는 "즉시 실행" 이 없거나, 켜도 배너를 한 번 눌러야 할 수 있습니다. 이 경우는 ERURI 쪽 잘못이 아닙니다.</p>
+
+  <!-- A -->
+  <h3>(A) 문자(메시지)가 도착했을 때</h3>
+  <div class="step">
+    <div class="mock"><div class="phone"><div class="status"></div>
+      <div class="nav"><span>취소</span><b>새로운 자동화</b><span></span></div>
+      <div class="label">커뮤니케이션</div>
+      <div class="group"><div class="row"><span>이메일</span></div><div class="row tap"><span>메시지</span></div></div>
+      <div class="label">메시지 조건</div>
+      <div class="group"><div class="row"><span>보낸 사람</span><span class="val">선택</span></div><div class="row"><span>메시지 포함 내용</span><span class="val">예약</span></div></div>
+      <div class="tabs"><span>단축어</span><span class="on">자동화</span><span>갤러리</span></div>
+    </div><div class="mock-cap">모형 · 메시지 트리거</div></div>
+    <div>
+      <div class="step-head"><span class="badge">A</span><span class="step-title">메시지 자동화 (6단계)</span></div>
+      <table class="see"><thead><tr><th>화면에 보이는 것</th><th>누를 것</th><th>누른 뒤 보이는 것</th></tr></thead><tbody>
+        <tr><td data-label="화면에 보이는 것">① 단축어 앱 아래 탭</td><td data-label="누를 것"><span class="ui">자동화</span> → (처음이면 바로, 아니면 오른쪽 위 ＋) → <span class="ui">개인용 자동화 생성</span><span class="flag ok">Apple 문서</span></td><td data-label="누른 뒤 보이는 것">트리거(<span class="gloss">자동화를 시작시키는 사건</span>) 목록</td></tr>
+        <tr><td data-label="화면에 보이는 것">② 트리거 목록</td><td data-label="누를 것">스크롤해서 <span class="ui">메시지</span><span class="flag ok">Apple 문서</span></td><td data-label="누른 뒤 보이는 것">조건 화면: <b>보낸 사람</b>, <b>메시지 포함 내용</b><span class="flag ok">Apple 문서</span></td></tr>
+        <tr><td data-label="화면에 보이는 것">③ 조건 화면</td><td data-label="누를 것"><b>메시지 포함 내용</b>에 <code>예약</code> 입력(아래 팁 참고). <b>즉시 실행</b> 선택, <b>실행 시 알림</b> 끄기 → <span class="ui">다음</span></td><td data-label="누른 뒤 보이는 것">"빈 자동화 / 기존 단축어" 고르는 화면<span class="flag ok">Apple 문서</span></td></tr>
+        <tr><td data-label="화면에 보이는 것">④ 선택 화면</td><td data-label="누를 것"><b>새로운 빈 자동화</b><span class="flag">비슷한 이름</span> → 검색에 <code>비서에 저장</code> → 탭</td><td data-label="누른 뒤 보이는 것">"비서에 저장" 카드</td></tr>
+        <tr><td data-label="화면에 보이는 것">⑤ 카드의 칸들</td><td data-label="누를 것"><b>본문</b> → 변수 <b>단축어 입력</b>. 알약을 한 번 더 누르면 <b>내용</b>을 고를 수 있으면 내용으로<span class="flag">비슷한 이름</span>. <b>발신자</b> → 단축어 입력의 <b>보낸 사람</b><span class="flag">비슷한 이름</span>. <b>출처</b> → <code>MESSAGES</code> 로 고쳐 입력<span class="flag ok">앱 코드</span></td><td data-label="누른 뒤 보이는 것">칸 세 개가 채워짐</td></tr>
+        <tr><td data-label="화면에 보이는 것">⑥ 오른쪽 위</td><td data-label="누를 것"><span class="ui">완료</span><span class="flag ok">Apple 문서</span></td><td data-label="누른 뒤 보이는 것">자동화 탭에 "메시지를 받을 때…" 항목이 생김</td></tr>
+      </tbody></table>
+      <p class="step-note">문자만은 1부의 "ERURI 저장" 대신 <b>비서에 저장</b>을 직접 넣습니다. 출처를 <code>MESSAGES</code> 로 따로 적어야 ERURI 가 "문자에서 온 글" 로 구분할 수 있기 때문입니다.<br>
+      팁: 조건을 비우면 모든 문자가 대상이 됩니다. ERURI 는 인증번호·지인 문자를 스스로 버리지만, 처음엔 <code>예약</code>·<code>접수</code>·<code>배송</code>·<code>도착</code>·<code>결제</code> 중 하나를 넣은 자동화를 단어별로 만들어도 됩니다. Apple 문서상 한 자동화에 조건을 여러 개 넣으면 <b>모두</b> 맞아야 실행됩니다.</p>
+    </div>
+  </div>
+
+  <!-- B -->
+  <h3>(B) 카카오톡 알림이 왔을 때</h3>
+  <div class="step">
+    <div class="mock"><div class="phone"><div class="status"></div>
+      <div class="nav"><span>취소</span><b>알림</b><span class="tap">다음</span></div>
+      <div class="group" style="margin-top:6px"><div class="row"><span>앱</span><span class="val">카카오톡</span></div><div class="row"><span>포함 내용</span><span class="val">주문</span></div></div>
+      <div class="group"><div class="row"><span>즉시 실행</span><span class="radio on"></span></div><div class="row"><span>확인 후 실행</span><span class="radio"></span></div><div class="row"><span>실행 시 알림</span><span class="tog"></span></div></div>
+      <div class="action"><div class="t">단축어 실행</div><span class="pill">ERURI 저장</span> · 입력 <span class="pill">단축어 입력</span></div>
+    </div><div class="mock-cap">모형 · 알림 트리거</div></div>
+    <div>
+      <div class="step-head"><span class="badge">B</span><span class="step-title">카카오톡 알림 자동화 (6단계)</span></div>
+      <table class="see"><thead><tr><th>화면에 보이는 것</th><th>누를 것</th><th>누른 뒤 보이는 것</th></tr></thead><tbody>
+        <tr><td data-label="화면에 보이는 것">① 자동화 탭</td><td data-label="누를 것">오른쪽 위 ＋ → <span class="ui">개인용 자동화 생성</span><span class="flag ok">Apple 문서</span></td><td data-label="누른 뒤 보이는 것">트리거 목록</td></tr>
+        <tr><td data-label="화면에 보이는 것">② 트리거 목록</td><td data-label="누를 것"><b>알림</b><span class="flag">비슷한 이름</span></td><td data-label="누른 뒤 보이는 것">앱·문구 조건 화면</td></tr>
+        <tr><td data-label="화면에 보이는 것">③ 조건 화면</td><td data-label="누를 것">앱: <b>카카오톡</b>. 포함 문구<span class="flag">비슷한 이름</span>에 <code>주문</code>·<code>배송</code>·<code>예약</code>·<code>결제</code>·<code>출발</code> 중 하나</td><td data-label="누른 뒤 보이는 것">조건이 채워짐</td></tr>
+        <tr><td data-label="화면에 보이는 것">④ 실행 방식</td><td data-label="누를 것"><b>즉시 실행</b>이 보이면 선택, <b>실행 시 알림</b> 끄기 → <span class="ui">다음</span></td><td data-label="누른 뒤 보이는 것">"빈 자동화 / 기존 단축어" 선택 화면</td></tr>
+        <tr><td data-label="화면에 보이는 것">⑤ 선택 화면</td><td data-label="누를 것">동작 <b>단축어 실행</b><span class="flag">비슷한 이름</span> 추가 → 단축어 칸에 <b>ERURI 저장</b>, 입력 칸에 <b>단축어 입력</b></td><td data-label="누른 뒤 보이는 것">"ERURI 저장 실행" 카드</td></tr>
+        <tr><td data-label="화면에 보이는 것">⑥ 오른쪽 위</td><td data-label="누를 것"><span class="ui">완료</span></td><td data-label="누른 뒤 보이는 것">자동화 탭에 카카오톡 항목이 생김</td></tr>
+      </tbody></table>
+      <p class="step-note">문구 조건은 <b>꼭 넣는 걸 권합니다.</b> ERURI 는 친구와의 개인 대화를 저장하지 않도록 만들어져 있고(연락처에 있는 사람이 보낸 알림은 버림), 조건을 넣으면 가게·택배 알림톡만 넘어가 배터리와 확인 배너도 줄어듭니다.</p>
+    </div>
+  </div>
+
+  <!-- C -->
+  <h3>(C) Instagram 알림이 왔을 때</h3>
+  <div class="step">
+    <div class="mock"><div class="phone"><div class="status"></div>
+      <div class="nav"><span>취소</span><b>알림</b><span>다음</span></div>
+      <div class="group" style="margin-top:6px"><div class="row"><span>앱</span><span class="val">Instagram</span></div><div class="row tap"><span>제목</span><span class="val">메시지를 보냈습니다</span></div></div>
+      <div class="group"><div class="row"><span>즉시 실행</span><span class="radio on"></span></div><div class="row"><span>실행 시 알림</span><span class="tog"></span></div></div>
+    </div><div class="mock-cap">모형 · Instagram</div></div>
+    <div>
+      <div class="step-head"><span class="badge">C</span><span class="step-title">Instagram 알림 자동화 (6단계)</span></div>
+      <table class="see"><thead><tr><th>화면에 보이는 것</th><th>누를 것</th><th>누른 뒤 보이는 것</th></tr></thead><tbody>
+        <tr><td data-label="화면에 보이는 것">①~② (B) 와 같음</td><td data-label="누를 것">＋ → <span class="ui">개인용 자동화 생성</span> → <b>알림</b><span class="flag">비슷한 이름</span></td><td data-label="누른 뒤 보이는 것">조건 화면</td></tr>
+        <tr><td data-label="화면에 보이는 것">③ 조건 화면</td><td data-label="누를 것">앱: <b>Instagram</b>. 제목 조건<span class="flag">비슷한 이름</span>에 <code>메시지를 보냈습니다</code></td><td data-label="누른 뒤 보이는 것">DM 알림만 대상</td></tr>
+        <tr><td data-label="화면에 보이는 것">④ 실행 방식</td><td data-label="누를 것"><b>즉시 실행</b>(보이면), <b>실행 시 알림</b> 끄기 → <span class="ui">다음</span></td><td data-label="누른 뒤 보이는 것">선택 화면</td></tr>
+        <tr><td data-label="화면에 보이는 것">⑤ 선택 화면</td><td data-label="누를 것"><b>단축어 실행</b> → <b>ERURI 저장</b>, 입력 <b>단축어 입력</b></td><td data-label="누른 뒤 보이는 것">카드 1장</td></tr>
+        <tr><td data-label="화면에 보이는 것">⑥ 오른쪽 위</td><td data-label="누를 것"><span class="ui">완료</span></td><td data-label="누른 뒤 보이는 것">자동화 탭에 Instagram 항목</td></tr>
+      </tbody></table>
+      <p class="step-note">Instagram 은 "누가 DM 을 보냈다" 는 사실만 넘깁니다. 좋아요·팔로우 알림까지 넘기지 않도록 제목 조건을 넣으세요.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="section" id="check">
+  <div class="eyebrow">05 · 확인</div>
+  <h2>잘 되는지 확인하기</h2>
+  <ol class="plain">
+    <li>다른 사람 폰이나 본인 다른 번호에서 <b>본인에게</b> 문자를 보냅니다. 내용은 가짜 문장으로: <code>10/17(토) 13:00 강남역 모임 예약</code> (조건에 <code>예약</code> 을 넣었다면 그 단어가 들어가게).</li>
+    <li>문자가 도착하고 <b>15초</b>쯤 기다립니다.</li>
+    <li>ERURI PoC 를 열어 <b>큐 (N건)</b><span class="flag ok">앱 코드</span> 목록에 새 항목이 생겼는지 봅니다. 앱의 <b>poc.log</b> 칸 맨 아래에 <code>CaptureIntent queued:…</code> 줄이 생겼으면 성공입니다.</li>
+  </ol>
+  <div class="callout">보내는 번호가 <b>연락처에 저장된 사람</b>이면 ERURI 가 개인 문자로 보고 일부러 버립니다(<code>discarded:contact</code>). 연락처에 없는 번호로 시험하세요. 인증번호처럼 보이는 문자도 버립니다(<code>discarded:otp</code>).</div>
+
+  <h3>안 뜰 때 점검 5가지</h3>
+  <div class="table-wrap"><table class="grid">
+    <thead><tr><th>#</th><th>점검</th><th>어디서</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><b>권한</b>: ERURI 알림 허용, 카톡·Instagram 알림 미리 보기 "항상"</td><td>설정 → 알림</td></tr>
+      <tr><td>2</td><td><b>즉시 실행</b>: 자동화가 "확인 후 실행" 으로 되어 있으면 배너를 눌러야만 돕니다</td><td>단축어 → 자동화 → 항목 탭</td></tr>
+      <tr><td>3</td><td><b>저전력 모드</b>: 켜져 있으면 백그라운드 작업이 늦거나 멈출 수 있습니다</td><td>설정 → 배터리</td></tr>
+      <tr><td>4</td><td><b>앱 강제 종료</b>: ERURI 를 위로 쓸어 올려 꺼 버렸다면 한 번 다시 열어 두세요</td><td>홈 화면</td></tr>
+      <tr><td>5</td><td><b>자동화 켜짐</b>: "이 자동화 활성화" 가 켜져 있는지, 조건 문구가 문자에 실제로 들어 있는지</td><td>단축어 → 자동화 → 항목 탭</td></tr>
+    </tbody>
+  </table></div>
+  <p class="step-note">3·4 번이 실제로 영향을 주는지는 실기기 시험 전입니다. 확인되면 이 표를 고칩니다.</p>
+</section>
+
+<!-- 7 -->
+<section class="section" id="faq">
+  <div class="eyebrow">06 · FAQ</div>
+  <h2>자주 묻는 질문</h2>
+  <details class="faq"><summary>내 문자·알림 내용은 어디로 가나요?</summary>
+    <p>먼저 iPhone 안에서 걸러집니다. 인증번호는 바로 버리고, 카드·계좌번호는 끝 4자리만 남기고 가리며, 연락처에 있는 사람이 보낸 글도 버립니다. 남은 글만 ERURI 서버로 암호화해 보내고, 원문은 90일 뒤 지웁니다. 일정·택배 같은 "정리된 사실" 만 계속 남습니다.</p></details>
+  <details class="faq"><summary>배터리를 많이 쓰나요?</summary>
+    <p>알림 한 건마다 몇 초 도는 정도라 크지 않을 것으로 예상하지만, 아직 실측 전입니다. 문구 조건을 넣어 대상 알림 수를 줄이면 가장 확실히 아낄 수 있습니다.</p></details>
+  <details class="faq"><summary>잠깐 끄고 싶어요.</summary>
+    <p>단축어 → 자동화 → 끌 항목 탭 → <span class="ui">이 자동화 활성화</span> 끄기 → <span class="ui">완료</span><span class="flag ok">Apple 문서</span>. 다시 켤 때도 같은 곳입니다.</p></details>
+  <details class="faq"><summary>완전히 지우려면요?</summary>
+    <p>자동화 탭에서 항목을 왼쪽으로 쓸어 <b>삭제</b><span class="flag">비슷한 이름</span>. 단축어 탭의 "ERURI 저장" 은 타일을 길게 눌러 <b>삭제</b><span class="flag">비슷한 이름</span>. ERURI 앱을 지워도 자동화는 남아 있으니 함께 지워 주세요.</p></details>
+  <details class="faq"><summary>쿠팡·은행 같은 다른 앱도 추가할 수 있나요?</summary>
+    <p>네. 2부 (B) 를 그대로 반복하고 앱만 바꾸면 됩니다. 권장 문구: <code>주문</code>·<code>결제</code>·<code>승인</code>. 쇼핑·금융 앱은 개인 대화가 아니라서 ERURI 가 조금 더 적극적으로 받아 둡니다.</p></details>
+</section>
+
+<!-- 확인 필요 -->
+<section class="section" id="todo">
+  <div class="eyebrow">07 · 남은 확인</div>
+  <h2>확인 필요</h2>
+  <p class="section-sub">Apple 공식 설명서(iOS 26, 한국어)로 확인하지 못했거나, 실기기에서 눌러 봐야 알 수 있는 항목입니다. 실기기 세션(PoC-1·2)에서 채웁니다.</p>
+  <div class="table-wrap"><table class="grid">
+    <thead><tr><th>#</th><th>항목</th><th>이 문서의 가정</th><th>근거 상태</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><b>알림 트리거</b> 이름·조건 항목(앱, 제목, 포함 문구)</td><td>트리거 이름 "알림", 앱 선택 + 문구 조건</td><td>한국어 설명서 트리거 4개 분류(이벤트·이동·커뮤니케이션·설정) 어디에도 알림 트리거 설명 없음</td></tr>
+      <tr><td>2</td><td>알림 트리거가 <b>묻지 않고 실행</b> 가능한지</td><td>불가하거나 배너 탭 필요할 수 있음</td><td>설명서 "자동으로 실행할 수 있음" 목록에 알림 없음(메시지는 있음). 스펙 §3·PoC-1</td></tr>
+      <tr><td>3</td><td>알림·메시지의 <b>단축어 입력</b>이 본문으로 넘어오는지, 앱 이름·제목·보낸 사람·내용을 따로 꺼낼 수 있는지</td><td>단축어 입력 전체를 본문에, 메시지는 "내용"·"보낸 사람" 속성</td><td>설명서에 트리거 입력 데이터 명세 없음. 스펙 §3 "미확인"</td></tr>
+      <tr><td>4</td><td>실행 방식 선택지 실제 문구</td><td>"즉시 실행" / "확인 후 실행" / "실행 시 알림"</td><td>설명서 문구는 ‘실행 전에 묻기’ 끄기 → ‘묻지 않음’. 화면 문구와 다를 수 있음</td></tr>
+      <tr><td>5</td><td>잠금 상태 실행 전용 스위치 존재 여부</td><td>따로 없음, 즉시 실행이면 잠금 중에도 실행</td><td>설명서 언급 없음. 앱 쪽 인텐트는 잠금 실행 허용(<code>alwaysAllowed</code>)</td></tr>
+      <tr><td>6</td><td>동작 검색 결과의 앱 표시명</td><td>"ERURI PoC"</td><td>PoC-1 절차서의 시뮬레이터 기록 기준. 실기기 TestFlight 빌드 표시명 미확인</td></tr>
+      <tr><td>7</td><td>변수 이름 "단축어 입력"·"입력 받기" 줄</td><td>변수 목록에 "단축어 입력"</td><td>설명서 본문에 "단축어 입력" 용어는 있으나 편집기 변수 목록 표기는 미확인</td></tr>
+      <tr><td>8</td><td>다른 단축어를 부르는 동작 이름</td><td>"단축어 실행", 입력 칸 있음</td><td>설명서에서 해당 동작 페이지 확인 못 함</td></tr>
+      <tr><td>9</td><td>자동화 생성 후 "빈 자동화" 선택지 문구</td><td>"새로운 빈 자동화"</td><td>설명서는 "빈 자동화 또는 자동화 제안을 생성하거나 기존 단축어를 사용할 수 있는 옵션" 으로만 서술</td></tr>
+      <tr><td>10</td><td>타일 길게 누르기 → "공유"</td><td>길게 눌러도 공유 가능</td><td>설명서 경로는 편집기(…) → 공유 버튼</td></tr>
+      <tr><td>11</td><td>ERURI 미설치 상태에서 링크를 가져올 때 화면</td><td>"비서에 저장" 동작이 비어 보임</td><td>추정</td></tr>
+      <tr><td>12</td><td>카카오톡·Instagram 알림 설정의 "미리 보기 표시" 문구, 자동화·단축어 <b>삭제</b> 제스처</td><td>현재 적은 대로</td><td>단축어 설명서 범위 밖, 미확인</td></tr>
+      <tr><td>13</td><td>저전력 모드·앱 강제 종료가 자동화에 주는 영향, 15초 안 도착, 배터리</td><td>영향 있을 수 있음</td><td>추정. PoC-1·2 실측 대상</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note step-note">확인된 공식 문구 출처: Apple 지원 「단축어 사용 설명서」 iOS 26 한국어판 — 새로운 개인용 자동화 생성하기(apdfbdbd7123), 개인용 자동화 개요(apd690170742), 개인용 자동화 활성화 또는 비활성화하기(apd602971e63), 커뮤니케이션 트리거(apdd711f9dff), 단축어 공유하기(apdf01f8c054), 사용자화 단축어 생성하기(apd84c576f8c), 입력 유형 이해하기(apd7644168e1). 2026-09-27 조회. 동작·파라미터 이름은 <code>poc/ios/App/CaptureIntent.swift</code>·<code>Shortcuts.swift</code>.</p>
+</section>
+
+<footer class="footer"><span>ERURI · 단축어 설정 가이드</span><span>모형 그림 · 실기기 미확인 · 2026-09-27</span></footer>
+</div>
+</body>
+</html>
