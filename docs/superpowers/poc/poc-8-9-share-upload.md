@@ -248,3 +248,46 @@ OCR 텍스트는 macOS Vision(ko-KR, accurate, Share Extension과 같은 API)으
 - 스펙 §13 vision 토큰 추정(건당 3k) → 실측 3.8~4.3k.
 - `process` 잡이 분류 없이 모든 텍스트 항목에 추출을 호출한다(계획서 Step 3 그대로). 스펙 §7 순서(분류 → discard 삭제 →
   추출)와 다르므로 분류 단계 도입 전까지 실제 Gmail 항목도 추출 호출 1회가 추가된다.
+
+## PoC-9 0.2.0: 잠금 중 이벤트 시점 전송 (2026-09-28)
+
+배경: 실기기(iOS 27, 0.1.1)에서 잠금 중 자동화 → CaptureIntent 는 실행되지만(`poc1/2.intent_fired locked=true bg=true`) 인텐트가 큐에 넣기만 하고 올리지 않아, 서버 도착이 (a) 잠금 해제 즉시 (b) 잠금 중 약 40초 뒤 일괄 (c) 앱을 열 때까지 대기로 섞였다.
+
+### 경로와 태깅 (`poc9.upload_done`)
+
+| 트리거 | 무엇이 깨우나 | 전송 | `path` |
+|---|---|---|---|
+| `intent` | 단축어 자동화 → CaptureIntent.perform | 직접 요청(8초) 성공 | `intent_direct` |
+| `intent` | 〃 | 직접 요청이 응답 없음 → background 세션 파일 업로드(outbox/) | `bg_upload` |
+| `silent_push` | `apns-send` `silent:true` → `didReceiveRemoteNotification` | 직접 → 실패 시 background 세션 | `silent_push` |
+| `bg_refresh` | BGAppRefreshTask `com.picpal.assistant.poc.refresh`(최소 15분, 매 실행 후 재예약) | 〃 | `bg_refresh` |
+| `foreground` | 앱 실행·복귀·버튼 | 〃 | `foreground` |
+
+같이 남는 필드: `via`(`direct`/`bg_session`), `trigger`, `age_ms`(캡처 → 완료), `intent_locked`(인텐트 **시작 시점** `!isProtectedDataAvailable`), 완료 시점 `locked`·`bg`, `status`, `item_id`. 무음 푸시·BG refresh 가 깨울 때는 `poc9.wake {trigger, pending}` 도 남는다. `taskDescription` 은 `cap|<id>|<trigger>|<capturedAt ms>|<locked>` — 앱이 재실행돼 완료 콜백만 받아도 경로를 안다. 0.1.x 가 남긴 태스크(설명 = id)는 `foreground` 로 본다.
+
+잠금 중 접근: Keychain 세션(refresh token·계정)은 `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`(기존 그대로), 큐 `queue.sqlite`(-wal/-shm 포함)·`outbox/*.json` 은 `completeUntilFirstUserAuthentication`.
+
+서버 멱등: 같은 `source:id` 재수신 → 200 + 기존 `item_id`, `duplicate:true` (`tests/ingest.test.ts`, `tests/jobs.test.ts`).
+
+### 무음 푸시 수동 호출 (cron 은 스펙 결정 후)
+
+```bash
+cd poc/server
+# SUPABASE_URL·SERVICE_ROLE_KEY 는 --env-file 로만 읽는다(셸에 source 하지 않는다). device_id 는 devices 테이블(scripts/sql.ts "select device_id, apns_env, build from devices where user_id = $1" <POC_USER_ID>)
+deno eval --env-file=.env '
+const r = await fetch(Deno.env.get("SUPABASE_URL") + "/functions/v1/apns-send", { method: "POST",
+  headers: { authorization: "Bearer " + Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"), "content-type": "application/json" },
+  body: JSON.stringify({ device_id: Deno.args[0], user_id: Deno.env.get("POC_USER_ID"), silent: true }) });
+console.log(r.status, await r.text());' <device_id>
+```
+
+응답 `{"ok":1,"silent":true,...}` 이면 APNs 가 받았다. 기기 도착은 보장되지 않는다(Apple: 무음 푸시는 시간당 소수로 제한·저전력 모드·앱 강제 종료 시 전달 안 됨). `poc9.wake trigger=silent_push` 가 오는지로 판정한다.
+
+### 실기기 확인 절차 (0.2.0)
+
+1. TestFlight 0.2.0 설치 → 앱을 한 번 열어 로그인·기기 등록(`poc4.device_registered`) 확인 후 홈으로.
+2. 잠금 → 30초 대기(데이터 보호 활성) → 다른 폰에서 합성 문자 발송. 발송 시각 기록.
+3. 앱을 열지 않고 `poc_traces` 에서 `poc2.intent_fired`(locked=true) → `poc9.upload_done` 의 `path`·`age_ms`, `items.created_at - 발송 시각` 을 본다.
+4. 비행기 모드로 2번 반복 → `bg_upload`(비행기 해제 후 완료) 또는 `bg_refresh` 경로 확인.
+5. 큐가 빈 상태에서 위 무음 푸시 호출 → `poc9.wake trigger=silent_push` 도착 여부·지연.
+

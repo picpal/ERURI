@@ -144,7 +144,9 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
        카카오톡·Instagram 출처는 **폐기** (개인 대화 배제 원칙이 우선)
        그 외(메시지·쇼핑/금융 앱)는 kind = unknown, device_filter = "rules"로 통과 → 서버 LLM 분류(§7)에 맡긴다
   3. App Group SQLite 큐에 저장 (보호 등급 completeUntilFirstUserAuthentication, WAL + busy_timeout. 아래 "큐")
-  4. background URLSession (sharedContainerIdentifier) → POST /ingest. 보낼 항목은 claim(lease)으로 가져온다 (아래 "업로더")
+  4. 인텐트가 깨어 있는 동안 바로 POST /ingest(직접 요청, 타임아웃 8초) → 응답이 없으면 background URLSession
+     (sharedContainerIdentifier, App Group outbox/ 파일 업로드)로 넘긴다. 보낼 항목은 claim(lease)으로 가져온다 (아래 "업로더").
+     보조: 무음 푸시(content-available)·BGAppRefreshTask가 앱을 깨우면 같은 flush를 탄다 (0.2.0)
   5. 성공 시 큐 삭제, 실패 시 지수 재시도(30초 × 2^n, 상한 1시간). 앱 강제 종료 시 백그라운드 전송이 취소되므로
      앱 실행·복귀 시 큐를 다시 스캔해 재전송한다. "24시간 내"는 목표이지 보장이 아니다.
 ```
@@ -199,6 +201,9 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
 - 중복 업로드 방지: 보낼 항목은 `claim(limit:)`으로 가져온다. 단일 `UPDATE … RETURNING`이 `next_attempt_at = now + 600초`(lease)를 걸면서 행을 반환하므로 연결·프로세스 사이에서도 원자적이다. 앱 시작과 `scenePhase == .active`가 연달아 flush해도 같은 항목을 두 번 올리지 않는다.
 - 완료 콜백은 `markSent`(삭제), 실패 콜백은 `markFailed`(attempts+1, lease를 백오프 시각으로 덮어씀)로 lease를 끝낸다. 콜백 없이 lease가 만료된 항목(앱 강제 종료로 전송 취소)은 다음 flush가 다시 가져간다.
 - 그래서 "보냈는데 콜백을 못 받은" 항목은 두 번 갈 수 있다. 서버 `/ingest`는 기기 항목의 `external_id`로 큐 항목 `id`(UUID)를 받아 멱등 키(§7)로 중복을 막는다.
+- 전송 경로(0.2.0, 실기기 09-28 "잠금 중 도착이 해제·앱 열기까지 밀림" 대응): flush 트리거는 `intent`·`silent_push`·`bg_refresh`·`foreground` 넷이다. 각 트리거는 먼저 프로세스 안 직접 요청을 보내고, 네트워크 오류·타임아웃일 때만 background 세션에 넘긴다. 백그라운드에서 시작한 background 세션 전송은 iOS가 discretionary로 다뤄 늦어질 수 있어서다. HTTP 오류 응답은 넘기지 않고 `markFailed`로 백오프한다. 넘긴 전송은 앱이 없어도 iOS가 끝내고, `handleEventsForBackgroundURLSession`으로 앱을 깨워 완료 콜백을 전달한다. 인텐트 뒤 남은 항목이 있으면 BGAppRefreshTask(`com.picpal.assistant.poc.refresh`, 최소 15분)를 예약하고, 실행될 때마다 다시 예약한다. 무음 푸시는 `apns-send`의 `silent:true`(priority 5, `apns-push-type: background`)로 보낸다. 주기 발송(cron)은 아직 정하지 않았다.
+- PoC trace `poc9.upload_done.path`: `intent_direct`(인텐트 실행 중 직접 요청 완료) · `bg_upload`(인텐트가 background 세션에 넘긴 전송) · `silent_push` · `bg_refresh` · `foreground`. `via`(direct/bg_session), `age_ms`(캡처→완료), `intent_locked`(인텐트 시작 시점 잠금)를 함께 남긴다.
+- 서버 멱등: 같은 `source:id` 재수신은 200 + 기존 `item_id`(`duplicate:true`). 기기는 2xx면 큐에서 지우므로 직접 요청이 타임아웃된 뒤 background 세션이 다시 보내도 실패로 남지 않는다.
 - 업로드 서버 주소는 App Group `UserDefaults`(`group.com.picpal.assistant`) 키 `ingestURL`에 저장하고 앱 화면에서 바꾼다. PoC 앱은 저장값이 없을 때만 스킴 환경변수 `INGEST_URL`을 초기값으로 쓰고, 둘 다 없으면 `http://localhost:8787`이다. 홈 화면에서 다시 열어도 저장값이 유지된다.
 
 Share Extension은 1단계(규칙 필터)만 적용하고 큐에 넣는다(텍스트·URL 문자열과 이미지 OCR 텍스트 모두). OTP로 폐기되면 큐에 넣지 않고 **파일도 App Group에 저장하지 않는다**. 그래서 이미지는 확장의 임시 복사본에서 OCR을 먼저 돌리고, 규칙을 통과한 경우에만 App Group `inbox/`로 영속화한다(임시 복사 → OCR → 규칙 → 영속화 → 큐). PDF는 OCR이 없어 규칙 대상 텍스트가 없으므로 그대로 영속화한다. 로그는 본문 없이 종류·결과만 남긴다: `ShareExtension file queued id=<uuid> type=image ocrLen=<n>`, 폐기면 `ShareExtension file discarded:otp id=- type=image ocrLen=<n>`, 텍스트·URL은 `ShareExtension text|url queued` 또는 `discarded:<reason>`. 이미지·PDF는 App Group 컨테이너에 파일로 영속화한 뒤 큐에 로컬 경로를 기록하고, 업로드는 앱이 background URLSession 파일 업로드로 수행한다. 업로드 성공 후에만 로컬 파일을 지운다. 이미지에는 정규식 마스킹이 적용되지 않으므로 사용자에게 "이미지는 서버로 그대로 전송됨"을 공유 화면에 표시한다.
