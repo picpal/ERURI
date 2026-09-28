@@ -8,7 +8,7 @@
 
 | PoC | 검증 대상 | 태스크 | 상태 | 핵심 근거 | 남은 실측 | 근거 커밋 | 갱신일 |
 |---|---|---|---|---|---|---|---|
-| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 통과 | 실기기(09-28, iOS 27, TestFlight 0.1.1): "새로운 빈 자동화"에 알림 트리거(카카오톡+Slack 다중 선택, "모든 앱"은 불가)·"비서에 저장" 직접 편집(본문=단축어 입력→내용) → Slack 알림 본문 183자·155자, `locked=true`·`bg=true`, **배너 탭 없이 실행**. 1건은 `len=0`. 제목(`title=-1`)·앱 이름(`app=false`)은 미전달(부분 항목) | 제목·앱 이름 연결 후 재측정, 카카오톡 알림 실측, `len=0` 1건 원인, 미리보기 꺼짐·묶음 알림 기록, 연락처 발신 `discarded:contact` | `964cfea` `affe7e9` `47e9435` | 2026-09-28 |
+| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 통과 | 실기기(09-28, iOS 27, TestFlight 0.1.1): "새로운 빈 자동화"에 알림 트리거(카카오톡+Slack 다중 선택, "모든 앱"은 불가)·"비서에 저장" 직접 편집(본문=단축어 입력→내용) → Slack 알림 본문 183자·155자, `locked=true`·`bg=true`, **배너 탭 없이 실행**. 1건은 `len=0`. 제목·앱 이름 변수 연결 후 05:24:48Z `len=147`·`title=11`·`app=true`·`locked=true` — **본문·제목·앱 이름 전부 전달** | 카카오톡 알림 실측, `len=0` 1건 원인, 미리보기 꺼짐·묶음 알림 기록, 연락처 발신 `discarded:contact` | `964cfea` `affe7e9` `47e9435` | 2026-09-28 |
 | PoC-2 | 단축어 Message 트리거 → CaptureIntent 자동 실행 | 4 | 통과 | 실기기(iOS 27, TestFlight 0.1.1): "새로운 빈 자동화" 안에서 "비서에 저장" 직접 편집(본문=단축어 입력→내용) → 본문 30/15/15자·발신자 도착, `bg=true`, 1.5~2.5초, 무확인 실행. **잠금 수신 확정**: 05:02:04Z `locked=true` 본문 38자·발신자. 기존 단축어 선택 방식은 발신자만·본문 0자(6건) | 판정 기준 중 BFU(재부팅 후 첫 해제 전) 수신 처리 기록, OTP `discarded:otp`, 연락처 번호 `discarded:contact` | `ca859a4` `47e9435` | 2026-09-28 |
 | PoC-3 | Foundation Models 한국어 분류 200건 정확도·p95 | 5 | 부분 | 폴백 경로(Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error`)·새 세션·enum 스키마·타임아웃 단위 테스트. 호스트 Mac Apple Intelligence 꺼짐으로 수치 없음 | 실기기 200건 p95·개인 대화 통과율·알림톡 폐기율, 메모리, 백그라운드 `rateLimited` 빈도 | `b1f3248` `0d2a293` `affe7e9` | 2026-09-24 |
 | PoC-4 | Edge Function → APNs HTTP/2 | 9 | 부분 | h2 동작(가짜 토큰 sandbox `400 BadDeviceToken`+`apns-id`, HTTP/1.1 대조군 거부), Edge 서울 100회 동시 1 100/100 p50 419ms, JWT 429 수정. **실기기(09-28)**: 앱 토큰 등록(`devices` production, 0.1.1) → `apns-send` count 1 → APNs 200 production 634ms, 잠금 화면 수신 확인 | 100회 동시 10 × 2(성공률 ≥ 99%, h2 오류 0) — 판정 기준. 노출된 APNs 키 교체 후 실시 | `e2552b5` `40d83cc` `b84bd60` | 2026-09-28 |
@@ -27,7 +27,7 @@
 
 | PoC | 남은 실측 | 필요한 것 | 판정 근거 | 절차 |
 |---|---|---|---|---|
-| PoC-1 | **보완**: 제목·앱 이름 전달(단축어 연결 후), 카카오톡 알림, `len=0` 원인, 미리보기 꺼짐·묶음, 연락처 발신 폐기(Slack 본문·잠금·백그라운드는 09-28 통과) | 실기기, 두 번째 카톡 계정, 연락처 1건 | `poc1.intent_fired`의 `app_set`·`text_len`·`locked`·`result` | `poc-1-notification-trigger.md` |
+| PoC-1 | **보완**: 카카오톡 알림, `len=0` 원인, 미리보기 꺼짐·묶음, 연락처 발신 폐기(Slack 본문·잠금·백그라운드는 09-28 통과) | 실기기, 두 번째 카톡 계정, 연락처 1건 | `poc1.intent_fired`의 `app_set`·`text_len`·`locked`·`result` | `poc-1-notification-trigger.md` |
 | PoC-2 | **보완**: BFU 수신(재부팅 후 첫 해제 전) 처리 기록, OTP·연락처 번호 폐기 | 실기기, 테스트 발신 번호, 재부팅 | `poc2.intent_fired`, BFU는 `bfu.log` | `poc-2-message-trigger.md` |
 | PoC-3 | **신규 실측**: FM 200건 p95·통과율·폐기율, 메모리, 백그라운드 10~20회 `rateLimited` | 실기기 + Xcode ⌘U(케이블·개발 설치), Apple Intelligence 모델 다운로드 완료 | `FM_BENCH`/`fm_bench.txt`, `poc3.bench_done`, 백그라운드는 `poc1.intent_fired`의 `result` | `poc-3-fm-classifier.md` |
 | PoC-4 | **동시 10**: 100회 동시 10 × 2(1회 production 수신은 09-28 완료) | APNs 키 재교체 후, TestFlight 설치 기기(`devices` 행 있음) | `apns-send` 응답 `ok`·`byStatus`·`h2Errors` | `poc-4-apns.md` |
@@ -48,7 +48,7 @@
 
 **알림 트리거(09-28 새벽, 사용자 보고)**: 자동화 목록에 알림 트리거가 있다. 앱은 여러 개를 동시에 고를 수 있고 "모든 앱"은 고를 수 없다 → 알림 자동화 1개에 앱 여러 개를 체크하도록 안내한다. 본문·앱명 전달은 아래 실측.
 
-**알림 자동화 실측(09-28, 실기기)**: "새로운 빈 자동화"에 알림 트리거(카카오톡+Slack 다중 선택), "비서에 저장" 직접 편집(본문 = 단축어 입력 → "내용"). Slack 알림 05:08:33Z `len=183`·`locked=true`·`bg=true`, 05:08:39Z `len=0`, 05:08:43Z `len=155`·`locked=true`. 확인 배너 탭 없이 실행. 제목(`title=-1`)·앱 이름(`app=false`)은 전달되지 않았다(액션 파라미터에 변수 미연결 — 연결 후 재측정). 판정: 판정 기준의 본문 전달·잠금·백그라운드 무확인 실행으로 **통과**, 앱 이름·제목 전달은 부분 항목으로 보완. 카카오톡 알림·미리보기 꺼짐·묶음 알림은 미기록.
+**알림 자동화 실측(09-28, 실기기)**: "새로운 빈 자동화"에 알림 트리거(카카오톡+Slack 다중 선택), "비서에 저장" 직접 편집(본문 = 단축어 입력 → "내용"). Slack 알림 05:08:33Z `len=183`·`locked=true`·`bg=true`, 05:08:39Z `len=0`, 05:08:43Z `len=155`·`locked=true`. 확인 배너 탭 없이 실행. 제목·앱 이름은 처음엔 변수 미연결로 비었으나, 제목·앱 이름 칸에도 단축어 입력 변수를 연결한 뒤 05:24:48Z `len=147`·`title=11`·`app=true`·`locked=true` 로 전부 전달됐다. 판정: 본문·제목·앱 이름 전달, 잠금, 백그라운드 무확인 실행 모두 확인 → **통과**. 카카오톡 알림·미리보기 꺼짐·묶음 알림은 미기록.
 
 시뮬레이터(재실측 09-24): `Metadata.appintents`에 CaptureIntent·App Shortcut 등록 확인, XCUITest로 **단축어 앱에서 수동 실행** 시 앱을 열지 않고 `CaptureIntent queued:rules … textLen=0 locked=false`(14:32:51Z). 이것은 인텐트 호출 경로일 뿐 판정 기준(알림 트리거로 본문·앱명 전달)은 아니다. 남은 실측: 실기기 알림 자동화 시나리오 1~8(`app=`·`textLen=` 로그, 시나리오 8은 연락처 발신 카톡 `discarded:contact`). 절차 `poc-1-notification-trigger.md`
 
@@ -102,7 +102,7 @@
 
 ## 실기기 세션 1 (2026-09-28 새벽, iOS 27, TestFlight 0.1.1 `202609272353`)
 
-판정 변경: PoC-1 미검증→**통과**(Slack 알림 본문·잠금·백그라운드, 제목·앱 이름은 부분 항목), PoC-2 미검증→**통과**(`locked=true` 확정), PoC-4 부분 유지(production 1회 수신), PoC-9 통과 유지(실기기 텍스트 업로드 확인). PoC-3·5·8은 이번 세션에서 재지 못했다.
+판정 변경: PoC-1 미검증→**통과**(Slack 알림 본문·제목·앱 이름·잠금·백그라운드), PoC-2 미검증→**통과**(`locked=true` 확정), PoC-4 부분 유지(production 1회 수신), PoC-9 통과 유지(실기기 텍스트 업로드 확인). PoC-3·5·8은 이번 세션에서 재지 못했다.
 
 발견된 결함·할 일:
 1. Release 빌드의 서버 URL 기본값이 `localhost`였다 → 0.1.1에서 수정.
@@ -110,7 +110,7 @@
 3. 공유 파일 `PUT upload/<id>` 엔드포인트가 Supabase에 없다 → PoC-8·9 파일 경로 실측 전에 서버 작업 필요.
 4. APNs 키가 세션 출력에 두 번 노출 → 교체 예정(스펙 §16 운영 기록). PoC-4 동시 10 측정은 교체 후.
 5. trace `locked` 판정(`isProtectedDataAvailable`)이 잠금 직후 유예 구간에서 `false`로 나온다(04:50:38Z). 잠금이 이어진 뒤 수신분은 `true`(05:02:04Z 문자, 05:08Z 알림)라 판정에는 영향 없음 — 유예 구간 기록 방식만 재검토.
-6. 알림 자동화에서 제목·앱 이름이 전달되지 않았다(`title=-1`, `app=false`) → 액션 파라미터에 변수 연결 후 재측정.
+6. 알림 자동화에서 제목·앱 이름은 액션 파라미터에 변수를 연결해야 온다(연결 후 `title=11`·`app=true` 확인) → 가이드에 세 칸 모두 연결하도록 명시.
 
 ## PoC-10 실측 (2026-09-26, Task 8)
 
