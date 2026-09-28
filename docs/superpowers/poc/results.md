@@ -4,22 +4,22 @@
 
 이 표는 스펙 §14 "판정 현황"과 **같은 내용**이다(표를 고칠 때 둘 다 고친다). 행이 길어지는 측정값·시각·로그는 아래 "PoC별 상세"에 둔다.
 
-## 판정 (2026-09-27)
+## 판정 (2026-09-28)
 
 | PoC | 검증 대상 | 태스크 | 상태 | 핵심 근거 | 남은 실측 | 근거 커밋 | 갱신일 |
 |---|---|---|---|---|---|---|---|
-| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 시뮬레이터: CaptureIntent·App Shortcut 등록, 단축어 앱 **수동** 실행 시 앱을 열지 않고 인텐트 실행(판정 기준인 알림 트리거 아님). 연락처 규칙 배선(합성 연락처 `discarded:contact`) | 실기기 알림 자동화 시나리오 1~8: 본문·앱명 전달(`text_len`·`app`), 배너·잠금·미리보기·묶음 기록 | `964cfea` `0d2a293` `affe7e9` `cf6dd12` | 2026-09-24 |
-| PoC-2 | 단축어 Message 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 인텐트 호출 경로만(PoC-1과 같음) | 실기기 메시지 자동화: 잠금 15초 후 `locked=true` 적재, BFU 수신, OTP `discarded:otp`, 연락처 번호 `discarded:contact` | `964cfea` `affe7e9` `cf6dd12` | 2026-09-24 |
+| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 시뮬레이터: CaptureIntent·App Shortcut 등록, 단축어 앱 **수동** 실행 시 앱을 열지 않고 인텐트 실행(판정 기준인 알림 트리거 아님). 연락처 규칙 배선(합성 연락처 `discarded:contact`). 실기기(09-28, iOS 27) 메시지 자동화에서 "기존 단축어 선택"은 본문 0자 → 알림 자동화도 자동화 안 직접 편집 방식으로 잴 것 | 실기기 알림 자동화 시나리오 1~8: 본문·앱명 전달(`text_len`·`app`), 배너·잠금·미리보기·묶음 기록 | `964cfea` `0d2a293` `affe7e9` `cf6dd12` | 2026-09-28 |
+| PoC-2 | 단축어 Message 트리거 → CaptureIntent 자동 실행 | 4 | 통과 | 실기기(iOS 27, TestFlight 0.1.1): "새로운 빈 자동화" 안에서 "비서에 저장" 직접 편집(본문=단축어 입력→내용) → 본문 30/15/15자·발신자 도착, `bg=true`, 1.5~2.5초, 무확인 실행. 잠금 중 수신 1건도 본문 도착(사용자 보고 잠금, trace `locked=false`). 기존 단축어 선택 방식은 발신자만·본문 0자(6건) | 판정 기준 중 BFU(재부팅 후 첫 해제 전) 수신 처리 기록, `locked` 판정 재검토 후 잠금 15초 후 재측정, OTP `discarded:otp`, 연락처 번호 `discarded:contact` | `ca859a4` `47e9435` | 2026-09-28 |
 | PoC-3 | Foundation Models 한국어 분류 200건 정확도·p95 | 5 | 부분 | 폴백 경로(Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error`)·새 세션·enum 스키마·타임아웃 단위 테스트. 호스트 Mac Apple Intelligence 꺼짐으로 수치 없음 | 실기기 200건 p95·개인 대화 통과율·알림톡 폐기율, 메모리, 백그라운드 `rateLimited` 빈도 | `b1f3248` `0d2a293` `affe7e9` | 2026-09-24 |
-| PoC-4 | Edge Function → APNs HTTP/2 | 9 | 부분 | h2 동작(가짜 토큰 sandbox `400 BadDeviceToken`+`apns-id`, HTTP/1.1 대조군 거부), Edge 서울 100회 동시 1 100/100 p50 419ms, JWT 429 수정. 기기별 `apns_env`·환경 불일치 1회 재시도, APNs 키 Sandbox & Production으로 교체 | 앱 토큰 등록(`ingest/device`) 구현 → TestFlight 기기 production 1회 수신 → 100회 동시 10 × 2(성공률 ≥ 99%, h2 오류 0) | `e2552b5` `40d83cc` | 2026-09-27 |
+| PoC-4 | Edge Function → APNs HTTP/2 | 9 | 부분 | h2 동작(가짜 토큰 sandbox `400 BadDeviceToken`+`apns-id`, HTTP/1.1 대조군 거부), Edge 서울 100회 동시 1 100/100 p50 419ms, JWT 429 수정. **실기기(09-28)**: 앱 토큰 등록(`devices` production, 0.1.1) → `apns-send` count 1 → APNs 200 production 634ms, 잠금 화면 수신 확인 | 100회 동시 10 × 2(성공률 ≥ 99%, h2 오류 0) — 판정 기준. 노출된 APNs 키 교체 후 실시 | `e2552b5` `40d83cc` `b84bd60` | 2026-09-28 |
 | PoC-5 | 잠금화면 알림 액션 → 백그라운드 EventKit 멱등 쓰기 | 6 | 부분 | XCUITest(실제 배너·액션 탭, 로컬 알림): 백그라운드 쓰기 `bg=true`, 재탭 `dup skip`, 앱 종료 후 콜드 스타트, 동시 두 번 탭 이벤트 +1 | 실기기 잠금 화면 `.authenticationRequired` 인증 후 1건. 보고 실패 후 재탭은 서버 연동 후 | `0e89279` `0d2a293` | 2026-09-24 |
 | PoC-6 | Gmail watch → Pub/Sub → history 동기화 | 10 | 부분 | 실계정: 연결·watch +7일, 백필 85 ID → 76행·429 없음·`content_enc` null 0, 웹훅 약 8초(1회), 404 재동기화로 누락 1건 복구·중복 0 | 웹훅 지연 5회 평균, watch 갱신(수동+다음 날 cron), 6일 `expiring`·8일 `invalid_grant`, 규칙 필터 OTP·카드 메일. 백필이 증분 동기화를 굶기는 문제(스펙 §16) | `ea6c762` `87673fe` `cdd7c79` | 2026-09-27 |
 | PoC-7 | 한국어 하이브리드 검색 Top-5 정확도 | 11 | 통과 | 합성 500건·질문 50: 하이브리드 + `text-embedding-3-large`(512) Top-5 38/40(95%), 무근거 거절 10/10, 인용 36/36·정밀도 39/39, 날짜 필터 오판 0, 검색 p95 70~111ms | — (1a에서 실데이터 검색 평가) | `4c00aa7` `cf786bb` `9e8ab9f` | 2026-09-27 |
 | PoC-8 | 이미지·PDF → OCR/추출 → 일정 | 7, 12 | 부분 | 서버: 합성 7종(이미지 5·PDF 2) vision+OCR 21/21, OCR만 21/21, `uncertain` 21/21, p50 1.95s·p95 2.53s, 건당 $0.00042, worker extract 7/7. 기기(시뮬레이터): 사진 앱 공유 시트 → 확장 `ocrLen=43`·큐 `SHARE` 행 | 실기기 공유 시트 → 큐·업로드(App Group 서명), 오프라인 후 복구 유실 0 | `f28814d` `0d2a293` `affe7e9` `7f533f1` | 2026-09-27 |
-| PoC-9 | 앱 종료 후 background URLSession 업로드 완료 | 7 | 통과 | 앱 프로세스 종료를 `ps`로 확인한 뒤 3.68초 후 목 서버에 정확한 바이트 수로 도착 | — (실기기 회귀: 스와이프 종료·비행기 모드) | `f28814d` | 2026-09-24 |
+| PoC-9 | 앱 종료 후 background URLSession 업로드 완료 | 7 | 통과 | 앱 프로세스 종료를 `ps`로 확인한 뒤 3.68초 후 목 서버에 정확한 바이트 수로 도착. 실기기(09-28): 로그인 직후 큐 7건 일괄 업로드(`poc9.upload_done` ×7), 잠금 중 수신분은 해제·앱 열기 후 업로드(45초 뒤), 서버 `process` 잡 전부 `done` | — (실기기 회귀: 스와이프 종료·비행기 모드, 파일 업로드는 서버 `upload/<id>` 엔드포인트 구현 후) | `f28814d` | 2026-09-28 |
 | PoC-10 | jobs 큐 lease/재시도/dead 처리 | 8 | 통과 | 같은 lease_key 동시 클레임 1건, 5회 실패 후 `dead`, 임대 180초+하트비트로 90초 잡 재클레임 0·attempts 1, 복호화 p50 0.7ms·p95 56ms | — (판정 기준 밖: 150초 강제 종료 잡 재클레임, 24시간 활동 유지) | `2d9a45a` `6ca66d8` | 2026-09-26 |
 
-**집계: 통과 3(PoC-7·9·10) · 부분 5(PoC-3·4·5·6·8) · 실패 0 · 미검증 2(PoC-1·2).** 부분·미검증 7건과 PoC-9 실기기 회귀는 아래 "실기기·장기 실측 대기"(8개 PoC)로 넘어간다.
+**집계: 통과 4(PoC-2·7·9·10) · 부분 5(PoC-3·4·5·6·8) · 실패 0 · 미검증 1(PoC-1).** 부분·미검증 6건과 PoC-2·9 실기기 보완 항목은 아래 "실기기·장기 실측 대기"(8개 PoC)로 넘어간다.
 
 ## 실기기·장기 실측 대기
 
@@ -27,14 +27,14 @@
 
 | PoC | 남은 실측 | 필요한 것 | 판정 근거 | 절차 |
 |---|---|---|---|---|
-| PoC-1 | **신규 실측**: 카톡·인스타 알림 자동화 시나리오 1~8 | 실기기, 두 번째 카톡·인스타 계정, 연락처 1건 | `poc1.intent_fired`의 `app_set`·`text_len`·`locked`·`result` | `poc-1-notification-trigger.md` |
-| PoC-2 | **신규 실측**: 메시지 시나리오 1~5(잠금 15초 후, BFU, OTP, 연락처 번호) | 실기기, 테스트 발신 번호, 재부팅 | `poc2.intent_fired`, BFU는 `bfu.log` | `poc-2-message-trigger.md` |
+| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 시뮬레이터: CaptureIntent·App Shortcut 등록, 단축어 앱 **수동** 실행 시 앱을 열지 않고 인텐트 실행(판정 기준인 알림 트리거 아님). 연락처 규칙 배선(합성 연락처 `discarded:contact`). 실기기(09-28, iOS 27) 메시지 자동화에서 "기존 단축어 선택"은 본문 0자 → 알림 자동화도 자동화 안 직접 편집 방식으로 잴 것 | 실기기 알림 자동화 시나리오 1~8: 본문·앱명 전달(`text_len`·`app`), 배너·잠금·미리보기·묶음 기록 | `964cfea` `0d2a293` `affe7e9` `cf6dd12` | 2026-09-28 |
+| PoC-2 | **보완**: BFU 수신(재부팅 후 첫 해제 전) 처리 기록, 잠금 15초 후 `locked=true` 재측정(판정 방식 재검토 후), OTP·연락처 번호 폐기 | 실기기, 테스트 발신 번호, 재부팅 | `poc2.intent_fired`, BFU는 `bfu.log` | `poc-2-message-trigger.md` |
 | PoC-3 | **신규 실측**: FM 200건 p95·통과율·폐기율, 메모리, 백그라운드 10~20회 `rateLimited` | 실기기 + Xcode ⌘U(케이블·개발 설치), Apple Intelligence 모델 다운로드 완료 | `FM_BENCH`/`fm_bench.txt`, `poc3.bench_done`, 백그라운드는 `poc1.intent_fired`의 `result` | `poc-3-fm-classifier.md` |
-| PoC-4 | **production 수신·동시 10**: 앱 토큰 등록 → 1회 수신(잠금·앱 종료) → 100회 동시 10 × 2 | 앱의 `ingest/device` 등록 코드(계획서 Task 9 Step 4, 미구현), TestFlight 설치 기기 | `apns-send` 응답 `ok`·`byStatus`·`h2Errors`, `devices` 행 | `poc-4-apns.md` |
+| PoC-4 | **동시 10**: 100회 동시 10 × 2(1회 production 수신은 09-28 완료) | APNs 키 재교체 후, TestFlight 설치 기기(`devices` 행 있음) | `apns-send` 응답 `ok`·`byStatus`·`h2Errors` | `poc-4-apns.md` |
 | PoC-5 | **신규 실측**: 잠금 화면 `.authenticationRequired` 액션 → Face ID/암호 → 1건 | 실기기, 기기 암호 | `poc5.action_handled`의 `result`·`dup`·`bg`·`locked` | `poc-5-notification-eventkit.md` |
 | PoC-6 | **반복 항목**: 웹훅 지연 5회 평균, watch 갱신 2회(수동·cron), 6일 `expiring`, 8일 `invalid_grant`→`reauth_required`, 규칙 필터 OTP·카드 메일 | 연결 후 8일(달력), 실측 중 테스트 DB 초기화 금지 | `sync_states`·`connections`·`jobs`, `gmail_reauth_due()` | `poc-6-gmail.md` |
-| PoC-8 | **실기기 회귀**: 사진 공유 시트 → 큐·OCR, 업로드 바이트 일치, 비행기 모드 후 유실 0 | 실기기, 목 서버(LAN) | `poc8.share_received`, `poc9.upload_done`, 목 서버 `/received` | `poc-8-9-share-upload.md` |
-| PoC-9 | **실기기 회귀**: 공유 직후 스와이프 종료 → 도착 또는 취소 기록, 재실행 후 유실 0 | 위와 같음 | `poc9.upload_done`, `/received`의 `at` | `poc-8-9-share-upload.md` |
+| PoC-8 | **실기기 회귀**: 사진 공유 시트 → 큐·OCR, 업로드 바이트 일치, 비행기 모드 후 유실 0 | 실기기, 서버 파일 업로드 엔드포인트(`PUT upload/<id>`, Supabase에 없음 — 09-28 발견) | `poc8.share_received`, `poc9.upload_done` | `poc-8-9-share-upload.md` |
+| PoC-9 | **실기기 회귀**: 공유 직후 스와이프 종료 → 도착 또는 취소 기록, 재실행 후 유실 0(텍스트 업로드는 09-28 확인) | 위와 같음 + 서버 `upload/<id>` | `poc9.upload_done`, `/received`의 `at` | `poc-8-9-share-upload.md` |
 
 권장 순서(한 세션): TestFlight 설치 → 권한·PoC 사용자 로그인 → 단축어 자동화 3개(PoC-1·2)와 백그라운드 FM 10~20회 → PoC-4 토큰 등록·발송(production) → 잠금 화면 로컬 알림 액션(PoC-5) → 공유·업로드(PoC-8·9) → FM ⌘U 벤치마크(PoC-3, 케이블·개발 설치가 TestFlight 앱을 덮어쓰므로 후반) → 재부팅 BFU(PoC-2 시나리오 3). PoC-6은 세션과 별개로 연결일 기준 6일·8일째에 확인한다.
 
@@ -42,19 +42,29 @@
 
 표의 "핵심 근거"를 뒷받침하는 측정값·시각·로그 원본이다(이전 판정표의 "근거 / 남은 실측" 열을 그대로 옮겼다).
 
-### PoC-1 단축어 Notification 트리거 → CaptureIntent 자동 실행 (갱신 2026-09-24)
+### PoC-1 단축어 Notification 트리거 → CaptureIntent 자동 실행 (갱신 2026-09-28)
+
+**iOS 27 단축어 UI 관찰(09-27~28, 실기기)**: iOS 26 문서와 화면이 다르다. 자동화 트리거 화면에 "즉시 실행/실행 전에 묻기"·"다음" 버튼이 없고, 단축어를 고르지 않으면 목록에 "설정 마저 하기"로 남는다. 메시지 자동화는 조건(보낸 사람 또는 포함 문구)이 있어야 켜지며 "메시지 → 다음을 포함" 조건을 두면 "실행 묻지 않기"가 나타난다. "입력 없음" 칩은 세부사항 화면으로 가고 "공유 시트 유형" 항목이 없다. 알림 자동화도 PoC-2와 같이 "기존 단축어 선택"이 아니라 자동화 안에서 액션을 직접 편집하는 방식으로 잰다(아래 PoC-2).
 
 시뮬레이터(재실측 09-24): `Metadata.appintents`에 CaptureIntent·App Shortcut 등록 확인, XCUITest로 **단축어 앱에서 수동 실행** 시 앱을 열지 않고 `CaptureIntent queued:rules … textLen=0 locked=false`(14:32:51Z). 이것은 인텐트 호출 경로일 뿐 판정 기준(알림 트리거로 본문·앱명 전달)은 아니다. 남은 실측: 실기기 알림 자동화 시나리오 1~8(`app=`·`textLen=` 로그, 시나리오 8은 연락처 발신 카톡 `discarded:contact`). 절차 `poc-1-notification-trigger.md`
 
-### PoC-2 단축어 Message 트리거 → CaptureIntent 자동 실행 (갱신 2026-09-24)
+### PoC-2 단축어 Message 트리거 → CaptureIntent 자동 실행 (갱신 2026-09-28)
 
-인텐트 호출 경로는 PoC-1과 같이 시뮬레이터에서 확인. 남은 실측: 실기기 메시지 자동화, 잠금 15초 후 수신 `locked=true`, BFU 수신은 `bfu.log`(보호 등급 none, 내용 없이 길이만)로 판독, OTP 문자 `discarded:otp`, 연락처 번호 문자 `discarded:contact`. 절차 `poc-2-message-trigger.md`
+**실기기 세션 1 (2026-09-28, iOS 27, TestFlight 0.1.1 `202609272353`, `poc_traces`·`items`·`jobs` 조회, 본문 조회 없음)**:
+- **자동화 → "단축어 선택"으로 기존 단축어(ERURI에 저장) 실행**: 발신자(Sender 속성)만 전달, 본문 0자 — 6건, 단축어 파일 v1·v2(Content)·v2-b(Body) 모두. v2-alt(입력에서 텍스트 가져오기)는 실행 자체가 안 됨.
+- **자동화 → "새로운 빈 자동화"에서 "비서에 저장" 직접 편집, 본문 = 단축어 입력 → "내용"**: 본문 30자·15자·15자 + 발신자 도착(04:46:28Z, 04:47:55Z, 04:50:38Z), `bg=true`, elapsed 1.5~2.5초, 확인 없이 실행. 잠금 상태 수신 건(04:50:38Z, 사용자 보고)도 본문 도착 — 단 trace `locked=false`(`isProtectedDataAvailable` 기준이라 잠금 직후 유예 구간일 수 있음, 판정 방식 재검토). 같은 방식의 공개 사례: zhgchg.li(iOS 단축어 SMS 전달), dev.to/noha1337(SMS → 웹훅).
+- **제약**: 메시지 자동화는 조건 필수 → "메시지 → 다음을 포함"에 공백 한 칸으로 전체 수신, "실행 묻지 않기" 선택 가능. 자동화는 파일·링크로 배포할 수 없어 사용자가 기기에서 직접 만든다(공유 단축어 파일은 보조). iOS 27 단축어 UI는 iOS 26 문서와 다르다(PoC-1 상세).
+- 판정: 판정 기준 "잠금 상태에서 큐에 저장됨"은 사용자 보고 잠금 수신 1건으로 **통과**. "첫 해제 전 수신분 처리 방식 기록"(BFU)은 아직 없어 보완 항목으로 남긴다. OTP·연락처 번호 폐기도 미실측.
+
+이전(09-24): 인텐트 호출 경로는 PoC-1과 같이 시뮬레이터에서 확인. 남은 실측: 실기기 메시지 자동화, 잠금 15초 후 수신 `locked=true`, BFU 수신은 `bfu.log`(보호 등급 none, 내용 없이 길이만)로 판독, OTP 문자 `discarded:otp`, 연락처 번호 문자 `discarded:contact`. 절차 `poc-2-message-trigger.md`
 
 ### PoC-3 Foundation Models 한국어 분류 200건 정확도·p95 (갱신 2026-09-24)
 
 재실측 09-24: 호스트 Mac이 `appleIntelligenceNotEnabled`(macOS 26.5에서 직접 호출로 확인)라 시뮬레이터 `availability()=available`은 오표시, `respond`는 에셋 에러(`FM error other`). 수정본(호출마다 새 세션, enum 스키마, 제목 입력, 에러→폴백, 제시간 타임아웃)은 단위 테스트 통과, 앱 프로세스 `CaptureIntent.perform()`에서 Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error` 확인. 정확도·p95·메모리 수치 없음. 남은 실측: Mac Apple Intelligence 켜기(사용자) 또는 실기기 벤치마크, 메모리, 백그라운드 인텐트 `rateLimited` 빈도. 절차 `poc-3-fm-classifier.md`
 
-### PoC-4 Edge Function → APNs HTTP/2 (갱신 2026-09-27)
+### PoC-4 Edge Function → APNs HTTP/2 (갱신 2026-09-28)
+
+**실기기 세션 1 (2026-09-28)**: 기기 등록 `poc4.device_registered` 15:04:21Z(09-27), `devices` 행 `apns_env=production`·build 0.1.1(`202609272353`). 배포 `apns-send` `{device_id,user_id,count:1}` → APNs **200 production 634ms**, 잠금 화면에 "PoC-4 / 합성 알림 1/1" 도착(사용자 확인). 판정 기준(100회·동시 10, 성공률 ≥ 99%, h2 오류 0)은 아직 1회분이라 **부분** 유지 — 세션 중 APNs 키가 출력에 두 번 노출돼 키 교체 후 100회 동시 10을 잰다.
 
 09-26~27 가짜 기기 토큰으로 sandbox 발송: 로컬 deno 400 `BadDeviceToken`·`apns-id` 있음(1.1초 콜드/0.45초 웜), **배포 Edge `apns-send`(서울)** 400 `BadDeviceToken`·`apns-id` 있음(APNs 호출 0.7~0.87초), 동시 1로 100회 100/100 오류 0(p50 419ms). **h2 동작**: APNs는 HTTP/1.1을 연결 단계에서 거부(curl 대조군 000)하므로 Deno fetch가 h2로 협상한 것이다. 동시 10에서는 fetch 오류 10~18%(APNs가 BadDeviceToken 뒤 `GOAWAY`로 연결을 닫아 떠 있던 스트림 실패, `dispatch task is gone` 1~2건, 로컬 Deno도 같음) — 가짜 토큰 탓으로 보이며 판정 기준(동시 10, 성공 ≥99%, h2 오류 0)은 실기기 토큰으로 재측정. 첫 배포의 429 `TooManyProviderTokenUpdates`(98/100)는 JWT 동시 생성·isolate별 iat 때문이라 in-flight 공유 + 30분 경계 iat로 고쳐 0건. 다음 조치: 실기기 토큰 등록 → 1회 수신 → 100회 동시 10(절차 `poc-4-apns.md`). 연결 오류가 남으면 1회 재시도, 그래도 남으면 Cloudflare Worker 릴레이
 
@@ -76,13 +86,26 @@
 
 **서버 부분(Task 12, 09-27, 통과)**: 합성 청첩장·안내 7종(이미지 5: 연도 없음 2·모바일 스크린샷 2·음력 1, PDF 2: 텍스트·스캔 2쪽)을 배포 `vision-extract`(`gpt-6-luna`, Structured Outputs strict, `store: false`)로 7×3회. 제목·시작·장소 **vision+OCR 21/21**, OCR만 21/21, vision만 19/21(스캔 PDF 제목에 혼주 이름). `uncertain` 적중 21/21·오탐 0(연도·음력은 스키마 플래그로 서버가 결정, 연도는 서버가 가장 가까운 미래 해로 재계산). 음력 1종은 양력 환산이 하루 틀려(10-25) 날짜를 확정하지 않고 `date`로 REVIEW. 지연 vision+OCR p50 1.95s·p95 2.53s(모델 1.42/2.06s), OCR만 1.48/1.81s. 건당 입력 3.8k·출력 82 토큰 $0.00042(월 100건 ≈ $0.04). 배포 worker `extract` 잡 7/7 `proposed`·facts/proposals 7건·`usage_counters` 반영, `process` 3/3 `extracted`, 월 100건 상한→OCR 폴백·멱등은 호스팅 DB 테스트로 고정. 기기 부분(시뮬레이터, 09-24): 사진 앱 → 공유 시트 → 확장 실행, `ShareExtension file … ocrLen=43`·큐 `SHARE` 행. 남은 실측: 실기기 공유 시트 → 큐·업로드(App Group 서명), 오프라인 후 복구 유실 0(대기 목록). 절차 `poc-8-9-share-upload.md`
 
-### PoC-9 앱 종료 후 background URLSession 업로드 완료 (갱신 2026-09-24)
+### PoC-9 앱 종료 후 background URLSession 업로드 완료 (갱신 2026-09-28)
+
+**실기기 세션 1 (2026-09-28)**: PoC 계정 로그인 직후 큐 7건 일괄 업로드(15:03:12Z, `poc9.upload_done` ×7), 이후 수신 건은 개별 업로드. 잠금 중 수신분은 잠금 해제·앱 열기 후 업로드(04:50:38Z 인텐트 실행 → 04:51:23Z 서버 수신). 서버 `process` 잡 최근 항목 모두 `done`(`extracted`). 통과 유지. 파일(사진·PDF) 업로드는 서버에 `PUT upload/<id>`가 없어 아직 못 잰다.
 
 호스트 `ps aux`로 앱 프로세스 완전 종료 확인(14:07:27.946) 후 3.68초 뒤 목 서버에 정확한 바이트 수로 도착(14:07:31.628) 실측. 실기기 회귀 확인은 대기 목록. 절차 `poc-8-9-share-upload.md`
 
 ### PoC-10 jobs 큐 lease/재시도/dead 처리 (갱신 2026-09-26)
 
 호스팅 프로젝트 `assistant-poc`(서울) 실측. 같은 lease_key 2건 동시 클레임 시 1건만(deno 테스트), pg_cron 매분 → worker로 `unknown` 잡 5회 후 `dead`·attempts=5, 변조 암호문 잡 5회 후 `dead`(last_error=`decrypt failed`, 본문 없음). **재실측 09-26(임대 180초 + 30초 하트비트, `6ca66d8`)**: `sleep` 90초 잡 클레임 후 65초에 두 번째 워커 호출 → `claimed: 0`, 65초 시점 임대 잔여 177초(하트비트 약 32·62초에 연장), 최종 `done` attempts=1. 이전 임대 60초에서는 같은 조건에서 재클레임·중복 실행(attempts=2)이었다. 남은 확인(판정 기준 밖): Edge wall-clock 150초를 넘겨 강제 종료된 잡의 임대 만료 후 재클레임, 24시간 일시정지 없음(시나리오 7). 상세는 아래 "PoC-10 실측"
+
+## 실기기 세션 1 (2026-09-28 새벽, iOS 27, TestFlight 0.1.1 `202609272353`)
+
+판정 변경: PoC-2 미검증→**통과**, PoC-4 부분 유지(production 1회 수신), PoC-9 통과 유지(실기기 텍스트 업로드 확인). PoC-1·3·5·8은 이번 세션에서 재지 못했다.
+
+발견된 결함·할 일:
+1. Release 빌드의 서버 URL 기본값이 `localhost`였다 → 0.1.1에서 수정.
+2. 실기기에 로그인 수단이 없었다 → 설정 화면에 PoC 계정 로그인 추가.
+3. 공유 파일 `PUT upload/<id>` 엔드포인트가 Supabase에 없다 → PoC-8·9 파일 경로 실측 전에 서버 작업 필요.
+4. APNs 키가 세션 출력에 두 번 노출 → 교체 예정(스펙 §16 운영 기록). PoC-4 동시 10 측정은 교체 후.
+5. trace `locked` 판정(`isProtectedDataAvailable`)이 잠금 직후 유예 구간에서 `false`로 나온다 → 판정 방식 재검토 후 PoC-2 잠금 15초 후 재측정.
 
 ## PoC-10 실측 (2026-09-26, Task 8)
 
