@@ -1,5 +1,6 @@
 import AppIntents
 import UIKit
+import UserNotifications
 import EruriCore
 
 struct CaptureIntent: AppIntent {
@@ -15,7 +16,8 @@ struct CaptureIntent: AppIntent {
   @Parameter(title: "발신자") var sender: String?
   @Parameter(title: "출처", default: "NOTIFICATION") var source: String
 
-  func perform() async throws -> some IntentResult & ProvidesDialog {
+  /// 대화상자를 돌려주지 않는다: 자동화 실행마다 단축어가 결과 배너를 띄웠다. 결과 표시는 설정 "저장 결과 알림"(기본 off)일 때만 로컬 알림으로
+  func perform() async throws -> some IntentResult {
     let started = Date()
     let (locked, bg) = await AppState.snapshot()
     // PoC-1/2 판정용 필드 메타. 값은 남기지 않고 존재·길이만 남긴다(AGENTS §7)
@@ -26,7 +28,8 @@ struct CaptureIntent: AppIntent {
       PoCLog.append("CaptureIntent \(result) \(Int(Date().timeIntervalSince(started) * 1000))ms \(meta)")
       trace(result: result, started: started, locked: locked, bg: bg)
       await upload(locked: locked)
-      return .result(dialog: "\(result)")
+      await notifyResult(result)
+      return .result()
     } catch {
       PoCLog.append("CaptureIntent error \(type(of: error)) \(meta)")
       BFULog.append("CaptureIntent error \(type(of: error)) textLen=\(text.count)")
@@ -34,6 +37,13 @@ struct CaptureIntent: AppIntent {
       await upload(locked: locked)
       throw error
     }
+  }
+
+  private func notifyResult(_ result: String) async {
+    guard CaptureResultNotice.isEnabled() else { return }
+    let c = UNMutableNotificationContent()
+    c.title = "비서에 저장"; c.body = result   // 결과 코드만(본문 원문 없음)
+    try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
   }
 
   /// PoC-9(0.2.0): 인텐트가 깨어 있는 동안 바로 올린다(직접 요청 → 실패 시 background 세션). 폐기돼도 trace·남은 큐를 올린다.

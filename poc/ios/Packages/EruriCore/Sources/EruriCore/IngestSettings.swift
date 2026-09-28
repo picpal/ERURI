@@ -38,3 +38,11 @@ public enum IngestSettings {
     return url
   }
 }
+
+/// 설정 화면 "저장 결과 알림": CaptureIntent 결과(`queued:rules` 등)를 로컬 알림으로 띄울지. 기본 off.
+/// 인텐트(백그라운드)와 앱이 같이 읽도록 App Group UserDefaults 에 둔다.
+public enum CaptureResultNotice {
+  public static let key = "captureResultNotice"
+  public static func isEnabled(defaults: UserDefaults = IngestSettings.shared) -> Bool { defaults.bool(forKey: key) }
+  public static func set(_ on: Bool, defaults: UserDefaults = IngestSettings.shared) { defaults.set(on, forKey: key) }
+}

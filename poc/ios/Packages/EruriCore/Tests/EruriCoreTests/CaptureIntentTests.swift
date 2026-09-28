@@ -123,3 +123,12 @@ final class IngestSettingsTests: XCTestCase {
     XCTAssertEqual(IngestSettings.fallback.absoluteString, "http://localhost:8787")   // 테스트 호스트는 Debug 구성
   }
 }
+
+final class CaptureResultNoticeTests: XCTestCase {
+  func testDefaultOffAndToggle() {
+    let d = UserDefaults(suiteName: "test.notice.\(UUID().uuidString)")!
+    XCTAssertFalse(CaptureResultNotice.isEnabled(defaults: d))
+    CaptureResultNotice.set(true, defaults: d); XCTAssertTrue(CaptureResultNotice.isEnabled(defaults: d))
+    CaptureResultNotice.set(false, defaults: d); XCTAssertFalse(CaptureResultNotice.isEnabled(defaults: d))
+  }
+}

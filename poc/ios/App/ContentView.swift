@@ -19,6 +19,7 @@ struct ContentView: View {
   @State private var accountStatus = ""
   @State private var diagCopied = false
   @State private var pushStatus = ""
+  @State private var resultNotice = CaptureResultNotice.isEnabled()
 
   var body: some View {
     NavigationStack {
@@ -65,6 +66,12 @@ struct ContentView: View {
           Button("저장") { saveIngestURL() }.accessibilityIdentifier("ingestURLSave")
           Button("기본값으로 (\(IngestSettings.fallback.host() ?? "-"))") { resetIngestURL() }.accessibilityIdentifier("ingestURLReset")
           Text("현재: \(ingestCurrent)").font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("ingestURLCurrent")
+        }
+        // CaptureIntent 결과(queued:rules 등) 로컬 알림. 기본 off, App Group 에 저장돼 인텐트가 읽는다
+        Section("알림") {
+          Toggle("저장 결과 알림", isOn: $resultNotice)
+            .onChange(of: resultNotice) { _, on in CaptureResultNotice.set(on) }
+            .accessibilityIdentifier("captureResultNotice")
         }
         Section("진단") {
           Button(diagCopied ? "복사됨" : "진단 정보 복사") { copyDiagnostics() }.accessibilityIdentifier("copyDiagnostics")
