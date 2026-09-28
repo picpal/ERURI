@@ -13,6 +13,7 @@ export type IngestDeps = {
   authUser(token: string): Promise<string | null>;                       // JWT → user_id, 실패 시 null
   encrypt(userId: string, plaintext: string): Promise<Uint8Array>;
   insertItem(item: NewItem): Promise<string | null>;                      // 중복이면 null
+  findItem(user: string, idempotencyKey: string): Promise<string | null>; // 중복일 때 기존 item id
 };
 
 const SOURCES = new Set(["MESSAGES", "NOTIFICATION", "SHARE", "CHAT"]);   // GMAIL은 서버가 직접 수집
@@ -29,6 +30,8 @@ function discarded(reason: string) {
 }
 
 // 스펙 §7 /ingest: JWT → 서버 규칙 필터 → 암호화 → items INSERT + jobs(process) → 202
+// 같은 idempotency_key(source:id) 재수신(기기 직접 요청 타임아웃 뒤 background 세션 재전송 등)은 200 + 기존 item_id.
+// 기기는 2xx 면 큐에서 지우므로 재전송이 실패로 남지 않는다
 export async function handleIngest(req: Request, deps: IngestDeps): Promise<Response> {
   const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
   const user = token ? await deps.authUser(token) : null;
@@ -55,5 +58,7 @@ export async function handleIngest(req: Request, deps: IngestDeps): Promise<Resp
     ocrTextEnc: ocr === null ? null : await deps.encrypt(user, ocr),
     occurredAt,
   });
-  return Response.json({ item_id: itemId, duplicate: itemId === null }, { status: 202 });
+  if (itemId !== null) return Response.json({ item_id: itemId, duplicate: false }, { status: 202 });
+  const existing = await deps.findItem(user, `${b.source}:${b.id}`);
+  return Response.json({ item_id: existing, duplicate: true }, { status: 200 });
 }

@@ -39,6 +39,9 @@ async function signJWT(o: { keyId: string; teamId: string; p8: string }, iat: nu
 
 export type APNsResult = { status: number; apnsId?: string; reason?: string };
 export type ApnsEnv = "sandbox" | "production";
+// background = 무음 푸시(`content-available:1`). Apple: apns-push-type background 는 priority 5 여야 한다
+export type ApnsPushType = "alert" | "background";
+export const SILENT_PAYLOAD = { aps: { "content-available": 1 } } as const;
 
 // 개발 서명(Xcode 설치)은 sandbox 토큰, TestFlight·App Store 빌드는 production 토큰을 발급한다
 export function apnsHost(env: ApnsEnv): string {
@@ -48,10 +51,10 @@ export function defaultApnsEnv(): ApnsEnv {
   return Deno.env.get("APNS_ENV") === "production" ? "production" : "sandbox";
 }
 
-export async function sendAPNs(o: { token: string; payload: unknown; topic: string; priority?: 5 | 10; env?: ApnsEnv }): Promise<APNsResult> {
+export async function sendAPNs(o: { token: string; payload: unknown; topic: string; priority?: 5 | 10; env?: ApnsEnv; pushType?: ApnsPushType }): Promise<APNsResult> {
   const jwt = await makeJWT({ keyId: Deno.env.get("APNS_KEY_ID")!, teamId: Deno.env.get("APNS_TEAM_ID")!, p8: Deno.env.get("APNS_P8")! });
   const r = await fetch(`https://${apnsHost(o.env ?? defaultApnsEnv())}/3/device/${o.token}`, { method: "POST",
-    headers: { authorization: `bearer ${jwt}`, "apns-topic": o.topic, "apns-priority": String(o.priority ?? 10), "apns-push-type": "alert" },
+    headers: { authorization: `bearer ${jwt}`, "apns-topic": o.topic, "apns-priority": String(o.priority ?? 10), "apns-push-type": o.pushType ?? "alert" },
     body: JSON.stringify(o.payload) });
   const apnsId = r.headers.get("apns-id") ?? undefined;
   if (r.status === 200) { await r.body?.cancel(); return { status: 200, apnsId }; }
@@ -66,8 +69,8 @@ export type EnvSendResult = APNsResult & { env: ApnsEnv; retried: boolean; first
 
 // 환경 불일치면 반대 환경으로 1회만 재시도한다. 로그에는 환경·사유만(토큰 없음)
 export async function sendWithEnvFallback(
-  send: (o: { token: string; payload: unknown; topic: string; priority?: 5 | 10; env: ApnsEnv }) => Promise<APNsResult>,
-  o: { token: string; payload: unknown; topic: string; priority?: 5 | 10; env: ApnsEnv },
+  send: (o: { token: string; payload: unknown; topic: string; priority?: 5 | 10; env: ApnsEnv; pushType?: ApnsPushType }) => Promise<APNsResult>,
+  o: { token: string; payload: unknown; topic: string; priority?: 5 | 10; env: ApnsEnv; pushType?: ApnsPushType },
 ): Promise<EnvSendResult> {
   const first = await send(o);
   if (first.reason === "BadEnvironmentKeyInToken") console.log(JSON.stringify({ apns: "key_env_mismatch", env: o.env }));

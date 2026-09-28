@@ -128,3 +128,14 @@ Deno.test("no retry on success or on other errors; the retry itself is not retri
   const r = await sendWithEnvFallback(async (o) => { calls.push(o.env); return { status: 400, reason: "BadDeviceToken" }; }, { token: "ef".repeat(32), payload: {}, topic: "t", env: "sandbox" });
   assertEquals([calls, r.status, r.retried], [["sandbox", "production"], 400, true]);
 });
+
+Deno.test("sendAPNs: silent push sets apns-push-type background and priority 5; default stays alert/10", async () => {
+  const seen: Headers[] = [];
+  using _f = stub(globalThis, "fetch", async (_u: string | URL | Request, init?: RequestInit) => {
+    seen.push(new Headers(init?.headers)); return new Response(null, { status: 200, headers: { "apns-id": "x" } });
+  });
+  __resetJWTCache();
+  await sendAPNs({ token: "ab".repeat(32), payload: { aps: { "content-available": 1 } }, topic: "t", env: "sandbox", priority: 5, pushType: "background" });
+  await sendAPNs({ token: "ab".repeat(32), payload: {}, topic: "t", env: "sandbox" });
+  assertEquals(seen.map((h) => [h.get("apns-push-type"), h.get("apns-priority")]), [["background", "5"], ["alert", "10"]]);
+});

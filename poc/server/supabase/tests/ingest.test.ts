@@ -3,13 +3,14 @@ import { handleIngest, type IngestDeps, type NewItem, parseCapturedAt } from "..
 
 // 가짜 의존성: encrypt는 평문 바이트를 그대로 돌려줘 무엇이 암호화됐는지 검사한다
 function deps(o: { user?: string | null; duplicate?: boolean } = {}) {
-  const inserted: NewItem[] = [];
+  const inserted: NewItem[] = [], looked: [string, string][] = [];
   const d: IngestDeps = {
     authUser: async (t) => (t === "good" ? (o.user === undefined ? "user-1" : o.user) : null),
     encrypt: async (_u, p) => new TextEncoder().encode(p),
     insertItem: async (item) => { inserted.push(item); return o.duplicate ? null : "item-1"; },
+    findItem: async (user, key) => { looked.push([user, key]); return "item-existing"; },
   };
-  return { d, inserted };
+  return { d, inserted, looked };
 }
 const req = (body: unknown, token: string | null = "good") => new Request("http://x/ingest", {
   method: "POST", body: JSON.stringify(body),
@@ -53,11 +54,21 @@ Deno.test("card/account masked before encrypt, title masked, idempotency key = s
   assertEquals(it.user, "user-1");
 });
 
-Deno.test("duplicate → 202 with duplicate flag", async () => {
-  const { d } = deps({ duplicate: true });
+Deno.test("same idempotency key again → 200 + existing item id (looked up by caller user and source:id)", async () => {
+  const { d, looked } = deps({ duplicate: true });
   const r = await handleIngest(req(base), d);
-  assertEquals(r.status, 202);
-  assertEquals((await r.json()).duplicate, true);
+  assertEquals(r.status, 200);
+  assertEquals(await r.json(), { item_id: "item-existing", duplicate: true });
+  assertEquals(looked, [["user-1", "NOTIFICATION:A1B2"]]);
+});
+
+Deno.test("first insert does not look up; retry of the same id keeps the same idempotency key", async () => {
+  const first = deps();
+  assertEquals((await handleIngest(req(base), first.d)).status, 202);
+  assertEquals(first.looked.length, 0);
+  const again = deps({ duplicate: true });
+  await handleIngest(req(base), again.d);
+  assertEquals(again.inserted[0].idempotencyKey, first.inserted[0].idempotencyKey);
 });
 
 Deno.test("bad body → 400 (unknown source, GMAIL from device, missing text, bad date)", async () => {

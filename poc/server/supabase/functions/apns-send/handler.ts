@@ -1,12 +1,13 @@
-import type { APNsResult, ApnsEnv } from "../_shared/apns.ts";
-import { sendWithEnvFallback } from "../_shared/apns.ts";
+import type { APNsResult, ApnsEnv, ApnsPushType } from "../_shared/apns.ts";
+import { SILENT_PAYLOAD, sendWithEnvFallback } from "../_shared/apns.ts";
 
 // PoC-4 부하 시나리오(service 키 호출만): body { token, env? } 또는 { device_id, user_id }(devices의 토큰·환경), count, concurrency.
+// PoC-9: silent:true 면 무음 푸시(`content-available:1`, priority 5, apns-push-type background)로 앱을 깨워 큐를 flush 하게 한다.
 // 환경 불일치 응답이면 반대 환경으로 1회 재시도한다(sendWithEnvFallback). 응답·로그에 토큰·JWT를 담지 않는다
 export type ApnsSendDeps = {
   isService(req: Request): boolean;
   lookupDevice(deviceId: string, userId: string): Promise<{ apns_token: string; apns_env: ApnsEnv } | null>;
-  send(o: { token: string; payload: unknown; topic: string; env: ApnsEnv }): Promise<APNsResult>;
+  send(o: { token: string; payload: unknown; topic: string; env: ApnsEnv; priority?: 5 | 10; pushType?: ApnsPushType }): Promise<APNsResult>;
   defaultEnv(): ApnsEnv;
   topic(): string;
 };
@@ -29,6 +30,8 @@ export async function handleApnsSend(req: Request, deps: ApnsSendDeps): Promise<
   } else {
     return bad("bad_target");
   }
+  if (b.silent !== undefined && typeof b.silent !== "boolean") return bad("bad_silent");
+  const silent = b.silent === true;
   const count = Math.min(Math.max(Number(b.count ?? 1), 1), 200);
   const concurrency = Math.min(Math.max(Number(b.concurrency ?? 1), 1), 20);
   const topic = deps.topic();
@@ -42,8 +45,9 @@ export async function handleApnsSend(req: Request, deps: ApnsSendDeps): Promise<
       const i = next++;
       const t = performance.now();
       try {
-        const r = await sendWithEnvFallback(deps.send, { token, topic, env,
-          payload: { aps: { alert: { title: "PoC-4", body: `합성 알림 ${i + 1}/${count}` } } } });
+        const r = await sendWithEnvFallback(deps.send, silent
+          ? { token, topic, env, payload: SILENT_PAYLOAD, priority: 5, pushType: "background" }
+          : { token, topic, env, payload: { aps: { alert: { title: "PoC-4", body: `합성 알림 ${i + 1}/${count}` } } } });
         lat.push(performance.now() - t);
         byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
         if (r.reason) reasons[r.reason] = (reasons[r.reason] ?? 0) + 1;
@@ -63,7 +67,7 @@ export async function handleApnsSend(req: Request, deps: ApnsSendDeps): Promise<
   await Promise.all(Array.from({ length: concurrency }, lane));
   lat.sort((x, y) => x - y);
   const pct = (p: number) => lat.length ? Math.round(lat[Math.min(lat.length - 1, Math.ceil(p * lat.length) - 1)]) : null;
-  const out = { ok: byStatus["200"] ?? 0, count, concurrency, env, envRetries, byEnv, byStatus, reasons, h2Errors, errors, apnsIds,
+  const out = { ok: byStatus["200"] ?? 0, count, concurrency, env, silent, envRetries, byEnv, byStatus, reasons, h2Errors, errors, apnsIds,
     ms: { total: Math.round(performance.now() - t0), p50: pct(0.5), p95: pct(0.95), max: pct(1) } };
   console.log(JSON.stringify({ apns_send: { ...out, errors: Object.keys(errors).length } }));
   return Response.json(out);

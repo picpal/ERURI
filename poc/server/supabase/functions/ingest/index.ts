@@ -45,5 +45,11 @@ Deno.serve((req) => {
       if (error) throw new Error("insert_item " + error.code);
       return data as string | null;
     },
+    // service role 경로라 user_id 를 명시해 조회한다(스펙 §12 통제 4). id 만 읽는다
+    findItem: async (user, key) => {
+      const { data, error } = await sb.from("items").select("id").eq("user_id", user).eq("idempotency_key", key).maybeSingle();
+      if (error) throw new Error("items lookup " + error.code);
+      return data?.id ?? null;
+    },
   });
 });

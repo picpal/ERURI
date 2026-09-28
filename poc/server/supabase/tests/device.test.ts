@@ -50,11 +50,11 @@ Deno.test("device: 400 on bad token, env, device_id, build", async () => {
 // ── apns-send: 기기별 환경 사용 ─────────────────────────────────────
 
 function sendDeps(o: { device?: { apns_token: string; apns_env: "sandbox" | "production" } | null } = {}) {
-  const sent: { env: string; token: string }[] = [];
+  const sent: { env: string; token: string; payload?: unknown; priority?: number; pushType?: string }[] = [];
   const d: ApnsSendDeps = {
     isService: (r) => r.headers.get("authorization") === "Bearer secret",
     lookupDevice: async () => (o.device === undefined ? { apns_token: TOKEN, apns_env: "production" } : o.device),
-    send: async (x) => { sent.push({ env: x.env, token: x.token }); return x.env === "production" ? { status: 200, apnsId: "a" } : { status: 400, reason: "BadDeviceToken" }; },
+    send: async (x) => { sent.push({ env: x.env, token: x.token, payload: x.payload, priority: x.priority, pushType: x.pushType }); return x.env === "production" ? { status: 200, apnsId: "a" } : { status: 400, reason: "BadDeviceToken" }; },
     defaultEnv: () => "sandbox",
     topic: () => "com.example.topic",
   };
@@ -94,4 +94,16 @@ Deno.test("devices RLS: a user upserts and reads only own device rows", async ()
   assertEquals(other.error?.code, "42501");
   await service.from("devices").delete().eq("device_id", deviceId);
   await user.auth.signOut();
+});
+
+Deno.test("apns-send silent:true → content-available only, priority 5, push type background (device_id target)", async () => {
+  const a = sendDeps();
+  const r = await (await handleApnsSend(sendReq({ device_id: "dev-1", user_id: "u", silent: true }), a.d)).json();
+  assertEquals([r.ok, r.silent, r.env], [1, true, "production"]);
+  assertEquals(a.sent, [{ env: "production", token: TOKEN, payload: { aps: { "content-available": 1 } }, priority: 5, pushType: "background" }]);
+  // 기본(alert)은 그대로: priority·push type 미지정 → sendAPNs 기본값 10·alert
+  const b = sendDeps();
+  await handleApnsSend(sendReq({ device_id: "dev-1", user_id: "u" }), b.d);
+  assertEquals([b.sent[0].priority, b.sent[0].pushType, (b.sent[0].payload as { aps: { alert?: unknown } }).aps.alert !== undefined], [undefined, undefined, true]);
+  assertEquals((await handleApnsSend(sendReq({ device_id: "dev-1", user_id: "u", silent: "yes" }), b.d)).status, 400);
 });

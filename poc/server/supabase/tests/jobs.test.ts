@@ -62,6 +62,9 @@ Deno.test("insert_item stores ciphertext, enqueues process job, dedups by idempo
   const again = await sb.rpc("insert_item", args);
   assertEquals(typeof first.data, "string");
   assertEquals(again.data, null);
+  // ingest 가 중복일 때 200 과 함께 돌려줄 기존 id: (user_id, idempotency_key) 조회(ingest/index.ts findItem 과 같은 쿼리)
+  const found = await sb.from("items").select("id").eq("user_id", user).eq("idempotency_key", args.p_idempotency_key).maybeSingle();
+  assertEquals(found.data?.id, first.data);
   const { data: jobs } = await sb.from("jobs").select("kind, user_id, payload").eq("lease_key", "item:" + first.data);
   assertEquals(jobs!.length, 1);
   assertEquals([jobs![0].kind, jobs![0].user_id, jobs![0].payload.item_id], ["process", user, first.data]);
