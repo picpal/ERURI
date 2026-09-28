@@ -8,7 +8,7 @@
 
 | PoC | 검증 대상 | 태스크 | 상태 | 핵심 근거 | 남은 실측 | 근거 커밋 | 갱신일 |
 |---|---|---|---|---|---|---|---|
-| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 시뮬레이터: CaptureIntent·App Shortcut 등록, 단축어 앱 **수동** 실행 시 앱을 열지 않고 인텐트 실행(판정 기준인 알림 트리거 아님). 연락처 규칙 배선(합성 연락처 `discarded:contact`). 실기기(09-28, iOS 27) 메시지 자동화에서 "기존 단축어 선택"은 본문 0자 → 알림 자동화도 자동화 안 직접 편집 방식으로 잴 것 | 실기기 알림 자동화 시나리오 1~8: 본문·앱명 전달(`text_len`·`app`), 배너·잠금·미리보기·묶음 기록 | `964cfea` `0d2a293` `affe7e9` `cf6dd12` | 2026-09-28 |
+| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 시뮬레이터: CaptureIntent·App Shortcut 등록, 단축어 앱 **수동** 실행 시 앱을 열지 않고 인텐트 실행(판정 기준인 알림 트리거 아님). 연락처 규칙 배선(합성 연락처 `discarded:contact`). 실기기(09-28, iOS 27): **트리거 존재·다중 앱 확인, 본문 전달 실측 대기** — 알림 자동화 트리거 있음, 앱 여러 개 동시 선택 가능·"모든 앱" 불가. 메시지 자동화에서 "기존 단축어 선택"은 본문 0자였으므로 자동화 안 직접 편집 방식으로 잴 것 | 실기기 알림 자동화 시나리오 1~8: 본문·앱명 전달(`text_len`·`app`), 배너·잠금·미리보기·묶음 기록 | `964cfea` `0d2a293` `affe7e9` `cf6dd12` | 2026-09-28 |
 | PoC-2 | 단축어 Message 트리거 → CaptureIntent 자동 실행 | 4 | 통과 | 실기기(iOS 27, TestFlight 0.1.1): "새로운 빈 자동화" 안에서 "비서에 저장" 직접 편집(본문=단축어 입력→내용) → 본문 30/15/15자·발신자 도착, `bg=true`, 1.5~2.5초, 무확인 실행. 잠금 중 수신 1건도 본문 도착(사용자 보고 잠금, trace `locked=false`). 기존 단축어 선택 방식은 발신자만·본문 0자(6건) | 판정 기준 중 BFU(재부팅 후 첫 해제 전) 수신 처리 기록, `locked` 판정 재검토 후 잠금 15초 후 재측정, OTP `discarded:otp`, 연락처 번호 `discarded:contact` | `ca859a4` `47e9435` | 2026-09-28 |
 | PoC-3 | Foundation Models 한국어 분류 200건 정확도·p95 | 5 | 부분 | 폴백 경로(Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error`)·새 세션·enum 스키마·타임아웃 단위 테스트. 호스트 Mac Apple Intelligence 꺼짐으로 수치 없음 | 실기기 200건 p95·개인 대화 통과율·알림톡 폐기율, 메모리, 백그라운드 `rateLimited` 빈도 | `b1f3248` `0d2a293` `affe7e9` | 2026-09-24 |
 | PoC-4 | Edge Function → APNs HTTP/2 | 9 | 부분 | h2 동작(가짜 토큰 sandbox `400 BadDeviceToken`+`apns-id`, HTTP/1.1 대조군 거부), Edge 서울 100회 동시 1 100/100 p50 419ms, JWT 429 수정. **실기기(09-28)**: 앱 토큰 등록(`devices` production, 0.1.1) → `apns-send` count 1 → APNs 200 production 634ms, 잠금 화면 수신 확인 | 100회 동시 10 × 2(성공률 ≥ 99%, h2 오류 0) — 판정 기준. 노출된 APNs 키 교체 후 실시 | `e2552b5` `40d83cc` `b84bd60` | 2026-09-28 |
@@ -27,7 +27,7 @@
 
 | PoC | 남은 실측 | 필요한 것 | 판정 근거 | 절차 |
 |---|---|---|---|---|
-| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 시뮬레이터: CaptureIntent·App Shortcut 등록, 단축어 앱 **수동** 실행 시 앱을 열지 않고 인텐트 실행(판정 기준인 알림 트리거 아님). 연락처 규칙 배선(합성 연락처 `discarded:contact`). 실기기(09-28, iOS 27) 메시지 자동화에서 "기존 단축어 선택"은 본문 0자 → 알림 자동화도 자동화 안 직접 편집 방식으로 잴 것 | 실기기 알림 자동화 시나리오 1~8: 본문·앱명 전달(`text_len`·`app`), 배너·잠금·미리보기·묶음 기록 | `964cfea` `0d2a293` `affe7e9` `cf6dd12` | 2026-09-28 |
+| PoC-1 | **신규 실측**: 카톡·인스타 알림 자동화 시나리오 1~8 | 실기기, 두 번째 카톡·인스타 계정, 연락처 1건 | `poc1.intent_fired`의 `app_set`·`text_len`·`locked`·`result` | `poc-1-notification-trigger.md` |
 | PoC-2 | **보완**: BFU 수신(재부팅 후 첫 해제 전) 처리 기록, 잠금 15초 후 `locked=true` 재측정(판정 방식 재검토 후), OTP·연락처 번호 폐기 | 실기기, 테스트 발신 번호, 재부팅 | `poc2.intent_fired`, BFU는 `bfu.log` | `poc-2-message-trigger.md` |
 | PoC-3 | **신규 실측**: FM 200건 p95·통과율·폐기율, 메모리, 백그라운드 10~20회 `rateLimited` | 실기기 + Xcode ⌘U(케이블·개발 설치), Apple Intelligence 모델 다운로드 완료 | `FM_BENCH`/`fm_bench.txt`, `poc3.bench_done`, 백그라운드는 `poc1.intent_fired`의 `result` | `poc-3-fm-classifier.md` |
 | PoC-4 | **동시 10**: 100회 동시 10 × 2(1회 production 수신은 09-28 완료) | APNs 키 재교체 후, TestFlight 설치 기기(`devices` 행 있음) | `apns-send` 응답 `ok`·`byStatus`·`h2Errors` | `poc-4-apns.md` |
@@ -45,6 +45,8 @@
 ### PoC-1 단축어 Notification 트리거 → CaptureIntent 자동 실행 (갱신 2026-09-28)
 
 **iOS 27 단축어 UI 관찰(09-27~28, 실기기)**: iOS 26 문서와 화면이 다르다. 자동화 트리거 화면에 "즉시 실행/실행 전에 묻기"·"다음" 버튼이 없고, 단축어를 고르지 않으면 목록에 "설정 마저 하기"로 남는다. 메시지 자동화는 조건(보낸 사람 또는 포함 문구)이 있어야 켜지며 "메시지 → 다음을 포함" 조건을 두면 "실행 묻지 않기"가 나타난다. "입력 없음" 칩은 세부사항 화면으로 가고 "공유 시트 유형" 항목이 없다. 알림 자동화도 PoC-2와 같이 "기존 단축어 선택"이 아니라 자동화 안에서 액션을 직접 편집하는 방식으로 잰다(아래 PoC-2).
+
+**알림 트리거(09-28 새벽, 사용자 보고)**: 자동화 목록에 알림 트리거가 있다. 앱은 여러 개를 동시에 고를 수 있고 "모든 앱"은 고를 수 없다 → 알림 자동화 1개에 앱 여러 개를 체크하도록 안내한다. 본문·앱명 전달은 실측 대기(상태 미검증 유지).
 
 시뮬레이터(재실측 09-24): `Metadata.appintents`에 CaptureIntent·App Shortcut 등록 확인, XCUITest로 **단축어 앱에서 수동 실행** 시 앱을 열지 않고 `CaptureIntent queued:rules … textLen=0 locked=false`(14:32:51Z). 이것은 인텐트 호출 경로일 뿐 판정 기준(알림 트리거로 본문·앱명 전달)은 아니다. 남은 실측: 실기기 알림 자동화 시나리오 1~8(`app=`·`textLen=` 로그, 시나리오 8은 연락처 발신 카톡 `discarded:contact`). 절차 `poc-1-notification-trigger.md`
 

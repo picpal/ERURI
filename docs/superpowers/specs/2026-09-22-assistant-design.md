@@ -435,15 +435,15 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 | # | 검증 대상 | 방법 | 통과 기준 | 실패 시 대안 |
 |---|---|---|---|---|
-| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 시뮬레이터: CaptureIntent·App Shortcut 등록, 단축어 앱 **수동** 실행 시 앱을 열지 않고 인텐트 실행(판정 기준인 알림 트리거 아님). 연락처 규칙 배선(합성 연락처 `discarded:contact`). 실기기(09-28, iOS 27) 메시지 자동화에서 "기존 단축어 선택"은 본문 0자 → 알림 자동화도 자동화 안 직접 편집 방식으로 잴 것 | 실기기 알림 자동화 시나리오 1~8: 본문·앱명 전달(`text_len`·`app`), 배너·잠금·미리보기·묶음 기록 | `964cfea` `0d2a293` `affe7e9` `cf6dd12` | 2026-09-28 |
-| PoC-2 | 단축어 Message 트리거 → CaptureIntent 자동 실행 | 4 | 통과 | 실기기(iOS 27, TestFlight 0.1.1): "새로운 빈 자동화" 안에서 "비서에 저장" 직접 편집(본문=단축어 입력→내용) → 본문 30/15/15자·발신자 도착, `bg=true`, 1.5~2.5초, 무확인 실행. 잠금 중 수신 1건도 본문 도착(사용자 보고 잠금, trace `locked=false`). 기존 단축어 선택 방식은 발신자만·본문 0자(6건) | 판정 기준 중 BFU(재부팅 후 첫 해제 전) 수신 처리 기록, `locked` 판정 재검토 후 잠금 15초 후 재측정, OTP `discarded:otp`, 연락처 번호 `discarded:contact` | `ca859a4` `47e9435` | 2026-09-28 |
+| PoC-1 | Notification 트리거 → App Intent | 빈 앱 + CaptureIntent, 카카오톡·Instagram 알림 트리거 자동화. iOS 26 (iOS 27 기기가 있다면 27도) | 본문·앱명 전달 확인. 확인 배너 여부·잠금 상태·미리보기 꺼짐 상태·묶음 알림 동작 기록 | 본문 미전달 → 알림 경로 폐기, 공유만. 배너 필수 → 키워드 필터로 탭 최소화 |
+| PoC-2 | Message 트리거 → App Intent | 문자 수신 시 발신자·본문 전달, 잠금 중 무확인 실행. 재부팅 후 첫 잠금 해제 전 수신 | 잠금 상태에서 큐에 저장됨. 첫 해제 전 수신분 처리 방식 기록 | 실패 시 문자도 공유 경로만 |
 | PoC-3 | Foundation Models in-app 백그라운드 인텐트 | 한국어 알림 200건(개인 대화 100·알림톡 96·검진 결과 안내 `medical_result` 4) 분류, 지연·메모리 측정. 백그라운드 인텐트 10~20회 연속 호출로 `rateLimited` 빈도 측정 | p95 < 3초. **개인 대화 통과율 ≤ 2%**, 알림톡 폐기율 ≤ 15%(분모 notice 96, `medical_result` 4건은 따로 센다) | 규칙 필터만 + 카톡·인스타 경로 폐기 |
-| PoC-4 | Edge Function → APNs HTTP/2 | 9 | 부분 | h2 동작(가짜 토큰 sandbox `400 BadDeviceToken`+`apns-id`, HTTP/1.1 대조군 거부), Edge 서울 100회 동시 1 100/100 p50 419ms, JWT 429 수정. **실기기(09-28)**: 앱 토큰 등록(`devices` production, 0.1.1) → `apns-send` count 1 → APNs 200 production 634ms, 잠금 화면 수신 확인 | 100회 동시 10 × 2(성공률 ≥ 99%, h2 오류 0) — 판정 기준. 노출된 APNs 키 교체 후 실시 | `e2552b5` `40d83cc` `b84bd60` | 2026-09-28 |
+| PoC-4 | Edge Function → APNs HTTP/2 | 프로덕션 리전에서 100회 발송, 동시 10회 포함 | 성공률 ≥ 99%, h2 스트림 오류 0 | Cloudflare Worker 릴레이 |
 | PoC-5 | 알림 액션 → 백그라운드 EventKit 쓰기 | `authenticationRequired` 액션에서 이벤트 생성. 같은 알림 두 번 탭, 동시 두 번 탭, 앱 종료 후 액션(콜드 스타트), 보고 실패 후 재탭. APNs 없이 로컬 알림으로 가능 | 앱 열지 않고 캘린더에 1건만 생성 | `foreground` 액션으로 앱 열어 실행 |
 | PoC-6 | Gmail serverAuthCode 교환 + watch + history | 테스트 계정으로 3개월 백필, push 수신. 8일 재인증 만료 재현, 커서 404 재현 | 쿼터 초과 없이 완료, push 1분 내 수신, 만료·404 후 누락 0건 | 폴링(15분) |
 | PoC-7 | 한국어 하이브리드 검색 | 샘플 500건(메일·알림톡·발화 혼합), 질문 50개(무근거 10개 포함) | Top-5 ≥ 90%, 무근거 거절 ≥ 90%, 인용 검증 통과 | 임베딩 모델 교체, 청크 크기 조정 |
 | PoC-8 | Share Extension 이미지 → 로컬 영속화 → 업로드 → vision 추출 | 청첩장 이미지 5종, 업로드 중 오프라인 전환 | 날짜·장소·연도 추출 5/5, 오프라인 후 복구 시 유실 0 | OCR 텍스트만 전송 |
-| PoC-9 | 앱 종료 후 background URLSession 업로드 완료 | 7 | 통과 | 앱 프로세스 종료를 `ps`로 확인한 뒤 3.68초 후 목 서버에 정확한 바이트 수로 도착. 실기기(09-28): 로그인 직후 큐 7건 일괄 업로드(`poc9.upload_done` ×7), 잠금 중 수신분은 해제·앱 열기 후 업로드(45초 뒤), 서버 `process` 잡 전부 `done` | — (실기기 회귀: 스와이프 종료·비행기 모드, 파일 업로드는 서버 `upload/<id>` 엔드포인트 구현 후) | `f28814d` | 2026-09-28 |
+| PoC-9 | background URLSession from App Intent | 잠금·오프라인·앱 강제 종료 후 복구 시 전송 | 앱 재실행 포함 시 유실 0. 강제 종료 시 취소되는 것을 기록 | 앱 포그라운드 시 재시도만 |
 | PoC-10 | jobs 워커 | pg_cron → Edge worker, 임대 만료·중복 실행·5회 실패 | 같은 잡이 동시에 두 번 돌지 않고 dead 전환됨 | 단일 워커 직렬 처리 |
 
 기기 PoC는 앱 하나(`poc/ios`: 앱 + Share Extension + `EruriCore` 패키지 + UI 테스트)에, 서버 PoC는 `poc/server`에 둔다. 결과는 `docs/superpowers/poc/`에 기록하고 판정의 원본은 `results.md`다. PoC 코드는 폐기 대상이며 제품 코드에 복사하지 않는다.
@@ -454,7 +454,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 | PoC | 검증 대상 | 태스크 | 상태 | 핵심 근거 | 남은 실측 | 근거 커밋 | 갱신일 |
 |---|---|---|---|---|---|---|---|
-| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 시뮬레이터: CaptureIntent·App Shortcut 등록, 단축어 앱 **수동** 실행 시 앱을 열지 않고 인텐트 실행(판정 기준인 알림 트리거 아님). 연락처 규칙 배선(합성 연락처 `discarded:contact`). 실기기(09-28, iOS 27) 메시지 자동화에서 "기존 단축어 선택"은 본문 0자 → 알림 자동화도 자동화 안 직접 편집 방식으로 잴 것 | 실기기 알림 자동화 시나리오 1~8: 본문·앱명 전달(`text_len`·`app`), 배너·잠금·미리보기·묶음 기록 | `964cfea` `0d2a293` `affe7e9` `cf6dd12` | 2026-09-28 |
+| PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 미검증 | 시뮬레이터: CaptureIntent·App Shortcut 등록, 단축어 앱 **수동** 실행 시 앱을 열지 않고 인텐트 실행(판정 기준인 알림 트리거 아님). 연락처 규칙 배선(합성 연락처 `discarded:contact`). 실기기(09-28, iOS 27): **트리거 존재·다중 앱 확인, 본문 전달 실측 대기** — 알림 자동화 트리거 있음, 앱 여러 개 동시 선택 가능·"모든 앱" 불가. 메시지 자동화에서 "기존 단축어 선택"은 본문 0자였으므로 자동화 안 직접 편집 방식으로 잴 것 | 실기기 알림 자동화 시나리오 1~8: 본문·앱명 전달(`text_len`·`app`), 배너·잠금·미리보기·묶음 기록 | `964cfea` `0d2a293` `affe7e9` `cf6dd12` | 2026-09-28 |
 | PoC-2 | 단축어 Message 트리거 → CaptureIntent 자동 실행 | 4 | 통과 | 실기기(iOS 27, TestFlight 0.1.1): "새로운 빈 자동화" 안에서 "비서에 저장" 직접 편집(본문=단축어 입력→내용) → 본문 30/15/15자·발신자 도착, `bg=true`, 1.5~2.5초, 무확인 실행. 잠금 중 수신 1건도 본문 도착(사용자 보고 잠금, trace `locked=false`). 기존 단축어 선택 방식은 발신자만·본문 0자(6건) | 판정 기준 중 BFU(재부팅 후 첫 해제 전) 수신 처리 기록, `locked` 판정 재검토 후 잠금 15초 후 재측정, OTP `discarded:otp`, 연락처 번호 `discarded:contact` | `ca859a4` `47e9435` | 2026-09-28 |
 | PoC-3 | Foundation Models 한국어 분류 200건 정확도·p95 | 5 | 부분 | 폴백 경로(Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error`)·새 세션·enum 스키마·타임아웃 단위 테스트. 호스트 Mac Apple Intelligence 꺼짐으로 수치 없음 | 실기기 200건 p95·개인 대화 통과율·알림톡 폐기율, 메모리, 백그라운드 `rateLimited` 빈도 | `b1f3248` `0d2a293` `affe7e9` | 2026-09-24 |
 | PoC-4 | Edge Function → APNs HTTP/2 | 9 | 부분 | h2 동작(가짜 토큰 sandbox `400 BadDeviceToken`+`apns-id`, HTTP/1.1 대조군 거부), Edge 서울 100회 동시 1 100/100 p50 419ms, JWT 429 수정. **실기기(09-28)**: 앱 토큰 등록(`devices` production, 0.1.1) → `apns-send` count 1 → APNs 200 production 634ms, 잠금 화면 수신 확인 | 100회 동시 10 × 2(성공률 ≥ 99%, h2 오류 0) — 판정 기준. 노출된 APNs 키 교체 후 실시 | `e2552b5` `40d83cc` `b84bd60` | 2026-09-28 |
