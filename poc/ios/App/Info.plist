@@ -22,9 +22,16 @@
   <!-- 알림 권한은 Info.plist 키가 없다(requestAuthorization 대화상자). 업로드 서버가 Mac 의 LAN 주소라 로컬 네트워크 권한이 뜬다 -->
   <key>NSLocalNetworkUsageDescription</key><string>PoC: 같은 네트워크의 개발용 업로드 서버로 수집 항목을 보냅니다.</string>
   <key>ITSAppUsesNonExemptEncryption</key><false/>
+  <!-- PoC-9: 무음 푸시(remote-notification)·BGAppRefreshTask(fetch)·BGTaskScheduler(processing) -->
   <key>UIBackgroundModes</key>
   <array>
     <string>remote-notification</string>
+    <string>fetch</string>
+    <string>processing</string>
+  </array>
+  <key>BGTaskSchedulerPermittedIdentifiers</key>
+  <array>
+    <string>com.picpal.assistant.poc.refresh</string>
   </array>
   <!-- PoC-6 Google Sign-In: 값은 Config/Secrets.xcconfig (sim.sh config) -->
   <key>GIDClientID</key><string>$(GID_CLIENT_ID)</string>

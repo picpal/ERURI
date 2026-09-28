@@ -34,8 +34,10 @@ public final class CaptureQueue {
     try? exec("ALTER TABLE queue ADD COLUMN next_attempt_at REAL NOT NULL DEFAULT 0")   // 이전 스키마 파일 이관
     // PoC 추적 이벤트(`Trace`)도 같은 큐·재시도 규칙을 쓰되 kind 로 나눠 캡처 업로드와 섞이지 않게 한다
     try? exec("ALTER TABLE queue ADD COLUMN kind TEXT NOT NULL DEFAULT 'capture'")
-    // 잠금 중에도 접근 가능해야 함: 첫 잠금 해제 후 보호 등급 (-wal/-shm 은 컨테이너 기본 등급이 같다)
-    try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
+    // 잠금 중(인텐트·무음 푸시·BG refresh)에도 열 수 있어야 함: 첫 잠금 해제 후 보호 등급. -wal/-shm 도 명시한다
+    for suffix in ["", "-wal", "-shm"] where FileManager.default.fileExists(atPath: url.path + suffix) {
+      try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path + suffix)
+    }
   }
   deinit { sqlite3_close(db) }
 
@@ -113,10 +115,14 @@ public final class CaptureQueue {
     guard rc == SQLITE_DONE else { throw Error.sqlite(msg) }
     return out.sorted { $0.at < $1.at }.map { ($0.id, $0.payload) }   // RETURNING 순서는 보장되지 않는다
   }
-  public func traceCount() throws -> Int {
+  /// 캡처 행 수(lease 중인 것 포함). BG refresh 가 깨어났을 때 flush 할지 판단한다.
+  public func captureCount() throws -> Int { try count("capture") }
+  public func traceCount() throws -> Int { try count("trace") }
+  private func count(_ kind: String) throws -> Int {
     var s: OpaquePointer?
-    guard sqlite3_prepare_v2(db, "SELECT count(*) FROM queue WHERE kind = 'trace'", -1, &s, nil) == SQLITE_OK, let st = s else { throw Error.sqlite(msg) }
+    guard sqlite3_prepare_v2(db, "SELECT count(*) FROM queue WHERE kind = ?", -1, &s, nil) == SQLITE_OK, let st = s else { throw Error.sqlite(msg) }
     defer { sqlite3_finalize(st) }
+    sqlite3_bind_text(st, 1, kind, -1, Self.transient)
     guard sqlite3_step(st) == SQLITE_ROW else { throw Error.sqlite(msg) }
     return Int(sqlite3_column_int(st, 0))
   }

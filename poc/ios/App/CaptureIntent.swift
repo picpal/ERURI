@@ -25,13 +25,22 @@ struct CaptureIntent: AppIntent {
       let result = try await runPipeline()
       PoCLog.append("CaptureIntent \(result) \(Int(Date().timeIntervalSince(started) * 1000))ms \(meta)")
       trace(result: result, started: started, locked: locked, bg: bg)
+      await upload(locked: locked)
       return .result(dialog: "\(result)")
     } catch {
       PoCLog.append("CaptureIntent error \(type(of: error)) \(meta)")
       BFULog.append("CaptureIntent error \(type(of: error)) textLen=\(text.count)")
       trace(result: "error:\(type(of: error))", started: started, locked: locked, bg: bg)
+      await upload(locked: locked)
       throw error
     }
+  }
+
+  /// PoC-9(0.2.0): 인텐트가 깨어 있는 동안 바로 올린다(직접 요청 → 실패 시 background 세션). 폐기돼도 trace·남은 큐를 올린다.
+  /// `locked` 는 인텐트 시작 시점 값. 그래도 남은 항목은 BG refresh 가 줍는다
+  private func upload(locked: Bool) async {
+    let r = await Uploader.shared.flush(trigger: .intent, locked: locked)
+    if r.handedOff + r.failed > 0 { BackgroundRefresh.schedule() }
   }
 
   /// PoC-1(알림)/PoC-2(메시지) 판정 필드: 앱명·제목·본문·발신자가 도착했는지와 길이만. 원문은 보내지 않는다

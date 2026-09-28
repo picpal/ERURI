@@ -10,7 +10,7 @@ settings:
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "6.0"
     # TestFlight: 앱·확장이 같은 버전을 쓴다. 빌드 번호는 scripts/testflight.sh 가 $(date +%Y%m%d%H%M) 으로 덮어쓴다
-    MARKETING_VERSION: 0.1.1
+    MARKETING_VERSION: 0.2.0
     CURRENT_PROJECT_VERSION: "1"
 packages:
   EruriCore:
@@ -37,6 +37,7 @@ targets:
       SystemCapabilities:
         com.apple.ApplicationGroups.iOS: { enabled: 1 }
         com.apple.Push: { enabled: 1 }
+        com.apple.BackgroundModes: { enabled: 1 }   # 값은 App/Info.plist UIBackgroundModes(remote-notification·fetch·processing)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.picpal.assistant.poc

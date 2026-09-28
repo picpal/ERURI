@@ -24,6 +24,25 @@ final class PushDelegate: NSObject, UIApplicationDelegate {
     Task { await DeviceRegistrar.shared.register() }
   }
 
+  /// PoC-9 보조 1: 무음 푸시(`content-available:1`, apns-send `silent:true`)로 깨어나면 큐를 flush 한다. 약 30초 안에 끝내야 한다
+  func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) async -> UIBackgroundFetchResult {
+    guard ((userInfo["aps"] as? [String: Any])?["content-available"] as? Int) == 1 else { return .noData }
+    let pending = (try? CaptureQueue.shared().captureCount()) ?? -1
+    let st = await AppState.snapshot()
+    Trace.log("poc9.wake", ["trigger": UploadTrigger.silentPush.rawValue, "pending": pending, "bg": st.bg, "locked": st.locked])
+    let r = await Uploader.shared.flush(trigger: .silentPush)
+    return r.claimed > 0 ? (r.direct > 0 ? .newData : .failed) : .noData
+  }
+
+  /// background 세션 전송이 앱이 없는 동안 끝나면 iOS 가 앱을 깨워 여기로 온다. 세션을 다시 만들어 완료 콜백을 받는다
+  func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+                   completionHandler: @escaping () -> Void) {
+    guard identifier == Uploader.sessionID else { completionHandler(); return }
+    BackgroundSessionEvents.store(completionHandler)
+    _ = Uploader.shared
+    PoCLog.append("bg session events")
+  }
+
   func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
     let e = error as NSError
     APNsDevice.setStatus("토큰 발급 실패 \(e.domain) \(e.code)")

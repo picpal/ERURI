@@ -20,7 +20,8 @@ struct EruriPoCApp: App {
       IngestSettings.set(String(v.dropFirst("--poc-ingest-url=".count)))
     }
     PoCLog.append("ingest base=\(Uploader.base.absoluteString)")
-    Uploader.shared.flush()
+    // 인텐트·무음 푸시·BG refresh 로 백그라운드 실행됐으면 각 경로가 자기 트리거로 flush 한다(경로 태깅이 섞이지 않게)
+    Task { if await !AppState.snapshot().bg { await Uploader.shared.flush(trigger: .foreground) } }
 
     // 시뮬레이터에 탭 자동화 도구(idb 등)가 없어 단축어 앱을 직접 조작할 수 없을 때,
     // `simctl launch <udid> <bundle> --poc-debug-capture` 로 같은 파이프라인을 실제 앱 프로세스에서 검증하는 훅.
@@ -127,6 +128,8 @@ struct EruriPoCApp: App {
         ContactsLoader.refresh(); Uploader.shared.flush()
         Task { await DeviceRegistrar.shared.register() }   // 미로그인으로 대기 중이던 토큰 등록
       }
+      if newPhase == .background { BackgroundRefresh.schedule() }
     }
+    .backgroundTask(.appRefresh(BackgroundRefresh.id)) { await BackgroundRefresh.run() }   // PoC-9 보조 2
   }
 }
