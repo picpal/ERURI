@@ -1,4 +1,6 @@
 import { openai } from "./openai.ts";
+import { seoulToday } from "./time.ts";
+export { seoulToday };
 
 // 이미지·PDF·OCR 텍스트 → 일정 후보(Task 12, 스펙 §7). gpt-6-luna, Responses API Structured Outputs(strict), store: false.
 // 로그·오류 메시지에 추출값·본문을 넣지 않는다
@@ -36,10 +38,6 @@ const INSTRUCTION = (today: string) => [
   "- 청첩장 제목은 신랑·신부 이름으로 짓는다(혼주 부모 이름이 아니다).",
   "- 문서에 없는 값은 지어내지 말고 null로 둔다.",
 ].join("\n");
-
-export function seoulToday(now = new Date()): string {
-  return new Date(now.getTime() + 9 * 3600_000).toISOString().slice(0, 10);
-}
 
 export function buildExtractRequest(input: ExtractInput, today: string) {
   const content: ({ type: "input_image"; detail: "high"; image_url: string } | { type: "input_file"; filename: string; file_data: string } |
@@ -79,7 +77,7 @@ export function normalizeDateTime(v: string | null): { value: string | null; ms:
   return Number.isFinite(ms) ? { value: toSeoulIso(ms), ms } : { value: null, ms: null };
 }
 
-const clean = (s: string | null) => (s === null ? null : s.trim().replace(/\s+/g, " ") || null);
+export const clean = (s: string | null) => (s === null ? null : s.trim().replace(/\s+/g, " ") || null);
 
 // 연도 표기가 없으면 연도는 서버가 정한다: 오늘(서울) 이후 가장 가까운 해. 모델은 가끔 내년으로 채운다(Task 12 실측 1/3)
 function nearestFutureYear(value: string, today: string): number {
@@ -107,17 +105,19 @@ export function normalizeEvent(raw: RawEvent, today = seoulToday()): ExtractedEv
   return { title: clean(raw.title), start: start.value, end: end.value, location: clean(raw.location), uncertain: [...uncertain] };
 }
 
-type RawResponse = {
+export type RawResponse = {
   status?: string; incomplete_details?: { reason?: string } | null; output_text: string;
   output: { type: string; content?: { type: string }[] }[];
 };
-// 잘림·거절은 파싱하지 않고 실패로 돌린다. 오류 메시지에 본문을 넣지 않는다
-export function parseExtractResponse(r: RawResponse, today = seoulToday()): ExtractedEvent {
+// 잘림·거절은 파싱하지 않고 실패로 돌린다. 오류 메시지에 본문을 넣지 않는다. 이미지·텍스트 추출과 분류 어댑터가 같이 쓴다
+export function parseStructured(r: RawResponse): unknown {
   if (r.status !== "completed") throw new Error(`openai ${r.status} ${r.incomplete_details?.reason ?? ""}`.trim());
   if (r.output.some((o) => o.type === "message" && o.content?.some((c) => c.type === "refusal"))) throw new Error("openai refusal");
-  let parsed: RawEvent;
-  try { parsed = JSON.parse(r.output_text); } catch { throw new Error("openai bad_json"); }
-  return normalizeEvent(parsed, today);
+  try { return JSON.parse(r.output_text); } catch { throw new Error("openai bad_json"); }
+}
+
+export function parseExtractResponse(r: RawResponse, today = seoulToday()): ExtractedEvent {
+  return normalizeEvent(parseStructured(r) as RawEvent, today);
 }
 
 // 측정·토큰 정산용. extractEvent는 계획서 시그니처 그대로 결과만 돌려준다

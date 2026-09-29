@@ -204,7 +204,7 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
 - 완료 콜백은 `markSent`(삭제), 실패 콜백은 `markFailed`(attempts+1, lease를 백오프 시각으로 덮어씀)로 lease를 끝낸다. 콜백 없이 lease가 만료된 항목(앱 강제 종료로 전송 취소)은 다음 flush가 다시 가져간다.
 - 그래서 "보냈는데 콜백을 못 받은" 항목은 두 번 갈 수 있다. 서버 `/ingest`는 기기 항목의 `external_id`로 큐 항목 `id`(UUID)를 받아 멱등 키(§7)로 중복을 막는다.
 - 전송 경로(0.2.0, 실기기 09-28 "잠금 중 도착이 해제·앱 열기까지 밀림" 대응): flush 트리거는 `intent`·`silent_push`·`bg_refresh`·`foreground` 넷이다. 각 트리거는 먼저 프로세스 안 직접 요청을 보내고, 네트워크 오류·타임아웃일 때만 background 세션에 넘긴다. 백그라운드에서 시작한 background 세션 전송은 iOS가 discretionary로 다뤄 늦어질 수 있어서다. HTTP 오류 응답은 넘기지 않고 `markFailed`로 백오프한다. 넘긴 전송은 앱이 없어도 iOS가 끝내고, `handleEventsForBackgroundURLSession`으로 앱을 깨워 완료 콜백을 전달한다. 인텐트 뒤 남은 항목이 있으면 BGAppRefreshTask(`com.picpal.assistant.poc.refresh`, 최소 15분)를 예약하고, 실행될 때마다 다시 예약한다. 무음 푸시는 `apns-send`의 `silent:true`(priority 5, `apns-push-type: background`)로 보낸다. 주기 발송(cron)은 아직 정하지 않았다.
-- PoC trace `poc9.upload_done.path`: `intent_direct`(인텐트 실행 중 직접 요청 완료) · `bg_upload`(인텐트가 background 세션에 넘긴 전송) · `silent_push` · `bg_refresh` · `foreground`. `via`(direct/bg_session), `age_ms`(캡처→완료), `intent_locked`(인텐트 시작 시점 잠금)를 함께 남긴다. 잠금 판정(0.2.1)은 `.complete` 보호 파일 읽기 결과다: 읽힘 = false, 권한 거부 = true, 파일 없음·기타 오류 = null(`lock_state=unknown`). `UIApplication.isProtectedDataAvailable`는 백그라운드로 깨어난 프로세스에서 잠금 중에도 false로 찍혀(09-29) `locked_app`에 비교용으로만 남긴다. 잠금 후 약 10초 유예 구간은 잠금 해제로 보인다(한계)
+- PoC trace `poc9.upload_done.path`: `intent_direct`(인텐트 실행 중 직접 요청 완료) · `bg_upload`(인텐트가 background 세션에 넘긴 전송) · `silent_push` · `bg_refresh` · `foreground`. `via`(direct/bg_session), `age_ms`(캡처→완료), `intent_locked`(인텐트 시작 시점 잠금)를 함께 남긴다.
 - 서버 멱등: 같은 `source:id` 재수신은 200 + 기존 `item_id`(`duplicate:true`). 기기는 2xx면 큐에서 지우므로 직접 요청이 타임아웃된 뒤 background 세션이 다시 보내도 실패로 남지 않는다.
 - 업로드 서버 주소는 App Group `UserDefaults`(`group.com.picpal.assistant`) 키 `ingestURL`에 저장하고 앱 화면에서 바꾼다. PoC 앱은 저장값이 없을 때만 스킴 환경변수 `INGEST_URL`을 초기값으로 쓰고, 둘 다 없으면 `http://localhost:8787`이다. 홈 화면에서 다시 열어도 저장값이 유지된다.
 
@@ -256,10 +256,6 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
       서버 음력 변환표(한국천문연구원 기준)로 한다. 종료 시각이 문서에 없으면 end는 null이고 uncertain에 넣지 않는다
       task: title, due, evidence, uncertain[]
       purchase: merchant, product[], ordered_at, amount, currency, order_no, status, recurrence?, evidence
-      텍스트 항목(0b, 2026-09-29): 한 항목에서 event·task·purchase 중 하나(없으면 none)를 고르는 단일 strict 스키마 `text_fact`.
-      상대 날짜('내일'·'목요일')와 연도 없는 날짜의 기준일은 **받은 시각(occurred_at)의 서울 날짜**다(오프라인 큐·지연 처리로
-      처리 시각이 늦어도 날짜가 밀리지 않게). 모델 입력은 출처·앱 이름·제목·본문(4,000자에서 절단)이고 발신자는 보내지 않는다.
-      event는 시작 일시가 없으면, task는 제목이 없으면, purchase는 가맹점·금액이 모두 없으면 none. evidence는 마스킹된 본문의 구절 ≤300자
   → 이미지/PDF: gpt-6-luna vision(`input_image`·`input_file`). 월 상한 100건(usage_counters). 초과 시 기기에서 같이 올라온 OCR 텍스트 사용
       기기 OCR 텍스트가 있으면 이미지·PDF와 함께 넣는다(0단계 실측 vision+OCR 21/21, vision만 19/21 — 스캔 PDF 제목 오류).
       건당 입력 3.8~4.3k 토큰, 약 $0.00042, 지연 p50 1.95s·p95 2.53s(PoC-8). 상한은 호출 전 예약(`reserve_vision_call`, 한 문장 upsert)
