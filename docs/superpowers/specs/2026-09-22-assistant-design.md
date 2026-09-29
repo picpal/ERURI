@@ -493,6 +493,11 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | PoC-9 | background URLSession from App Intent | 잠금·오프라인·앱 강제 종료 후 복구 시 전송 | 앱 재실행 포함 시 유실 0. 강제 종료 시 취소되는 것을 기록 | 앱 포그라운드 시 재시도만 |
 | PoC-10 | jobs 워커 | pg_cron → Edge worker, 임대 만료·중복 실행·5회 실패 | 같은 잡이 동시에 두 번 돌지 않고 dead 전환됨 | 단일 워커 직렬 처리 |
 
+PoC-3 서버 보완(0b): 09-29 기기 실측 10문구(`poc/server/eval/phrases.json`의 d01~d10, Jev 평가와 같은 합성 문구 — 원문이 기록된 것은 d09·d10뿐이고
+나머지는 기록된 주제로 재구성)로 서버 최종 상태를 잰다 — 결정적 테스트(`phrases.test.ts`), 실제 추출 평가(`eval/run-phrase-eval.ts`),
+실기기 재현(Slack 웹훅 `scripts/send-phrases.ts`, 문자 `scripts/send-sms.ts`). 다음 실기기 세션부터는 이 문구를 그대로 보낸다(리포트 ⑦-6).
+PoC-5 제안 푸시 실측용 문구(`push`)는 날짜가 늘 미래가 되게 발송일 기준 상대값으로 만든다
+
 기기 PoC는 앱 하나(`poc/ios`: 앱 + Share Extension + `EruriCore` 패키지 + UI 테스트)에, 서버 PoC는 `poc/server`에 둔다. 결과는 `docs/superpowers/poc/`에 기록하고 판정의 원본은 `results.md`다. PoC 코드는 폐기 대상이며 제품 코드에 복사하지 않는다.
 
 ### 판정 현황 (2026-09-28, 원본 `docs/superpowers/poc/results.md`)

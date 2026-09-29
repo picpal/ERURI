@@ -66,6 +66,13 @@
 
 재실측 09-24: 호스트 Mac이 `appleIntelligenceNotEnabled`(macOS 26.5에서 직접 호출로 확인)라 시뮬레이터 `availability()=available`은 오표시, `respond`는 에셋 에러(`FM error other`). 수정본(호출마다 새 세션, enum 스키마, 제목 입력, 에러→폴백, 제시간 타임아웃)은 단위 테스트 통과, 앱 프로세스 `CaptureIntent.perform()`에서 Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error` 확인. 정확도·p95·메모리 수치 없음. 남은 실측: Mac Apple Intelligence 켜기(사용자) 또는 실기기 벤치마크, 메모리, 백그라운드 인텐트 `rateLimited` 빈도. 절차 `poc-3-fm-classifier.md`
 
+서버 보완 평가(09-29, 0b Task 6, DB 없이 `processText` + 실제 `gpt-6-luna` 추출, `eval/run-phrase-eval.ts`): 09-29 기기 10문구(d01~d10, 합성)의 서버 최종 상태. 실기기 재현(Slack 웹훅 `scripts/send-phrases.ts`)은 Task 7 워커 게이트 이후 사용자와 함께 — 아직 미실행이라 판정은 바꾸지 않는다.
+
+| 분류기 | 결과 | 잡담 d09·d10 | 비고 |
+|---|---|---|---|
+| Jev(임계 0.8), 3회 | miss 0/30 | 3회 모두 `discarded:server:personal`(추출 호출 없음, 토큰 0) | d01·d03 purchase, d02·d04·d08 event, d05 task, d06 `promotion`·d07 `otp` 규칙 폐기. 추출 1건 ≈1.41~1.44k 토큰 |
+| none(게이트 없음), 1회 | miss 0/10 | `discarded:server:empty`(2차 방어선: 추출이 none, ≈1.36k 토큰 소비) | 나머지 8건은 Jev와 같은 결과 |
+
 ### PoC-4 Edge Function → APNs HTTP/2 (갱신 2026-09-28)
 
 **실기기 세션 1 (2026-09-28)**: 기기 등록 `poc4.device_registered` 15:04:21Z(09-27), `devices` 행 `apns_env=production`·build 0.1.1(`202609272353`). 배포 `apns-send` `{device_id,user_id,count:1}` → APNs **200 production 634ms**, 잠금 화면에 "PoC-4 / 합성 알림 1/1" 도착(사용자 확인). 판정 기준(100회·동시 10, 성공률 ≥ 99%, h2 오류 0)은 아직 1회분이라 **부분** 유지 — 세션 중 APNs 키가 출력에 두 번 노출돼 키 교체 후 100회 동시 10을 잰다.
