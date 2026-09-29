@@ -6,7 +6,7 @@ import { isPermanentFailure, planProposalPush, type ProposalRow, whenLabel } fro
 import { type Device, notifyProposal, type NotifyDeps, type PushRecord } from "../functions/worker/notify.ts";
 
 const NOW = new Date("2026-09-29T06:00:00Z");                  // 서울 15:00
-const row = (o: Partial<ProposalRow> & { payload?: Record<string, unknown> } = {}): ProposalRow => ({ id: "p1", action: "create_event", status: "proposed",
+const row = (o: Partial<ProposalRow> & { payload?: Record<string, unknown> } = {}): ProposalRow => ({ id: "p1", action: "create_event", status: "proposed", version: 1,
   occurred_at: "2026-09-29T05:00:00Z", captured_at: "2026-09-29T05:00:05Z",
   payload: { title: "합성 치과", start: "2026-10-02T15:30:00+09:00", end: null, location: null, uncertain: [] }, ...o });
 const aps = (p: ReturnType<typeof planProposalPush>) => (p.skip === null ? p.payload.aps as { alert: { title: string; body: string }; category: string } : null);
@@ -22,7 +22,7 @@ Deno.test("plan: timed event without uncertain → ADD_EVENT with iOS contract k
   assertEquals(p.skip, null);
   if (p.skip !== null) return;
   assertEquals([p.category, aps(p)!.category, aps(p)!.alert.title, aps(p)!.alert.body], ["ADD_EVENT", "ADD_EVENT", "일정 제안", "10월 2일(금) 15:30 · 합성 치과"]);
-  assertEquals([p.payload.proposal_id, p.payload.title, p.payload.start], ["p1", "합성 치과", "2026-10-02T15:30:00+09:00"]);
+  assertEquals([p.payload.proposal_id, p.payload.version, p.payload.title, p.payload.start], ["p1", 1, "합성 치과", "2026-10-02T15:30:00+09:00"]);
 });
 
 // Review Focus 2: 날짜만·uncertain 일정은 버튼 없는 REVIEW
@@ -135,4 +135,12 @@ Deno.test("notify: skip plans never list devices; not found → skipped; no devi
   assertEquals(await notifyProposal(deps({ proposal: null }).d, job()), "skipped");
   assertEquals(await notifyProposal(deps({ devices: [] }).d, job()), "no_device");
   await assertRejects(() => notifyProposal(deps().d, job({ user_id: null })), Error, "notify job without user_id");
+});
+
+Deno.test("plan: every pushed payload carries the proposal version (§10 순서 5)", () => {
+  const now = new Date("2026-10-01T00:00:00Z");
+  const base = { id: "p1", status: "proposed", version: 3, occurred_at: "2026-09-30T23:00:00Z", captured_at: "2026-09-30T23:00:05Z" };
+  const ev = planProposalPush({ ...base, action: "create_event", payload: { title: "합성 진료", start: "2026-10-03T15:00:00+09:00", uncertain: [] } }, now);
+  const task = planProposalPush({ ...base, action: "create_reminder", payload: { title: "합성 납부", due: "2026-10-05" } }, now);
+  assertEquals([ev.skip === null ? ev.payload.version : null, task.skip === null ? task.payload.version : null], [3, 3]);
 });

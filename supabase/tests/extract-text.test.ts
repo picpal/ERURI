@@ -59,7 +59,7 @@ Deno.test("C1: year missing in text → no uncertain year → planProposalPush A
     const x = normalizeTextExtraction(raw({ kind: "event", title: "진료 예약", start, uncertain: [], year_in_text: false }), today);
     assertEquals(x.kind === "event" && [x.event.start, x.event.uncertain], [want, []]);
     const f = textFact("u", "i", x)!;
-    const plan = planProposalPush({ id: "p1", action: proposalAction(f.kind)!, payload: f.payload, status: "proposed",
+    const plan = planProposalPush({ id: "p1", action: proposalAction(f.kind)!, payload: f.payload, status: "proposed", version: 1,
       occurred_at: "2026-09-29T01:00:00Z", captured_at: "2026-09-29T01:00:05Z" }, new Date("2026-09-29T01:01:00Z"));
     assertEquals(plan.skip === null && [plan.category, plan.payload.start], ["ADD_EVENT", want]);
   }

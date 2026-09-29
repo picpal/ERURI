@@ -406,7 +406,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 - 푸시 카테고리 `ADD_EVENT`, `ADD_REMINDER`, `REVIEW`. 액션 "추가"는 `authenticationRequired`, "무시", "앱에서 수정"은 `foreground`. `uncertain`이 있는 제안은 REVIEW로만 보낸다.
 - 제안 푸시 페이로드(0b): `aps.alert` 제목 `일정 제안`·`일정 확인 필요`·`할 일 제안`, 본문 `M월 D일(요) HH:mm · <추출 제목 ≤40자>`
   (원문 본문 금지, §12). `aps.category`: `ADD_EVENT`(시각 있는 시작 + uncertain 없음) · `REVIEW`(날짜만이거나 uncertain 있음) · `ADD_REMINDER`(할 일).
-  최상위 키 `proposal_id`, `title`, `start`(`ADD_EVENT`면 항상 `YYYY-MM-DDTHH:mm:ss+09:00`) 또는 `due`.
+  최상위 키 `proposal_id`, `title`, `start`(`ADD_EVENT`면 항상 `YYYY-MM-DDTHH:mm:ss+09:00`) 또는 `due`. 1단계(M1-②b)부터 `version`(제안 버전 정수)도 싣는다 — 순서 5(오프라인 실행 후 보고 시 불일치 판정)에 쓴다.
   0단계 앱은 `ADD_EVENT`만 등록하므로 `REVIEW`·`ADD_REMINDER`는 버튼 없는 알림으로 보인다. 제품 앱(1단계 M1)은 세 카테고리를 모두 등록하고
   `ADD_REMINDER`·`REVIEW`의 액션은 앱 열기만 한다
 - 액션 핸들러 순서 (멱등):
@@ -415,7 +415,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   3. EventKit 쓰기 → 성공 즉시 로컬 executions에 (proposal_id, eventkit_id) 기록.
      **2~3단계는 한 직렬 구간에서 원자적으로 수행한다.** 확인 → 저장 → 기록을 하나의 actor 메서드 안에서 `await` 없이 처리한다(PoC `AddEventGate`). 액션 핸들러는 동시에 여러 번 불릴 수 있어(같은 proposal_id의 알림 두 개를 연달아 탭) 둘 다 "기록 없음"을 보고 저장하면 `INSERT OR IGNORE`로 기록은 1건이어도 이벤트는 2건이 된다. 시뮬레이터 실측: 동시 두 번 탭에서 이벤트 +1만 생성(PoC-5).
      **저장 후 기록 전에 프로세스가 죽으면** 재탭 시 중복이 생길 수 있다. 대응: 저장하는 이벤트의 `url`에 `assistant://proposal/<proposal_id>` 표식을 넣고, 로컬 기록이 없을 때는 쓰기 전에 제안 시각 ±1일의 이벤트를 조회해 같은 표식이 있으면 새로 만들지 않고 그 `eventIdentifier`로 기록만 복구한다.
-  4. 서버 `executions` 보고. 실패하면 다음 앱 실행 시 로컬 미보고 항목을 재전송.
+  4. 서버 `executions` 보고.(앱이 사용자 JWT로 `report_execution` RPC 호출 → `ok`·`changed`·`stale`·`not_found`, 성공 시 제안 status = succeeded) 실패하면 다음 앱 실행 시 로컬 미보고 항목을 재전송.
   5. 오프라인이면 순서 1의 서버 조회를 건너뛰고 마지막으로 받은 버전으로 실행하되, 보고 시 서버가 version 불일치를 감지하면 사용자에게 "변경된 제안" 알림.
 - `update_event`는 `eventkit_id`로 원본을 찾고, 사용자가 캘린더에서 직접 수정한 흔적(lastModifiedDate > 제안 시각)이 있으면 자동 갱신하지 않고 REVIEW로 보낸다. 원본이 삭제됐으면 제안을 stale 처리.
 - `complete_reminder`는 미리알림 `isCompleted`만 바꾼다.

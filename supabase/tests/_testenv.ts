@@ -38,3 +38,12 @@ export async function deleteRunJobs(prefix = RUN) {
   const { error } = await service.from("jobs").delete().like("lease_key", prefix + "%");
   if (error) throw new Error("delete jobs " + error.code);
 }
+
+// 사용자 JWT 클라이언트(RLS·authenticated RPC 테스트). 비밀번호는 testUser 가 실행마다 새로 건다
+export async function userClient(n = 1) {
+  const u = await testUser(n);
+  const c = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, SERVER_AUTH);
+  const { error } = await c.auth.signInWithPassword({ email: u.email, password: u.password });
+  if (error) throw new Error("signin " + error.code);
+  return { u, c };
+}

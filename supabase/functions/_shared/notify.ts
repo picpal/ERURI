@@ -1,9 +1,9 @@
 import type { APNsResult } from "./apns.ts";
 import { seoulToday, WEEKDAYS_KO } from "./time.ts";
 
-// 제안 푸시 계획(스펙 §7 notify, §10 페이로드, 0b). 기존 iOS NotificationActions 계약: category ADD_EVENT + 최상위 proposal_id·title·start.
+// 제안 푸시 계획(스펙 §7 notify, §10 페이로드, 0b). 기존 iOS NotificationActions 계약: category ADD_EVENT + 최상위 proposal_id·version·title·start.
 // 알림 문구는 추출 제목·일시만(원문 본문 금지, §12)
-export type ProposalRow = { id: string; action: string; payload: Record<string, unknown>; status: string;
+export type ProposalRow = { id: string; action: string; payload: Record<string, unknown>; status: string; version: number;
   occurred_at: string | null; captured_at: string | null };
 export const BACKFILL_MS = 3 * 24 * 3600_000;
 type Skip = "not_proposed" | "backfill" | "past" | "unsupported";
@@ -38,7 +38,7 @@ export function planProposalPush(p: ProposalRow, now: Date): PushPlan {
     const category = uncertain.length === 0 && hasTime(start) ? "ADD_EVENT" : "REVIEW";
     return { skip: null, category, payload: {
       aps: { alert: { title: category === "ADD_EVENT" ? "일정 제안" : "일정 확인 필요", body: `${whenLabel(start)} · ${title}` }, category, sound: "default" },
-      proposal_id: p.id, title, start } };
+      proposal_id: p.id, version: p.version, title, start } };
   }
   if (p.action === "create_reminder") {
     const due = str(pl.due);
@@ -46,7 +46,7 @@ export function planProposalPush(p: ProposalRow, now: Date): PushPlan {
     const title = clip(str(pl.title) ?? "할 일", 40);
     return { skip: null, category: "ADD_REMINDER", payload: {
       aps: { alert: { title: "할 일 제안", body: due ? `${title} · ${whenLabel(due)}까지` : title }, category: "ADD_REMINDER", sound: "default" },
-      proposal_id: p.id, title, ...(due ? { due } : {}) } };
+      proposal_id: p.id, version: p.version, title, ...(due ? { due } : {}) } };
   }
   return { skip: "unsupported" };
 }
