@@ -10,8 +10,8 @@ export function embedDeps(sb: SupabaseClient): EmbedDeps {
     async source(u, i) {
       const { data, error } = await sb.rpc("worker_get_embed_source", { p_user: u, p_item: i });
       if (error) throw new Error("worker_get_embed_source " + error.code);
-      const r = (data as { content_enc: string; title: string | null; backfill: boolean }[])[0];
-      return r ? { contentEnc: r.content_enc, title: r.title, backfill: r.backfill } : null;
+      const r = (data as { content_enc: string; title: string | null }[])[0];
+      return r ? { contentEnc: r.content_enc, title: r.title } : null;
     },
     decrypt: (u, enc) => decrypt(u, enc),
     embed: (texts) => embedWithUsage(texts, "document"),

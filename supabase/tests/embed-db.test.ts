@@ -38,6 +38,12 @@ Deno.test("embed source → save chunks → hybrid_search finds by vector and ke
     assert((byVec as { item_id: string }[]).some((r) => r.item_id === item));
     assert((byKw as { item_id: string }[]).some((r) => r.item_id === item));
 
+    // 같은 항목의 save 두 번이 겹쳐도(실시간 embed:<id> + 백로그) 청크는 한 벌(0016 for update)
+    const two = [{ i: 0, text: "합성 주문", embedding: vec(3) }, { i: 1, text: "합성상점", embedding: vec(4) }];
+    await Promise.all([1, 2, 3].map(() => sb.rpc("worker_save_chunks", { p_user: USER, p_item: item, p_chunks: two })));
+    const { count: once } = await sb.from("item_chunks").select("id", { count: "exact", head: true }).eq("item_id", item);
+    assertEquals(once, 2);
+
     // 저장 직전에 대상에서 빠진 항목(격리·만료)은 청크를 만들지 않는다
     const { data: n } = await sb.rpc("worker_save_chunks", { p_user: USER, p_item: quarantined, p_chunks: [{ i: 0, text: "합성", embedding: vec(1) }] });
     assertEquals(n, 0);
@@ -70,6 +76,28 @@ Deno.test("embed job with real deps: chunks + 512-dim vectors saved, decrypt aud
     const { data: q } = await sb.rpc("hybrid_search", { p_user: USER, p_query: "무선 이어폰",
       p_embedding: toPgVector((await embed(["무선 이어폰 주문"], "query"))[0]), p_limit: 5 });
     assert((q as { item_id: string; sem_sim: number | null }[]).some((r) => r.item_id === item && r.sem_sim !== null));
+  } finally {
+    await sb.from("items").delete().eq("user_id", USER).eq("id", item);
+    await sb.from("audit_log").delete().eq("user_id", USER).eq("target", item);
+    await sb.from("usage_counters").delete().eq("user_id", USER);
+    await sb.from("llm_slots").delete().eq("user_id", USER);
+  }
+});
+
+// Ruling E: 백필 예산이 다 쓰인 달에도 백필 레인의 embed 잡은 미뤄지지 않고 월 예산으로 청크를 만든다(검색 인덱스 공백 방지)
+Deno.test("embed backfill-lane job with the backfill budget exhausted: embedded on the monthly budget", async () => {
+  const item = await newItem("emb-bf", "extracted");
+  const deps = embedDeps(sb);
+  const job: Job = { id: `${RUN}:embed-bf-job`, kind: "embed", user_id: USER, payload: { item_id: item, backfill: true }, attempts: 1, checkpoint: null };
+  try {
+    assert((await sb.rpc("reserve_usage", { p_user: USER, p_kind: "backfill", p_est_krw: 1500 })).data !== "refused");   // 백필 예산 소진
+    assertEquals((await sb.rpc("reserve_usage", { p_user: USER, p_kind: "backfill", p_est_krw: 0.01 })).data, "refused");
+    assertEquals(await embedItem(deps, job), "embedded");
+    const { count } = await sb.from("item_chunks").select("id", { count: "exact", head: true }).eq("item_id", item);
+    assertEquals(count, 1);
+    const { data: usage } = await sb.from("usage_counters").select("reserved_krw, backfill_reserved_krw").eq("user_id", USER).single();
+    assert(Number(usage!.reserved_krw) > 0);
+    assertEquals(Number(usage!.backfill_reserved_krw), 1500);
   } finally {
     await sb.from("items").delete().eq("user_id", USER).eq("id", item);
     await sb.from("audit_log").delete().eq("user_id", USER).eq("target", item);

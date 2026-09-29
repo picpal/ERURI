@@ -2,15 +2,18 @@ import { type BudgetDeps, costKrw, guarded } from "../_shared/budget.ts";
 import { chunkText } from "../_shared/chunk.ts";
 import { EMBED_MODEL, toPgVector } from "../_shared/embeddings.ts";
 import type { Job } from "../_shared/job.ts";
+import { applyRules } from "../_shared/rules.ts";
 
-// embed 잡(스펙 §7 청크 → item_chunks, 체크포인트 embedded). 청크 = 제목 + 본문(마스킹된 원문). 로그는 id·개수만
+// embed 잡(스펙 §7 청크 → item_chunks, 체크포인트 embedded). 청크 = 제목 + 본문(지금 규칙으로 다시 마스킹). 로그는 id·개수만
 export type EmbedDeps = {
-  source(userId: string, itemId: string): Promise<{ contentEnc: string; title: string | null; backfill: boolean } | null>;
+  source(userId: string, itemId: string): Promise<{ contentEnc: string; title: string | null } | null>;
   decrypt(userId: string, enc: string): Promise<string>;
   embed(texts: string[]): Promise<{ vectors: number[][]; tokens: number }>;
   save(userId: string, itemId: string, chunks: { i: number; text: string; embedding: string }[]): Promise<void>;
   budget: BudgetDeps;
 };
+
+const BATCH = 256;
 
 export async function embedItem(deps: EmbedDeps, job: Job): Promise<string> {
   if (!job.user_id) throw new Error("embed job without user_id");
@@ -23,13 +26,21 @@ export async function embedItem(deps: EmbedDeps, job: Job): Promise<string> {
   } catch (e) {
     throw new Error(e instanceof Error && e.message.startsWith("no data key") ? "decrypt no_key" : "decrypt failed");
   }
-  const texts = chunkText([src.title, body].filter((s) => s && s.trim()).join("\n"));
+  // 규칙 재적용(§12 통제 2): ingest 뒤 규칙이 바뀌었을 수 있다. 모델과 평문 청크에는 지금 규칙의 마스킹 결과만, 폐기 판정이면 청크 없음
+  const v = applyRules(body, { title: src.title });
+  if (v.kind === "discard") return log(job, "skipped", { reason: "rules" });
+  const texts = chunkText([v.maskedTitle ?? src.title, v.masked].filter((s) => s && s.trim()).join("\n"));
   if (texts.length === 0) return log(job, "skipped", { reason: "empty" });
-  // 비용 예약(§13): 백필 항목은 백필 예산, 그 외는 월 예산. 예상 토큰 = 글자 수(정산이 실제 토큰으로 보정)
+  // 비용 예약(§13): 백필 항목(레인은 백필)도 임베딩은 월 예산(Ruling E). 예상 토큰 = 글자 수(정산이 실제 토큰으로 보정)
   const chars = texts.reduce((a, t) => a + t.length, 0);
-  const kind = src.backfill || job.payload.backfill === true ? "backfill" : "embed";
-  const { value } = await guarded(deps.budget, user, kind, costKrw(EMBED_MODEL, { input: chars, output: 0 }), job.id, async () => {
-    const r = await deps.embed(texts);
+  const { value } = await guarded(deps.budget, user, "embed", costKrw(EMBED_MODEL, { input: chars, output: 0 }), job.id, async () => {
+    // 요청당 입력 2,048개·30만 토큰 한도 → BATCH 청크씩(512자 × 256 ≈ 15만 토큰 이하)
+    const r = { vectors: [] as number[][], tokens: 0 };
+    for (let i = 0; i < texts.length; i += BATCH) {
+      const b = await deps.embed(texts.slice(i, i + BATCH));
+      r.vectors.push(...b.vectors);
+      r.tokens += b.tokens;
+    }
     return { value: r, actualKrw: costKrw(EMBED_MODEL, { input: r.tokens, output: 0 }) };
   });
   if (value.vectors.length !== texts.length) throw new Error("embed count_mismatch");

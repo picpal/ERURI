@@ -301,10 +301,12 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   → 연결(2단계, `purchases` 테이블과 함께): purchases는 (merchant, order_no) 복합 키. 없으면 (merchant, amount, ordered_at ±1일)로 후보 제시
       취소·변경 문구 → 기존 fact status = cancelled/superseded, 새 fact에 supersedes_id
   → 청크(512자) → item_chunks. 임베딩 `text-embedding-3-large`(`dimensions: 512`). 활성화 조건(PoC-7 통과)은 2026-09-27 충족,
-      worker 연결 M2-⑧a(2026-09-30, `0015`): process 잡이 저장(extracted)·empty(원문 유지) 뒤 embed 잡(lease `embed:<item>`, 백필 항목은
+      worker 연결 M2-⑧a(2026-09-30, `0015`·`0016`): process 잡이 저장(extracted)·empty(원문 유지) 뒤 embed 잡(lease `embed:<item>`, 백필 항목은
       백필 레인)을 넣고, embed 잡이 제목+본문을 512자 청크로 나눠 임베딩·저장한다(checkpoint embedded). 격리·규칙 폐기·원문 만료 항목은
-      청크를 만들지 않는다. 비용은 예약·정산(§13, 백필 항목은 백필 예산), LLM 슬롯(동시 2)을 같이 쓴다. M1 기간 항목은
-      `enqueue_embed_backlog`로 한 번에(백필 레인 — 새 항목의 process·embed 잡 앞에 서지 않게)
+      청크를 만들지 않는다. 비용은 예약·정산(§13, 임베딩은 백필 항목도 **월 예산** — 레인만 백필), LLM 슬롯(동시 2)을 같이 쓴다. M1 기간 항목은
+      `enqueue_embed_backlog`로 한 번에(백필 레인 — 새 항목의 process·embed 잡 앞에 서지 않게). 청크 전에 서버 규칙을 다시 적용하고
+      (§12 통제 2, 폐기 판정이면 청크 없음), 한 요청은 256청크 이하로 나눠 보낸다(요청당 30만 토큰·2,048개 한도). 임베딩을 월 예산으로 둔
+      이유(M2-⑧a 리뷰 수정 `0016`): 백필 예산이면 추출이 먼저 다 써서 백필 메일 전체가 다음 달까지 검색(벡터·키워드 둘 다 `item_chunks`)에서 빠진다
   → 저장(0b): 이미지(extract 잡)·텍스트(process 잡) 공용 `save_fact`(0013). fact 1건(같은 항목·같은 종류의 active fact는 1개) +
       event → `create_event`, task → `create_reminder` 제안(purchase는 제안 없음. 1단계까지는 `purchases` 테이블 없이 facts.payload, 테이블은 2단계),
       items.status = `extracted`. 재시도는 새 행 없이 같은 fact·제안 id를 돌려주고 status만 `extracted`로 맞춘다
@@ -533,7 +535,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 - 호출 전 `usage_counters.reserved_krw`에 예상 비용을 예약하고, 월 상한(기본 1만원) 초과 예약은 거부한다. 응답 후 실제 토큰으로 정산한다. 1단계에서 vision 전용 `reserve_vision_call`을 `reserve_usage(kind, est_krw)`로 일반화하고, 예약·정산과 80/100% 강등을 M2의 chat 태스크 **직전** 태스크로 만든다(채팅이 비용의 87%). 구현(M2-⑦): reserve_usage(p_user, kind, est_krw) → ok·degraded(≥80%)·refused, settle_usage, 상한 budget_caps() = 월 10,000원·백필 1,500원, 환율 USD_KRW(기본 1400). 소진·슬롯 없음은 잡 실패가 아니라 defer_job(not_before)로 미룬다(다음 달 1일 00:00 서울 / 30초). 동시 LLM 슬롯 llm_slots(사용자당 2). Jev 분류(건당 약 $0.00003)는 예약하지 않는다. vision 금액 예약은 파일 경로(2단계)와 함께 연결한다.
 - 80% 도달: 채팅 gpt-6-sol → gpt-6-luna 강등, vision → OCR 텍스트. 100% 도달: 추출·채팅 중단, 수집만 계속(jobs는 queued 유지). 앱에 잔여 예산 표시.
-- 초기 백필 3개월(약 1,800건 × 1.8k 토큰, gpt-6-luna ≈ $0.5)은 월 상한과 별도인 백필 예산(`usage_counters` 월 행의 `backfill_reserved_krw`, 매달 1,500원)으로 잡는다. 백필 예산이 소진되면 월 예산이 남아 있어도 백필 잡은 다음 달로 미룬다(2026-09-30 판정: 재연결 재적재도 같은 예산을 쓰므로 월 단위가 맞다)(1단계 M1 Gmail 태스크에서 별도 카운터(`usage_counters.backfill_tokens`, 백필 항목의 추출 토큰은 월 `extract_tokens`에 넣지 않는다)).
+- 초기 백필 3개월(약 1,800건 × 1.8k 토큰, gpt-6-luna 추출 ≈ $0.5, 임베딩 `text-embedding-3-large` ≈ 1,800건 × 1.4k 토큰 × $0.13/1M ≈ $0.33 ≈ 460원 — 합계 ≈ 1,150~1,400원) 중 **추출**은 월 상한과 별도인 백필 예산(`usage_counters` 월 행의 `backfill_reserved_krw`, 매달 1,500원)으로 잡는다. 백필 예산이 소진되면 월 예산이 남아 있어도 백필 추출 잡은 다음 달로 미룬다(2026-09-30 판정: 재연결 재적재도 같은 예산을 쓰므로 월 단위가 맞다). **임베딩**은 백필 항목도 월 예산(`embed`)으로 예약·정산한다 — 레인(우선순위 40)은 백필 그대로, 추출이 백필 예산을 다 써도 검색 인덱스가 다음 달까지 비지 않게(M2-⑧a 리뷰, 2026-09-30; 월 1만원 대비 수백 원)(1단계 M1 Gmail 태스크에서 별도 카운터(`usage_counters.backfill_tokens`, 백필 항목의 추출 토큰은 월 `extract_tokens`에 넣지 않는다)).
 - 동시 LLM 호출은 사용자당 2개로 제한한다.
 
 ## 14. 0단계: 기능별 사전 검증 (구현 전 필수)
