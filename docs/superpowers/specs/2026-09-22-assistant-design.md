@@ -367,7 +367,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | `device_traces` | device_id, event, at, 속성 jsonb(본문 없음) | 진단 trace(1단계, `poc_traces`의 제품판). 30일 보관. 설정의 "진단 전송" 토글 기본 켜짐(1인 사용). 별도 마이그레이션(`0002_diagnostics`)이라 지인 확대 시 기본값만 끈다. 실기기 게이트(잠금 상태·업로드 경로·액션 결과) 판정 근거 |
 | `reauth_pushes` | connection_id, reason(expiring/invalid_grant), window_key, sent_at | 재인증 푸시 1회 기록(M1-③a). window_key = expires_at epoch 초 또는 `-`, 재연결 시 그 연결 행 삭제(0008) |
 | `gate_feedback` | item_id, verdict(wrong_discard/wrong_pass), at | Jev 정확도 정답(사용자 표시, 본문 없음). RLS 자기 행 |
-| `eval_judgments` | question_id, item_id, ok | 1b 검색 평가의 인용 판정(§9). 사용자가 앱 채팅에서 누른 👍/👎만, 본문 없음 |
+| `eval_judgments` | question_id, item_id, ok | 1b 검색 평가의 인용 판정(§9). 사용자가 앱 채팅에서 누른 👍/👎만, 본문 없음. question_id = 채팅 응답 answer_id(M2-⑨a), unique(user_id, question_id, item_id)·RLS 자기 행 읽기·쓰기·수정, 자기 항목에만(0018) |
 
 ### 삭제·만료 정책 (두 가지를 분리)
 
@@ -415,6 +415,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   5. 합격선은 위 지표 그대로(Top-5 ≥ 90%, 무근거 거절 ≥ 90%). 인용 정확도가 PoC-7 수준에 못 미치면 문장-문서 재검증(§16)을 추가한다.
 - 수집된 메일·웹·알림 안의 지시문은 데이터로만 취급한다. 검색 결과는 `<document>` 블록으로 감싸 user 턴에 넣고 시스템 프롬프트는 고정해 앞에 두어 OpenAI 자동 프롬프트 캐시(캐시 입력 단가 1/10)에 걸리게 한다. 도구 호출 권한은 chat 함수에 없다(읽기 전용).
 - 모든 발화는 `utterances`에 기록하되, 사실로 검색되는 것은 `memories`(statement 판정 또는 "기억해줘")뿐이다. "아니 그거 안 샀어" 같은 정정은 이전 memory를 retracted로 바꾼다.
+- 구현(M2-⑧b, 0017): `POST /chat` `{question}`(≤500자) → `{answer_id, answer, refused, source_item_ids, citations(출처 메타 item_id·source·app_name·title·sender·occurred_at·expired = 원문 만료 여부), proposals(인용 항목의 제안 id·item_id·action·status·payload, proposed·succeeded), hits(문서 순서 = facts 우선 + 하이브리드, item 단위 중복 제거, 최대 12)}`. `POST /chat/item` `{item_id}` → 본인 항목 원문 `{item_id, source, app_name, title, sender, occurred_at, expired, text}`(원문 만료면 text null, 남의 항목·형식 오류 404, 복호화 감사 actor `chat`). 필터는 gpt-6-luna(effort none, {date_from, date_to, sources, kinds, merchant}, 서울 날짜), facts 는 종류·가맹점 조건이 있을 때만(`search_facts`, 상위 5), 답변은 예산 80% 미만 gpt-6-sol·이상 gpt-6-luna(effort low). 문서로 읽은 item_id 목록은 `audit_log(action='read', target=목록 SHA-256)`. 예산 소진 `429 budget_exhausted`, LLM 슬롯 없음은 서버가 1초·2초 두 번 기다렸다 다시 시도한 뒤에도 없으면 `503 llm_busy`(retry-after 30). 답변 형식은 `{answer, source_item_ids, refused}`(PoC-7 측정 형식, Ruling 5) — 위 그림의 문장별 인용·"근거 미확인"은 1단계 계획 "스펙 확인 필요" #5로 보류. `memories` 단계는 1단계 제외(Ruling 7).
 
 ## 10. 실행
 

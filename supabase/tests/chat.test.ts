@@ -1,5 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert";
-import { answerQuestion, type ChatDeps, type ChatHit, formatDocuments, handleChat, REFUSAL, validateAnswer } from "../functions/chat/handler.ts";
+import type { BudgetDeps } from "../functions/_shared/budget.ts";
+import { answerQuestion, type ChatDeps, type ChatHit, type Filters, formatDocuments, handleChat, REFUSAL, validateAnswer } from "../functions/chat/handler.ts";
+import { normalizeFilters } from "../functions/chat/filters.ts";
 
 const hits: ChatHit[] = [
   { item_id: "i1", occurred_at: "2026-07-03T12:14:00Z", text: "[쿠팡] 에어팟 프로 2세대 주문 329,000원" },
@@ -26,30 +28,94 @@ Deno.test("documents are wrapped as <document id date> blocks and cannot close t
   assertEquals(s.match(/<\/document>/g)!.length, 1);                  // 본문 안의 닫는 태그는 무력화
 });
 
-function deps(o: { hits?: ChatHit[]; raw?: { answer: string; source_item_ids: string[]; refused: boolean } } = {}) {
-  const seen: { question: string; documents: ChatHit[] }[] = [];
+function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; raw?: { answer: string; source_item_ids: string[]; refused: boolean };
+  level?: "ok" | "degraded" | "refused"; filters?: Partial<Filters>; slots?: (number | null)[] } = {}) {
+  const seen = { answer: [] as { docs: string[]; level: string }[], audit: [] as string[][], search: [] as unknown[], sleeps: [] as number[],
+    settled: [] as number[] };
+  const slots = [...(o.slots ?? [])];
+  const budget: BudgetDeps = { reserve: async () => o.level ?? "ok", settle: async (_u, _k, _e, actual) => { seen.settled.push(actual); },
+    acquire: async () => (slots.length ? slots.shift()! : 1), release: async () => {}, now: () => new Date("2026-10-01T00:00:00Z") };
   const d: ChatDeps = {
     authUser: async (t) => (t === "good" ? "user-1" : null),
-    search: async () => o.hits ?? hits,
-    answer: async (x) => { seen.push({ question: x.question, documents: x.documents }); return { ...(o.raw ?? { answer: "쿠팡", source_item_ids: ["i1"], refused: false }), usage: { input_tokens: 100, output_tokens: 20 } }; },
-    today: () => "2026-09-27",
+    filters: async () => ({ filters: { date_from: null, date_to: null, sources: [], kinds: [], merchant: null, ...o.filters } }),
+    facts: async () => o.facts ?? [],
+    search: async (_u, q) => { seen.search.push(q); return o.hits ?? hits; },
+    answer: async (x, level) => { seen.answer.push({ docs: x.documents.map((d) => d.item_id), level });
+      return { ...(o.raw ?? { answer: "쿠팡", source_item_ids: ["i1"], refused: false }), model: level === "degraded" ? "gpt-6-luna" : "gpt-6-sol" }; },
+    meta: async (_u, ids) => ids.map((id) => ({ item_id: id, source: "GMAIL", app_name: null, title: "합성", sender: null, occurred_at: "2026-07-03T12:14:00Z", expired: false })),
+    proposals: async () => [],
+    audit: async (_u, ids) => { seen.audit.push(ids); },
+    itemDetail: async (_u, id) => (id === "i1" ? { item_id: "i1", text: "합성 원문", expired: false } : null),
+    budget,
+    today: () => "2026-10-01",
+    sleep: async (ms) => { seen.sleeps.push(ms); },
   };
   return { d, seen };
 }
+const req = (path: string, body: unknown, token: string | null = "good") => new Request(`http://x/${path}`, { method: "POST", body: JSON.stringify(body),
+  headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
 
-Deno.test("answerQuestion: no search results → refused without calling the model", async () => {
+Deno.test("answerQuestion: nothing found (facts and search) → refused without calling the model", async () => {
   const { d, seen } = deps({ hits: [] });
-  const r = await answerQuestion("user-1", { question: "여권 만료일" }, d);
-  assertEquals([r.refused, r.source_item_ids, seen.length], [true, [], 0]);
+  const r = await answerQuestion("user-1", "여권 만료일", d);
+  assertEquals([r.refused, r.source_item_ids, seen.answer.length], [true, [], 0]);
 });
 
-Deno.test("handleChat: 401 without JWT, 400 without question, 200 validated answer", async () => {
-  const { d } = deps({ raw: { answer: "쿠팡에서 샀어요.", source_item_ids: ["i1", "nope"], refused: false } });
-  const req = (body: unknown, token: string | null = "good") => new Request("http://x/chat", { method: "POST", body: JSON.stringify(body),
-    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
-  assertEquals((await handleChat(req({ question: "에어팟" }, null), d)).status, 401);
-  assertEquals((await handleChat(req({}), d)).status, 400);
-  const r = await handleChat(req({ question: "에어팟 어디서 샀지" }), d);
+Deno.test("answerQuestion: facts first, then hybrid hits, deduped by item; audit gets the document ids; citations carry meta", async () => {
+  const { d, seen } = deps({ facts: [{ item_id: "i2", occurred_at: "2026-08-12T04:02:00Z", text: "[purchase] 11번가 12,900원" }] });
+  const r = await answerQuestion("user-1", "에어팟 어디서 샀지", d);
+  assertEquals(seen.answer[0].docs, ["i2", "i1"]);
+  assertEquals(seen.audit, [["i2", "i1"]]);
+  assertEquals([r.hits, r.citations.map((c) => c.item_id)], [["i2", "i1"], ["i1"]]);
+});
+
+Deno.test("answerQuestion: date/source filters go to search; degraded budget → answer on the light model", async () => {
+  const { d, seen } = deps({ level: "degraded", filters: { date_from: "2026-09-01T00:00:00+09:00", date_to: "2026-09-30T23:59:59+09:00", sources: ["GMAIL"] } });
+  const r = await answerQuestion("user-1", "지난달 견적 메일", d);
+  assertEquals(seen.search[0], { question: "지난달 견적 메일", from: "2026-09-01T00:00:00+09:00", to: "2026-09-30T23:59:59+09:00", sources: ["GMAIL"] });
+  assertEquals([seen.answer[0].level, r.model], ["degraded", "gpt-6-luna"]);
+});
+
+Deno.test("answerQuestion: citations follow the answer's citation order, not the meta row order", async () => {
+  const { d } = deps({ raw: { answer: "둘 다", source_item_ids: ["i2", "i1"], refused: false } });
+  d.meta = async (_u, ids) => [...ids].sort().map((id) => ({ item_id: id, source: "SHARE", app_name: null, title: null, sender: null, occurred_at: "2026-07-03T12:14:00Z", expired: false }));
+  const r = await answerQuestion("user-1", "에어팟", d);
+  assertEquals(r.citations.map((c) => c.item_id), ["i2", "i1"]);
+});
+
+Deno.test("answerQuestion: no LLM slot → waits briefly and retries (twice at most); reservation cancelled each time", async () => {
+  const { d, seen } = deps({ slots: [null, null, 1] });
+  const r = await answerQuestion("user-1", "에어팟", d);
+  assertEquals([r.refused, seen.sleeps, seen.answer.length], [false, [1000, 2000], 1]);
+  assertEquals(seen.settled.slice(0, 2), [0, 0]);
+});
+
+Deno.test("handleChat: 401, 400, 429 when budget exhausted, 503 when slots stay busy, 200 with validated citations", async () => {
+  assertEquals((await handleChat(req("chat", { question: "x" }, null), deps().d)).status, 401);
+  assertEquals((await handleChat(req("chat", {}), deps().d)).status, 400);
+  assertEquals((await handleChat(req("chat", { question: "x".repeat(501) }), deps().d)).status, 400);
+  const ex = await handleChat(req("chat", { question: "에어팟" }), deps({ level: "refused" }).d);
+  assertEquals([ex.status, (await ex.json()).error], [429, "budget_exhausted"]);
+  const busy = deps({ slots: [null, null, null] });
+  const b = await handleChat(req("chat", { question: "에어팟" }), busy.d);
+  assertEquals([b.status, (await b.json()).error, busy.seen.sleeps.length, busy.seen.answer.length], [503, "llm_busy", 2, 0]);
+  const r = await handleChat(req("chat", { question: "에어팟 어디서 샀지" }), deps({ raw: { answer: "쿠팡에서 샀어요.", source_item_ids: ["i1", "nope"], refused: false } }).d);
   const j = await r.json();
-  assertEquals([r.status, j.answer, j.source_item_ids, j.refused], [200, "쿠팡에서 샀어요.", ["i1"], false]);
+  assertEquals([r.status, j.answer, j.source_item_ids, j.refused, typeof j.answer_id], [200, "쿠팡에서 샀어요.", ["i1"], false, "string"]);
+  assertEquals([j.citations.map((c: { item_id: string }) => c.item_id), j.proposals, j.hits], [["i1"], [], ["i1", "i2"]]);
+});
+
+Deno.test("handleChat /chat/item: owner's original; unknown → 404", async () => {
+  const { d } = deps();
+  const ok = await handleChat(req("chat/item", { item_id: "i1" }), d);
+  assertEquals([ok.status, (await ok.json()).text], [200, "합성 원문"]);
+  assertEquals((await handleChat(req("chat/item", { item_id: "zz" }), d)).status, 404);
+  assertEquals((await handleChat(req("chat/item", {}), d)).status, 400);
+});
+
+Deno.test("normalizeFilters: Seoul day bounds; anything but YYYY-MM-DD becomes null", () => {
+  const f = normalizeFilters({ date_from: "2026-09-01", date_to: "2026-09-30", sources: ["GMAIL"], kinds: [], merchant: null });
+  assertEquals([f.date_from, f.date_to, f.sources], ["2026-09-01T00:00:00+09:00", "2026-09-30T23:59:59+09:00", ["GMAIL"]]);
+  const bad = normalizeFilters({ date_from: "지난달", date_to: "2026-9-3", sources: [], kinds: [], merchant: null });
+  assertEquals([bad.date_from, bad.date_to], [null, null]);
 });
