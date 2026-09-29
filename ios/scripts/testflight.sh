@@ -22,6 +22,8 @@ fi
 
 vm_stat | grep -E 'free|compressor'   # 아카이브는 시뮬레이터 빌드보다 무겁다. 한 번에 하나
 ./scripts/sim.sh config   # 매번 최신 supabase/.env 반영
+# 호스트가 비면 업로드 기본값이 https:///functions/v1 → localhost 로 조용히 떨어진다. 그런 Release 는 올리지 않는다
+grep -q '^ERURI_SUPABASE_HOST = [^[:space:]]' Config/Secrets.xcconfig || { echo "Supabase 설정 없음: supabase/.env 의 SUPABASE_URL 을 채운 뒤 다시"; exit 1; }
 xcodegen generate >/dev/null
 rm -rf "$ARCHIVE" build/export
 mkdir -p build

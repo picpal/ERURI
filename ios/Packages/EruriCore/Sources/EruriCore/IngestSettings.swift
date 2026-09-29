@@ -1,16 +1,18 @@
 import Foundation
 
 /// 업로드 서버 주소. App Group UserDefaults 에 저장해 홈 화면에서 다시 열어도 유지된다.
-/// Xcode 스킴 환경변수 `INGEST_URL` 은 저장값이 없을 때 초기값으로만 쓴다.
-/// 저장값이 없을 때의 기본값은 빌드 구성별 Info.plist `EruriIngestDefaultURL`(제품: https://<프로젝트>.supabase.co/functions/v1).
+/// 저장값이 없을 때의 기본값은 Info.plist `EruriIngestDefaultURL`(https://<프로젝트>.supabase.co/functions/v1, Debug·Release 공통).
+/// Secrets.xcconfig 가 비어 그 값이 무효면 `localFallback` 으로 떨어진다 — 아카이브는 scripts/testflight.sh 가 빈 호스트를 막는다.
 public enum IngestSettings {
   public static let key = "ingestURL"
   public static let localFallback = URL(string: "http://localhost:8787")!
   public static var fallback: URL {
-    (Bundle.main.object(forInfoDictionaryKey: "EruriIngestDefaultURL") as? String).flatMap(validated) ?? localFallback
+    fallback(infoValue: Bundle.main.object(forInfoDictionaryKey: "EruriIngestDefaultURL") as? String)
   }
+  static func fallback(infoValue: String?) -> URL { infoValue.flatMap(validated) ?? localFallback }
   public static var shared: UserDefaults { UserDefaults(suiteName: AppGroup.id) ?? .standard }
 
+  /// 환경변수 `INGEST_URL` 을 저장값이 없을 때만 저장한다. 테스트·도구용 — 제품 앱은 호출하지 않는다.
   public static func seed(from env: [String: String], defaults: UserDefaults = shared) {
     guard defaults.string(forKey: key) == nil, let v = env["INGEST_URL"], let url = validated(v) else { return }
     defaults.set(url.absoluteString, forKey: key)

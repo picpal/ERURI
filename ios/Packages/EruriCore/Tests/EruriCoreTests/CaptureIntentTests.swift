@@ -92,13 +92,14 @@ final class CapturePipelineShareTests: XCTestCase {
   }
 }
 
-// fix-2: 업로드 서버 주소는 App Group UserDefaults. 스킴 환경변수 INGEST_URL 은 저장값이 없을 때 초기값으로만 쓴다.
+// 업로드 서버 주소는 App Group UserDefaults 저장값 → 없으면 빌드 기본값(fallback).
+// 테스트는 Bundle.main(테스트 호스트 Info.plist, Secrets.xcconfig 채움 여부에 따라 달라짐)에 기대지 않고 fallback 을 직접 넘긴다.
 final class IngestSettingsTests: XCTestCase {
   func makeDefaults() -> UserDefaults { UserDefaults(suiteName: "test.ingest.\(UUID().uuidString)")! }
   func testFallbackWhenNothingStored() {
     let d = makeDefaults()
     IngestSettings.seed(from: [:], defaults: d)
-    XCTAssertEqual(IngestSettings.url(defaults: d).absoluteString, "http://localhost:8787")
+    XCTAssertEqual(IngestSettings.url(defaults: d, fallback: IngestSettings.localFallback).absoluteString, "http://localhost:8787")
   }
   func testEnvSeedsOnlyWhenEmpty() {
     let d = makeDefaults()
@@ -123,7 +124,13 @@ final class IngestSettingsTests: XCTestCase {
     XCTAssertEqual(IngestSettings.url(defaults: d, fallback: release).absoluteString, "http://localhost:8787")
     IngestSettings.reset(defaults: d)
     XCTAssertEqual(IngestSettings.url(defaults: d, fallback: release), release)
-    XCTAssertEqual(IngestSettings.fallback.absoluteString, "http://localhost:8787")   // 테스트 호스트는 Debug 구성
+  }
+  // Info.plist EruriIngestDefaultURL: 유효하면 그 값, 비었거나(Secrets 없음 → https:///functions/v1) 틀리면 localFallback
+  func testFallbackFromInfoValue() {
+    XCTAssertEqual(IngestSettings.fallback(infoValue: "https://example.supabase.co/functions/v1").absoluteString,
+                   "https://example.supabase.co/functions/v1")
+    XCTAssertEqual(IngestSettings.fallback(infoValue: "https:///functions/v1"), IngestSettings.localFallback)
+    XCTAssertEqual(IngestSettings.fallback(infoValue: nil), IngestSettings.localFallback)
   }
 }
 
