@@ -207,6 +207,9 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
 - PoC trace `poc9.upload_done.path`: `intent_direct`(인텐트 실행 중 직접 요청 완료) · `bg_upload`(인텐트가 background 세션에 넘긴 전송) · `silent_push` · `bg_refresh` · `foreground`. `via`(direct/bg_session), `age_ms`(캡처→완료), `intent_locked`(인텐트 시작 시점 잠금)를 함께 남긴다. 잠금 판정(0.2.1)은 `.complete` 보호 파일 읽기 결과다: 읽힘 = false, 권한 거부 = true, 파일 없음·기타 오류 = null(`lock_state=unknown`). `UIApplication.isProtectedDataAvailable`는 백그라운드로 깨어난 프로세스에서 잠금 중에도 true로 찍혀 `locked=false`가 되므로(09-29 관찰) `locked_app`에 비교용으로만 남긴다. 잠금 후 약 10초 유예 구간은 잠금 해제로 보인다(한계)
 - PoC trace 멱등(0b, 서버): `ingest/trace`는 `(user_id, device_id, event, at)`가 같은 행을 무시하고 `202 {inserted, duplicates}`를 준다(0015).
   기기 `at`은 ms 정밀도라 같은 기기·같은 이벤트가 같은 ms에 두 번 나지 않는다. 09-29 앱 열기 때의 전체 재업로드 같은 중복이 판정 집계를 부풀리지 않게 한다
+- PoC trace 업로드(0b, 기기 0.2.1): 캡처와 같이 **직접 요청 우선**(8초). 2xx면 즉시 큐에서 지우고, HTTP 오류는 백오프, 응답이 없을 때만
+  background 세션에 넘긴다. 넘긴 배치가 아직 끝나지 않았으면(`URLSession.allTasks`의 `trace:` 태스크) 그 id들의 lease를 늘려 다시 claim하지 않고,
+  같은 프로세스의 동시 flush는 한 번만 돈다. 09-29 결함: background 세션으로만 올려 완료 콜백 전에 lease(600초)가 끝나 앱 열기 때 전부 재업로드
 - 서버 멱등: 같은 `source:id` 재수신은 200 + 기존 `item_id`(`duplicate:true`). 기기는 2xx면 큐에서 지우므로 직접 요청이 타임아웃된 뒤 background 세션이 다시 보내도 실패로 남지 않는다.
 - 업로드 서버 주소는 App Group `UserDefaults`(`group.com.picpal.assistant`) 키 `ingestURL`에 저장하고 앱 화면에서 바꾼다. PoC 앱은 저장값이 없을 때만 스킴 환경변수 `INGEST_URL`을 초기값으로 쓰고, 둘 다 없으면 `http://localhost:8787`이다. 홈 화면에서 다시 열어도 저장값이 유지된다.
 

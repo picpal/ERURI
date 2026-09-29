@@ -112,34 +112,66 @@ final class Uploader: Sendable {
 }
 
 /// PoC 추적 이벤트를 `POST /functions/v1/ingest/trace` 로 최대 200건씩 올린다(계약: poc-traces.md).
-/// 캡처와 같은 background 세션·lease·지수 재시도를 쓴다. 세션(JWT)이 없으면 큐에 둔 채 건너뛴다.
+/// 0.2.1: 캡처와 같이 직접 요청 우선 — 2xx 면 바로 지우고, 응답이 없을 때만 background 세션에 넘긴다.
+/// 넘긴 배치가 아직 끝나지 않았으면 그 id 의 lease 를 늘려 다시 가져가지 않는다(09-29 중복 업로드 결함). 서버도 같은 행을 무시한다(0015)
 actor TraceUploader {
   static let shared = TraceUploader()
   static let batch = 200
   private var warnedNoSession = false
+  /// 같은 프로세스에서 인텐트·scenePhase·무음 푸시 flush 가 겹쳐도 한 번만 돈다
+  private var inFlight = false
+  private let direct: URLSession = {
+    let e = URLSessionConfiguration.ephemeral
+    e.timeoutIntervalForRequest = 8; e.timeoutIntervalForResource = 10; e.waitsForConnectivity = false
+    return URLSession(configuration: e)
+  }()
 
   func flush() async {
+    guard !inFlight else { return }
+    inFlight = true
+    defer { inFlight = false }
     guard let q = try? CaptureQueue.shared(), ((try? q.traceCount()) ?? 0) > 0, let cfg = SupabaseSession.config else { return }
     guard let token = await SupabaseSession.shared.accessToken() else {
       if !warnedNoSession { warnedNoSession = true; PoCLog.append("trace flush skipped: no session") }
       return
     }
+    let pending = TraceFlushGate.pendingIDs(taskDescriptions: await Uploader.shared.session.allTasks.map(\.taskDescription))
+    if !pending.isEmpty { try? q.extendLease(ids: Array(pending), until: Date().addingTimeInterval(CaptureQueue.lease)) }
     guard let items = try? q.claimTraces(limit: Self.batch), !items.isEmpty else { return }
+    let ids = items.map(\.id)
     var r = URLRequest(url: cfg.url.appendingPathComponent("functions/v1/ingest/trace")); r.httpMethod = "POST"
     r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     r.setValue(cfg.anonKey, forHTTPHeaderField: "apikey")
     r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("trace-\(UUID().uuidString).json")
-    do { try Trace.batchBody(items.map(\.payload)).write(to: tmp) } catch { try? q.markFailed(ids: items.map(\.id)); return }
-    let t = Uploader.shared.session.uploadTask(with: r, fromFile: tmp)
-    t.taskDescription = UploadDelegate.tracePrefix + items.map(\.id).joined(separator: ",")
-    t.resume()
-    PoCLog.append("trace flush \(items.count)")
+    let body = Trace.batchBody(items.map(\.payload))
+    var status: Int?
+    do {
+      let (_, resp) = try await direct.upload(for: r, from: body)
+      status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+    } catch {
+      status = nil
+    }
+    switch TraceBatchOutcome.resolve(status: status) {
+    case .sent:
+      try? q.markSent(ids: ids)
+      PoCLog.append("trace upload ok n=\(ids.count) status=\(status ?? -1) via=direct")
+    case .retry:
+      if status == 401 { await SupabaseSession.shared.invalidate() }
+      try? q.markFailed(ids: ids)
+      PoCLog.append("trace upload fail n=\(ids.count) status=\(status ?? -1) via=direct")
+    case .handOff:
+      let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("trace-\(UUID().uuidString).json")
+      do { try body.write(to: tmp) } catch { try? q.markFailed(ids: ids); return }
+      let t = Uploader.shared.session.uploadTask(with: r, fromFile: tmp)
+      t.taskDescription = TraceFlushGate.taskDescription(ids: ids)
+      t.resume()
+      PoCLog.append("trace handoff n=\(ids.count)")
+    }
   }
 }
 
 final class UploadDelegate: NSObject, URLSessionTaskDelegate, Sendable {
-  static let tracePrefix = "trace:"
+  static let tracePrefix = TraceFlushGate.prefix
 
   func urlSession(_ s: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
     guard let desc = task.taskDescription, let q = try? CaptureQueue.shared() else { return }

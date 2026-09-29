@@ -128,6 +128,14 @@ public final class CaptureQueue {
   }
   public func markSent(ids: [String]) throws { for id in ids { try markSent(id: id) } }
   public func markFailed(ids: [String], now: Date = Date()) throws { for id in ids { try markFailed(id: id, now: now) } }
+  /// background 세션에 넘긴 배치의 lease 를 늘린다(완료 콜백 전 재claim 방지). 이미 더 늦으면 그대로 둔다
+  public func extendLease(ids: [String], until: Date) throws {
+    for id in ids {
+      try run("UPDATE queue SET next_attempt_at = max(next_attempt_at, ?) WHERE id = ?") { s in
+        sqlite3_bind_double(s, 1, until.timeIntervalSince1970); sqlite3_bind_text(s, 2, id, -1, Self.transient)
+      }
+    }
+  }
 
   /// 테스트 전용: 디코딩 불가 행(poison row) 재현
   func insertRawForTesting(id: String, payload: Data, createdAt: Double) throws {

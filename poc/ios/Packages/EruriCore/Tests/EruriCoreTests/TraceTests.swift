@@ -57,4 +57,30 @@ final class TraceTests: XCTestCase {
     let arr = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [[String: Int]])
     XCTAssertEqual(arr, [["a": 1], ["b": 2]])
   }
+
+  func testBatchOutcome() {
+    XCTAssertEqual(TraceBatchOutcome.resolve(status: 202), .sent)
+    XCTAssertEqual(TraceBatchOutcome.resolve(status: 200), .sent)
+    XCTAssertEqual(TraceBatchOutcome.resolve(status: 400), .retry)
+    XCTAssertEqual(TraceBatchOutcome.resolve(status: 401), .retry)
+    XCTAssertEqual(TraceBatchOutcome.resolve(status: nil), .handOff)   // 응답 없음(오프라인·타임아웃)만 background 세션으로
+  }
+
+  func testPendingIDsReadOnlyTraceTasks() {
+    let d = [TraceFlushGate.taskDescription(ids: ["a", "b"]), "cap|x|intent|1|-", nil, "trace:c"]
+    XCTAssertEqual(TraceFlushGate.pendingIDs(taskDescriptions: d), ["a", "b", "c"])
+  }
+
+  /// 09-29 결함 재현: background 세션 배치가 lease(600초)보다 오래 걸리면 다음 flush 가 같은 행을 다시 가져갔다
+  func testExtendLeaseKeepsInFlightRowsFromReclaim() throws {
+    let q = try tempQueue(); let t0 = Date()
+    try q.enqueueTrace(id: "t1", payload: Data("{}".utf8), at: t0)
+    try q.enqueueTrace(id: "t2", payload: Data("{}".utf8), at: t0.addingTimeInterval(1))
+    XCTAssertEqual(try q.claimTraces(limit: 10, now: t0).map(\.id), ["t1", "t2"])
+    let later = t0.addingTimeInterval(CaptureQueue.lease + 1)
+    try q.extendLease(ids: ["t1"], until: later.addingTimeInterval(CaptureQueue.lease))
+    XCTAssertEqual(try q.claimTraces(limit: 10, now: later).map(\.id), ["t2"])
+    try q.extendLease(ids: ["t2"], until: t0)                               // 더 이른 시각으로는 줄이지 않는다
+    XCTAssertTrue(try q.claimTraces(limit: 10, now: later).isEmpty)
+  }
 }
