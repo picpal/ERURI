@@ -1,0 +1,89 @@
+import SwiftUI
+import EruriCore
+
+/// 보관함(스펙 §11): 본인 항목의 메타 목록 → 상세(원문·추출). 게이트를 통과한 항목에 "잘못 통과" 표시(Jev 정확도 정답, §16)
+struct ArchiveView: View {
+  @State private var rows: [Archive.Row] = []
+  @State private var filter = Archive.Filter.all
+  @State private var more = false
+  @State private var loading = false
+  @State private var message = ""
+
+  var body: some View {
+    NavigationStack {
+      List {
+        Picker("출처", selection: $filter) {
+          Text("전체").tag(Archive.Filter.all); Text("메일").tag(Archive.Filter.mail)
+          Text("알림·문자").tag(Archive.Filter.notification); Text("공유").tag(Archive.Filter.share)
+        }.pickerStyle(.segmented)
+        NavigationLink("최근 폐기 (7일)") { RecentDiscardsView() }
+        if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
+        ForEach(rows) { r in
+          NavigationLink {
+            ItemDetailView(itemID: r.id, footer: r.gatePassed ? AnyView(WrongPassSection(itemID: r.id)) : nil)
+          } label: {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(r.titleLine).lineLimit(1)
+              Text(r.metaLine).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+          }
+        }
+        if more { Button(loading ? "불러오는 중…" : "더 보기") { Task { await load(reset: false) } }.disabled(loading) }
+      }
+      .navigationTitle("보관함")
+      .task { if rows.isEmpty { await load(reset: true) } }                // 상세에서 돌아올 때 목록·스크롤을 유지
+      .onChange(of: filter) { _, _ in Task { await load(reset: true) } }
+      .refreshable { await load(reset: true) }
+    }
+  }
+
+  private func load(reset: Bool) async {
+    if loading && !reset { return }
+    let requested = filter
+    loading = true; defer { loading = false }
+    let r = await API.send(Archive.query(filter: requested, offset: reset ? 0 : rows.count))
+    guard requested == filter else { return }                              // 필터를 바꾼 뒤 늦게 온 응답은 버린다
+    guard let r, r.status == 200, let v = Archive.decode(r.data) else { message = "불러오지 못했습니다"; return }
+    rows = reset ? v : rows + v
+    more = Archive.hasMore(pageCount: v.count)
+    message = rows.isEmpty ? "항목이 없습니다" : ""
+  }
+}
+
+/// "분류가 틀렸어요(버렸어야 함)" → gate_feedback wrong_pass(본인 항목만, RLS). 다시 누르면 취소. 복구한 항목에는 보이지 않는다
+struct WrongPassSection: View {
+  let itemID: String
+  @State private var state = Archive.Feedback.unknown
+  @State private var busy = false
+  @State private var failed = false
+  init(itemID: String) { self.itemID = itemID }
+
+  var body: some View {
+    if state != .restored {
+      Section {
+        Button(state == .wrongPass ? "표시 취소" : "분류가 틀렸어요 (버렸어야 함)") { toggle() }
+          .disabled(busy || state == .unknown)
+      } header: { Text("분류") } footer: {
+        Text(failed ? "저장하지 못했습니다. 다시 눌러 주세요"
+             : state == .wrongPass ? "버렸어야 할 항목으로 표시했습니다" : "개인 대화·광고처럼 저장할 필요가 없던 항목이면 눌러 주세요")
+      }
+      .task { await refresh() }
+    }
+  }
+
+  private func refresh() async {
+    let r = await API.send(Archive.feedbackQuery(itemID: itemID))
+    state = Archive.feedback(status: r?.status, data: r?.data)
+  }
+  private func toggle() {
+    busy = true
+    Task {
+      let r = state == .wrongPass
+        ? await API.send(Archive.unmarkPath(itemID: itemID), method: "DELETE")
+        : await API.send("rest/v1/gate_feedback", method: "POST", json: ["item_id": itemID, "verdict": "wrong_pass"])
+      failed = !Archive.succeeded(r?.status)
+      await refresh()                                                      // 성공 여부와 상관없이 서버 상태를 다시 읽어 표시
+      busy = false
+    }
+  }
+}

@@ -45,9 +45,6 @@ struct ContentView: View {
           Toggle("저장 결과 알림", isOn: $resultNotice).onChange(of: resultNotice) { _, v in CaptureResultNotice.set(v) }
           Button(copied ? "복사됨" : "진단 정보 복사") { copyDiagnostics() }
         }
-        Section("보관") {
-          NavigationLink("최근 폐기") { RecentDiscardsView() }
-        }
         Section("데이터") {                                                    // 스펙 §12 통제 5 1단계 버튼 2개(M2-⑥)
           Button("Gmail 데이터 삭제 (연결 해제)", role: .destructive) { confirmSource = true }
           Button("계정 전체 삭제", role: .destructive) { confirmAccount = true }
