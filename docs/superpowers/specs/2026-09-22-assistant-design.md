@@ -140,7 +140,10 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
   2. Foundation Models 분류 (가능 시, 타임아웃 3초). 세부는 아래 "Foundation Models 분류"
      notice → 통과 (device_filter = "fm")
      personal/otp/promo/medical_result → 폐기 (사유 fm:<kind>)
-     불가·타임아웃·생성 에러 → 같은 폴백:
+     타임아웃 → 출처와 무관하게 kind = unknown, device_filter = "rules"로 통과 → 서버 LLM 분류(§7)에 맡긴다
+       (0.2.3: 인텐트 프로세스의 FM 콜드 로드가 3초를 넘는 것이 상수라 폐기하면 채팅 앱 항목이 전부 유실된다.
+        개인 대화 배제는 서버 Jev 게이트(§7)가 담당)
+     불가·생성 에러 → 폴백:
        카카오톡·Instagram 출처는 **폐기** (개인 대화 배제 원칙이 우선)
        그 외(메시지·쇼핑/금융 앱)는 kind = unknown, device_filter = "rules"로 통과 → 서버 LLM 분류(§7)에 맡긴다
   3. App Group SQLite 큐에 저장 (보호 등급 completeUntilFirstUserAuthentication, WAL + busy_timeout. 아래 "큐")
@@ -175,7 +178,8 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
 - 입력은 앱 이름·제목·본문(본문 1,500자에서 절단). 제목은 카톡 채널명과 사람 이름을 가르는 가장 강한 신호다.
 - 출력 `kind`는 `@Generable enum`이다. 문자열이면 스키마 밖 값("공지")이 나와 조용히 폐기되므로 쓰지 않는다.
 - 타임아웃 3초는 `respond`의 취소 협조 여부와 무관하게 그 시점에 반환한다(응답·타이머 중 먼저 끝난 쪽이 결과를 정한다). `withThrowingTaskGroup`은 남은 자식 태스크를 기다리므로 쓰지 않는다.
-- 불가(`availability()`≠available)·타임아웃·생성 에러(`rateLimited`, `guardrailViolation`, `assetsUnavailable`, `decodingFailure` 등)는 모두 같은 폴백(위 2단계)을 탄다. 에러가 인텐트 실패로 전파되지 않는다. 로그에는 에러 종류 코드만 남긴다.
+- 실측(실기기 0.2.1/0.2.2, 2026-09-29, 인텐트 13건): 콜드 로드 3.07~3.22초로 11건이 3초 타임아웃, 웜 상태 2건만 1.7~1.8초로 `queued:fm`. 잠금 여부와 무관하다. 그래서 타임아웃은 출처와 무관하게 `rules`로 통과시킨다(0.2.3, 위 2단계).
+- 불가(`availability()`≠available)·생성 에러(`rateLimited`, `guardrailViolation`, `assetsUnavailable`, `decodingFailure` 등)는 같은 폴백(위 2단계, 채팅 앱 폐기)을 탄다. 타임아웃은 위 2단계의 별도 규칙(`rules` 통과)을 따른다. 에러가 인텐트 실패로 전파되지 않는다. 로그에는 에러 종류 코드만 남긴다.
 - **`availability()`가 `available`이어도 `respond()`가 에셋 오류를 낼 수 있다**(시뮬레이터에서 실측, §16). 그래서 가용성 판정(벤치마크 실행 여부, 설정 화면의 FM 상태 표시)은 짧은 합성 문장 1건을 먼저 호출하는 사전 점검 결과로 한다. 인텐트 경로는 건별 에러를 폴백으로 흡수하므로 사전 점검 없이도 안전하다.
 - `rateLimited`는 앱이 백그라운드에서 시스템 한도를 넘을 때만 난다. `.background` 인텐트가 바로 그 경로이므로 빈도를 PoC-3 실기기에서 잰다.
 - 폴백 여부는 큐 항목의 `device_filter`("fm" 또는 "rules")로 서버에 전달된다.
