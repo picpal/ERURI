@@ -258,7 +258,8 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
       그대로. 게이트를 저신뢰로 통과한 비행동 항목의 2차 방어선)
       구현(M1-④a): 워커가 분류한 항목마다 items.gate_label·gate_confidence를 남기고, 게이트 폐기는 quarantine_until = 폐기 + 7일.
       복구는 restore_discarded RPC(사용자 JWT) → status queued + process 잡 payload skip_gate + gate_feedback(wrong_discard).
-      pg_cron purge-quarantine-daily가 기한 지난 본문·청크를 지운다.
+      기한 경과·정리 뒤 복구는 `expired`. 테스트 항목(idempotency_key `test:<run>:…`)의 복구 잡은 lease_key 도 `test:<run>:` 접두(0011, 운영 워커 제외).
+      pg_cron purge-quarantine-daily(하루 1회)가 기한 지난 본문·청크를 지운다 — 실제 보존은 7일 + 다음 일일 정리까지(최대 약 8일).
       **서버 분류 게이트(0b, 2026-09-29 사용자 결정 — Jev 채택)**: `Classifier` 인터페이스 `classify(text, meta) → {label, confidence} | null`.
       운영 공급자 `CLASSIFY_PROVIDER=jev`(TypeSafe Jev, 모델 `jev-1.13.0` 고정 — 버전이 바뀌면 confidence 분포가 바뀐다, 키 `JEV_API_KEY`.
       코드 기본값 none은 설정 누락 대비). 라벨은 0b 5종 actionable · personal · promo · otp · notice에 1단계에서 `medical_result`를 더해
