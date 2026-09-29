@@ -238,10 +238,12 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   → 재분류 (gpt-6-luna, effort none, ≤200 토큰 Structured Outputs JSON): event|task|purchase|subscription|reference|discard|medical_result
       medical_result·personal 경계는 §6 분류 라벨 정의와 같다. device_filter = "rules" 항목은 기기 FM 판정이 없으므로 여기서 처음 분류된다
       discard·medical_result → items DELETE, 감사 로그에 사유 코드만. 이 단계 전에는 다른 외부 전송 없음
-      **0단계 예외(2026-09-27 결정)**: PoC worker는 분류 단계가 없고 `process` 잡이 복호화한 텍스트 전부에 추출을 1회 호출한다
-      (계획서 Task 12 Step 3, 추출값은 저장하지 않고 유무·개수만 로그). 분류는 1a에서 도입하고 순서는 위(분류 → 삭제 → 추출)를 따른다.
-      근거: 분류도 같은 공급자·약관(§12 통제 3, `store: false`)으로 항목당 1회 전송하므로 노출 범위가 같고, 0단계에는 discard 삭제가
-      원래 없어 보관 상태도 같다. PoC 코드는 폐기 대상이라 순서를 맞추려고 고치지 않는다
+      **0단계 예외(2026-09-27 결정, 2026-09-29 0b 갱신)**: PoC worker의 `process` 잡은 복호화한 텍스트에 (1) 서버 규칙 재적용 →
+      (2) 분류 게이트(아래 문단) → (3) 텍스트 추출(`text_fact`) → (4) `save_fact` 순으로 처리한다. 이미 처리된 항목(status ≠ queued)은
+      복호화·모델 호출 없이 끝난다. 폐기(규칙·게이트)는 PoC 측정을 위해 행을 남기되 `content_enc`·`ocr_text_enc`를 지우고
+      status = `discarded:server:<사유>`, 감사 로그 `discard`(item_id·사유 코드만). 추출 결과가 없으면 `discarded:server:empty`이고 원문은
+      남긴다(1a 검색 대상, 90일 만료 규칙 그대로. 게이트를 저신뢰로 통과한 비행동 항목의 2차 방어선). 1a에서 본문 순서
+      (분류 → discard 행 삭제 → 추출)와 삭제 정책으로 바꾼다
       **서버 분류 게이트(0b, 2026-09-29 사용자 결정 — Jev 채택)**: `Classifier` 인터페이스 `classify(text, meta) → {label, confidence} | null`.
       운영 공급자 `CLASSIFY_PROVIDER=jev`(TypeSafe Jev, 모델 `jev-1.13.0` 고정 — 버전이 바뀌면 confidence 분포가 바뀐다, 키 `JEV_API_KEY`.
       코드 기본값 none은 설정 누락 대비). 라벨 5종 actionable · personal · promo · otp · notice(경계는 `_shared/classify.ts` LABEL_CRITERIA,
@@ -544,7 +546,7 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 - **OpenAI 30일 보관**: ZDR은 사전 승인제라 본인 사용 단계에서는 남용 모니터링 30일 보관을 수용한다. 지인 확대 시 ZDR 신청, 거절되면 처리방침에 명시.
 - **인용 검증의 한계**: OpenAI에는 문서 인용 기능이 없어 인용은 모델이 JSON에 적은 `source_item_ids`다. 서버는 id가 검색 결과에 있는지만 확인하므로 "있는 문서를 잘못 인용"은 구조적으로 막지 못한다. PoC-7 합성 평가에서는 인용 36/36·정밀도 39/39였다. 1a 실데이터 검색 평가에서 다시 재고, 미달 시 문장-문서 대조(gpt-6-luna 재검증) 단계를 추가한다.
 - **음력 날짜** (PoC-8 실측): 모델의 음력→양력 환산이 하루씩 틀린다. 음력 표기는 `uncertain: date`로 REVIEW에 보낸다(§7). 자동 환산은 서버 변환표로만.
-- **0단계 worker의 분류 생략**: §7 "0단계 예외". 1a 진입 조건에 "분류 → discard 삭제 → 추출 순서" 포함.
+- **0단계 worker의 분류(0b)**: Jev 게이트는 들어갔으나 폐기 시 행을 남긴다(§7 "0단계 예외"). 1a 진입 조건에 "분류 → discard 행 삭제 → 추출 순서" 포함.
 - **Gmail 7일 재인증**: 테스트 모드 refresh token 만료(`connections.expires_at`) 24시간 전 푸시로 완화. 본인 사용 기간엔 감수. 지인 확대 시점에 앱 검증 비용을 결정한다. 6일·8일 동작은 PoC-6 반복 항목.
 - **모델 ID 수명**: `gpt-6-luna`·`gpt-6-sol`은 별칭과 스냅샷이 같은 ID 하나뿐이다. 날짜 고정 스냅샷이 나오면 제품 코드에서는 스냅샷으로 고정한다.
 - **Supabase 무료 티어 500MB**: 1인 1년 원문이면 충분하나 이미지 포함 시 Storage 1GB 상한 감시.

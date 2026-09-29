@@ -1,13 +1,15 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { isServiceCaller } from "../_shared/auth.ts";
 import { SERVER_AUTH } from "../_shared/crypto.ts";
+import { classifierOrNone } from "../_shared/classifier-env.ts";
+import { classifyThreshold } from "../_shared/classify.ts";
 import { gmailFetch, gmailSync, gmailWatch } from "../_shared/gmail-jobs.ts";
-import { extractEventDetailed } from "../_shared/extract.ts";
 import type { Job } from "../_shared/job.ts";
 import { extractMedia } from "./extract.ts";
 import { withHeartbeat } from "./heartbeat.ts";
 import { mediaDeps } from "./media-deps.ts";
-import { type Metrics, processItem } from "./process.ts";
+import { type Metrics, processText } from "./text.ts";
+import { textDeps } from "./text-deps.ts";
 
 // 임대 180초 > Edge 무료 wall-clock 150초. 30초 넘게 걸리는 잡은 하트비트로 연장한다(스펙 §7)
 const LEASE_SECONDS = 180;
@@ -15,17 +17,14 @@ const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
 // 잡별 측정값(복호화 ms·글자 수). 본문은 담지 않는다
 let metrics: Metrics | null = null;
 const media = mediaDeps(sb);
+const env = (k: string) => Deno.env.get(k);
+// 분류 게이트(스펙 §7 0b, Jev). 설정이 잘못돼도 워커 전체를 멈추지 않고 none 으로 돈다(오류 코드는 로그)
+const text = textDeps(sb, { classifier: classifierOrNone(env), threshold: classifyThreshold(env) });
 const handlers: Record<string, (job: Job) => Promise<string>> = {
   noop: async () => "done",
   sleep: async (j) => { await new Promise((r) => setTimeout(r, Number(j.payload.ms ?? 0))); return "done"; },
-  // Task 12 Step 3: 복호화된 텍스트만 추출에 넘긴다. 로그에는 추출값을 남기지 않는다(유무·개수만)
-  process: (j) => processItem(sb, j, async (userId, _itemId, text) => {
-    if (!text.trim()) return "extracted";
-    const { event, usage } = await extractEventDetailed({ ocrText: text });
-    await media.addTokens(userId, usage.input_tokens + usage.output_tokens);
-    console.log(JSON.stringify({ job_id: j.id, has_start: event.start !== null, uncertain: event.uncertain.length }));
-    return "extracted";
-  }, (m) => { metrics = m; }),
+  // 텍스트(스펙 §7 0b): 규칙 재적용 → 분류 게이트 → 추출 → save_fact. 로그에는 코드·개수만
+  process: (j) => processText(text, j, (m) => { metrics = m; }),
   // 이미지·PDF(스펙 §7): Storage → vision(월 100건) → 초과 시 OCR 텍스트 → facts·proposals
   extract: (j) => extractMedia(media, j),
   "gmail-sync": (j) => gmailSync(sb, j),
