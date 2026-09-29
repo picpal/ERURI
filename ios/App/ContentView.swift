@@ -38,6 +38,9 @@ struct ContentView: View {
           Toggle("저장 결과 알림", isOn: $resultNotice).onChange(of: resultNotice) { _, v in CaptureResultNotice.set(v) }
           Button(copied ? "복사됨" : "진단 정보 복사") { copyDiagnostics() }
         }
+        Section("보관") {
+          NavigationLink("최근 폐기") { RecentDiscardsView() }
+        }
         Section("데이터") {
           Button("계정 전체 삭제", role: .destructive) {}.disabled(true)        // 자리: M2-⑥b 에서 연결(스펙 §12 통제 5)
           Text("삭제 기능은 다음 버전에서 제공됩니다").font(.caption).foregroundStyle(.secondary)
