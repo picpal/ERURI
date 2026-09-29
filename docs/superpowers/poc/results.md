@@ -11,15 +11,15 @@
 | PoC-1 | 단축어 Notification 트리거 → CaptureIntent 자동 실행 | 4 | 통과 | 실기기(09-28, iOS 27, TestFlight 0.1.1): "새로운 빈 자동화"에 알림 트리거(카카오톡+Slack 다중 선택, "모든 앱"은 불가)·"비서에 저장" 직접 편집(본문=단축어 입력→내용) → Slack 알림 본문 183자·155자, `locked=true`·`bg=true`, **배너 탭 없이 실행**. 1건은 `len=0`. 제목·앱 이름 변수 연결 후 05:24:48Z `len=147`·`title=11`·`app=true`·`locked=true` — **본문·제목·앱 이름 전부 전달** | 카카오톡 알림 실측, `len=0` 1건 원인, 미리보기 꺼짐·묶음 알림 기록, 연락처 발신 `discarded:contact` | `964cfea` `affe7e9` `47e9435` | 2026-09-28 |
 | PoC-2 | 단축어 Message 트리거 → CaptureIntent 자동 실행 | 4 | 통과 | 실기기(iOS 27, TestFlight 0.1.1): "새로운 빈 자동화" 안에서 "비서에 저장" 직접 편집(본문=단축어 입력→내용) → 본문 30/15/15자·발신자 도착, `bg=true`, 1.5~2.5초, 무확인 실행. **잠금 수신 확정**: 05:02:04Z `locked=true` 본문 38자·발신자. 기존 단축어 선택 방식은 발신자만·본문 0자(6건). **제품 경로(09-28 사용자 최종)**: 알림 자동화 1개(메시지 앱 포함)로 수집, 메시지 트리거는 선택 사항. 06:00Z 메시지 트리거로 문자 3건(연락처 있는 지인 발신) 모두 `src=MESSAGE, app=SMS`·발신자 번호·본문 도착(통과 근거 유지). 알림 경로(05:50:19Z)는 `app=메시지`·발신자 표시 이름, 알림이 안 뜨는 문자(조용히 한 대화·알 수 없는 발신자·집중 모드)는 누락 감수 | 판정 기준 중 BFU(재부팅 후 첫 해제 전) 수신 처리 기록, OTP `discarded:otp`, 연락처 번호 `discarded:contact` | `ca859a4` `47e9435` | 2026-09-28 |
 | PoC-3 | Foundation Models 한국어 분류 200건 정확도·p95 | 5 | 부분 | 폴백 경로(Coupang→`queued:rules`, KakaoTalk→`discarded:fm-error`)·새 세션·enum 스키마·타임아웃 단위 테스트. 호스트 Mac Apple Intelligence 꺼짐으로 수치 없음 **실기기(09-29, iOS 27, 0.2.0, Slack 웹훅 합성 문구 10개)**: Apple Intelligence 분류기 동작 확인. 택배·병원·카드·컨퍼런스·공과금 5건 `queued:rules`(p50 3.13s, 최대 3.22s), 광고 `discarded:fm:promo`(2.04s), 인증번호 `discarded:otp`(정규식 6ms), 경계 문구(목요일 판교 약속) `queued:rules`. 잡담 2건(ㅋㅋㅋ/밥 먹었어?)은 `queued:rules` 로 통과시켜 오분류 → 서버 규칙이 걸러야 함. 별도 관찰: 4자 알림 `discarded:fm-timeout`, 지인 문자 `discarded:fm:personal`. 기기 정확도 8/10(목표 90% 미달, p95·메모리 미측정), 잠금·백그라운드에서 실행. **서버 게이트 후보 Jev(09-29, 합성 60건)**: 게이트 60/60(같은 10문구 10/10, 잡담 2건 폐기), p50 211ms·p95 269ms, 60건 $0.0019, 임계 0.8 제안·조건부 채택(벤더 결정·보관 정책·실데이터 재측정 대기) → `reports/2026-09-29-jev-classification-eval.html`. **서버 분류 게이트(Jev, 운영 요청 재현 09-29)**: gate 60/60, 5라벨 60/60, p50/p95 218/302ms, 건당 $0.000032, t=0.8 유실 0·누수 1(p02 잡담 conf 0.64 → 추출로); 메신저 제목 미전송(최종 리뷰 I1) 재측정 09-29: gate 60/60, 5라벨 60/60, p50/p95 216/314ms, t=0.8 유실 0·누수 0, 운영 적용 예(`CLASSIFY_PROVIDER=jev`·`CLASSIFY_THRESHOLD=0.8`, 스모크 잡담 `discarded:server:personal`·일정 `extracted`) → `poc/server/eval/jev-results-prod.json` | 실기기 200건 p95·개인 대화 통과율·알림톡 폐기율, 메모리, 백그라운드 `rateLimited` 빈도. **실기기 관찰(09-28 06:00Z)**: 지인 약속 문구 문자 3건이 `discarded:fm:personal`로 폐기 → 약속·일정이 담긴 개인 대화의 폐기율을 재측정. 실데이터 200건 재측정(스펙 §16 Jev 조건) | `b1f3248` `0d2a293` `affe7e9` | 2026-09-29 |
-| PoC-4 | Edge Function → APNs HTTP/2 | 9 | 부분 | h2 동작(가짜 토큰 sandbox `400 BadDeviceToken`+`apns-id`, HTTP/1.1 대조군 거부), Edge 서울 100회 동시 1 100/100 p50 419ms, JWT 429 수정. **실기기(09-28)**: 앱 토큰 등록(`devices` production, 0.1.1) → `apns-send` count 1 → APNs 200 production 634ms, 잠금 화면 수신 확인 | 100회 동시 10 × 2(성공률 ≥ 99%, h2 오류 0) — 판정 기준. 노출된 APNs 키 교체 후 실시 | `e2552b5` `40d83cc` `b84bd60` | 2026-09-28 |
-| PoC-5 | 잠금화면 알림 액션 → 백그라운드 EventKit 멱등 쓰기 | 6 | 부분 | XCUITest(실제 배너·액션 탭, 로컬 알림): 백그라운드 쓰기 `bg=true`, 재탭 `dup skip`, 앱 종료 후 콜드 스타트, 동시 두 번 탭 이벤트 +1 | 실기기 잠금 화면 `.authenticationRequired` 인증 후 1건. 보고 실패 후 재탭은 서버 연동 후. 서버 제안 푸시 경로 절차 준비됨(poc-5 문서 0b 절) | `0e89279` `0d2a293` | 2026-09-24 |
+| PoC-4 | Edge Function → APNs HTTP/2 | 9 | 부분 | h2 동작(가짜 토큰 sandbox `400 BadDeviceToken`+`apns-id`, HTTP/1.1 대조군 거부), Edge 서울 100회 동시 1 100/100 p50 419ms, JWT 429 수정. **실기기(09-28)**: 앱 토큰 등록(`devices` production, 0.1.1) → `apns-send` count 1 → APNs 200 production 634ms, 잠금 화면 수신 확인. **0.2.1/0.2.2 자동 재등록(build 갱신) 확인(09-29)**: 설치 후 앱 열기만으로 `devices.build` 갱신(08:51:50Z·09:25:01Z, "등록" 버튼 안 누름) | 100회 동시 10 × 2(성공률 ≥ 99%, h2 오류 0) — 판정 기준. 노출된 APNs 키 교체 후 실시 | `e2552b5` `40d83cc` `b84bd60` | 2026-09-29 |
+| PoC-5 | 잠금화면 알림 액션 → 백그라운드 EventKit 멱등 쓰기 | 6 | 통과 | XCUITest(실제 배너·액션 탭, 로컬 알림): 백그라운드 쓰기 `bg=true`, 재탭 `dup skip`, 앱 종료 후 콜드 스타트, 동시 두 번 탭 이벤트 +1. **실기기(09-29, iOS 27, 서버 제안 푸시)**: 0.2.1 제안 2건 잠금 화면 "캘린더에 추가" → 캘린더 각 1건·`result=ok bg=true dup=false auth=3`, 단 TestFlight 충돌 안내 2회(완료 핸들러 메인 스레드 밖 호출) → 0.2.2 수정 후 09:27:19Z `ok bg=true dup=false auth=3`·캘린더 1건·**충돌 안내 없음** | — (실기기 재탭 `dup` 은 안 함 — 시뮬레이터 XCUITest 근거로 갈음. 보고 실패 후 재탭은 서버 연동 후) | `0e89279` `0d2a293` `3879270` | 2026-09-29 |
 | PoC-6 | Gmail watch → Pub/Sub → history 동기화 | 10 | 부분 | 실계정: 연결·watch +7일, 백필 85 ID → 76행·429 없음·`content_enc` null 0, 웹훅 약 8초(1회), 404 재동기화로 누락 1건 복구·중복 0 | 웹훅 지연 5회 평균, watch 갱신(수동+다음 날 cron), 6일 `expiring`·8일 `invalid_grant`, 규칙 필터 OTP·카드 메일. 백필이 증분 동기화를 굶기는 문제(스펙 §16) | `ea6c762` `87673fe` `cdd7c79` | 2026-09-27 |
 | PoC-7 | 한국어 하이브리드 검색 Top-5 정확도 | 11 | 통과 | 합성 500건·질문 50: 하이브리드 + `text-embedding-3-large`(512) Top-5 38/40(95%), 무근거 거절 10/10, 인용 36/36·정밀도 39/39, 날짜 필터 오판 0, 검색 p95 70~111ms | — (1a에서 실데이터 검색 평가) | `4c00aa7` `cf786bb` `9e8ab9f` | 2026-09-27 |
 | PoC-8 | 이미지·PDF → OCR/추출 → 일정 | 7, 12 | 부분 | 서버: 합성 7종(이미지 5·PDF 2) vision+OCR 21/21, OCR만 21/21, `uncertain` 21/21, p50 1.95s·p95 2.53s, 건당 $0.00042, worker extract 7/7. 기기(시뮬레이터): 사진 앱 공유 시트 → 확장 `ocrLen=43`·큐 `SHARE` 행 | 실기기 공유 시트 → 큐·업로드(App Group 서명), 오프라인 후 복구 유실 0 | `f28814d` `0d2a293` `affe7e9` `7f533f1` | 2026-09-27 |
-| PoC-9 | 앱 종료 후 background URLSession 업로드 완료 | 7 | 통과 | 앱 프로세스 종료를 `ps`로 확인한 뒤 3.68초 후 목 서버에 정확한 바이트 수로 도착. 실기기(09-28): 로그인 직후 큐 7건 일괄 업로드(`poc9.upload_done` ×7), 잠금 중 수신분은 해제·앱 열기 후 업로드(45초 뒤), 서버 `process` 잡 전부 `done` | — (실기기 회귀: 스와이프 종료·비행기 모드, 파일 업로드는 서버 `upload/<id>` 엔드포인트 구현 후) | `f28814d` | 2026-09-28 **0.2.0 실기기(09-29)**: 잠금 중 Slack 알림 → `path=intent_direct` 0.86초 즉시 업로드(앱 미실행). 비행기 모드에서 공유 확장으로 큐 적재 → 잠금 화면에서 네트워크 복구 → 서버 무음 푸시(APNs 200) → 33초 뒤 `poc9.wake`·`poc9.upload_done path=silent_push` 도착(앱 미실행). 앱이 떠 있으면 `path=foreground` 16초. trace `locked` 값은 잠금 중에도 false 로 찍혀 신뢰 불가(버그) |
+| PoC-9 | 앱 종료 후 background URLSession 업로드 완료 | 7 | 통과 | 앱 프로세스 종료를 `ps`로 확인한 뒤 3.68초 후 목 서버에 정확한 바이트 수로 도착. 실기기(09-28): 로그인 직후 큐 7건 일괄 업로드(`poc9.upload_done` ×7), 잠금 중 수신분은 해제·앱 열기 후 업로드(45초 뒤), 서버 `process` 잡 전부 `done`. **0.2.0 실기기(09-29)**: 잠금 중 Slack 알림 → `path=intent_direct` 0.86초 즉시 업로드(앱 미실행), 비행기 모드 큐 적재 → 무음 푸시 → 33초 뒤 `path=silent_push`(앱 미실행), 앱이 떠 있으면 `path=foreground` 16초. **0.2.1 잠금 판정 L1~L4(09-29, 상세 표)**: L1 `unlocked/readable`, L2·L4 `locked/denied`·`locked_app=true`(UIKit 값 일치), L3 잠금 직후는 같은 초에 unlocked→locked(유예 경계, 한계), `probe=error` 0 → 후속 패치 불필요. **trace 중복**: 0.2.1 설치 뒤 `ingest` trace 17줄 중 16줄 `duplicates=0`, 09:17:47Z 1줄 `count=2, duplicates=2`(0.2.1 PoC-5 충돌 구간), 0.2.2 이후 0 | — (실기기 회귀: 스와이프 종료·비행기 모드, 파일 업로드는 서버 `upload/<id>` 엔드포인트 구현 후) | `f28814d` | 2026-09-29 |
 | PoC-10 | jobs 큐 lease/재시도/dead 처리 | 8 | 통과 | 같은 lease_key 동시 클레임 1건, 5회 실패 후 `dead`, 임대 180초+하트비트로 90초 잡 재클레임 0·attempts 1, 복호화 p50 0.7ms·p95 56ms | — (판정 기준 밖: 150초 강제 종료 잡 재클레임, 24시간 활동 유지) | `2d9a45a` `6ca66d8` | 2026-09-26 |
 
-**집계: 통과 5(PoC-1·2·7·9·10) · 부분 5(PoC-3·4·5·6·8) · 실패 0 · 미검증 0.** 부분 5건과 PoC-1·2·9 실기기 보완 항목은 아래 "실기기·장기 실측 대기"(8개 PoC)로 넘어간다.
+**집계: 통과 6(PoC-1·2·5·7·9·10) · 부분 4(PoC-3·4·6·8) · 실패 0 · 미검증 0.** 부분 4건과 PoC-1·2·9 실기기 보완 항목은 아래 "실기기·장기 실측 대기"(7개 PoC)로 넘어간다.
 
 ## 실기기·장기 실측 대기
 
@@ -31,7 +31,6 @@
 | PoC-2 | **보완**: BFU 수신(재부팅 후 첫 해제 전) 처리 기록, OTP·연락처 번호 폐기 | 실기기, 테스트 발신 번호, 재부팅 | `poc2.intent_fired`, BFU는 `bfu.log` | `poc-2-message-trigger.md` |
 | PoC-3 | **신규 실측**: FM 200건 p95·통과율·폐기율, 메모리, 백그라운드 10~20회 `rateLimited` | 실기기 + Xcode ⌘U(케이블·개발 설치), Apple Intelligence 모델 다운로드 완료 | `FM_BENCH`/`fm_bench.txt`, `poc3.bench_done`, 백그라운드는 `poc1.intent_fired`의 `result` | `poc-3-fm-classifier.md` |
 | PoC-4 | **동시 10**: 100회 동시 10 × 2(1회 production 수신은 09-28 완료) | APNs 키 재교체 후, TestFlight 설치 기기(`devices` 행 있음) | `apns-send` 응답 `ok`·`byStatus`·`h2Errors` | `poc-4-apns.md` |
-| PoC-5 | **신규 실측**: 잠금 화면 `.authenticationRequired` 액션 → Face ID/암호 → 1건 | 실기기, 기기 암호 | `poc5.action_handled`의 `result`·`dup`·`bg`·`locked` | `poc-5-notification-eventkit.md` |
 | PoC-6 | **반복 항목**: 웹훅 지연 5회 평균, watch 갱신 2회(수동·cron), 6일 `expiring`, 8일 `invalid_grant`→`reauth_required`, 규칙 필터 OTP·카드 메일 | 연결 후 8일(달력), 실측 중 테스트 DB 초기화 금지 | `sync_states`·`connections`·`jobs`, `gmail_reauth_due()` | `poc-6-gmail.md` |
 | PoC-8 | **실기기 회귀**: 사진 공유 시트 → 큐·OCR, 업로드 바이트 일치, 비행기 모드 후 유실 0 | 실기기, 서버 파일 업로드 엔드포인트(`PUT upload/<id>`, Supabase에 없음 — 09-28 발견) | `poc8.share_received`, `poc9.upload_done` | `poc-8-9-share-upload.md` |
 | PoC-9 | **실기기 회귀**: 공유 직후 스와이프 종료 → 도착 또는 취소 기록, 재실행 후 유실 0(텍스트 업로드 09-28, 무음 푸시·직접 업로드 09-29 확인; BGAppRefresh 경로는 미관측) | 위와 같음 + 서버 `upload/<id>` | `poc9.upload_done`, `/received`의 `at` | `poc-8-9-share-upload.md` |
@@ -73,7 +72,9 @@
 | Jev(임계 0.8), 3회 | miss 0/30 | 3회 모두 `discarded:server:personal`(추출 호출 없음, 토큰 0) | d01·d03 purchase, d02·d04·d08 event, d05 task, d06 `promotion`·d07 `otp` 규칙 폐기. 추출 1건 ≈1.41~1.44k 토큰 |
 | none(게이트 없음), 1회 | miss 0/10 | `discarded:server:empty`(2차 방어선: 추출이 none, ≈1.36k 토큰 소비) | 나머지 8건은 Jev와 같은 결과 |
 
-### PoC-4 Edge Function → APNs HTTP/2 (갱신 2026-09-28)
+### PoC-4 Edge Function → APNs HTTP/2 (갱신 2026-09-29)
+
+**자동 재등록(Task 13, 09-29)**: 0.2.1(`202609291603`) 설치 후 앱을 열기만 하자 `devices.build` 가 08:51:50Z 에 갱신, 0.2.2(`202609291819`)도 09:25:01Z 자동 갱신. "등록" 버튼은 누르지 않았다.
 
 **실기기 세션 1 (2026-09-28)**: 기기 등록 `poc4.device_registered` 15:04:21Z(09-27), `devices` 행 `apns_env=production`·build 0.1.1(`202609272353`). 배포 `apns-send` `{device_id,user_id,count:1}` → APNs **200 production 634ms**, 잠금 화면에 "PoC-4 / 합성 알림 1/1" 도착(사용자 확인). 판정 기준(100회·동시 10, 성공률 ≥ 99%, h2 오류 0)은 아직 1회분이라 **부분** 유지 — 세션 중 APNs 키가 출력에 두 번 노출돼 키 교체 후 100회 동시 10을 잰다.
 
@@ -81,7 +82,11 @@
 
 **기기별 환경(09-27, `40d83cc`)**: TestFlight·App Store 빌드는 production 토큰이라 `devices(apns_env)`(`0011_devices.sql`)와 `ingest/device` 등록 경로를 두고, 발송은 기기 환경을 쓰며 `BadDeviceToken`/`BadEnvironmentToken`이면 반대 환경으로 1회 재시도한다. 가짜 토큰 실측에서 production 호스트가 기존 키를 `403 BadEnvironmentKeyInToken`으로 거부해(Sandbox 전용 키) **APNs 키를 Sandbox & Production 키로 교체**했다(2026-09-27. 세션 출력 노출 뒤 13:15에 한 번 더 교체 — 스펙 §16 "0단계 운영 기록"). Edge secrets `APNS_KEY_ID`·`APNS_P8`이 현재 `.p8`과 같은지 해시로 대조했다(값 출력 없음). 교체 키 확인(가짜 토큰, 배포 `apns-send`): production·sandbox 모두 `400 BadDeviceToken`(403 `BadEnvironmentKeyInToken` 없음) → 키가 두 환경에서 인증된다. 실제 수신은 실기기 토큰이 있어야 하고, 앱의 토큰 등록 코드는 미구현(계획서 Task 9 Step 4).
 
-### PoC-5 잠금화면 알림 액션 → 백그라운드 EventKit 멱등 쓰기 (갱신 2026-09-24)
+### PoC-5 잠금화면 알림 액션 → 백그라운드 EventKit 멱등 쓰기 (갱신 2026-09-29)
+
+**실기기 서버 제안 푸시 (09-29, iOS 27, 통과)**: 0.2.1 — 제안 2건(`57640839…` 15:30, `460ac020…` 10:30 — 후자는 L4 오프라인 공유 텍스트에서 생성) 푸시 200, 잠금 화면 "캘린더에 추가" 각 1회 → 캘린더 각 1건, `poc5.action_handled result=ok bg=true dup=false auth=3`(09:04:53Z·09:05:02Z, 09:12 flush 로 도착). 그러나 TestFlight "앱이 충돌함" 안내 2회: async `didReceive` 의 완료 핸들러가 메인 스레드 밖에서 호출돼 UIKit SIGABRT(09-24 시뮬레이터 `.ips` 3건과 같은 지점). `3879270` 에서 메인 스레드 호출로 고쳐 0.2.2 로 배포. 0.2.2(`202609291819`) — 09:25:48Z 전송 → 제안 `b55328b4…` 푸시 09:26:04Z 200 → 잠금 화면 액션 1회 → 09:27:19Z `ok bg=true dup=false auth=3`, 캘린더 1건, **충돌 안내 없음**. 실기기 재탭(`dup`)은 하지 않았고 시뮬레이터 XCUITest(09-24 `dup skip`)로 갈음.
+
+**정리 항목**: `proposal_pushes` 가 제안마다 sandbox 시뮬레이터 기기 행(`FA9308ED…`, build `0.2.1 (1)`)에도 발송된다(0.2.1 때 `sending` 으로 남음, 0.2.2 때 200). 판정과 무관 — 개발 기기 행 삭제 또는 stale 기기 제외로 정리한다.
 
 재실측 09-24(XCUITest, 실제 배너·액션 탭, 로컬 알림): 백그라운드 `ADD ok … bg=true auth=3`(14:29:48Z), 같은 알림 재탭 `dup skip`(14:30:08Z), **앱 종료 후 액션 콜드 스타트** `bg=true`(14:31:00Z), 동시 두 번 탭 이벤트 +1만(14:32:23Z). 남은 실측: **잠금 화면**에서 `.authenticationRequired`의 Face ID/암호 요구와 쓰기 성공(시뮬레이터는 암호 없음), 보고 실패 후 재탭은 서버 연동 후. 절차 `poc-5-notification-eventkit.md`
 
@@ -97,7 +102,20 @@
 
 **서버 부분(Task 12, 09-27, 통과)**: 합성 청첩장·안내 7종(이미지 5: 연도 없음 2·모바일 스크린샷 2·음력 1, PDF 2: 텍스트·스캔 2쪽)을 배포 `vision-extract`(`gpt-6-luna`, Structured Outputs strict, `store: false`)로 7×3회. 제목·시작·장소 **vision+OCR 21/21**, OCR만 21/21, vision만 19/21(스캔 PDF 제목에 혼주 이름). `uncertain` 적중 21/21·오탐 0(연도·음력은 스키마 플래그로 서버가 결정, 연도는 서버가 가장 가까운 미래 해로 재계산). 음력 1종은 양력 환산이 하루 틀려(10-25) 날짜를 확정하지 않고 `date`로 REVIEW. 지연 vision+OCR p50 1.95s·p95 2.53s(모델 1.42/2.06s), OCR만 1.48/1.81s. 건당 입력 3.8k·출력 82 토큰 $0.00042(월 100건 ≈ $0.04). 배포 worker `extract` 잡 7/7 `proposed`·facts/proposals 7건·`usage_counters` 반영, `process` 3/3 `extracted`, 월 100건 상한→OCR 폴백·멱등은 호스팅 DB 테스트로 고정. 기기 부분(시뮬레이터, 09-24): 사진 앱 → 공유 시트 → 확장 실행, `ShareExtension file … ocrLen=43`·큐 `SHARE` 행. 남은 실측: 실기기 공유 시트 → 큐·업로드(App Group 서명), 오프라인 후 복구 유실 0(대기 목록). 절차 `poc-8-9-share-upload.md`
 
-### PoC-9 앱 종료 후 background URLSession 업로드 완료 (갱신 2026-09-28)
+### PoC-9 앱 종료 후 background URLSession 업로드 완료 (갱신 2026-09-29)
+
+**잠금 판정 L1~L4 (Task 12, 0.2.1, 09-29 UTC)** — `poc_traces` 조회값
+
+| # | 조작 | 전송 → trace | 결과 |
+|---|---|---|---|
+| L1 | 잠금 해제, 앱 백그라운드 | 08:53:25 → 08:53:31 `poc1.intent_fired` | `lock_state=unlocked` `probe=readable` `locked_app=false` → `upload_done` |
+| L2 | 잠금 30초 후 | 08:55:06 → 08:55:13 `intent_fired` | `locked/denied` `locked_app=true`, `upload_done` locked(`intent_direct`) |
+| L3 | 잠금 직후 | 08:55:52 → 08:55:59 `intent_fired` | `unlocked/readable` `app=false`, **같은 초** `upload_done` `locked/denied` `app=true` — 유예 경계 통과 시점(한계) |
+| L4 | 잠금 20초+ 무음 푸시 | 비행기 모드 큐 적재 08:57:20 `poc8.share_received queued` → 푸시 08:58:17 → 08:58:33 `poc9.wake` | `locked/denied`, 08:58:34 `poc9.upload_done path=silent_push` locked (지연 16초) |
+
+결론: `probe=error:<code>` 없음, `locked_app` 은 L2·L4 에서 true 로 UIKit 값과 일치 → 0.2.0 의 `locked` 오판정은 해소, 후속 패치 불필요.
+
+**trace 중복 (Step 4-4, Management API 로그 조회)**: 0.2.1 설치(08:51Z) 이후 `"ingest":"trace"` 17줄(08:53:32~09:28:03Z, 34건) 중 16줄 `duplicates=0`. 09:17:47Z 1줄만 `count=2, duplicates=2` — 0.2.1 PoC-5 충돌 구간이라 충돌로 전송 완료 표시 전에 끊긴 trace 의 재전송으로 추정(서버는 무시). 0.2.2 설치(09:25Z) 이후 3줄 모두 0. 충돌 수정 후 재발 여부는 다음 세션에서 한 번 더 본다.
 
 **실기기 세션 1 (2026-09-28)**: PoC 계정 로그인 직후 큐 7건 일괄 업로드(15:03:12Z, `poc9.upload_done` ×7), 이후 수신 건은 개별 업로드. 잠금 중 수신분은 잠금 해제·앱 열기 후 업로드(04:50:38Z 인텐트 실행 → 04:51:23Z 서버 수신). 서버 `process` 잡 최근 항목 모두 `done`(`extracted`). 통과 유지. 파일(사진·PDF) 업로드는 서버에 `PUT upload/<id>`가 없어 아직 못 잰다.
 
