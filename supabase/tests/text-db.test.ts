@@ -48,6 +48,9 @@ Deno.test("process end-to-end on hosted DB: event saved once across retries; per
     const { data: wiped } = await sb.from("items").select("id").eq("id", chat).not("content_enc", "is", null).not("quarantine_until", "is", null);
     const { data: kept } = await sb.from("items").select("id").eq("id", empty).not("content_enc", "is", null);
     assertEquals([wiped!.length, kept!.length, extractCalls], [1, 1, 3]);               // 잡담은 추출 호출 없음
+    // 검색 대상(저장·empty)만 embed 잡(실행 태그 lease), 격리 항목은 없다
+    const { data: emb } = await sb.from("jobs").select("payload").eq("kind", "embed").like("lease_key", `${RUN}:embed:%`);
+    assertEquals([...new Set(emb!.map((j) => (j.payload as { item_id: string }).item_id))].sort(), [ev, empty].sort());
   } finally {
     const ids = [ev, chat, empty];
     await sb.from("facts").delete().eq("user_id", USER).in("item_id", ids);

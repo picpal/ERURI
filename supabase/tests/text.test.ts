@@ -14,7 +14,7 @@ function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: Cla
   failEnqueue?: number; pushed?: boolean; budget?: "ok" | "degraded" | "refused" } = {}) {
   const calls = { decrypt: 0, classify: [] as string[], extract: [] as { text: string; today: string }[], saved: [] as FactInput[],
     status: [] as [string, boolean][], tokens: 0, notify: [] as string[], classifyMeta: [] as ClassifyMeta[], extractMeta: [] as TextMeta[],
-    backfill: [] as boolean[], gate: [] as [string, number][], quarantine: [] as string[] };
+    backfill: [] as boolean[], gate: [] as [string, number][], quarantine: [] as string[], embed: [] as [string, boolean][] };
   const base: TextItem = { contentEnc: "enc", source: "NOTIFICATION", appName: "Slack", sender: null, title: null,
     occurredAt: "2026-09-28T15:30:00Z", capturedAt: "2026-09-28T15:30:05Z", status: "queued" };
   // save_fact 처럼 status 를 extracted 로 바꾸고 제안을 기억한다 → 같은 fake 로 processText 를 다시 부르면 실제 재시도가 된다
@@ -34,6 +34,7 @@ function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: Cla
     quarantine: async (_u, _i, s) => { calls.quarantine.push(s); state.status = s; },
     enqueueNotify: async (_u, p) => { if (state.failEnqueue > 0) { state.failEnqueue--; throw new Error("enqueue_job XX000"); } calls.notify.push(p); },
     unpushedProposals: async () => (o.pushed ? [] : state.proposals),
+    enqueueEmbed: async (_u, i, bf) => { calls.embed.push([i, bf]); },
     budget: { reserve: async () => o.budget ?? "ok", settle: async () => {}, acquire: async () => 1, release: async () => {},
       now: () => new Date("2026-10-15T00:00:00Z") },
   };
@@ -173,4 +174,22 @@ Deno.test("budget exhausted → Deferred to next month before extraction (job st
   const { d, calls } = fake({ budget: "refused" });
   await assertRejects(() => processText(d, job()), Error, "budget_exhausted");
   assertEquals([calls.extract.length, calls.saved.length], [0, 0]);
+});
+
+Deno.test("embed job enqueued after save and after empty-with-body; never for discards", async () => {
+  const a = fake(); await processText(a.d, job());                                                       // event → saved
+  const b = fake({ result: { kind: "none" } }); await processText(b.d, job());                          // empty(본문 유지)
+  const c = fake({ verdict: { label: "personal", confidence: 0.95 } }); await processText(c.d, job());   // 격리
+  const e = fake({ text: "인증번호 482913 입니다" }); await processText(e.d, job());                     // 규칙 폐기
+  assertEquals([a.calls.embed, b.calls.embed, c.calls.embed, e.calls.embed], [[["i1", false]], [["i1", false]], [], []]);
+});
+
+Deno.test("embed job: backfill lane follows the process job; retry after a lost enqueue re-enqueues only for searchable items", async () => {
+  const bf = fake(); await processText(bf.d, job({ payload: { item_id: "i1", backfill: true } }));
+  assertEquals(bf.calls.embed, [["i1", true]]);
+  // save_fact 가 커밋된 뒤 끊긴 재시도(status extracted): 다시 넣는다(embed 잡은 청크가 있으면 건너뛴다). 격리 항목의 재시도는 넣지 않는다
+  const ex = fake({ item: { status: "extracted" } }); await processText(ex.d, job());
+  const em = fake({ item: { status: "discarded:server:empty" } }); await processText(em.d, job());
+  const q = fake({ item: { status: "discarded:server:personal" } }); await processText(q.d, job());
+  assertEquals([ex.calls.embed, em.calls.embed, q.calls.embed], [[["i1", false]], [["i1", false]], []]);
 });

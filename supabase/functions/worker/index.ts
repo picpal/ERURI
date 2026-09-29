@@ -6,6 +6,8 @@ import { classifyThreshold } from "../_shared/classify.ts";
 import { gmailFetch, gmailSync, gmailWatch } from "../_shared/gmail-jobs.ts";
 import type { Job } from "../_shared/job.ts";
 import { runBatches } from "./batch.ts";
+import { embedItem } from "./embed.ts";
+import { embedDeps } from "./embed-deps.ts";
 import { extractMedia } from "./extract.ts";
 import { mediaDeps } from "./media-deps.ts";
 import { notifyProposal } from "./notify.ts";
@@ -28,11 +30,14 @@ const env = (k: string) => Deno.env.get(k);
 const text = textDeps(sb, { classifier: classifierOrNone(env), threshold: classifyThreshold(env) });
 const notify = notifyDeps(sb);
 const reauth = reauthDeps(sb);
+const emb = embedDeps(sb);
 const handlers: Record<string, (job: Job) => Promise<string>> = {
   noop: async () => "done",
   sleep: async (j) => { await new Promise((r) => setTimeout(r, Number(j.payload.ms ?? 0))); return "done"; },
   // 텍스트(스펙 §7 0b): 규칙 재적용 → 분류 게이트 → 추출 → save_fact. 로그에는 코드·개수만
   process: (j) => processText(text, j, (m) => { metrics = m; }),
+  // 청크·임베딩(스펙 §7): 제목+본문 512자 청크 → text-embedding-3-large 512 → item_chunks. process 잡이 저장·empty 뒤에 넣는다
+  embed: (j) => embedItem(emb, j),
   // 이미지·PDF(스펙 §7): Storage → vision(월 100건) → 초과 시 OCR 텍스트 → facts·proposals
   extract: (j) => extractMedia(media, j),
   // 제안 푸시(스펙 §7 notify 0b): 기기별 1회

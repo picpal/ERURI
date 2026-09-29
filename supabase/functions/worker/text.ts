@@ -7,7 +7,7 @@ import type { Job } from "../_shared/job.ts";
 import { applyRules } from "../_shared/rules.ts";
 import { receivedDay } from "../_shared/time.ts";
 
-// process 잡(스펙 §7 "0단계 예외" 0b): 규칙 재적용 → 분류 게이트(Jev) → 텍스트 추출 → save_fact.
+// process 잡(스펙 §7 "0단계 예외" 0b): 규칙 재적용 → 분류 게이트(Jev) → 텍스트 추출 → save_fact → embed 잡(1b).
 // 로그에는 id·코드·개수만(본문·추출값 금지)
 export type TextItem = { contentEnc: string | null; source: string; appName: string | null; sender: string | null; title: string | null;
   occurredAt: string; capturedAt: string; status: string };
@@ -25,6 +25,7 @@ export type TextDeps = {
   setStatus(userId: string, itemId: string, status: string, wipe: boolean): Promise<void>;
   recordGate(userId: string, itemId: string, label: string, confidence: number): Promise<void>;
   quarantine(userId: string, itemId: string, status: string): Promise<void>;
+  enqueueEmbed(userId: string, itemId: string, backfill: boolean): Promise<void>;
   budget: BudgetDeps;
 };
 
@@ -37,7 +38,10 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
     // save_fact 가 extracted 를 커밋한 뒤 notify enqueue 전에 끊겼을 수 있다. 푸시 기록이 없는 제안은 다시 넣는다(기기별 1회가 중복을 막는다)
     const again = item.status === "extracted" ? await deps.unpushedProposals(user, itemId) : [];
     for (const p of again) await deps.enqueueNotify(user, p);
-    return log(job, item.status, { reason: "already_processed", renotify: again.length });
+    // embed 잡 적재 전에 끊겼을 수도 있다. 검색 대상이면 다시 넣는다(embed 잡은 청크가 이미 있으면 건너뛴다)
+    const embed = item.contentEnc !== null && (item.status === "extracted" || item.status === "discarded:server:empty");
+    if (embed) await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);
+    return log(job, item.status, { reason: "already_processed", renotify: again.length, reembed: embed });
   }
   if (item.contentEnc === null) return discard(deps, job, user, itemId, "empty", false);           // 원문 만료·미리보기 꺼짐
 
@@ -83,11 +87,16 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   });
   await deps.addTokens(user, usage.input_tokens + usage.output_tokens, job.payload.backfill === true);
   const fact = textFact(user, itemId, result);
-  if (fact === null) return discard(deps, job, user, itemId, "empty", false);   // 남길 것 없음: 원문 유지(1a 검색 대상)
+  if (fact === null) {                                               // 남길 것 없음: 원문 유지(1b 검색 대상, §7)
+    const st = await discard(deps, job, user, itemId, "empty", false);
+    await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);
+    return st;
+  }
 
   // 4) 저장(items.status = extracted 는 save_fact 가 한다)
   const saved = await deps.saveFact(fact);
   if (saved.proposalId) await deps.enqueueNotify(user, saved.proposalId);
+  await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);   // 청크·임베딩(백필 항목은 백필 레인)
   return log(job, saved.proposalId ? "proposed" : "extracted", { kind: fact.kind, created: saved.created,
     label: verdict?.label ?? null, confidence: verdict?.confidence ?? null, tokens: usage.input_tokens + usage.output_tokens });
 }

@@ -301,7 +301,10 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   → 연결(2단계, `purchases` 테이블과 함께): purchases는 (merchant, order_no) 복합 키. 없으면 (merchant, amount, ordered_at ±1일)로 후보 제시
       취소·변경 문구 → 기존 fact status = cancelled/superseded, 새 fact에 supersedes_id
   → 청크(512자) → item_chunks. 임베딩 `text-embedding-3-large`(`dimensions: 512`). 활성화 조건(PoC-7 통과)은 2026-09-27 충족,
-      worker 연결은 1b(M2)에서 한다. 그 전까지 실제 데이터의 embedding은 null(검색은 키워드 경로, §16)
+      worker 연결 M2-⑧a(2026-09-30, `0015`): process 잡이 저장(extracted)·empty(원문 유지) 뒤 embed 잡(lease `embed:<item>`, 백필 항목은
+      백필 레인)을 넣고, embed 잡이 제목+본문을 512자 청크로 나눠 임베딩·저장한다(checkpoint embedded). 격리·규칙 폐기·원문 만료 항목은
+      청크를 만들지 않는다. 비용은 예약·정산(§13, 백필 항목은 백필 예산), LLM 슬롯(동시 2)을 같이 쓴다. M1 기간 항목은
+      `enqueue_embed_backlog`로 한 번에(백필 레인 — 새 항목의 process·embed 잡 앞에 서지 않게)
   → 저장(0b): 이미지(extract 잡)·텍스트(process 잡) 공용 `save_fact`(0013). fact 1건(같은 항목·같은 종류의 active fact는 1개) +
       event → `create_event`, task → `create_reminder` 제안(purchase는 제안 없음. 1단계까지는 `purchases` 테이블 없이 facts.payload, 테이블은 2단계),
       items.status = `extracted`. 재시도는 새 행 없이 같은 fact·제안 id를 돌려주고 status만 `extracted`로 맞춘다
@@ -347,7 +350,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | `items` | source(GMAIL/MESSAGES/NOTIFICATION/SHARE/CHAT), app_name, sender, title, content_enc bytea, ocr_text_enc bytea, occurred_at, captured_at, device_filter, idempotency_key, status, storage_key, expires_at, gate_label, gate_confidence, quarantine_until | 원문. `content_enc`·`ocr_text_enc`는 Edge Function이 사용자 데이터 키로 AES-256-GCM 암호화해 저장(§12). 90일 후 삭제, 행은 유지. status: queued → extracted \| discarded:server:<사유>(0b). 게이트 폐기 항목은 본문을 7일 격리 후 삭제(§7). gate_label·gate_confidence = Jev 판정(분류한 항목만, 폐기·통과 모두), quarantine_until = 게이트 폐기 본문 보존 기한(규칙 폐기는 null, M1-④a `0010`) |
 | `user_keys` | user_id, wrapped_key bytea, created_at | 사용자별 데이터 키를 마스터 키로 감싼 값(봉투 암호화). 마스터 키는 Edge Function 시크릿에만 있고 DB에 없다 |
 | `utterances` / `memories` | (아래) | 평문. 사용자 삭제 시 연쇄 |
-| `item_chunks` | item_id, chunk_index, text, embedding vector(512), tsv tsvector | HNSW + GIN. 원문 만료 시 삭제 |
+| `item_chunks` | item_id, chunk_index, text, embedding vector(512), tsv tsvector | HNSW + GIN. 원문 만료 시 삭제. worker embed 잡이 제목+본문 512자 청크로 채운다(M2-⑧a `0015`, 대상 = extracted·discarded:server:empty 이고 원문 있음) |
 | `facts` | item_id, kind, payload jsonb, evidence(원문 인용 ≤300자), status(active/cancelled/superseded), supersedes_id | 추출 결과, 무기한. evidence가 만료 후 출처 역할 |
 | `purchases` | fact_id, merchant, product[], ordered_at, amount, currency, order_no, status, delivery_status, recurrence | **2단계**(facts 백필 마이그레이션과 함께). 구매·구독. `purchase_evidence(purchase_id, item_id)`로 다대다. 1단계는 `facts(kind=purchase).payload` |
 | `proposals` | fact_id, action(create_event/update_event/create_reminder/complete_reminder), payload, version, status(proposed/confirmed/succeeded/failed/stale), eventkit_id, idempotency_key | fact 변경 시 version 증가, 이전 제안은 stale |
@@ -659,7 +662,7 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 
 ### 해소된 리스크
 
-- **임베딩 보류 — 해소 (2026-09-27, PoC-7 통과, `9e8ab9f`)**: 약관 사유는 2026-09-26 OpenAI 데이터 정책 확인(학습 미사용·남용 모니터링 30일, 임베딩은 분류와 같은 공급자·약관이라 새 전송처가 아님, §12 통제 3)으로 먼저 풀렸고, 남은 조건인 PoC-7(합성 코퍼스, 하이브리드 경로)이 통과했다. 실제 데이터 임베딩은 1b(M2) worker에서 연결한다.
+- **임베딩 보류 — 해소 (2026-09-27, PoC-7 통과, `9e8ab9f`)**: 약관 사유는 2026-09-26 OpenAI 데이터 정책 확인(학습 미사용·남용 모니터링 30일, 임베딩은 분류와 같은 공급자·약관이라 새 전송처가 아님, §12 통제 3)으로 먼저 풀렸고, 남은 조건인 PoC-7(합성 코퍼스, 하이브리드 경로)이 통과했다. 실제 데이터 임베딩은 1b(M2) worker에서 연결한다. 실데이터 연결 M2-⑧a.
 - **임베딩 한국어 품질 — 해소 (2026-09-27, PoC-7)**: 공식 문서에 한국어 수치가 없어 합성 평가로 판정했다. 하이브리드 Top-5 `text-embedding-3-small` 31~33/40, `text-embedding-3-large`(`dimensions: 512`) 38/40 → large 채택(§2).
 - **APNs from Deno (h2) — 해소 (2026-09-27, `e2552b5`)**: Deno `fetch`가 HTTP/2로 협상한다(sandbox 가짜 토큰 `400 BadDeviceToken` + `apns-id`, HTTP/1.1 대조군은 연결 거부). Edge 서울 100회 동시 1 → 100/100 p50 419ms. JWT 동시 생성 429는 in-flight 공유 + 30분 경계 iat로 고쳤다. PoC-4 판정 실측(2026-09-30, 실기기 production 토큰 100회 동시 10 × 2)은 100/100·h2 오류 0으로 통과했고 `GOAWAY` 스트림 오류는 재현되지 않았다(가짜 토큰의 부작용). Cloudflare Worker 릴레이는 불필요.
 - **jobs 임대 만료로 중복 실행 — 해소 (2026-09-26, PoC-10, `6ca66d8`)**: 임대 60초에서 90초 잡이 65초에 재클레임돼 두 번 실행됐다. 임대 180초(Edge wall-clock 150초보다 김) + 30초 하트비트로 재클레임 0건·attempts 1(§7).

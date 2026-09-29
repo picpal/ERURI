@@ -46,6 +46,13 @@ export function textDeps(sb: SupabaseClient, o: { classifier: Classifier; thresh
       const { error } = await sb.rpc("worker_quarantine_item", { p_user: userId, p_item: itemId, p_status: status });
       if (error) throw new Error("worker_quarantine_item " + error.code);
     },
+    // 청크·임베딩 잡(스펙 §7). 백필 항목은 백필 레인(사용자당 1개, 우선순위 40)
+    async enqueueEmbed(userId, itemId, backfill) {
+      const { error } = await sb.rpc("enqueue_job", { p_user: userId, p_kind: "embed",
+        p_lease_key: backfill ? `${o.leasePrefix ?? ""}backfill:${userId}` : `${o.leasePrefix ?? ""}embed:${itemId}`,
+        p_payload: backfill ? { item_id: itemId, backfill: true } : { item_id: itemId } });
+      if (error) throw new Error("enqueue_job " + error.code);
+    },
     budget: o.budget ?? budgetDeps(sb),
   };
 }
