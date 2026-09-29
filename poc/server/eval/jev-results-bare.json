@@ -1,0 +1,1400 @@
+{
+  "run_at": "2026-09-29T04:20:31.845Z",
+  "endpoint": "https://api.typesafe.ai/v1/systemone",
+  "model_alias": "jev-latest",
+  "variant": "bare",
+  "model": [
+    "jev-1.13.0"
+  ],
+  "n": 60,
+  "labels": [
+    "actionable",
+    "personal",
+    "promo",
+    "otp",
+    "notice"
+  ],
+  "instructions": "Classify this Korean phone notification or text message (app, title, sender, body) for a personal assistant that extracts calendar events, tasks, and purchases. Pick the single best category.",
+  "criteria": {
+    "actionable": "Schedule, task, purchase, payment, bill, reservation, or delivery",
+    "personal": "Casual personal chat",
+    "promo": "Advertising",
+    "otp": "Verification code",
+    "notice": "Informational notice, no action needed"
+  },
+  "accuracy_5class": 0.983,
+  "gate_accuracy": 0.983,
+  "per_label": {
+    "actionable": {
+      "n": 30,
+      "predicted": 29,
+      "tp": 29,
+      "precision": 1,
+      "recall": 0.967
+    },
+    "personal": {
+      "n": 12,
+      "predicted": 12,
+      "tp": 12,
+      "precision": 1,
+      "recall": 1
+    },
+    "promo": {
+      "n": 10,
+      "predicted": 10,
+      "tp": 10,
+      "precision": 1,
+      "recall": 1
+    },
+    "otp": {
+      "n": 4,
+      "predicted": 4,
+      "tp": 4,
+      "precision": 1,
+      "recall": 1
+    },
+    "notice": {
+      "n": 4,
+      "predicted": 5,
+      "tp": 4,
+      "precision": 0.8,
+      "recall": 1
+    }
+  },
+  "confusion": {
+    "actionable": {
+      "actionable": 29,
+      "personal": 0,
+      "promo": 0,
+      "otp": 0,
+      "notice": 1
+    },
+    "personal": {
+      "actionable": 0,
+      "personal": 12,
+      "promo": 0,
+      "otp": 0,
+      "notice": 0
+    },
+    "promo": {
+      "actionable": 0,
+      "personal": 0,
+      "promo": 10,
+      "otp": 0,
+      "notice": 0
+    },
+    "otp": {
+      "actionable": 0,
+      "personal": 0,
+      "promo": 0,
+      "otp": 4,
+      "notice": 0
+    },
+    "notice": {
+      "actionable": 0,
+      "personal": 0,
+      "promo": 0,
+      "otp": 0,
+      "notice": 4
+    }
+  },
+  "latency_ms": {
+    "p50": 193.023,
+    "p95": 292.318,
+    "max": 414.078,
+    "min": 170.833
+  },
+  "retries": 0,
+  "cost": {
+    "input_tokens_total": 28329,
+    "input_tokens_mean": 472.15,
+    "usd_per_request": 0.000019830300000000006,
+    "usd_total": 0.0011898180000000003
+  },
+  "threshold_policy": [
+    {
+      "threshold": 0,
+      "discarded": 31,
+      "passed": 29,
+      "discard_precision": 0.968,
+      "pass_rate": 0.483,
+      "actionable_lost": [
+        "a08"
+      ],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 0.983
+    },
+    {
+      "threshold": 0.6,
+      "discarded": 31,
+      "passed": 29,
+      "discard_precision": 0.968,
+      "pass_rate": 0.483,
+      "actionable_lost": [
+        "a08"
+      ],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 0.983
+    },
+    {
+      "threshold": 0.8,
+      "discarded": 30,
+      "passed": 30,
+      "discard_precision": 1,
+      "pass_rate": 0.5,
+      "actionable_lost": [],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 1
+    },
+    {
+      "threshold": 0.9,
+      "discarded": 30,
+      "passed": 30,
+      "discard_precision": 1,
+      "pass_rate": 0.5,
+      "actionable_lost": [],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 1
+    }
+  ],
+  "pipeline_rules_then_jev": [
+    {
+      "threshold": 0,
+      "discarded": 31,
+      "passed": 29,
+      "discard_precision": 0.968,
+      "pass_rate": 0.483,
+      "actionable_lost": [
+        "a08"
+      ],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 0.983
+    },
+    {
+      "threshold": 0.6,
+      "discarded": 31,
+      "passed": 29,
+      "discard_precision": 0.968,
+      "pass_rate": 0.483,
+      "actionable_lost": [
+        "a08"
+      ],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 0.983
+    },
+    {
+      "threshold": 0.8,
+      "discarded": 30,
+      "passed": 30,
+      "discard_precision": 1,
+      "pass_rate": 0.5,
+      "actionable_lost": [],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 1
+    },
+    {
+      "threshold": 0.9,
+      "discarded": 30,
+      "passed": 30,
+      "discard_precision": 1,
+      "pass_rate": 0.5,
+      "actionable_lost": [],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 1
+    }
+  ],
+  "misclassified": [
+    {
+      "id": "a08",
+      "label": "actionable",
+      "pred": "notice",
+      "confidence": 0.65,
+      "app": "SMS",
+      "title": null,
+      "text": "[한빛아파트 관리사무소] 10월 7일(화) 10시~15시 배관 공사로 단수 예정입니다. 미리 물을 받아 두시기 바랍니다.",
+      "gate_wrong": true
+    }
+  ],
+  "device10": [
+    {
+      "id": "d01",
+      "topic": "택배",
+      "label": "actionable",
+      "device": "queued:rules",
+      "jev": "actionable",
+      "confidence": 0.99,
+      "gate_ok": true
+    },
+    {
+      "id": "d02",
+      "topic": "병원",
+      "label": "actionable",
+      "device": "queued:rules",
+      "jev": "actionable",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d03",
+      "topic": "카드",
+      "label": "actionable",
+      "device": "queued:rules",
+      "jev": "actionable",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d04",
+      "topic": "컨퍼런스",
+      "label": "actionable",
+      "device": "queued:rules",
+      "jev": "actionable",
+      "confidence": 0.62,
+      "gate_ok": true
+    },
+    {
+      "id": "d05",
+      "topic": "공과금",
+      "label": "actionable",
+      "device": "queued:rules",
+      "jev": "actionable",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d06",
+      "topic": "광고",
+      "label": "promo",
+      "device": "discarded:fm:promo",
+      "jev": "promo",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d07",
+      "topic": "인증번호",
+      "label": "otp",
+      "device": "discarded:otp",
+      "jev": "otp",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d08",
+      "topic": "경계(목요일 판교 약속)",
+      "label": "actionable",
+      "device": "queued:rules",
+      "jev": "actionable",
+      "confidence": 0.94,
+      "gate_ok": true
+    },
+    {
+      "id": "d09",
+      "topic": "잡담",
+      "label": "personal",
+      "device": "queued:rules",
+      "jev": "personal",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d10",
+      "topic": "잡담",
+      "label": "personal",
+      "device": "queued:rules",
+      "jev": "personal",
+      "confidence": 1,
+      "gate_ok": true
+    }
+  ],
+  "rows": [
+    {
+      "id": "d01",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.99,
+      "probabilities": {
+        "personal": 0,
+        "promo": 0,
+        "actionable": 0.99,
+        "otp": 0,
+        "notice": 0.01
+      },
+      "ms": 193.023,
+      "input_tokens": 481
+    },
+    {
+      "id": "d02",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "personal": 0,
+        "promo": 0,
+        "otp": 0,
+        "notice": 0
+      },
+      "ms": 187.429,
+      "input_tokens": 483
+    },
+    {
+      "id": "d03",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "otp": 0,
+        "promo": 0,
+        "actionable": 1,
+        "personal": 0
+      },
+      "ms": 183.181,
+      "input_tokens": 481
+    },
+    {
+      "id": "d04",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.62,
+      "probabilities": {
+        "notice": 0.3,
+        "otp": 0,
+        "promo": 0,
+        "personal": 0,
+        "actionable": 0.7
+      },
+      "ms": 176.583,
+      "input_tokens": 489
+    },
+    {
+      "id": "d05",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "personal": 0,
+        "promo": 0,
+        "otp": 0,
+        "notice": 0
+      },
+      "ms": 282.554,
+      "input_tokens": 485
+    },
+    {
+      "id": "d06",
+      "label": "promo",
+      "app": "Slack",
+      "rule": "discard:promotion",
+      "sent": "raw",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "personal": 0,
+        "promo": 1,
+        "otp": 0,
+        "notice": 0
+      },
+      "ms": 199.256,
+      "input_tokens": 479
+    },
+    {
+      "id": "d07",
+      "label": "otp",
+      "app": "Slack",
+      "rule": "discard:otp",
+      "sent": "raw",
+      "pred": "otp",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "actionable": 0,
+        "otp": 1,
+        "personal": 0,
+        "promo": 0
+      },
+      "ms": 199.161,
+      "input_tokens": 469
+    },
+    {
+      "id": "d08",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.94,
+      "probabilities": {
+        "otp": 0,
+        "personal": 0.05,
+        "notice": 0,
+        "actionable": 0.95,
+        "promo": 0
+      },
+      "ms": 175.914,
+      "input_tokens": 465
+    },
+    {
+      "id": "d09",
+      "label": "personal",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 1,
+        "actionable": 0,
+        "notice": 0,
+        "promo": 0,
+        "otp": 0
+      },
+      "ms": 178.742,
+      "input_tokens": 442
+    },
+    {
+      "id": "d10",
+      "label": "personal",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "otp": 0,
+        "promo": 0,
+        "actionable": 0,
+        "personal": 1
+      },
+      "ms": 292.318,
+      "input_tokens": 445
+    },
+    {
+      "id": "a01",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "promo": 0,
+        "personal": 0,
+        "notice": 0,
+        "actionable": 1
+      },
+      "ms": 180.092,
+      "input_tokens": 483
+    },
+    {
+      "id": "a02",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.99,
+      "probabilities": {
+        "notice": 0.01,
+        "personal": 0,
+        "promo": 0,
+        "actionable": 0.99,
+        "otp": 0
+      },
+      "ms": 183.056,
+      "input_tokens": 470
+    },
+    {
+      "id": "a03",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.98,
+      "probabilities": {
+        "personal": 0,
+        "notice": 0.02,
+        "actionable": 0.98,
+        "promo": 0,
+        "otp": 0
+      },
+      "ms": 185.247,
+      "input_tokens": 479
+    },
+    {
+      "id": "a04",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "actionable": 1,
+        "notice": 0,
+        "promo": 0,
+        "otp": 0
+      },
+      "ms": 170.833,
+      "input_tokens": 480
+    },
+    {
+      "id": "a05",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "otp": 0,
+        "personal": 0,
+        "promo": 0,
+        "notice": 0
+      },
+      "ms": 327.687,
+      "input_tokens": 483
+    },
+    {
+      "id": "a06",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.99,
+      "probabilities": {
+        "actionable": 1,
+        "otp": 0,
+        "personal": 0,
+        "promo": 0,
+        "notice": 0
+      },
+      "ms": 235.623,
+      "input_tokens": 470
+    },
+    {
+      "id": "a07",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "actionable": 1,
+        "notice": 0,
+        "personal": 0,
+        "otp": 0
+      },
+      "ms": 287.918,
+      "input_tokens": 473
+    },
+    {
+      "id": "a08",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "notice",
+      "confidence": 0.65,
+      "probabilities": {
+        "notice": 0.72,
+        "otp": 0,
+        "promo": 0,
+        "personal": 0,
+        "actionable": 0.28
+      },
+      "ms": 243.551,
+      "input_tokens": 487
+    },
+    {
+      "id": "a09",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "actionable": 1,
+        "personal": 0,
+        "notice": 0,
+        "otp": 0
+      },
+      "ms": 183.208,
+      "input_tokens": 476
+    },
+    {
+      "id": "a10",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "personal": 0,
+        "notice": 0,
+        "actionable": 1,
+        "promo": 0
+      },
+      "ms": 190.041,
+      "input_tokens": 496
+    },
+    {
+      "id": "a11",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "notice": 0,
+        "actionable": 1,
+        "promo": 0,
+        "otp": 0
+      },
+      "ms": 180.907,
+      "input_tokens": 480
+    },
+    {
+      "id": "a12",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "personal": 0,
+        "promo": 0,
+        "otp": 0,
+        "notice": 0
+      },
+      "ms": 249.291,
+      "input_tokens": 464
+    },
+    {
+      "id": "a13",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "notice": 0,
+        "actionable": 1,
+        "otp": 0,
+        "promo": 0
+      },
+      "ms": 185.154,
+      "input_tokens": 464
+    },
+    {
+      "id": "a14",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.87,
+      "probabilities": {
+        "promo": 0,
+        "actionable": 0.89,
+        "otp": 0,
+        "personal": 0,
+        "notice": 0.11
+      },
+      "ms": 192.36,
+      "input_tokens": 491
+    },
+    {
+      "id": "a15",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.98,
+      "probabilities": {
+        "personal": 0,
+        "otp": 0,
+        "notice": 0.02,
+        "promo": 0,
+        "actionable": 0.98
+      },
+      "ms": 203.943,
+      "input_tokens": 485
+    },
+    {
+      "id": "a16",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.94,
+      "probabilities": {
+        "promo": 0,
+        "otp": 0,
+        "personal": 0,
+        "notice": 0.05,
+        "actionable": 0.95
+      },
+      "ms": 229.266,
+      "input_tokens": 480
+    },
+    {
+      "id": "a17",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "promo": 0,
+        "notice": 0,
+        "actionable": 1,
+        "personal": 0
+      },
+      "ms": 236.224,
+      "input_tokens": 493
+    },
+    {
+      "id": "a18",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "otp": 0,
+        "actionable": 1,
+        "notice": 0,
+        "personal": 0
+      },
+      "ms": 183.417,
+      "input_tokens": 478
+    },
+    {
+      "id": "a19",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "actionable": 1,
+        "notice": 0,
+        "otp": 0,
+        "personal": 0
+      },
+      "ms": 186.517,
+      "input_tokens": 476
+    },
+    {
+      "id": "a20",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.99,
+      "probabilities": {
+        "actionable": 0.99,
+        "notice": 0.01,
+        "personal": 0,
+        "promo": 0,
+        "otp": 0
+      },
+      "ms": 179.899,
+      "input_tokens": 482
+    },
+    {
+      "id": "a21",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "notice": 0,
+        "otp": 0,
+        "actionable": 1,
+        "personal": 0
+      },
+      "ms": 248.076,
+      "input_tokens": 477
+    },
+    {
+      "id": "a22",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "promo": 0,
+        "personal": 0,
+        "actionable": 1,
+        "notice": 0
+      },
+      "ms": 249.395,
+      "input_tokens": 489
+    },
+    {
+      "id": "a23",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "personal": 0,
+        "promo": 0,
+        "otp": 0,
+        "notice": 0
+      },
+      "ms": 414.078,
+      "input_tokens": 473
+    },
+    {
+      "id": "a24",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.99,
+      "probabilities": {
+        "personal": 0,
+        "notice": 0,
+        "promo": 0,
+        "otp": 0,
+        "actionable": 1
+      },
+      "ms": 179.38,
+      "input_tokens": 474
+    },
+    {
+      "id": "p01",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "personal": 1,
+        "actionable": 0,
+        "otp": 0,
+        "notice": 0
+      },
+      "ms": 180.177,
+      "input_tokens": 458
+    },
+    {
+      "id": "p02",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 0.99,
+      "probabilities": {
+        "actionable": 0.01,
+        "notice": 0,
+        "otp": 0,
+        "promo": 0,
+        "personal": 0.99
+      },
+      "ms": 273.788,
+      "input_tokens": 452
+    },
+    {
+      "id": "p03",
+      "label": "personal",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 0.97,
+      "probabilities": {
+        "promo": 0,
+        "actionable": 0.02,
+        "notice": 0,
+        "personal": 0.98,
+        "otp": 0
+      },
+      "ms": 227.006,
+      "input_tokens": 453
+    },
+    {
+      "id": "p04",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "notice": 0,
+        "personal": 1,
+        "actionable": 0,
+        "otp": 0
+      },
+      "ms": 194.197,
+      "input_tokens": 457
+    },
+    {
+      "id": "p05",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "otp": 0,
+        "personal": 1,
+        "promo": 0,
+        "notice": 0
+      },
+      "ms": 203.225,
+      "input_tokens": 452
+    },
+    {
+      "id": "p06",
+      "label": "personal",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 0.99,
+      "probabilities": {
+        "promo": 0,
+        "otp": 0,
+        "notice": 0,
+        "actionable": 0.01,
+        "personal": 0.99
+      },
+      "ms": 202.227,
+      "input_tokens": 458
+    },
+    {
+      "id": "p07",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 1,
+        "otp": 0,
+        "notice": 0,
+        "actionable": 0,
+        "promo": 0
+      },
+      "ms": 218.318,
+      "input_tokens": 452
+    },
+    {
+      "id": "p08",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 0.96,
+      "probabilities": {
+        "promo": 0,
+        "notice": 0,
+        "personal": 0.97,
+        "actionable": 0.03,
+        "otp": 0
+      },
+      "ms": 207.008,
+      "input_tokens": 458
+    },
+    {
+      "id": "p09",
+      "label": "personal",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "promo": 0,
+        "actionable": 0,
+        "personal": 1,
+        "otp": 0
+      },
+      "ms": 205.119,
+      "input_tokens": 452
+    },
+    {
+      "id": "p10",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "notice": 0,
+        "actionable": 0,
+        "promo": 0,
+        "personal": 1
+      },
+      "ms": 184.885,
+      "input_tokens": 456
+    },
+    {
+      "id": "m01",
+      "label": "promo",
+      "app": "SMS",
+      "rule": "discard:promotion",
+      "sent": "raw",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "personal": 0,
+        "promo": 1,
+        "otp": 0,
+        "notice": 0
+      },
+      "ms": 222.082,
+      "input_tokens": 495
+    },
+    {
+      "id": "m02",
+      "label": "promo",
+      "app": "KakaoTalk",
+      "rule": "discard:promotion",
+      "sent": "raw",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 1,
+        "otp": 0,
+        "notice": 0,
+        "actionable": 0,
+        "personal": 0
+      },
+      "ms": 229.948,
+      "input_tokens": 470
+    },
+    {
+      "id": "m03",
+      "label": "promo",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "notice": 0,
+        "personal": 0,
+        "promo": 1,
+        "otp": 0
+      },
+      "ms": 192.291,
+      "input_tokens": 484
+    },
+    {
+      "id": "m04",
+      "label": "promo",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "notice": 0,
+        "otp": 0,
+        "personal": 0,
+        "promo": 1
+      },
+      "ms": 191.997,
+      "input_tokens": 467
+    },
+    {
+      "id": "m05",
+      "label": "promo",
+      "app": "SMS",
+      "rule": "discard:promotion",
+      "sent": "raw",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 1,
+        "notice": 0,
+        "personal": 0,
+        "actionable": 0,
+        "otp": 0
+      },
+      "ms": 179.552,
+      "input_tokens": 494
+    },
+    {
+      "id": "m06",
+      "label": "promo",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 0.92,
+      "probabilities": {
+        "otp": 0,
+        "actionable": 0.06,
+        "personal": 0,
+        "promo": 0.94,
+        "notice": 0
+      },
+      "ms": 188.094,
+      "input_tokens": 482
+    },
+    {
+      "id": "m07",
+      "label": "promo",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "personal": 0,
+        "otp": 0,
+        "actionable": 0,
+        "promo": 1
+      },
+      "ms": 294.9,
+      "input_tokens": 477
+    },
+    {
+      "id": "m08",
+      "label": "promo",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 0.99,
+      "probabilities": {
+        "personal": 0,
+        "otp": 0,
+        "notice": 0,
+        "actionable": 0.01,
+        "promo": 0.99
+      },
+      "ms": 186.124,
+      "input_tokens": 455
+    },
+    {
+      "id": "m09",
+      "label": "promo",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 0.95,
+      "probabilities": {
+        "personal": 0,
+        "notice": 0,
+        "actionable": 0.04,
+        "promo": 0.96,
+        "otp": 0
+      },
+      "ms": 172.345,
+      "input_tokens": 473
+    },
+    {
+      "id": "o01",
+      "label": "otp",
+      "app": "SMS",
+      "rule": "discard:otp",
+      "sent": "raw",
+      "pred": "otp",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "otp": 1,
+        "personal": 0,
+        "actionable": 0,
+        "notice": 0
+      },
+      "ms": 194.562,
+      "input_tokens": 459
+    },
+    {
+      "id": "o02",
+      "label": "otp",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "otp",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 1,
+        "promo": 0,
+        "personal": 0,
+        "actionable": 0,
+        "notice": 0
+      },
+      "ms": 209.966,
+      "input_tokens": 458
+    },
+    {
+      "id": "o03",
+      "label": "otp",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "otp",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 1,
+        "actionable": 0,
+        "personal": 0,
+        "promo": 0,
+        "notice": 0
+      },
+      "ms": 290.72,
+      "input_tokens": 457
+    },
+    {
+      "id": "n01",
+      "label": "notice",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "notice",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "promo": 0,
+        "notice": 1,
+        "actionable": 0,
+        "personal": 0
+      },
+      "ms": 190.717,
+      "input_tokens": 484
+    },
+    {
+      "id": "n02",
+      "label": "notice",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "notice",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "notice": 1,
+        "actionable": 0,
+        "promo": 0,
+        "personal": 0
+      },
+      "ms": 181.019,
+      "input_tokens": 465
+    },
+    {
+      "id": "n03",
+      "label": "notice",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "notice",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "notice": 1,
+        "otp": 0,
+        "promo": 0,
+        "actionable": 0
+      },
+      "ms": 171.564,
+      "input_tokens": 463
+    },
+    {
+      "id": "n04",
+      "label": "notice",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "notice",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "otp": 0,
+        "actionable": 0,
+        "notice": 1,
+        "personal": 0
+      },
+      "ms": 222.658,
+      "input_tokens": 476
+    }
+  ]
+}

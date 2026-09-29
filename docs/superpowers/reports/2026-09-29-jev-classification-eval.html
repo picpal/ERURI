@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ERURI · Jev 분류 게이트 평가</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --paper: #f5f5f5; --paper-2: #ececec; --card: #ffffff; --ink: #2d3142; --muted: #4f5d75; --soft: #7a8399;
+  --rule: rgba(45,49,66,0.12); --rule-2: rgba(45,49,66,0.08); --accent: #0f766e; --accent-tint: rgba(15,118,110,0.08);
+  --alert: #8a5a12; --alert-tint: rgba(138,90,18,0.07); --bad: #9b2c2c; --bad-tint: rgba(155,44,44,0.07); --link: #4c1d95;
+  --font-sans: 'Pretendard', 'Noto Sans KR', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'Noto Sans Mono CJK KR', ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #16181d; --paper-2: #1e2128; --card: #1b1e24; --ink: #e6e8ee; --muted: #a9b1c3; --soft: #7f879a;
+    --rule: rgba(230,232,238,0.14); --rule-2: rgba(230,232,238,0.08); --accent: #4fd1c5; --accent-tint: rgba(79,209,197,0.10);
+    --alert: #e0b25a; --alert-tint: rgba(224,178,90,0.10); --bad: #f08a8a; --bad-tint: rgba(240,138,138,0.10); --link: #b69cff;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #16181d; --paper-2: #1e2128; --card: #1b1e24; --ink: #e6e8ee; --muted: #a9b1c3; --soft: #7f879a;
+  --rule: rgba(230,232,238,0.14); --rule-2: rgba(230,232,238,0.08); --accent: #4fd1c5; --accent-tint: rgba(79,209,197,0.10);
+  --alert: #e0b25a; --alert-tint: rgba(224,178,90,0.10); --bad: #f08a8a; --bad-tint: rgba(240,138,138,0.10); --link: #b69cff;
+}
+body { font-family: var(--font-sans); background: var(--paper); color: var(--ink); min-height: 100vh; padding: 3rem 2rem; }
+a { color: var(--link); }
+.container { max-width: 1100px; margin: 0 auto; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.75rem; }
+h1 { font-size: clamp(1.6rem, 3vw + 1rem, 2.4rem); font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 0.5rem; }
+h2 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 0.35rem; }
+h3 { font-size: 0.9rem; font-weight: 600; margin: 1.5rem 0 0.25rem; }
+.sub { font-size: 1rem; line-height: 1.6; color: var(--muted); max-width: 72ch; }
+.section { margin-top: 3.25rem; padding-top: 2rem; border-top: 1px solid var(--rule); }
+.meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 1.5rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--card); }
+.meta div { padding: 0.9rem 1rem; border-right: 1px solid var(--rule-2); }
+.meta div:last-child { border-right: none; }
+.meta dt { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--soft); margin-bottom: 0.35rem; }
+.meta dd { font-size: 0.95rem; line-height: 1.45; }
+.meta dd b { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.verdict { margin-top: 1.25rem; padding: 1rem 1.15rem; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent-tint); font-size: 0.92rem; line-height: 1.6; }
+.verdict.warn { border-color: var(--alert); background: var(--alert-tint); }
+code { font-family: var(--font-mono); font-size: 0.85em; background: var(--rule-2); padding: 0 0.25em; border-radius: 2px; overflow-wrap: anywhere; }
+pre { font-family: var(--font-mono); font-size: 0.74rem; line-height: 1.55; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 0.9rem 1rem; overflow-x: auto; margin-top: 0.75rem; white-space: pre; }
+.flag { display: inline-block; font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.06em; padding: 0 0.35rem; border: 1px solid var(--alert); border-radius: 2px; color: var(--alert); background: var(--alert-tint); margin-right: 0.25rem; white-space: nowrap; }
+.flag.ok { border-color: var(--accent); color: var(--accent); background: var(--accent-tint); }
+.flag.bad { border-color: var(--bad); color: var(--bad); background: var(--bad-tint); }
+.table-wrap { margin-top: 1rem; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; background: var(--card); border: 1px solid var(--rule); border-radius: 6px; }
+th, td { text-align: left; padding: 0.55rem 0.65rem; border-bottom: 1px solid var(--rule-2); vertical-align: top; line-height: 1.5; }
+th { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--paper-2); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 0.78rem; }
+td.diag { background: var(--accent-tint); font-weight: 600; }
+tr.pick td { background: var(--accent-tint); }
+.note { margin-top: 0.9rem; font-size: 0.8125rem; line-height: 1.65; color: var(--muted); max-width: 92ch; }
+ul.plain { list-style: none; margin-top: 0.75rem; }
+ul.plain li { font-size: 0.875rem; line-height: 1.6; padding-left: 1rem; position: relative; margin-bottom: 0.45rem; }
+ul.plain li::before { content: '—'; position: absolute; left: 0; color: var(--soft); }
+/* 흐름도 */
+.flow { margin-top: 1.25rem; display: grid; gap: 0; }
+.step { display: grid; grid-template-columns: 2.2rem 1fr; gap: 0.75rem; position: relative; }
+.step .rail { display: flex; flex-direction: column; align-items: center; }
+.step .dot { width: 2rem; height: 2rem; border-radius: 50%; border: 1.5px solid var(--ink); display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 0.72rem; font-weight: 600; background: var(--card); flex-shrink: 0; }
+.step .line { flex: 1; width: 1.5px; background: var(--rule); min-height: 0.75rem; }
+.step:last-child .line { display: none; }
+.step .body { background: var(--card); border: 1px solid var(--rule); border-radius: 6px; padding: 0.75rem 0.9rem; margin-bottom: 0.75rem; }
+.step.gate .dot { border-color: var(--accent); color: var(--accent); background: var(--accent-tint); }
+.step.gate .body { border: 1.5px solid var(--accent); }
+.step.todo .body { border-style: dashed; }
+.step .where { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--soft); }
+.step .title { font-weight: 600; font-size: 0.92rem; margin: 0.15rem 0 0.35rem; }
+.step .row { display: grid; grid-template-columns: 4.2rem 1fr; gap: 0.5rem; font-size: 0.8rem; line-height: 1.55; color: var(--muted); margin-top: 0.2rem; }
+.step .row span:first-child { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.08em; color: var(--soft); padding-top: 0.15rem; }
+.footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); font-family: var(--font-mono); font-size: 0.72rem; color: var(--soft); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+@media (max-width: 760px) {
+  body { padding: 2rem 16px; }
+  .meta { grid-template-columns: 1fr 1fr; }
+  .meta div:nth-child(2) { border-right: none; }
+  .meta div:nth-child(-n+2) { border-bottom: 1px solid var(--rule-2); }
+  .step .row { grid-template-columns: 1fr; gap: 0; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <p class="eyebrow">Classification Gate Eval · 2026-09-29 · PoC-3 연계</p>
+    <h1>Jev 분류 게이트 평가</h1>
+    <p class="sub">문자·알림 본문을 TypeSafe <b>Jev</b>(<code>jev-1.13.0</code>)의 Choice 문항 하나로 분류해, 추출(gpt-6-luna) 앞에서 비행동 항목을 버리는 게이트로 쓸 수 있는지 쟀다. 합성 문구 60개, 라벨 5종, 같은 설정으로 2회 실행하고 기준 설명을 뺀 대조군 1회를 더 돌렸다. 원자료는 <code>poc/server/eval/jev-results.json</code>(대조군 <code>jev-results-bare.json</code>), 스크립트는 <code>poc/server/scripts/jev-eval.ts</code>다.</p>
+    <dl class="meta">
+      <div><dt>게이트 정확도</dt><dd><b>60/60</b><br>5종 라벨도 60/60 (2회 동일)</dd></div>
+      <div><dt>지연 p50 / p95</dt><dd><b>211 / 269 ms</b><br>1회차 203 / 285 ms</dd></div>
+      <div><dt>비용</dt><dd><b>$0.0019</b> / 60건<br>건당 $0.000032 (입력 769토큰)</dd></div>
+      <div><dt>판단</dt><dd><b>조건부 채택</b><br>임계 0.8 · 확인 필요 8건</dd></div>
+    </dl>
+    <div class="verdict warn"><b>숫자를 읽는 법.</b> 60/60은 상한값으로 봐야 한다. 문구와 라벨 기준 설명을 같은 작성자가 만들었고, 문구가 라벨 경계에서 멀리 있다. Jev 문서도 “영어가 주 학습 언어이고 CJK는 같은 수준이 아니다”라고 적는다. 게이트 목표(90%)는 이 합성 세트에서 넘었지만, <b>실데이터 분포에서 재측정하기 전에는 폐기 권한을 넓히지 않는다.</b></div>
+  </header>
+
+  <!-- ① 흐름 -->
+  <section class="section">
+    <p class="eyebrow">① Pipeline After Classification</p>
+    <h2>판정 후 파이프라인과 단계별 폐기 조건</h2>
+    <p class="sub">점선 상자는 아직 구현되지 않은 단계다. Jev 게이트(초록)는 이번 평가의 제안 위치다. 스펙 §7의 “재분류(gpt-6-luna)” 자리에 들어가며, 폐기 전에는 추출 호출이 없다. 09-29 기준 PoC worker는 텍스트 항목의 facts·proposals를 쓰지 않는다(results.md 실기기 관찰). 그래서 6~10단계는 아직 실제로 동작하지 않는다.</p>
+    <div class="flow">
+      <div class="step"><div class="rail"><div class="dot">1</div><div class="line"></div></div><div class="body">
+        <p class="where">기기 · CaptureIntent · &lt;10ms</p><p class="title">기기 규칙 필터</p>
+        <div class="row"><span>폐기</span><span>연락처 발신자 <code>discarded:contact</code> · OTP <code>discarded:otp</code></span></div>
+        <div class="row"><span>통과</span><span>카드·계좌 번호는 끝 4자리만 남기고 가림 → 2단계</span></div>
+      </div></div>
+      <div class="step"><div class="rail"><div class="dot">2</div><div class="line"></div></div><div class="body">
+        <p class="where">기기 · Foundation Models · 타임아웃 3s</p><p class="title">기기 FM 분류</p>
+        <div class="row"><span>폐기</span><span><code>discarded:fm:personal|otp|promo|medical_result</code>. 카카오톡·Instagram 출처가 타임아웃·오류면 <code>discarded:fm-timeout</code> / <code>fm-error</code></span></div>
+        <div class="row"><span>통과</span><span><code>notice</code> → <code>queued:fm</code>. 그 외 출처의 불가·타임아웃 → <code>queued:rules</code>(서버가 처음 분류)</span></div>
+        <div class="row"><span>실측</span><span>09-29 실기기 10문구: 잡담 2건이 <code>queued:rules</code>로 통과 → 서버 게이트가 받아야 한다</span></div>
+      </div></div>
+      <div class="step"><div class="rail"><div class="dot">3</div><div class="line"></div></div><div class="body">
+        <p class="where">기기 → 서버 · POST /ingest (JWT)</p><p class="title">업로드</p>
+        <div class="row"><span>상태</span><span><code>202</code> 접수 → <code>items.status=queued</code> + <code>jobs(kind=process)</code>. 같은 <code>source:id</code> 재수신은 <code>200 duplicate:true</code>. 세션 없음 <code>401</code></span></div>
+      </div></div>
+      <div class="step"><div class="rail"><div class="dot">4</div><div class="line"></div></div><div class="body">
+        <p class="where">서버 · rules.ts · 저장 전</p><p class="title">서버 규칙 필터</p>
+        <div class="row"><span>폐기</span><span>OTP · <code>(광고)</code> 표기 · Gmail 프로모션 라벨 → <b>저장 없이 <code>204</code></b></span></div>
+        <div class="row"><span>실측</span><span>60건 중 6건 폐기(otp 2, promotion 4). OTP 2건(<code>o02</code> 영문 코드 뒤 마침표, <code>o03</code> 영숫자)은 규칙이 놓치고 Jev가 잡았다</span></div>
+      </div></div>
+      <div class="step gate todo"><div class="rail"><div class="dot">5</div><div class="line"></div></div><div class="body">
+        <p class="where">서버 · worker process 잡 · 체크포인트 classified · 제안</p><p class="title">Jev 게이트 (이번 평가)</p>
+        <div class="row"><span>폐기</span><span>예측 ≠ <code>actionable</code> <b>이고</b> confidence ≥ 0.8 → <code>items</code> DELETE, 감사 로그에 사유 코드만 <code>discarded:jev:&lt;label&gt;</code> <span class="flag">제안 코드</span></span></div>
+        <div class="row"><span>통과</span><span><code>actionable</code>이거나 confidence &lt; 0.8 → 6단계. <code>429</code>/<code>529</code>는 지수 백오프 재시도, 그래도 실패하거나 <code>401</code>/<code>422</code>이면 <b>게이트를 건너뛰고 추출로 넘긴다</b>(fail-open, 행동 항목 유실 방지)</span></div>
+      </div></div>
+      <div class="step todo"><div class="rail"><div class="dot">6</div><div class="line"></div></div><div class="body">
+        <p class="where">서버 · gpt-6-luna · store:false · 체크포인트 extracted</p><p class="title">추출</p>
+        <div class="row"><span>폐기</span><span>분류 결과 <code>discard</code>·<code>medical_result</code> → items DELETE (게이트를 통과한 저신뢰 항목의 2차 방어선)</span></div>
+        <div class="row"><span>통과</span><span>event / task / purchase 스키마 추출, uncertain[]은 서버가 채움</span></div>
+      </div></div>
+      <div class="step todo"><div class="rail"><div class="dot">7</div><div class="line"></div></div><div class="body">
+        <p class="where">서버 · 체크포인트 proposed</p><p class="title">facts / proposals 저장</p>
+        <div class="row"><span>분기</span><span>uncertain 비어 있음 → 잠금화면 “추가” 버튼. 아니면 REVIEW 카테고리. 백필(3일 이상 과거) 제안은 보관함에만</span></div>
+      </div></div>
+      <div class="step todo"><div class="rail"><div class="dot">8</div><div class="line"></div></div><div class="body">
+        <p class="where">서버 · jobs(kind=notify) → APNs</p><p class="title">제안 푸시</p>
+        <div class="row"><span>실패</span><span>재시도 → 최대 5회 후 <code>dead</code></span></div>
+      </div></div>
+      <div class="step todo"><div class="rail"><div class="dot">9</div><div class="line"></div></div><div class="body">
+        <p class="where">기기 · 알림 액션 / 앱</p><p class="title">사용자 수락</p>
+        <div class="row"><span>분기</span><span>수락 → 10단계. 거절·무시 → 제안 상태만 갱신</span></div>
+      </div></div>
+      <div class="step todo"><div class="rail"><div class="dot">10</div><div class="line"></div></div><div class="body">
+        <p class="where">기기 · EventKit</p><p class="title">캘린더 / 미리알림 저장</p>
+        <div class="row"><span>비고</span><span>서버는 기기 캘린더에 직접 접근하지 못한다. 앱 실행·복귀 때 대조한다</span></div>
+      </div></div>
+    </div>
+  </section>
+
+  <!-- ② 정확도 -->
+  <section class="section">
+    <p class="eyebrow">② Accuracy</p>
+    <h2>라벨별 정확도와 혼동 행렬</h2>
+    <p class="sub">본 설정(rubric: 라벨마다 “포함 / 제외” 경계 설명)으로 2회 실행했고 두 번 모두 60/60이었다. 대조군(bare: 라벨당 한 줄 설명)은 59/60이었다.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>라벨</th><th>정의(픽스처)</th><th class="num">n</th><th class="num">정밀도</th><th class="num">재현율</th><th class="num">평균 conf</th><th class="num">최저 conf</th><th class="num">bare 재현율</th></tr></thead>
+      <tbody>
+        <tr><td><code>actionable</code></td><td>일정·할 일·구매·배송·예약·결제·공과금</td><td class="num">30</td><td class="num">1.00</td><td class="num">1.00</td><td class="num">0.99</td><td class="num">0.69</td><td class="num">0.97</td></tr>
+        <tr><td><code>personal</code></td><td>지인 잡담</td><td class="num">12</td><td class="num">1.00</td><td class="num">1.00</td><td class="num">0.96</td><td class="num">0.67</td><td class="num">1.00</td></tr>
+        <tr><td><code>promo</code></td><td>광고·마케팅</td><td class="num">10</td><td class="num">1.00</td><td class="num">1.00</td><td class="num">1.00</td><td class="num">0.99</td><td class="num">1.00</td></tr>
+        <tr><td><code>otp</code></td><td>인증번호</td><td class="num">4</td><td class="num">1.00</td><td class="num">1.00</td><td class="num">1.00</td><td class="num">1.00</td><td class="num">1.00</td></tr>
+        <tr><td><code>notice</code></td><td>정보성 안내, 행동 없음</td><td class="num">4</td><td class="num">1.00</td><td class="num">1.00</td><td class="num">1.00</td><td class="num">1.00</td><td class="num">1.00</td></tr>
+      </tbody>
+    </table></div>
+    <h3>혼동 행렬 (행 = 정답, 열 = 예측, 2회차)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>정답 \ 예측</th><th class="num">actionable</th><th class="num">personal</th><th class="num">promo</th><th class="num">otp</th><th class="num">notice</th></tr></thead>
+      <tbody>
+        <tr><td><code>actionable</code></td><td class="num diag">30</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr>
+        <tr><td><code>personal</code></td><td class="num">0</td><td class="num diag">12</td><td class="num">0</td><td class="num">0</td><td class="num">0</td></tr>
+        <tr><td><code>promo</code></td><td class="num">0</td><td class="num">0</td><td class="num diag">10</td><td class="num">0</td><td class="num">0</td></tr>
+        <tr><td><code>otp</code></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num diag">4</td><td class="num">0</td></tr>
+        <tr><td><code>notice</code></td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td class="num diag">4</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">대조군(bare)의 유일한 오답: <code>a08</code> 아파트 단수 예고(actionable)가 <code>notice</code>로 판정됐고 confidence는 0.65였다. 1·2회차 사이 confidence는 최대 ±0.04 흔들렸고 예측 라벨은 바뀌지 않았다.</p>
+
+    <h3>실기기 Apple Intelligence와 같은 10문구 비교</h3>
+    <p class="note">실기기 결과는 results.md PoC-3 행(09-29, iOS 27, 0.2.0, Slack 웹훅)이다. <span class="flag">재구성</span> 원문이 기록된 문구는 잡담 2건(d09·d10)뿐이다. 나머지 8건은 기록된 주제(택배·병원·…)로 합성 문구를 다시 만들었다.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ID</th><th>주제</th><th>기대</th><th>기기 결과</th><th>기기</th><th>Jev (conf)</th><th>Jev 게이트</th></tr></thead>
+      <tbody>
+        <tr><td>d01</td><td>택배</td><td>통과</td><td><code>queued:rules</code></td><td><span class="flag ok">일치</span></td><td>actionable (1.00)</td><td><span class="flag ok">통과</span></td></tr>
+        <tr><td>d02</td><td>병원</td><td>통과</td><td><code>queued:rules</code></td><td><span class="flag ok">일치</span></td><td>actionable (1.00)</td><td><span class="flag ok">통과</span></td></tr>
+        <tr><td>d03</td><td>카드</td><td>통과</td><td><code>queued:rules</code></td><td><span class="flag ok">일치</span></td><td>actionable (1.00)</td><td><span class="flag ok">통과</span></td></tr>
+        <tr><td>d04</td><td>컨퍼런스</td><td>통과</td><td><code>queued:rules</code></td><td><span class="flag ok">일치</span></td><td>actionable (0.97)</td><td><span class="flag ok">통과</span></td></tr>
+        <tr><td>d05</td><td>공과금</td><td>통과</td><td><code>queued:rules</code></td><td><span class="flag ok">일치</span></td><td>actionable (1.00)</td><td><span class="flag ok">통과</span></td></tr>
+        <tr><td>d06</td><td>광고</td><td>폐기</td><td><code>discarded:fm:promo</code></td><td><span class="flag ok">일치</span></td><td>promo (1.00)</td><td><span class="flag ok">폐기</span></td></tr>
+        <tr><td>d07</td><td>인증번호</td><td>폐기</td><td><code>discarded:otp</code> (정규식)</td><td><span class="flag ok">일치</span></td><td>otp (1.00)</td><td><span class="flag ok">폐기</span></td></tr>
+        <tr><td>d08</td><td>목요일 판교 약속</td><td>통과</td><td><code>queued:rules</code></td><td><span class="flag ok">일치</span></td><td>actionable (1.00)</td><td><span class="flag ok">통과</span></td></tr>
+        <tr><td>d09</td><td>ㅋㅋㅋ 오늘 진짜 웃겼다</td><td>폐기</td><td><code>queued:rules</code></td><td><span class="flag bad">오분류</span></td><td>personal (1.00)</td><td><span class="flag ok">폐기</span></td></tr>
+        <tr><td>d10</td><td>밥 먹었어? 나 지금 집 가는 중</td><td>폐기</td><td><code>queued:rules</code></td><td><span class="flag bad">오분류</span></td><td>personal (1.00)</td><td><span class="flag ok">폐기</span></td></tr>
+        <tr><td colspan="4"><b>합계</b></td><td><b>8/10</b></td><td colspan="2"><b>10/10</b></td></tr>
+      </tbody>
+    </table></div>
+    <p class="note"><span class="flag">관찰</span> 기기 “통과” 7건은 모두 <code>queued:fm</code>이 아니라 <code>queued:rules</code>였다. 지연도 p50 3.13s로 3초 타임아웃과 거의 같다. 기기 FM이 판정했다기보다 <b>타임아웃 폴백으로 통과했을 가능성</b>이 있다. 그렇다면 잡담 2건도 FM이 잘못 본 것이 아니라 FM 판정이 없었던 것이다. trace의 폴백 사유로 확인해야 한다(⑦).</p>
+  </section>
+
+  <!-- ③ 임계값 -->
+  <section class="section">
+    <p class="eyebrow">③ Threshold Policy</p>
+    <h2>신뢰도 임계값별 폐기 정확도와 추출 넘김 비율</h2>
+    <p class="sub">정책: 예측이 <code>actionable</code>이 아니고 confidence ≥ t일 때만 폐기하고, 나머지는 모두 추출로 넘긴다. confidence는 Jev가 확률 분포에서 계산한 값이다(Choice n개일 때 <code>(n·p_max − 1)/(n − 1)</code>, 문서의 Confidence 페이지). 행동 항목 유실(actionable을 폐기)이 가장 비싼 오류라서 이를 기준으로 고른다.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>t</th><th class="num">폐기</th><th class="num">폐기 정확도</th><th class="num">추출로 넘김</th><th class="num">actionable 유실</th><th class="num">비행동 누수</th><th class="num">게이트 정확도</th><th>bare 대조군</th></tr></thead>
+      <tbody>
+        <tr><td>0 (항상)</td><td class="num">30</td><td class="num">100%</td><td class="num">50.0%</td><td class="num">0</td><td class="num">0</td><td class="num">100%</td><td>유실 1 (<code>a08</code> 0.65)</td></tr>
+        <tr><td>0.6</td><td class="num">30</td><td class="num">100%</td><td class="num">50.0%</td><td class="num">0</td><td class="num">0</td><td class="num">100%</td><td>유실 1 (<code>a08</code> 0.65)</td></tr>
+        <tr class="pick"><td><b>0.8 (제안)</b></td><td class="num">29</td><td class="num">100%</td><td class="num">51.7%</td><td class="num">0</td><td class="num">1 (<code>p02</code> 0.67)</td><td class="num">98.3%</td><td>유실 0 · 누수 0</td></tr>
+        <tr><td>0.9</td><td class="num">29</td><td class="num">100%</td><td class="num">51.7%</td><td class="num">0</td><td class="num">1</td><td class="num">98.3%</td><td>유실 0 · 누수 0</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">2회차 기준. 1회차에서는 <code>p08</code> confidence가 0.88이라 t=0.9일 때 누수 2건이었다. 서버 규칙을 먼저 적용해도 표는 같다. 규칙이 버린 6건은 Jev도 모두 버렸기 때문이다.</p>
+    <div class="verdict"><b>제안: t = 0.8.</b> 세 번의 실행(rubric 2회·bare 1회) 모두 actionable 유실이 0건인 가장 낮은 임계값이다. t=0.6 이하에서는 bare 설정이 <code>a08</code>(0.65)을 버린다. 대가는 저신뢰 비행동 항목이 추출로 새는 것(이번에 60건 중 1건)이다. 새어도 6단계 추출 분류의 <code>discard</code>가 한 번 더 거른다. 0.9는 얻는 것 없이 누수만 늘어난다. 버전이 바뀌면 confidence 분포도 바뀌므로 모델은 <code>jev-latest</code> 대신 <code>jev-1.13.0</code>으로 고정한다(문서 권고).</div>
+  </section>
+
+  <!-- ④ 지연·비용 -->
+  <section class="section">
+    <p class="eyebrow">④ Latency &amp; Cost</p>
+    <h2>지연과 비용</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>항목</th><th>값</th><th>근거</th></tr></thead>
+      <tbody>
+        <tr><td>지연 p50 / p95 / max</td><td>211 / 269 / 517 ms (1회차 203 / 285 / 337)</td><td>Mac에서 순차 60건, 워밍업 1건 제외, fetch 왕복 시간. Edge Function 리전에서는 다를 수 있다</td></tr>
+        <tr><td>재시도(429/529)</td><td>0회</td><td>3회 실행 합계</td></tr>
+        <tr><td>입력 토큰</td><td>평균 769 (합계 46,149). bare는 평균 472</td><td>응답 <code>usage.input_tokens</code>. 대부분이 기준 설명이고 본문은 짧다</td></tr>
+        <tr><td>단가</td><td>입력 $0.042 / 1M 토큰, <b>출력 무료</b></td><td>docs.typesafe.ai/models (jev-1.13.0)</td></tr>
+        <tr><td>요청당 / 60건</td><td><b>$0.0000323 / $0.00194</b></td><td>769 × $0.042/1M</td></tr>
+        <tr><td>월 추정 (일 60건)</td><td>약 $0.058</td><td>스펙 §13 가정 1,800건/월</td></tr>
+        <tr><td>비교: 같은 입력을 gpt-6-luna로 분류</td><td>건당 약 $0.000087 (월 약 $0.16) <span class="flag">추정</span></td><td>입력 769 × $0.10/1M + 출력 약 20 × $0.50/1M, 스펙 §13 단가</td></tr>
+        <tr><td>게이트로 아끼는 추출</td><td>폐기율 약 48% × 추출 건당 약 $0.0003 → 월 약 $0.26 <span class="flag">추정</span></td><td>추출 1.5k 입력 + 0.3k 출력(§13). 실데이터 폐기율에 비례</td></tr>
+        <tr><td>한도</td><td>250,000 토큰/초 · 1,200 요청/분, 컨텍스트 64k</td><td>문서: “한도는 동적으로 바뀔 수 있다” 경고</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">금액은 어느 쪽이든 월 1달러보다 작다. 벤더를 고르는 기준은 비용이 아니라 정확도·지연·데이터 정책이다.</p>
+  </section>
+
+  <!-- ⑤ 오분류 -->
+  <section class="section">
+    <p class="eyebrow">⑤ Misclassifications</p>
+    <h2>오분류 사례와 원인 추정</h2>
+    <p class="sub">본 설정에서는 오분류가 없었다. 아래는 confidence가 낮았던 경계 사례, 대조군의 오답, 그리고 이번에 드러난 서버 규칙의 빈틈이다.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>ID</th><th>문구(합성)</th><th>정답</th><th>결과</th><th>원인 추정</th></tr></thead>
+      <tbody>
+        <tr><td><code>a08</code></td><td>[한빛아파트 관리사무소] 10월 7일(화) 10시~15시 배관 공사로 단수 예정… 미리 물을 받아 두시기 바랍니다.</td><td>actionable</td><td>rubric 0.69 / <b>bare → notice 0.65</b></td><td>기관 안내문 말투와 날짜·준비 행동이 섞여 있다. “날짜가 있는 안내는 actionable” 경계를 명시해야 맞는다. 설명 없이는 notice로 기운다</td></tr>
+        <tr><td><code>p02</code></td><td>형 내 충전기 어디 뒀어? 아무리 찾아도 없네</td><td>personal</td><td>personal 0.63~0.67 (actionable 0.29)</td><td>질문·요청 형태라 “할 일”로 읽힌다. 날짜 없는 개인 요청의 경계. t=0.8에서는 추출로 넘어간다(누수 1)</td></tr>
+        <tr><td><code>p08</code></td><td>예약했어? 아 그거 말고 머리 자른 거 말이야 ㅋㅋ</td><td>personal</td><td>personal 0.88~0.91</td><td>“예약” 키워드 함정. 문맥으로 이겨냈지만 confidence가 깎였다</td></tr>
+        <tr><td><code>o02</code></td><td>[Web발신] Your verification code is 603918. Do not share…</td><td>otp</td><td>Jev otp 1.00 / <b>rules.ts 통과</b></td><td>서버 규칙의 OTP 숫자 정규식이 뒤에 <code>.</code>가 붙은 숫자를 제외한다(소수 방지용 lookahead <code>(?![\d.:/-]…)</code>). 마침표를 빼면 폐기된다. 기기 RuleFilter도 같은 정규식이라 같은 빈틈이 있을 것으로 추정 <span class="flag">규칙 결함</span></td></tr>
+        <tr><td><code>o03</code></td><td>로그인 확인용 코드 A7K2Q9 를 3분 안에 입력해 주세요.</td><td>otp</td><td>Jev otp 1.00 / rules.ts 통과</td><td>영숫자 OTP는 규칙으로 잡지 못한다(스펙 §6에 알려진 한계). 게이트가 보완한다</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <!-- ⑥ 결론 -->
+  <section class="section">
+    <p class="eyebrow">⑥ Conclusion</p>
+    <h2>게이트로 채택할지, 언제 OpenAI 소형 모델로 바꿀지</h2>
+    <div class="verdict"><b>판단: 조건부 채택.</b> 합성 60건에서 게이트 정확도 100%(목표 90%), 행동 항목 유실 0, p95 약 0.27초, 월 수 센트다. 실기기 FM이 놓친 잡담 2건을 확신도 1.00으로 걸렀고, 규칙이 놓친 OTP 2건도 잡았다. 다만 아래 조건을 먼저 채워야 한다.</div>
+    <h3>채택 전제 (모두 충족 시)</h3>
+    <ul class="plain">
+      <li><b>벤더 결정</b>: 스펙 §2 “AI 벤더 OpenAI 단일” 결정과 충돌한다. 게이트를 붙이면 복호화한 본문이 두 번째 외부 공급자로 나간다. 사용자 결정과 스펙 §2·§12 통제 3 개정이 필요하다.</li>
+      <li><b>데이터 보관</b>: TypeSafe DPA에는 “필요한 기간 동안 보관”만 있고 기간이 없다. ZDR은 엔터프라이즈 전용이다. OpenAI(<code>store:false</code>, 남용 모니터링 최대 30일)와 같은 수준인지 확인해야 한다(⑦-1·2).</li>
+      <li><b>실데이터 재측정</b>: 실제 분포(카톡 알림톡, 약속이 섞인 지인 대화, 날짜 있는 기관 안내)에서 200건 이상을 재측정한다. 원문을 남기지 않고 라벨·confidence만 기록한다. 통과 기준은 게이트 정확도 ≥ 90%이고, <b>t=0.8에서 actionable 유실 ≤ 1%</b>다.</li>
+      <li><b>운영 설정</b>: <code>jev-1.13.0</code> 고정, t=0.8, fail-open(오류 시 추출로), 폐기 사유 코드 <code>discarded:jev:&lt;label&gt;</code> 감사 로그.</li>
+    </ul>
+    <h3>OpenAI 소형 모델(gpt-6-luna 분류)로 바꾸는 조건 (하나라도 해당 시)</h3>
+    <ul class="plain">
+      <li>벤더 추가가 승인되지 않거나, TypeSafe 보관 조건이 OpenAI <code>store:false</code>보다 약하다.</li>
+      <li>실데이터에서 게이트 정확도가 90% 미만이거나, t=0.8에서 actionable 유실이 1%를 넘는다(문서상 한국어는 주 언어가 아니다).</li>
+      <li>worker 운영 중 <code>429</code>/<code>529</code>로 fail-open 비율이 5%를 넘는다(한도가 동적이라는 경고가 있다).</li>
+      <li>Edge 리전에서 p95가 1초를 넘어 cron 1분 주기의 처리량을 잡아먹는다.</li>
+    </ul>
+    <p class="note">gpt-6-luna로 바꿔도 비용 차이는 월 약 $0.1이고, 분류 요청을 추출과 같은 공급자·약관 안에 둘 수 있다. 하지만 confidence가 보정된 확률로 나오지 않아 ③의 임계값 정책을 그대로 옮길 수 없다. 이 경우 “discard 라벨만 폐기, 나머지는 추출” 규칙으로 단순화한다.</p>
+  </section>
+
+  <!-- ⑦ 확인 필요 -->
+  <section class="section">
+    <p class="eyebrow">⑦ Open Questions</p>
+    <h2>확인 필요 8건</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>항목</th><th>현재 아는 것</th><th>확인 방법</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>비엔터프라이즈 요청·응답 보관 기간, 남용 모니터링 로그</td><td>DPA: “필요한 기간 동안”. 학습에는 쓰지 않음. ZDR은 엔터프라이즈 전용</td><td>sales@typesafe.ai 문의, Privacy Policy 원문</td></tr>
+        <tr><td>2</td><td>하위 처리자(추론 GPU 공급자 등)</td><td>trust.typesafe.ai/subprocessors로 링크만 있음</td><td>Trust Center 열람</td></tr>
+        <tr><td>3</td><td>처리 리전·데이터 위치, SLA</td><td>문서에 없음</td><td>문의</td></tr>
+        <tr><td>4</td><td>요율 한도 안정성</td><td>250k TPS / 1,200 RPM, “예고 없이 바뀔 수 있음”</td><td>worker에서 429 빈도 로그</td></tr>
+        <tr><td>5</td><td>한국어 실데이터 정확도</td><td>문서: 영어가 주 언어, CJK는 “같은 수준 아님”. 합성 60건은 상한값</td><td>실데이터 200건+ (라벨·conf만 기록)</td></tr>
+        <tr><td>6</td><td>실기기 10문구 원문</td><td>d09·d10만 기록됨. 8건은 주제로 재구성</td><td>다음 실기기 세션에서 발송 문구를 픽스처와 같게 보냄</td></tr>
+        <tr><td>7</td><td>기기 <code>queued:rules</code>가 FM 타임아웃 폴백인지</td><td>통과 7건 모두 rules, p50 3.13s ≈ 타임아웃 3s</td><td>PoC-3 trace의 폴백 사유 코드 조회</td></tr>
+        <tr><td>8</td><td>rules.ts·RuleFilter의 OTP 마침표 빈틈 수정 여부</td><td><code>code is 603918.</code> 통과 확인(서버). 기기는 같은 정규식이라 추정</td><td>기기 단위 테스트 1건 추가 후 양쪽 수정(이번 범위 밖)</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="section">
+    <p class="eyebrow">Appendix · Request Shape</p>
+    <h2>요청 형태</h2>
+    <p class="sub">문서로 확인한 계약: <code>POST https://api.typesafe.ai/v1/systemone</code>, <code>Authorization: Bearer &lt;key&gt;</code>, 본문 <code>{state, model, questions}</code>. 응답 Choice 답은 <code>{type, choice, probabilities, confidence}</code>이고 <code>usage.input_tokens</code>가 함께 온다. 오류는 401 · 422 · 429 · 529.</p>
+<pre>{
+  "state": { "app": "KakaoTalk", "title": "민수", "sender": null, "body": "&lt;마스킹된 본문&gt;" },
+  "model": "jev-latest",
+  "questions": { "kind": { "type": "choice",
+    "instructions": "Classify this Korean phone notification … Pick the single best category.",
+    "criteria": { "actionable": { "covers": "…", "not": "…" }, "personal": {…}, "promo": {…}, "otp": {…}, "notice": {…} } } }
+}
+→ { "model": "jev-1.13.0",
+    "answers": { "kind": { "type": "choice", "choice": "actionable", "confidence": 1.0, "probabilities": {…} } },
+    "usage": { "input_tokens": 780, "output_tokens": … } }</pre>
+    <p class="note">본문은 서버 규칙(<code>applyRules</code>)으로 마스킹한 뒤 보냈다. 규칙이 폐기한 6건은 Jev 단독 정확도를 재려고 원문(합성)을 보냈다. 실행: <code>cd poc/server &amp;&amp; deno run -A --env-file=.env scripts/jev-eval.ts [rubric|bare]</code></p>
+  </section>
+
+  <div class="footer"><span>ERURI · Jev classification gate eval</span><span>2026-09-29 · jev-1.13.0 · 합성 60건</span></div>
+</div>
+</body>
+</html>
