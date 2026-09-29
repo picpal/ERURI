@@ -1,5 +1,5 @@
 // cron이 워커를 부를 때 쓰는 vault 값(worker_url, service_role_key)을 등록·갱신한다. 값은 출력하지 않는다.
-// supabase link 후, db push 전에 1회 실행: deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/vault-setup.ts
+// supabase link 후 1회 실행(db push 전후 무관 — cron 이 실행 시점에 vault 를 읽는다): deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/vault-setup.ts
 import postgres from "npm:postgres@3";
 const u = new URL((await Deno.readTextFile(new URL("../.temp/pooler-url", import.meta.url))).trim());
 const sql = postgres({

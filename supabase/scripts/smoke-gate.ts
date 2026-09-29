@@ -1,6 +1,7 @@
 // M1-①b 게이트(스펙 §15 ①): 합성 항목 1건 → ingest → (cron) worker process → extracted → notify → proposal_pushes 행.
 // 기기 행은 가짜 토큰(sandbox)이라 APNs 가 400 BadDeviceToken → rejected 로 끝나도 통과다.
 // 전용 테스트 사용자(poc-test-1)·실행 태그만 쓰고, 끝나면 자기 행만 지운다(AGENTS.md §7). 출력은 id·상태·코드만
+// deno 테스트와 동시에 돌리지 않는다: 끝의 정리가 같은 테스트 사용자의 usage_counters 를 지운다
 // 사용: deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/smoke-gate.ts
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { SERVER_AUTH } from "../functions/_shared/crypto.ts";
@@ -21,14 +22,16 @@ try {
   const dev = await fetch(`${BASE}/functions/v1/ingest/device`, { method: "POST", headers,
     body: JSON.stringify({ device_id: deviceId, apns_token: fakeToken, apns_env: "sandbox", build: "gate" }) });
   await dev.body?.cancel();
+  if (dev.status !== 200) throw new Error("ingest/device " + dev.status);
   const ing = await fetch(`${BASE}/functions/v1/ingest`, { method: "POST", headers, body: JSON.stringify({
     id: `${RUN}:gate1`, source: "NOTIFICATION", appName: "Slack", title: "ERURI 테스트",
     text: renderPhrase(PUSH_TEMPLATE, seoulToday()), capturedAt: new Date().toISOString(), deviceFilter: "rules" }) });
+  if (ing.status !== 202) { await ing.body?.cancel(); throw new Error("ingest " + ing.status); }
   itemId = ((await ing.json()) as { item_id: string }).item_id;
   console.log(["device", dev.status, "ingest", ing.status, itemId].join("\t"));
   const t0 = Date.now();
   let status = "", push: Push | null = null;
-  while (Date.now() - t0 < 300_000 && push === null) {
+  while (Date.now() - t0 < 300_000 && (push === null || ["sending", "failed"].includes(push.status))) {   // sending·failed 는 중간 상태(재시도)
     await new Promise((r) => setTimeout(r, 10_000));
     status = (await sb.from("items").select("status").eq("id", itemId).eq("user_id", u.id).single()).data?.status ?? "";
     const { data } = await sb.from("facts").select("proposals(id, proposal_pushes(status, apns_status, reason))").eq("user_id", u.id).eq("item_id", itemId);
