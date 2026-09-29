@@ -1,0 +1,11 @@
+{
+  "_note": "형식 예시(합성). 실제 질문은 supabase/eval/questions.json(gitignore)에 사용자가 쓴다. §9: 50개 = 정답 40(expected_item_ids) + 무근거 10, 날짜 필터 10(정답 40 안), 제목·발신자만으로 답이 안 나오는 질문(title_only_answerable=false) ≥ 15, 출처별(GMAIL·NOTIFICATION·SHARE) ≥ 3. tags(선택): deep_chunk = 긴 메일에서 답이 첫 청크 밖, period_kind = 받은기간+종류 복합(예: 지난주 받은 일정 메일), period_no_answer = 받은기간을 건 무근거 질문(no_answer 에만)",
+  "questions": [
+    { "id": "q01", "question": "지난달 합성건설에서 받은 견적 금액이 얼마였지?", "kind": "answer", "expected_item_ids": ["00000000-0000-0000-0000-000000000000"],
+      "date_filter": true, "title_only_answerable": false, "source": "GMAIL", "tags": ["deep_chunk"] },
+    { "id": "q02", "question": "지난주에 받은 일정 메일 중 합성상사 미팅은 언제야?", "kind": "answer", "expected_item_ids": ["00000000-0000-0000-0000-000000000001"],
+      "date_filter": true, "title_only_answerable": true, "source": "GMAIL", "tags": ["period_kind"] },
+    { "id": "n01", "question": "합성보험 갱신일이 언제야?", "kind": "no_answer", "expected_item_ids": [] },
+    { "id": "n02", "question": "어제 받은 합성은행 대출 안내 메일에 금리가 얼마였어?", "kind": "no_answer", "expected_item_ids": [], "tags": ["period_no_answer"] }
+  ]
+}
