@@ -10,8 +10,8 @@ export type RuleMeta = { sender?: string | null; title?: string | null; labels?:
 // OTP 키워드. `OTP`·`code`는 영문자 경계로만 인정한다
 const OTP_KEYWORD =
   /(인증|보안|승인|확인)\s*(번호|코드)|verification|verify|passcode|one[- ]?time|(?<![A-Za-z])(code|OTP)(?![A-Za-z])/gi;
-// OTP 숫자: 4~8자리 또는 3-3 분리. 날짜·시각·금액·소수·점 날짜는 제외. 마침표는 뒤에 숫자가 올 때만 제외(문장 끝 마침표는 OTP, 0b)
-const OTP_DIGITS = /(?<![\d.,:/-])(?:\d{4,8}|\d{3}[ -]\d{3})(?![\d:/-]|\.\s*\d|\s*(?:년|월|일|시|분|원))/g;
+// OTP 숫자: 4~8자리 또는 3-3 분리. 날짜·시각·금액·소수·점 날짜는 제외. 마침표는 소수(`.5`)·점 날짜(`. 10.`)가 이어질 때만 제외(문장 끝 마침표는 OTP, 0b)
+const OTP_DIGITS = /(?<![\d.,:/-])(?:\d{4,8}|\d{3}[ -]\d{3})(?![\d:/-]|\.\d|\.\s*\d{1,2}\s*\.|\s*(?:년|월|일|시|분|원))/g;
 const APPROVAL_KEYWORD = /^승인\s*(번호|코드)$/;
 const PAYMENT_CONTEXT = /\d[\d,]*\s*원|금액|결제|승인\s*취소|일시불|할부|누적/;
 const OTP_WINDOW = 30;

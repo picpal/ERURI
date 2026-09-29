@@ -76,6 +76,8 @@ final class RuleFilterReviewTests: XCTestCase {
   func testOTPKoreanSentencePeriod() { otp("인증번호는 482913.") }
   func testOTPBracketed() { otp("[네이버] 인증번호 [482913]를 입력해 주세요. 타인에게 절대 알리지 마세요.") }
   func testDottedDateNearKeywordPasses() { pass("예약 확인번호 안내: 2026. 10. 2. 방문", "예약 확인번호 안내: 2026. 10. 2. 방문") }
+  func testOTPBeforePeriodThenDigitSentence() { otp("인증번호는 482913. 3분 내 입력해 주세요.") }
+  func testOTPBeforePeriodThenDigitSentenceEnglish() { otp("Your code is 603918. 5 minutes left.") }
 }
 
 // fix-2: title 에도 규칙 적용(판정은 제목+본문 합쳐서, 마스킹은 각각), 연락처 정규화(공백·"님/씨").

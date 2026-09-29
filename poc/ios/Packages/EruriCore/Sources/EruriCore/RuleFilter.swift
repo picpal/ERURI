@@ -16,9 +16,9 @@ public struct RuleFilter: Sendable {
     #"(인증|보안|승인|확인)\s*(번호|코드)|verification|verify|passcode|one[- ]?time|(?<![A-Za-z])(code|OTP)(?![A-Za-z])"#,
     options: [.caseInsensitive])
   // OTP 숫자: 4~8자리 또는 3-3 분리. 날짜·시각·금액(`2026년`, `15:00`, `9/25`, `32,000원`)·소수·점 날짜는 제외.
-  // 마침표는 뒤에 숫자가 올 때만 제외한다(문장 끝 마침표는 OTP, 0b).
+  // 마침표는 소수(`.5`)·점 날짜(`. 10.`)가 이어질 때만 제외한다(문장 끝 마침표는 OTP, 0b).
   private static let otpDigits = try! NSRegularExpression(pattern:
-    #"(?<![\d.,:/-])(?:\d{4,8}|\d{3}[ -]\d{3})(?![\d:/-]|\.\s*\d|\s*(?:년|월|일|시|분|원))"#)
+    #"(?<![\d.,:/-])(?:\d{4,8}|\d{3}[ -]\d{3})(?![\d:/-]|\.\d|\.\s*\d{1,2}\s*\.|\s*(?:년|월|일|시|분|원))"#)
   // "승인번호"가 카드 결제 승인 문자에 쓰일 때의 결제 문맥
   private static let approvalKeyword = try! NSRegularExpression(pattern: #"^승인\s*(번호|코드)$"#)
   private static let paymentContext = try! NSRegularExpression(pattern: #"\d[\d,]*\s*원|금액|결제|승인\s*취소|일시불|할부|누적"#)
