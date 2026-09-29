@@ -256,6 +256,10 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
       서버 음력 변환표(한국천문연구원 기준)로 한다. 종료 시각이 문서에 없으면 end는 null이고 uncertain에 넣지 않는다
       task: title, due, evidence, uncertain[]
       purchase: merchant, product[], ordered_at, amount, currency, order_no, status, recurrence?, evidence
+      텍스트 항목(0b, 2026-09-29): 한 항목에서 event·task·purchase 중 하나(없으면 none)를 고르는 단일 strict 스키마 `text_fact`.
+      상대 날짜('내일'·'목요일')와 연도 없는 날짜의 기준일은 **받은 시각(occurred_at)의 서울 날짜**다(오프라인 큐·지연 처리로
+      처리 시각이 늦어도 날짜가 밀리지 않게). 모델 입력은 출처·앱 이름·제목·본문(4,000자에서 절단)이고 발신자는 보내지 않는다.
+      event는 시작 일시가 없으면, task는 제목이 없으면, purchase는 가맹점·금액이 모두 없으면 none. evidence는 마스킹된 본문의 구절 ≤300자
   → 이미지/PDF: gpt-6-luna vision(`input_image`·`input_file`). 월 상한 100건(usage_counters). 초과 시 기기에서 같이 올라온 OCR 텍스트 사용
       기기 OCR 텍스트가 있으면 이미지·PDF와 함께 넣는다(0단계 실측 vision+OCR 21/21, vision만 19/21 — 스캔 PDF 제목 오류).
       건당 입력 3.8~4.3k 토큰, 약 $0.00042, 지연 p50 1.95s·p95 2.53s(PoC-8). 상한은 호출 전 예약(`reserve_vision_call`, 한 문장 upsert)
