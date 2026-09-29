@@ -2,15 +2,15 @@ import { assert, assertEquals } from "jsr:@std/assert";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { SERVER_AUTH } from "../functions/_shared/crypto.ts";
 import { RUN, service, testUser } from "./_testenv.ts";
-import { handleTrace, isTracePath, MAX_TRACES, type TraceDeps, type TraceRow } from "../functions/ingest/trace.ts";
+import { handleTrace, isTracePath, MAX_TRACES, type TraceDeps, type TraceRow, upsertTraces } from "../functions/ingest/trace.ts";
 
 // ── 순수: 허용·거부 경로 ────────────────────────────────────────────
 
-function deps(o: { user?: string | null } = {}) {
+function deps(o: { user?: string | null; fresh?: number } = {}) {
   const inserted: { token: string; rows: TraceRow[] }[] = [];
   const d: TraceDeps = {
     authUser: async (t) => (t === "good" ? (o.user === undefined ? "user-1" : o.user) : null),
-    insertTraces: async (token, rows) => { inserted.push({ token, rows }); },
+    insertTraces: async (token, rows) => { inserted.push({ token, rows }); return o.fresh ?? rows.length; },
   };
   return { d, inserted };
 }
@@ -39,12 +39,18 @@ Deno.test("202 stores a batch with the caller's user_id, the caller's token, and
   const { d, inserted } = deps();
   const r = await handleTrace(req([ev(), ev({ event: "poc5.action_handled", at: 780000000, fields: undefined })]), d);
   assertEquals(r.status, 202);
-  assertEquals(await r.json(), { inserted: 2 });
+  assertEquals(await r.json(), { inserted: 2, duplicates: 0 });
   assertEquals(inserted[0].token, "good");                             // 사용자 JWT로 삽입(RLS)
   const [a, b] = inserted[0].rows;
   assertEquals(a, { user_id: "user-1", device_id: "dev-1", event: "poc1.intent_fired",
     fields: { locked: true, bg: false, source: "NOTIFICATION", elapsed_ms: 12, text_len: 48, text_sha8: "a1b2c3d4" }, at: "2026-09-27T00:00:00.000Z" });
   assertEquals([b.event, b.fields, b.at], ["poc5.action_handled", {}, "2025-09-19T18:40:00.000Z"]);   // Swift 기준 초
+});
+
+Deno.test("202 reports duplicates the store ignored", async () => {
+  const { d } = deps({ fresh: 1 });
+  const r = await handleTrace(req([ev(), ev({ at: "2026-09-27T09:00:01+09:00" })]), d);
+  assertEquals([r.status, await r.json()], [202, { inserted: 1, duplicates: 1 }]);
 });
 
 Deno.test("string values longer than 200 chars are truncated (nested too); other types kept", async () => {
@@ -117,4 +123,24 @@ Deno.test("RLS: a user inserts and reads only own poc_traces rows; anon can do n
   assertEquals(anonSeen ?? [], []);
   await service.from("poc_traces").delete().eq("device_id", dev);
   await user.auth.signOut();
+});
+
+Deno.test("DB: same (device_id, event, at) twice → stored once; second upload inserts 0", async () => {
+  const user = createClient(URL_, Deno.env.get("SUPABASE_ANON_KEY")!, SERVER_AUTH);
+  const t1 = await testUser(1);
+  assertEquals((await user.auth.signInWithPassword({ email: t1.email, password: t1.password })).error, null);
+  const dev = `${RUN}:${crypto.randomUUID()}`;
+  const rows: TraceRow[] = [
+    { user_id: t1.id, device_id: dev, event: "poc9.upload_done", fields: { ok: true }, at: "2026-09-29T02:26:41.123Z" },
+    { user_id: t1.id, device_id: dev, event: "poc9.wake", fields: {}, at: "2026-09-29T02:22:03.000Z" },
+  ];
+  try {
+    assertEquals(await upsertTraces(user, rows), 2);
+    assertEquals(await upsertTraces(user, rows), 0);
+    const { count } = await service.from("poc_traces").select("id", { count: "exact", head: true }).eq("device_id", dev);
+    assertEquals(count, 2);
+  } finally {
+    await service.from("poc_traces").delete().eq("device_id", dev);
+    await user.auth.signOut();
+  }
 });

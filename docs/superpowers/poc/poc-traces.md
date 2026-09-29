@@ -26,7 +26,7 @@ content-type: application/json
 
 | 항목 | 규칙 |
 |---|---|
-| 배치 | JSON 배열 1~200건. 기기에서 모아 두었다가 한 번에 보낸다(실패하면 다음 flush에 재전송. 중복 제거는 없다) |
+| 배치 | JSON 배열 1~200건. 기기에서 모아 두었다가 한 번에 보낸다(실패하면 다음 flush에 재전송. 서버는 (user_id, device_id, event, at)가 같은 행을 무시하고 202 {inserted, duplicates}를 준다 — 0015) |
 | `device_id` | 1~100자. `UIDevice.current.identifierForVendor?.uuidString` 권장 |
 | `event` | `<poc>.<event>` 소문자·숫자·`_`: 정규식 `^poc[0-9]+[a-z0-9_]*\.[a-z0-9_.]{1,60}$`. 예: `poc1.intent_fired`, `poc2.message_received`, `poc3.fm_classified`, `poc5.action_handled`, `poc8_9.upload_done` |
 | `at` | 관찰 시각. ISO 8601 문자열, 또는 Swift `JSONEncoder` 기본 Date(2001-01-01 기준 초) |

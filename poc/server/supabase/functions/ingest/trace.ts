@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { parseCapturedAt } from "./handler.ts";
 
 // PoC 전용 추적 이벤트(실기기 세션 관찰값). POST /functions/v1/ingest/trace, 사용자 JWT 필수.
@@ -12,8 +13,16 @@ const EVENT = /^poc[0-9]+[a-z0-9_]*\.[a-z0-9_.]{1,60}$/;              // <poc>.<
 export type TraceRow = { user_id: string; device_id: string; event: string; fields: Record<string, unknown>; at: string };
 export type TraceDeps = {
   authUser(token: string): Promise<string | null>;
-  insertTraces(userToken: string, rows: TraceRow[]): Promise<void>;   // 사용자 JWT로 삽입(RLS가 소유자만 허용)
+  insertTraces(userToken: string, rows: TraceRow[]): Promise<number>;   // 새로 들어간 행 수(중복 제외)
 };
+
+// 사용자 JWT 클라이언트로 넣는다(RLS). 같은 (user_id, device_id, event, at)는 무시한다(0015)
+export async function upsertTraces(client: SupabaseClient, rows: TraceRow[]): Promise<number> {
+  const { error, count } = await client.from("poc_traces")
+    .upsert(rows, { onConflict: "user_id,device_id,event,at", ignoreDuplicates: true, count: "exact" });
+  if (error) throw new Error("poc_traces insert " + error.code);
+  return count ?? 0;
+}
 
 export function isTracePath(url: URL): boolean {
   return /\/ingest\/trace\/?$/.test(url.pathname);
@@ -66,7 +75,8 @@ export async function handleTrace(req: Request, deps: TraceDeps): Promise<Respon
     if (!(e instanceof Bad)) throw e;
     return Response.json({ error: e.code, ...(e.index === undefined ? {} : { index: e.index }) }, { status: 400 });
   }
-  await deps.insertTraces(token, rows);
-  console.log(JSON.stringify({ ingest: "trace", count: rows.length }));   // 이벤트 내용은 남기지 않는다
-  return Response.json({ inserted: rows.length }, { status: 202 });
+  const inserted = await deps.insertTraces(token, rows);
+  const duplicates = rows.length - inserted;
+  console.log(JSON.stringify({ ingest: "trace", count: rows.length, duplicates }));   // 이벤트 내용은 남기지 않는다
+  return Response.json({ inserted, duplicates }, { status: 202 });
 }
