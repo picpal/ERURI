@@ -54,7 +54,8 @@ public enum APNsDevice {
   /// 24시간 규칙: 진단 전송을 끄면 trace 가 last_seen_at 을 갱신하지 않아 7일 뒤 발송 대상에서 빠지므로 등록을 하루 1회 다시 보낸다(M1-⑤)
   public static func needsRegistration(build: String, now: Date = Date(), defaults: UserDefaults = IngestSettings.shared) -> Bool {
     guard let t = token(defaults: defaults), let e = env(defaults: defaults) else { return false }
-    guard let at = defaults.object(forKey: registeredAtKey) as? Date, now.timeIntervalSince(at) < refreshInterval else { return true }
+    // 등록 시각이 미래(시계를 앞으로 돌렸다 원복)면 무효로 본다
+    guard let at = defaults.object(forKey: registeredAtKey) as? Date, at <= now, now.timeIntervalSince(at) < refreshInterval else { return true }
     return defaults.string(forKey: registeredEnvKey) != e.rawValue || defaults.string(forKey: registeredBuildKey) != build
       || defaults.string(forKey: registeredSha8Key) != Trace.sha8(t)
   }

@@ -91,4 +91,19 @@ final class APNsDeviceTests: XCTestCase {
     APNsDevice.clearRegistration(defaults: d)                                                                    // 로그아웃
     XCTAssertTrue(APNsDevice.needsRegistration(build: b, now: t0.addingTimeInterval(24 * 3600 + 60), defaults: d))
   }
+
+  func testClockSetBackBeforeRegisteredAtReRegisters() {
+    let d = tempDefaults(), b = "0.4.1 (1)", t0 = Date(timeIntervalSince1970: 1_800_000_000)
+    APNsDevice.store(token: "aa", env: .production, defaults: d)
+    APNsDevice.markRegistered(token: "aa", env: .production, build: b, now: t0.addingTimeInterval(30 * 86400), defaults: d)  // 시계를 앞으로 돌린 채 등록
+    XCTAssertTrue(APNsDevice.needsRegistration(build: b, now: t0, defaults: d))                                              // 원복 뒤: 미래 표식은 무효
+  }
+
+  func testPreTimestampMarkersNeedOneRegistration() {
+    let d = tempDefaults(), b = "0.3.0 (1)"
+    APNsDevice.store(token: "aa", env: .production, defaults: d)
+    d.set("production", forKey: "apnsRegisteredEnv"); d.set(b, forKey: "apnsRegisteredBuild")   // 0.3.0 이전: 표식 3개, 시각 없음
+    d.set(Trace.sha8("aa"), forKey: "apnsRegisteredTokenSha8")
+    XCTAssertTrue(APNsDevice.needsRegistration(build: b, defaults: d))
+  }
 }

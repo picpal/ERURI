@@ -29,12 +29,14 @@ struct CaptureIntent: AppIntent {
       trace(result: result, queueID: qid, started: started, state: st)
       await upload(locked: st.lock.boolValue)
       await notifyResult(result)
+      await DeviceRegistrar.shared.register()   // 24시간 지났으면 재등록(M1-⑤). 결과 알림 뒤라 등록 왕복이 알림을 늦추지 않는다
       return .result()
     } catch {
       DiagLog.append("CaptureIntent error \(type(of: error)) \(meta)")
       BFULog.append("CaptureIntent error \(type(of: error)) textLen=\(text.count)")
       trace(result: "error:\(type(of: error))", queueID: nil, started: started, state: st)
       await upload(locked: st.lock.boolValue)
+      await DeviceRegistrar.shared.register()
       throw error
     }
   }
@@ -51,7 +53,6 @@ struct CaptureIntent: AppIntent {
   private func upload(locked: Bool?) async {
     let r = await Uploader.shared.flush(trigger: .intent, locked: locked)
     if r.handedOff + r.failed > 0 { BackgroundRefresh.schedule() }
-    await DeviceRegistrar.shared.register()   // 24시간 지났으면 재등록(M1-⑤). 아니면 네트워크 없이 끝난다
   }
 
   /// 진단 필드: 앱명·제목·본문·발신자가 도착했는지와 길이만. 원문은 보내지 않는다.

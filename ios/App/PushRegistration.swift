@@ -112,7 +112,8 @@ actor DeviceRegistrar {
       DiagLog.append("device register queued: no session")
       return
     }
-    var r = URLRequest(url: cfg.url.appendingPathComponent("functions/v1/ingest/device")); r.httpMethod = "POST"
+    // 무음 푸시·BG refresh·인텐트(약 30초 한도)에서도 돈다: 기본 60초 대신 8초(M1-⑤)
+    var r = URLRequest(url: cfg.url.appendingPathComponent("functions/v1/ingest/device"), timeoutInterval: 8); r.httpMethod = "POST"
     r.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
     r.setValue(cfg.anonKey, forHTTPHeaderField: "apikey")
     r.setValue("application/json", forHTTPHeaderField: "Content-Type")
