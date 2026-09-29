@@ -2,6 +2,9 @@ import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { buildTextExtractRequest, EVIDENCE_MAX, MAX_TEXT_CHARS, normalizeTextExtraction, parseTextExtractResponse, TEXT_SCHEMA }
   from "../functions/_shared/extract-text.ts";
 import { receivedDay, seoulToday } from "../functions/_shared/time.ts";
+import { proposalAction, textFact } from "../functions/_shared/facts.ts";
+import { planProposalPush } from "../functions/_shared/notify.ts";
+import { PUSH_TEMPLATE, renderPhrase } from "../../eval/phrases.ts";
 
 // 문구는 전부 합성(AGENTS.md §7)
 const META = { source: "NOTIFICATION", appName: "Slack", title: "합성채널" };
@@ -39,6 +42,33 @@ Deno.test("received day: occurred_at in Seoul; year chosen from the received day
   assert(textOf(r, 1).includes("2026-12-31"));
   const x = normalizeTextExtraction(raw({ kind: "event", title: "치과", start: "2026-01-01T15:00:00+09:00", year_in_text: false }), "2026-12-31");
   assertEquals(x.kind === "event" && x.event.start, "2027-01-01T15:00:00+09:00");
+});
+
+// 최종 리뷰 C1: 연도 없는 문자 약속은 받은 날 기준으로 연도가 정해지므로 uncertain year 가 붙지 않고 ADD_EVENT 로 간다.
+// 리뷰어 실측 4건(PoC-5 PUSH_TEMPLATE +3일 15:30 ×2, "내일 오후 3시 30분 진료 예약" ×2)의 모델 출력 형태(uncertain=[], year_in_text=false)
+Deno.test("C1: year missing in text → no uncertain year → planProposalPush ADD_EVENT with the +09:00 start", () => {
+  const today = "2026-09-29";
+  assertEquals(renderPhrase(PUSH_TEMPLATE, today), "[합성의원] 10월 2일(금) 오후 3시 30분 진료 예약이 확정되었습니다.");
+  const cases: [string, string][] = [
+    ["2026-10-02T15:30:00+09:00", "2026-10-02T15:30:00+09:00"],     // PUSH_TEMPLATE 1회차
+    ["2026-10-02T15:30", "2026-10-02T15:30:00+09:00"],              // PUSH_TEMPLATE 2회차(오프셋 없음)
+    ["2026-09-30T15:30:00+09:00", "2026-09-30T15:30:00+09:00"],     // "내일 오후 3시 30분 진료 예약" 1회차
+    ["2027-09-30T15:30:00+09:00", "2026-09-30T15:30:00+09:00"],     // 2회차: 모델이 내년으로 채워도 받은 날 기준으로 되돌린다
+  ];
+  for (const [start, want] of cases) {
+    const x = normalizeTextExtraction(raw({ kind: "event", title: "진료 예약", start, uncertain: [], year_in_text: false }), today);
+    assertEquals(x.kind === "event" && [x.event.start, x.event.uncertain], [want, []]);
+    const f = textFact("u", "i", x)!;
+    const plan = planProposalPush({ id: "p1", action: proposalAction(f.kind)!, payload: f.payload, status: "proposed",
+      occurred_at: "2026-09-29T01:00:00Z", captured_at: "2026-09-29T01:00:05Z" }, new Date("2026-09-29T01:01:00Z"));
+    assertEquals(plan.skip === null && [plan.category, plan.payload.start], ["ADD_EVENT", want]);
+  }
+  // 음력(date)·ampm 같은 다른 불확실은 그대로 REVIEW
+  const lunar = normalizeTextExtraction(raw({ kind: "event", title: "제사", start: "2026-10-24", year_in_text: false, lunar: true,
+    uncertain: ["ampm"] }), today);
+  assertEquals(lunar.kind === "event" && lunar.event.uncertain.sort(), ["ampm", "date"]);
+  const due = normalizeTextExtraction(raw({ kind: "task", title: "납부", due: "2026-10-04", year_in_text: false }), today);
+  assertEquals(due.kind === "task" && due.task.uncertain, []);
 });
 
 Deno.test("normalize: event without start / task without title / purchase without merchant and amount → none", () => {

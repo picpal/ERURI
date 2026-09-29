@@ -76,13 +76,17 @@ export function buildTextExtractRequest(text: string, meta: TextMeta, today: str
   };
 }
 
+// 텍스트 경로는 연도 없는 날짜를 받은 날 기준 가장 가까운 해로 결정적으로 정한다(스펙 §7). 그래서 normalizeEvent 가 붙이는
+// uncertain year 를 뺀다 — year 는 PoC-8 이미지(청첩장) 규칙이고, 남기면 연도 없는 문자 약속이 모두 REVIEW 가 된다(최종 리뷰 C1)
+const noYear = (u: string[]) => u.filter((x) => x !== "year");
+
 export function normalizeTextExtraction(raw: RawText, today: string): TextExtraction {
   const evidence = clean(raw.evidence)?.slice(0, EVIDENCE_MAX) ?? null;
   switch (raw.kind) {
     case "event": {
       const event = normalizeEvent({ title: raw.title, start: raw.start, end: raw.end, location: raw.location, uncertain: raw.uncertain,
         year_in_text: raw.year_in_text, lunar: raw.lunar }, today);
-      return event.start === null ? { kind: "none" } : { kind: "event", event, evidence };
+      return event.start === null ? { kind: "none" } : { kind: "event", event: { ...event, uncertain: noYear(event.uncertain) }, evidence };
     }
     case "task": {
       const title = clean(raw.title);
@@ -91,7 +95,7 @@ export function normalizeTextExtraction(raw: RawText, today: string): TextExtrac
       // 기한도 일정과 같은 날짜 규칙(연도 없음 → 받은 날 이후 가장 가까운 해, 해석 불가 → null + date)
       const d = normalizeEvent({ title, start: raw.due, end: null, location: null, uncertain: raw.uncertain,
         year_in_text: raw.year_in_text, lunar: raw.lunar }, today);
-      return { kind: "task", task: { title, due: d.start, uncertain: d.uncertain }, evidence };
+      return { kind: "task", task: { title, due: d.start, uncertain: noYear(d.uncertain) }, evidence };
     }
     case "purchase": {
       const merchant = clean(raw.merchant);
