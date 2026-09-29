@@ -3,11 +3,11 @@ import { applyRules } from "../_shared/rules.ts";
 // 기기 CaptureItem(Task 3) JSON. localFile 항목은 이 경로로 오지 않는다(파일은 Storage 경로)
 export type IngestBody = {
   id: string; source: string; appName?: string | null; sender?: string | null; title?: string | null;
-  text: string; ocrText?: string | null; capturedAt: number | string;
+  text: string; ocrText?: string | null; capturedAt: number | string; deviceFilter?: string | null;
 };
 export type NewItem = {
   user: string; source: string; idempotencyKey: string; appName: string | null; sender: string | null;
-  title: string | null; contentEnc: Uint8Array; ocrTextEnc: Uint8Array | null; occurredAt: string;
+  title: string | null; contentEnc: Uint8Array; ocrTextEnc: Uint8Array | null; occurredAt: string; deviceFilter: string | null;
 };
 export type IngestDeps = {
   authUser(token: string): Promise<string | null>;                       // JWT → user_id, 실패 시 null
@@ -17,6 +17,7 @@ export type IngestDeps = {
 };
 
 const SOURCES = new Set(["MESSAGES", "NOTIFICATION", "SHARE", "CHAT"]);   // GMAIL은 서버가 직접 수집
+const DEVICE_FILTERS = new Set(["fm", "rules"]);                        // 스펙 §6 device_filter. 모르는 값·구버전(키 없음)은 null
 const APPLE_EPOCH = 978307200;                                           // Swift JSONEncoder 기본 Date = 2001-01-01 기준 초
 
 export function parseCapturedAt(v: unknown): string | null {
@@ -57,6 +58,7 @@ export async function handleIngest(req: Request, deps: IngestDeps): Promise<Resp
     contentEnc: await deps.encrypt(user, v.masked),
     ocrTextEnc: ocr === null ? null : await deps.encrypt(user, ocr),
     occurredAt,
+    deviceFilter: DEVICE_FILTERS.has(b.deviceFilter ?? "") ? b.deviceFilter! : null,
   });
   if (itemId !== null) return Response.json({ item_id: itemId, duplicate: false }, { status: 202 });
   const existing = await deps.findItem(user, `${b.source}:${b.id}`);

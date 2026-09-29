@@ -71,6 +71,15 @@ Deno.test("first insert does not look up; retry of the same id keeps the same id
   assertEquals(again.inserted[0].idempotencyKey, first.inserted[0].idempotencyKey);
 });
 
+Deno.test("deviceFilter (Swift CaptureItem key) is stored as device_filter; absent or unknown → null", async () => {
+  const { d, inserted } = deps();
+  await handleIngest(req({ ...base, id: "F1", deviceFilter: "rules" }), d);
+  await handleIngest(req({ ...base, id: "F2", deviceFilter: "fm" }), d);
+  await handleIngest(req({ ...base, id: "F3" }), d);
+  await handleIngest(req({ ...base, id: "F4", deviceFilter: "whatever" }), d);
+  assertEquals(inserted.map((i) => i.deviceFilter), ["rules", "fm", null, null]);
+});
+
 Deno.test("bad body → 400 (unknown source, GMAIL from device, missing text, bad date)", async () => {
   const { d } = deps();
   for (const b of [{ ...base, source: "X" }, { ...base, source: "GMAIL" }, { ...base, text: undefined }, { ...base, capturedAt: "nope" }]) {

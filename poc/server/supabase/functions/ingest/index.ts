@@ -38,6 +38,7 @@ Deno.serve((req) => {
         p_user: a.user, p_source: a.source, p_idempotency_key: a.idempotencyKey, p_sender: a.sender, p_title: a.title,
         p_content_enc: toBytea(a.contentEnc), p_occurred_at: a.occurredAt,
         p_app_name: a.appName, p_ocr_text_enc: a.ocrTextEnc ? toBytea(a.ocrTextEnc) : null,
+        p_device_filter: a.deviceFilter,
       });
       if (error) throw new Error("insert_item " + error.code);
       return data as string | null;

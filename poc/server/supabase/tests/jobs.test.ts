@@ -72,6 +72,19 @@ Deno.test("insert_item stores ciphertext, enqueues process job, dedups by idempo
   await sb.from("items").delete().eq("id", first.data);
 });
 
+Deno.test("insert_item stores p_device_filter; rejects values other than fm/rules", async () => {
+  const user = (await testUser()).id;
+  const enc = toBytea(await encrypt(user, "합성"));
+  const args = (f: string | null) => ({ p_user: user, p_source: "NOTIFICATION", p_idempotency_key: key(crypto.randomUUID()), p_sender: null,
+    p_title: null, p_content_enc: enc, p_occurred_at: new Date().toISOString(), p_enqueue: false, p_device_filter: f });
+  const ok = await sb.rpc("insert_item", args("rules"));
+  const { data: row } = await sb.from("items").select("device_filter").eq("id", ok.data).single();
+  assertEquals(row?.device_filter, "rules");
+  const bad = await sb.rpc("insert_item", args("x"));
+  assertEquals(bad.error?.code, "23514");
+  await sb.from("items").delete().eq("id", ok.data);
+});
+
 Deno.test("worker_get_item returns nothing for a mismatched user and audits only real reads", async () => {
   const user = (await testUser()).id;
   const { data: id } = await sb.rpc("insert_item", { p_user: user, p_source: "SHARE", p_idempotency_key: key(crypto.randomUUID()),
