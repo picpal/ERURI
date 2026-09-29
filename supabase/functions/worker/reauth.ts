@@ -23,6 +23,11 @@ export async function reauthPush(deps: ReauthDeps, job: Job): Promise<string> {
   if (reason !== "expiring" && reason !== "invalid_grant") throw new Error("gmail-reauth bad_reason");
   if (!await deps.claim(job.user_id, conn, reason, key)) return log(job, "already_sent", {});
   const devices = await deps.listDevices(job.user_id);
+  // 기기 0개면 창을 쓰지 않는다: 기록을 풀어 매시 cron 이 다시 넣고, 그 사이 등록한 기기가 받는다
+  if (devices.length === 0) {
+    await deps.release(job.user_id, conn, reason, key);
+    return log(job, "no_device", { reason });
+  }
   const n = { sent: 0, rejected: 0, failed: 0 };
   for (const d of devices) {
     try {
@@ -36,7 +41,8 @@ export async function reauthPush(deps: ReauthDeps, job: Job): Promise<string> {
     await deps.release(job.user_id, conn, reason, key);
     throw new Error(`gmail-reauth transient failed=${n.failed}`);
   }
-  return log(job, devices.length === 0 ? "no_device" : "reauth_sent", { reason, devices: devices.length, ...n });
+  // 전부 영구 거절(410 등)은 재시도해도 같으므로 창을 소비하되, 실제 도달 0건을 구분해 남긴다
+  return log(job, n.sent > 0 ? "reauth_sent" : "reauth_rejected", { reason, devices: devices.length, ...n });
 }
 
 function log(job: Job, checkpoint: string, m: Record<string, unknown>): string {

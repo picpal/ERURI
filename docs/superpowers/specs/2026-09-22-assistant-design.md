@@ -238,6 +238,7 @@ Share Extension은 규칙 단계만 적용하고 큐에 넣는다(텍스트·URL
   → 202 반환
 
 jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회 재시도, 실패 시 dead 상태)
+  → 실패한 잡은 `not_before = now + attempts × 60초`(60·120·180·240초) 전에는 클레임하지 않는다(0007). 한 호출이 클레임을 반복해도 일시 오류 잡이 수 초 만에 5회를 쓰지 않게
   → 임대 180초는 Edge 무료 wall-clock 150초보다 길다: 살아 있는 워커의 잡은 만료되지 않아 다른 호출이 재클레임하지 않는다.
     잡 하나를 30초 넘게 붙들면 30초마다 heartbeat_job(id)으로 leased_until을 연장한다
     (0단계 실측: 임대 60초에서 90초 잡이 65초에 재클레임돼 중복 실행 → 180초+하트비트에서 재클레임 0건)
@@ -314,7 +315,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 서버 규칙 필터와 source: `rules.ts`의 `applyRules`는 source·app_name으로 분기하지 않고 모든 항목에 같은 OTP·카드·계좌·`(광고)` 규칙을 적용한다. 따라서 알림 자동화로 온 문자(`source=NOTIFICATION, app_name=메시지`)도 `MESSAGES`와 같은 규칙을 받는다(2026-09-28 확인, 코드 변경 불필요). 연락처 규칙은 기기에서 `title`(표시 이름)로도 비교하므로 알림 경로에서도 `discarded:contact`가 동작한다(실측). **1단계**: source로 문자를 구분하는 코드(분류·추출·검색 표시)는 `NOTIFICATION + app_name=메시지`를 `MESSAGES`와 같이 취급만 한다. 선택 사항인 메시지 트리거를 함께 켠 사용자의 2건 중복(발신자 번호 ≠ 표시 이름이라 멱등 키가 다름) 제거는 2단계다.
 
-`jobs`는 items 외에 gmail-sync·notify·cleanup도 같은 테이블로 처리한다. 사용자·연결별로 동시에 하나만 실행하도록 `lease_key`를 둔다. 1단계는 `jobs.priority`로 잡 종류별 우선순위를 둔다: notify > gmail-sync > process > backfill(백필이 만든 잡). 워커는 우선순위 순으로 클레임하고, 백필 잡은 사용자당 동시 1개로 제한한다(PoC-6에서 백필 `process` 잡 뒤에 웹훅 `gmail-sync`가 11분 대기, §16). 값: notify 10 · gmail-sync/gmail-fetch/gmail-watch/gmail-reauth 20 · process 등 30 · 백필 40(payload.backfill=true, insert 트리거가 정한다). 백필 잡(연결 시 90일 목록의 gmail-fetch와 그 항목의 process)은 lease_key `backfill:<user_id>`를 같이 써 기존 lease 규칙으로 사용자당 동시 1개가 된다. 워커 호출 1회는 100초 예산 안에서 1건씩 클레임을 반복한다(백필이 분당 1건으로 늘어지지 않게).
+`jobs`는 items 외에 gmail-sync·notify·cleanup도 같은 테이블로 처리한다. 사용자·연결별로 동시에 하나만 실행하도록 `lease_key`를 둔다. 1단계는 `jobs.priority`로 잡 종류별 우선순위를 둔다: notify > gmail-sync > process > backfill(백필이 만든 잡). 워커는 우선순위 순으로 클레임하고, 백필 잡은 사용자당 동시 1개로 제한한다(PoC-6에서 백필 `process` 잡 뒤에 웹훅 `gmail-sync`가 11분 대기, §16). 값: notify 10 · gmail-sync/gmail-fetch/gmail-watch/gmail-reauth 20 · process 등 30 · 백필 40(payload.backfill=true, insert 트리거가 정한다). 백필 잡(연결 시 90일 목록의 gmail-fetch와 그 항목의 process)은 lease_key `backfill:<user_id>`를 같이 써 기존 lease 규칙으로 사용자당 동시 1개가 된다. 워커 호출 1회는 100초 예산 안에서 1건씩 클레임을 반복한다(백필이 분당 1건으로 늘어지지 않게). 실패한 잡은 `not_before`(attempts × 60초) 뒤에 다시 클레임되므로 같은 호출에서 반복 실행되지 않는다.
 
 ### Gmail 동기화
 
@@ -329,7 +330,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 - 만료 두 가지를 분리한다.
   - **Gmail watch 만료** `sync_states.watch_expires_at`: `users.watch` 응답의 expiration(7일). pg_cron이 매일 watch를 갱신해 이 값을 밀어낸다.
   - **OAuth refresh token 만료** `connections.expires_at`: 테스트 모드에서 발급 후 7일. 앱 게시(Production) 후에는 null.
-- 재인증 푸시: `connections.expires_at` 24시간 전, 또는 토큰 갱신에서 `invalid_grant`가 발생했을 때 보낸다. refresh 실패 시 `connections.status = reauth_required`로 두고 해당 연결의 잡을 중단한다. pg_cron 매시(`gmail-reauth-hourly`)와 invalid_grant 발생 즉시 `gmail-reauth` 잡을 넣고, 같은 연결·사유·만료 창(`connections.expires_at`)에는 한 번만 보낸다(`reauth_pushes`). 문구에 계정 주소를 넣지 않는다.
+- 재인증 푸시: `connections.expires_at` 24시간 전, 또는 토큰 갱신에서 `invalid_grant`가 발생했을 때 보낸다. refresh 실패 시 `connections.status = reauth_required`로 두고 해당 연결의 잡을 중단한다. pg_cron 매시(`gmail-reauth-hourly`)와 invalid_grant 발생 즉시 `gmail-reauth` 잡을 넣고, 같은 연결·사유·만료 창에는 한 번만 보낸다(`reauth_pushes`). 창 키는 `connections.expires_at`의 epoch 초, 없으면(Production 모드) `-`이고, 재연결(status → active)이 그 연결의 기록을 지워 다음 끊김에 다시 보낸다(0008). 기기가 0개면 기록을 풀어 매시 cron이 다시 넣는다. 문구에 계정 주소를 넣지 않는다.
 
 ## 8. 데이터 모델
 
@@ -348,13 +349,13 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | `proposals` | fact_id, action(create_event/update_event/create_reminder/complete_reminder), payload, version, status(proposed/confirmed/succeeded/failed/stale), eventkit_id, idempotency_key | fact 변경 시 version 증가, 이전 제안은 stale |
 | `executions` | user_id, proposal_id(unique), device_id, eventkit_id, version, executed_at, reported_at | 기기가 쓰기 성공 직후 기록(로컬 SQLite), 서버는 `report_execution`으로 받는다. 보고 실패 복구·version 불일치(§10 순서 5) 판정용 |
 | `proposal_pushes` | proposal_id, device_id(쌍 unique), status(sending/sent/failed/rejected), apns_status, reason, apns_id, env, claimed_at | 제안 푸시 기기별 1회(0014, 0b). failed와 잡 임대(180초)가 지난 sending 행(발송 중 워커 종료)만 다시 가져간다. 임대 안의 sending은 잡을 재시도시킨다(0016) |
-| `jobs` | kind, payload, priority, lease_key, leased_until, attempts, status(queued/running/done/dead), checkpoint | 영속 작업 큐. `priority`는 1단계(§7: notify > gmail-sync > process > backfill). claimed_at(첫 클레임, 웹훅→sync 지연 측정) |
+| `jobs` | kind, payload, priority, lease_key, leased_until, attempts, status(queued/running/done/dead), checkpoint, claimed_at, not_before | 영속 작업 큐. `priority`는 1단계(§7: notify > gmail-sync > process > backfill). claimed_at(첫 클레임, 웹훅→sync 지연 측정). not_before(이 시각 전에는 클레임 안 함: 실패 백오프 attempts × 60초, M2-⑦ 예산·슬롯 미루기) |
 | `utterances` | text, embedding, said_at, source(chat/siri/quick), kind(statement/question/correction) | 사용자 발화 전체 기록 |
 | `memories` | text, embedding, utterance_id, status(active/retracted), supersedes_id | "기억해줘" 또는 gpt-6-luna가 statement로 판정한 것만. 정정 발화는 이전 memory를 retracted 처리 |
 | `devices` | device_id(unique with user_id), apns_token, apns_env(sandbox/production), build, last_seen_at | 개발 설치 = sandbox, TestFlight·App Store = production 토큰. 발송은 기기 환경으로, 환경 불일치 응답이면 반대 환경 1회 재시도. 0단계 `0011_devices.sql`과 일치. 앱은 App Group에 마지막 등록의 환경·build·token_sha8을 두고 셋 중 하나라도 바뀌면(업데이트 설치·토큰 갱신) 앱 활성화·토큰 수신 때 자동 재등록한다(0.2.1. 0.2.0은 토큰이 같으면 생략해 build가 0.1.1로 남았다). 발송 대상은 `last_seen_at`이 7일 안인 기기만이다(버려진 개발 설치·시뮬레이터 제외, 0b). `last_seen_at`은 등록과 추적 업로드(`/ingest/trace`, 같은 device_id)가 갱신한다 |
 | `usage_counters` | month, vision_calls, extract_tokens, backfill_tokens, chat_tokens, reserved_krw | 비용 상한. 호출 전 예약(`reserve_usage(kind, est_krw)`, §13), 후 정산 |
 | `device_traces` | device_id, event, at, 속성 jsonb(본문 없음) | 진단 trace(1단계, `poc_traces`의 제품판). 30일 보관. 설정의 "진단 전송" 토글 기본 켜짐(1인 사용). 별도 마이그레이션(`0002_diagnostics`)이라 지인 확대 시 기본값만 끈다. 실기기 게이트(잠금 상태·업로드 경로·액션 결과) 판정 근거 |
-| `reauth_pushes` | connection_id, reason(expiring/invalid_grant), window_key, sent_at | 재인증 푸시 1회 기록(M1-③a) |
+| `reauth_pushes` | connection_id, reason(expiring/invalid_grant), window_key, sent_at | 재인증 푸시 1회 기록(M1-③a). window_key = expires_at epoch 초 또는 `-`, 재연결 시 그 연결 행 삭제(0008) |
 | `eval_judgments` | question_id, item_id, ok | 1b 검색 평가의 인용 판정(§9). 사용자가 앱 채팅에서 누른 👍/👎만, 본문 없음 |
 
 ### 삭제·만료 정책 (두 가지를 분리)

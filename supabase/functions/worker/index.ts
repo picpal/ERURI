@@ -76,6 +76,7 @@ Deno.serve(async (req) => {
   const claimed = await runBatches(claim, run);
   if (claimError && claimed === 0) return new Response(claimError, { status: 500 });
   const ms = Math.round(performance.now() - t0);
-  console.log(JSON.stringify({ worker: "batch", claimed, ms }));
+  // 일부 성공 뒤의 클레임 오류도 흔적을 남긴다(코드만)
+  console.log(JSON.stringify({ worker: "batch", claimed, ms, ...(claimError ? { claim_error: claimError } : {}) }));
   return Response.json({ claimed, ms, results });
 });

@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assert, assertEquals } from "jsr:@std/assert";
 import { encrypt, toBytea } from "../functions/_shared/crypto.ts";
 import { deleteRunJobs, RUN, service as sb, testUser } from "./_testenv.ts";
 
@@ -23,10 +23,32 @@ Deno.test("expired lease is reclaimable and dead after 5 attempts", async () => 
     const c = await claim(1, 0);
     assertEquals(c.data!.length, 1);
     await sb.rpc("fail_job", { p_id: data!.id, p_error: "boom" });
+    await sb.from("jobs").update({ not_before: new Date(Date.now() - 1000).toISOString() }).eq("id", data!.id);  // 백오프 건너뛰기
   }
   const { data: j } = await sb.from("jobs").select().eq("id", data!.id).single();
   assertEquals(j!.status, "dead");
   await deleteRunJobs();
+});
+
+// 리뷰(M1-③a) Important 1: 워커가 한 호출 안에서 클레임을 반복해도 실패 잡은 백오프 전에 다시 돌지 않는다
+Deno.test("fail_job backs off: not_before = now + attempts × 60s, claim right after fail is empty", async () => {
+  try {
+    const { data } = await sb.from("jobs").insert({ kind: "t", lease_key: key("u5") }).select().single();
+    for (const attempts of [1, 2]) {
+      const c = await claim(1);
+      assertEquals(c.data!.map((j: { id: string }) => j.id), [data!.id]);
+      const t = Date.now();
+      await sb.rpc("fail_job", { p_id: data!.id, p_error: "boom" });
+      const { data: j } = await sb.from("jobs").select("status, attempts, not_before").eq("id", data!.id).single();
+      assertEquals([j!.status, j!.attempts], ["queued", attempts]);
+      const wait = (Date.parse(j!.not_before) - t) / 1000;
+      assert(Math.abs(wait - attempts * 60) < 10, `not_before +${wait}s`);          // 호스팅 DB 시계 차이 허용
+      assertEquals((await claim(10)).data!.length, 0);                                // 곧바로 다시 클레임되지 않는다
+      await sb.from("jobs").update({ not_before: new Date(Date.now() - 1000).toISOString() }).eq("id", data!.id);
+    }
+  } finally {
+    await deleteRunJobs();
+  }
 });
 
 Deno.test("default lease is 180s: a job still running at 65s is not reclaimed", async () => {
