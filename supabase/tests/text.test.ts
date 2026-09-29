@@ -14,7 +14,7 @@ function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: Cla
   failEnqueue?: number; pushed?: boolean } = {}) {
   const calls = { decrypt: 0, classify: [] as string[], extract: [] as { text: string; today: string }[], saved: [] as FactInput[],
     status: [] as [string, boolean][], tokens: 0, notify: [] as string[], classifyMeta: [] as ClassifyMeta[], extractMeta: [] as TextMeta[],
-    backfill: [] as boolean[] };
+    backfill: [] as boolean[], gate: [] as [string, number][], quarantine: [] as string[] };
   const base: TextItem = { contentEnc: "enc", source: "NOTIFICATION", appName: "Slack", sender: null, title: null,
     occurredAt: "2026-09-28T15:30:00Z", capturedAt: "2026-09-28T15:30:05Z", status: "queued" };
   // save_fact 처럼 status 를 extracted 로 바꾸고 제안을 기억한다 → 같은 fake 로 processText 를 다시 부르면 실제 재시도가 된다
@@ -30,6 +30,8 @@ function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: Cla
       if (proposalId && !state.proposals.includes(proposalId)) state.proposals.push(proposalId);
       return { factId: "f1", proposalId, created: calls.saved.length === 1 }; },
     setStatus: async (_u, _i, s, w) => { calls.status.push([s, w]); },
+    recordGate: async (_u, _i, l, c) => { calls.gate.push([l, c]); },
+    quarantine: async (_u, _i, s) => { calls.quarantine.push(s); state.status = s; },
     enqueueNotify: async (_u, p) => { if (state.failEnqueue > 0) { state.failEnqueue--; throw new Error("enqueue_job XX000"); } calls.notify.push(p); },
     unpushedProposals: async () => (o.pushed ? [] : state.proposals),
   };
@@ -90,13 +92,29 @@ Deno.test("server rules: OTP → discarded:server:otp with wipe, no model calls;
   assertEquals([card.calls.classify[0].includes("4111-1111"), card.calls.extract[0].text.includes("****-****-****-1111")], [false, true]);
 });
 
-// 사용자 결정: 비행동 라벨 + confidence ≥ 0.8 → discarded:server:<label>, 원문 삭제, 추출 없음
-Deno.test("gate: personal/promo/otp/notice ≥ 0.8 → discarded:server:<label> with wipe, no extraction", async () => {
-  for (const label of ["personal", "promo", "otp", "notice"] as const) {
+// 사용자 결정: 비행동 라벨 + confidence ≥ 0.8 → discarded:server:<label>, 추출 없음. 본문은 7일 격리(스펙 §7, M1-④a)
+Deno.test("gate: non-actionable ≥ 0.8 → 7-day quarantine (no wipe), label recorded, no extraction", async () => {
+  for (const label of ["personal", "promo", "otp", "notice", "medical_result"] as const) {
     const { d, calls } = fake({ verdict: { label, confidence: 0.95 } });
     assertEquals(await processText(d, job()), `discarded:server:${label}`);
-    assertEquals([calls.status, calls.extract.length], [[[`discarded:server:${label}`, true]], 0]);
+    assertEquals([calls.quarantine, calls.status, calls.gate, calls.extract.length], [[`discarded:server:${label}`], [], [[label, 0.95]], 0]);
   }
+});
+
+// Review Focus 3: 복구한 항목은 Jev 가 또 버리라고 해도 추출로 간다
+Deno.test("restored item (skip_gate): classifier not called, no quarantine, extraction runs", async () => {
+  const { d, calls } = fake({ verdict: { label: "personal", confidence: 0.99 } });
+  assertEquals(await processText(d, job({ payload: { item_id: "i1", skip_gate: true } })), "proposed");
+  assertEquals([calls.classify.length, calls.quarantine.length, calls.extract.length], [0, 0, 1]);
+});
+
+Deno.test("gate label recorded for passed items too; classifier error records nothing", async () => {
+  const a = fake({ verdict: { label: "actionable", confidence: 0.97 } });
+  await processText(a.d, job());
+  assertEquals(a.calls.gate, [["actionable", 0.97]]);
+  const b = fake({ verdict: new Error("classify jev_timeout") });
+  await processText(b.d, job());
+  assertEquals(b.calls.gate, []);
 });
 
 // Review Focus 4 + 사용자 결정: 낮은 confidence·분류기 오류는 버리지 않고 추출로

@@ -1,0 +1,1671 @@
+{
+  "run_at": "2026-09-29T17:21:22.366Z",
+  "endpoint": "https://api.typesafe.ai/v1/systemone",
+  "model_alias": "jev-1.13.0",
+  "variant": "prod",
+  "model": [
+    "jev-1.13.0"
+  ],
+  "n": 70,
+  "labels": [
+    "actionable",
+    "personal",
+    "promo",
+    "otp",
+    "notice",
+    "medical_result"
+  ],
+  "instructions": "Classify this Korean phone notification or text message (app, title, body) for a personal assistant that extracts calendar events, tasks, and purchases. Pick the single best category.",
+  "criteria": {
+    "actionable": {
+      "covers": "Anything the recipient may need to act on or record: a schedule, appointment, meeting, reservation or booking, a to-do or deadline, an order, purchase, payment, card approval, bill, subscription, delivery status, or pickup. Includes messages from friends or family that fix a concrete date/time/place or ask the recipient to do something.",
+      "not": "Casual chat with no concrete plan; advertising; login codes; informational notices that need no action."
+    },
+    "personal": {
+      "covers": "Casual conversation written by a person (friend, family, coworker): greetings, jokes, reactions, small talk.",
+      "not": "A person's message that sets a concrete appointment or asks for a specific task with a date is actionable."
+    },
+    "promo": {
+      "covers": "Advertising or marketing: discounts, coupons, sales, events to sign up for, loan or real-estate offers, often marked (광고) or with an opt-out number.",
+      "not": "Confirmation of something the recipient already ordered, booked, or paid for is actionable."
+    },
+    "otp": {
+      "covers": "One-time passwords, verification or login codes (numeric or alphanumeric).",
+      "not": "Order numbers, approval numbers of card payments, or tracking numbers."
+    },
+    "notice": {
+      "covers": "Informational notices from companies or institutions that require no action and carry no date the recipient must meet: policy changes, maintenance completed, general alerts.",
+      "not": "Notices with a deadline, appointment, bill, or delivery are actionable. A notice that medical test or checkup results are ready is medical_result."
+    },
+    "medical_result": {
+      "covers": "Medical test, checkup, or diagnosis results, including a notice that results are ready (e.g., 건강검진 결과가 준비되었습니다).",
+      "not": "Booking a checkup, appointment reminders, preparation instructions (e.g., fasting), or paying for a checkup are actionable."
+    }
+  },
+  "accuracy_5class": 1,
+  "gate_accuracy": 1,
+  "per_label": {
+    "actionable": {
+      "n": 30,
+      "predicted": 30,
+      "tp": 30,
+      "precision": 1,
+      "recall": 1
+    },
+    "personal": {
+      "n": 12,
+      "predicted": 12,
+      "tp": 12,
+      "precision": 1,
+      "recall": 1
+    },
+    "promo": {
+      "n": 10,
+      "predicted": 10,
+      "tp": 10,
+      "precision": 1,
+      "recall": 1
+    },
+    "otp": {
+      "n": 4,
+      "predicted": 4,
+      "tp": 4,
+      "precision": 1,
+      "recall": 1
+    },
+    "notice": {
+      "n": 4,
+      "predicted": 4,
+      "tp": 4,
+      "precision": 1,
+      "recall": 1
+    },
+    "medical_result": {
+      "n": 10,
+      "predicted": 10,
+      "tp": 10,
+      "precision": 1,
+      "recall": 1
+    }
+  },
+  "confusion": {
+    "actionable": {
+      "actionable": 30,
+      "personal": 0,
+      "promo": 0,
+      "otp": 0,
+      "notice": 0,
+      "medical_result": 0
+    },
+    "personal": {
+      "actionable": 0,
+      "personal": 12,
+      "promo": 0,
+      "otp": 0,
+      "notice": 0,
+      "medical_result": 0
+    },
+    "promo": {
+      "actionable": 0,
+      "personal": 0,
+      "promo": 10,
+      "otp": 0,
+      "notice": 0,
+      "medical_result": 0
+    },
+    "otp": {
+      "actionable": 0,
+      "personal": 0,
+      "promo": 0,
+      "otp": 4,
+      "notice": 0,
+      "medical_result": 0
+    },
+    "notice": {
+      "actionable": 0,
+      "personal": 0,
+      "promo": 0,
+      "otp": 0,
+      "notice": 4,
+      "medical_result": 0
+    },
+    "medical_result": {
+      "actionable": 0,
+      "personal": 0,
+      "promo": 0,
+      "otp": 0,
+      "notice": 0,
+      "medical_result": 10
+    }
+  },
+  "latency_ms": {
+    "p50": 209.569,
+    "p95": 289.234,
+    "max": 357.287,
+    "min": 176.741
+  },
+  "retries": 0,
+  "cost": {
+    "input_tokens_total": 60517,
+    "input_tokens_mean": 864.529,
+    "usd_per_request": 0.000036310200000000003,
+    "usd_total": 0.0025417140000000005
+  },
+  "threshold_policy": [
+    {
+      "threshold": 0,
+      "discarded": 40,
+      "passed": 30,
+      "discard_precision": 1,
+      "pass_rate": 0.429,
+      "actionable_lost": [],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 1
+    },
+    {
+      "threshold": 0.6,
+      "discarded": 40,
+      "passed": 30,
+      "discard_precision": 1,
+      "pass_rate": 0.429,
+      "actionable_lost": [],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 1
+    },
+    {
+      "threshold": 0.8,
+      "discarded": 40,
+      "passed": 30,
+      "discard_precision": 1,
+      "pass_rate": 0.429,
+      "actionable_lost": [],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 1
+    },
+    {
+      "threshold": 0.9,
+      "discarded": 39,
+      "passed": 31,
+      "discard_precision": 1,
+      "pass_rate": 0.443,
+      "actionable_lost": [],
+      "non_actionable_passed": 1,
+      "non_actionable_filtered_rate": 0.975,
+      "gate_accuracy": 0.986
+    }
+  ],
+  "pipeline_rules_then_jev": [
+    {
+      "threshold": 0,
+      "discarded": 40,
+      "passed": 30,
+      "discard_precision": 1,
+      "pass_rate": 0.429,
+      "actionable_lost": [],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 1
+    },
+    {
+      "threshold": 0.6,
+      "discarded": 40,
+      "passed": 30,
+      "discard_precision": 1,
+      "pass_rate": 0.429,
+      "actionable_lost": [],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 1
+    },
+    {
+      "threshold": 0.8,
+      "discarded": 40,
+      "passed": 30,
+      "discard_precision": 1,
+      "pass_rate": 0.429,
+      "actionable_lost": [],
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 1
+    },
+    {
+      "threshold": 0.9,
+      "discarded": 39,
+      "passed": 31,
+      "discard_precision": 1,
+      "pass_rate": 0.443,
+      "actionable_lost": [],
+      "non_actionable_passed": 1,
+      "non_actionable_filtered_rate": 0.975,
+      "gate_accuracy": 0.986
+    }
+  ],
+  "misclassified": [],
+  "device10": [
+    {
+      "id": "d01",
+      "topic": "택배",
+      "label": "actionable",
+      "device": "queued:rules",
+      "jev": "actionable",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d02",
+      "topic": "병원",
+      "label": "actionable",
+      "device": "queued:rules",
+      "jev": "actionable",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d03",
+      "topic": "카드",
+      "label": "actionable",
+      "device": "queued:rules",
+      "jev": "actionable",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d04",
+      "topic": "컨퍼런스",
+      "label": "actionable",
+      "device": "queued:rules",
+      "jev": "actionable",
+      "confidence": 0.99,
+      "gate_ok": true
+    },
+    {
+      "id": "d05",
+      "topic": "공과금",
+      "label": "actionable",
+      "device": "queued:rules",
+      "jev": "actionable",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d06",
+      "topic": "광고",
+      "label": "promo",
+      "device": "discarded:fm:promo",
+      "jev": "promo",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d07",
+      "topic": "인증번호",
+      "label": "otp",
+      "device": "discarded:otp",
+      "jev": "otp",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d08",
+      "topic": "경계(목요일 판교 약속)",
+      "label": "actionable",
+      "device": "queued:rules",
+      "jev": "actionable",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d09",
+      "topic": "잡담",
+      "label": "personal",
+      "device": "queued:rules",
+      "jev": "personal",
+      "confidence": 1,
+      "gate_ok": true
+    },
+    {
+      "id": "d10",
+      "topic": "잡담",
+      "label": "personal",
+      "device": "queued:rules",
+      "jev": "personal",
+      "confidence": 1,
+      "gate_ok": true
+    }
+  ],
+  "rows": [
+    {
+      "id": "d01",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "actionable": 1,
+        "medical_result": 0,
+        "notice": 0,
+        "personal": 0,
+        "otp": 0
+      },
+      "ms": 194.702,
+      "input_tokens": 877
+    },
+    {
+      "id": "d02",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "otp": 0,
+        "personal": 0,
+        "actionable": 1,
+        "medical_result": 0,
+        "promo": 0
+      },
+      "ms": 208.1,
+      "input_tokens": 879
+    },
+    {
+      "id": "d03",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "otp": 0,
+        "notice": 0,
+        "medical_result": 0,
+        "actionable": 1,
+        "personal": 0
+      },
+      "ms": 210.377,
+      "input_tokens": 877
+    },
+    {
+      "id": "d04",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.99,
+      "probabilities": {
+        "medical_result": 0,
+        "actionable": 0.99,
+        "notice": 0.01,
+        "otp": 0,
+        "personal": 0,
+        "promo": 0
+      },
+      "ms": 200.034,
+      "input_tokens": 885
+    },
+    {
+      "id": "d05",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "notice": 0,
+        "medical_result": 0,
+        "personal": 0,
+        "otp": 0,
+        "promo": 0
+      },
+      "ms": 228.447,
+      "input_tokens": 881
+    },
+    {
+      "id": "d06",
+      "label": "promo",
+      "app": "Slack",
+      "rule": "discard:promotion",
+      "sent": "raw",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "personal": 0,
+        "promo": 1,
+        "otp": 0,
+        "notice": 0,
+        "medical_result": 0
+      },
+      "ms": 261.418,
+      "input_tokens": 875
+    },
+    {
+      "id": "d07",
+      "label": "otp",
+      "app": "Slack",
+      "rule": "discard:otp",
+      "sent": "raw",
+      "pred": "otp",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 1,
+        "personal": 0,
+        "notice": 0,
+        "actionable": 0,
+        "promo": 0,
+        "medical_result": 0
+      },
+      "ms": 261.064,
+      "input_tokens": 865
+    },
+    {
+      "id": "d08",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "notice": 0,
+        "medical_result": 0,
+        "otp": 0,
+        "promo": 0,
+        "actionable": 1
+      },
+      "ms": 197.572,
+      "input_tokens": 861
+    },
+    {
+      "id": "d09",
+      "label": "personal",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "personal": 1,
+        "promo": 0,
+        "otp": 0,
+        "notice": 0,
+        "medical_result": 0
+      },
+      "ms": 357.287,
+      "input_tokens": 838
+    },
+    {
+      "id": "d10",
+      "label": "personal",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "promo": 0,
+        "notice": 0,
+        "medical_result": 0,
+        "personal": 1,
+        "otp": 0
+      },
+      "ms": 241.606,
+      "input_tokens": 841
+    },
+    {
+      "id": "a01",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "actionable": 1,
+        "promo": 0,
+        "notice": 0,
+        "otp": 0,
+        "medical_result": 0
+      },
+      "ms": 250.508,
+      "input_tokens": 873
+    },
+    {
+      "id": "a02",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "medical_result": 0,
+        "actionable": 1,
+        "personal": 0,
+        "promo": 0,
+        "notice": 0
+      },
+      "ms": 209.185,
+      "input_tokens": 864
+    },
+    {
+      "id": "a03",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.99,
+      "probabilities": {
+        "medical_result": 0,
+        "otp": 0,
+        "notice": 0.01,
+        "actionable": 0.99,
+        "promo": 0,
+        "personal": 0
+      },
+      "ms": 181.239,
+      "input_tokens": 875
+    },
+    {
+      "id": "a04",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "personal": 0,
+        "actionable": 1,
+        "notice": 0,
+        "otp": 0,
+        "medical_result": 0
+      },
+      "ms": 215.328,
+      "input_tokens": 877
+    },
+    {
+      "id": "a05",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "actionable": 1,
+        "notice": 0,
+        "promo": 0,
+        "personal": 0,
+        "medical_result": 0
+      },
+      "ms": 236.903,
+      "input_tokens": 873
+    },
+    {
+      "id": "a06",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "personal": 0,
+        "promo": 0,
+        "otp": 0,
+        "notice": 0,
+        "medical_result": 0
+      },
+      "ms": 201.977,
+      "input_tokens": 860
+    },
+    {
+      "id": "a07",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "personal": 0,
+        "medical_result": 0,
+        "notice": 0,
+        "otp": 0,
+        "actionable": 1
+      },
+      "ms": 187.088,
+      "input_tokens": 865
+    },
+    {
+      "id": "a08",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.64,
+      "probabilities": {
+        "medical_result": 0,
+        "actionable": 0.7,
+        "otp": 0,
+        "promo": 0,
+        "notice": 0.3,
+        "personal": 0
+      },
+      "ms": 200.999,
+      "input_tokens": 881
+    },
+    {
+      "id": "a09",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "medical_result": 0,
+        "otp": 0,
+        "actionable": 1,
+        "personal": 0,
+        "promo": 0,
+        "notice": 0
+      },
+      "ms": 203.795,
+      "input_tokens": 870
+    },
+    {
+      "id": "a10",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "notice": 0,
+        "medical_result": 0,
+        "promo": 0,
+        "otp": 0,
+        "personal": 0
+      },
+      "ms": 201.743,
+      "input_tokens": 886
+    },
+    {
+      "id": "a11",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "notice": 0,
+        "medical_result": 0,
+        "promo": 0,
+        "otp": 0,
+        "personal": 0
+      },
+      "ms": 251.159,
+      "input_tokens": 868
+    },
+    {
+      "id": "a12",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "medical_result": 0,
+        "promo": 0,
+        "otp": 0,
+        "actionable": 1,
+        "personal": 0
+      },
+      "ms": 225.166,
+      "input_tokens": 861
+    },
+    {
+      "id": "a13",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "personal": 0,
+        "notice": 0,
+        "actionable": 1,
+        "medical_result": 0,
+        "promo": 0
+      },
+      "ms": 194.4,
+      "input_tokens": 861
+    },
+    {
+      "id": "a14",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.99,
+      "probabilities": {
+        "promo": 0,
+        "personal": 0,
+        "notice": 0.01,
+        "otp": 0,
+        "actionable": 0.99,
+        "medical_result": 0
+      },
+      "ms": 213.914,
+      "input_tokens": 881
+    },
+    {
+      "id": "a15",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "personal": 0,
+        "promo": 0,
+        "otp": 0,
+        "notice": 0,
+        "medical_result": 0
+      },
+      "ms": 181.648,
+      "input_tokens": 881
+    },
+    {
+      "id": "a16",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "otp": 0,
+        "notice": 0,
+        "promo": 0,
+        "actionable": 1,
+        "medical_result": 0
+      },
+      "ms": 230.691,
+      "input_tokens": 872
+    },
+    {
+      "id": "a17",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "medical_result": 0,
+        "personal": 0,
+        "promo": 0,
+        "actionable": 1,
+        "otp": 0,
+        "notice": 0
+      },
+      "ms": 191.408,
+      "input_tokens": 887
+    },
+    {
+      "id": "a18",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "medical_result": 0,
+        "notice": 0,
+        "otp": 0,
+        "personal": 0,
+        "promo": 0
+      },
+      "ms": 203.761,
+      "input_tokens": 872
+    },
+    {
+      "id": "a19",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "medical_result": 0,
+        "notice": 0,
+        "actionable": 1,
+        "personal": 0,
+        "promo": 0
+      },
+      "ms": 226.911,
+      "input_tokens": 872
+    },
+    {
+      "id": "a20",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "actionable": 1,
+        "notice": 0,
+        "promo": 0,
+        "otp": 0,
+        "medical_result": 0
+      },
+      "ms": 200.745,
+      "input_tokens": 872
+    },
+    {
+      "id": "a21",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "otp": 0,
+        "notice": 0,
+        "promo": 0,
+        "actionable": 1,
+        "medical_result": 0
+      },
+      "ms": 223.936,
+      "input_tokens": 869
+    },
+    {
+      "id": "a22",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "otp": 0,
+        "promo": 0,
+        "personal": 0,
+        "notice": 0,
+        "medical_result": 0
+      },
+      "ms": 192.369,
+      "input_tokens": 876
+    },
+    {
+      "id": "a23",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "promo": 0,
+        "medical_result": 0,
+        "notice": 0,
+        "personal": 0,
+        "otp": 0
+      },
+      "ms": 230.744,
+      "input_tokens": 870
+    },
+    {
+      "id": "a24",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "medical_result": 0,
+        "notice": 0,
+        "otp": 0,
+        "personal": 0,
+        "promo": 0
+      },
+      "ms": 206.539,
+      "input_tokens": 862
+    },
+    {
+      "id": "p01",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "notice": 0,
+        "promo": 0,
+        "personal": 1,
+        "otp": 0,
+        "medical_result": 0
+      },
+      "ms": 211.917,
+      "input_tokens": 855
+    },
+    {
+      "id": "p02",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 0.8,
+      "probabilities": {
+        "actionable": 0.17,
+        "personal": 0.83,
+        "promo": 0,
+        "otp": 0,
+        "notice": 0,
+        "medical_result": 0
+      },
+      "ms": 207.693,
+      "input_tokens": 849
+    },
+    {
+      "id": "p03",
+      "label": "personal",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 0.98,
+      "probabilities": {
+        "medical_result": 0,
+        "promo": 0,
+        "personal": 0.99,
+        "notice": 0,
+        "actionable": 0.01,
+        "otp": 0
+      },
+      "ms": 196.241,
+      "input_tokens": 847
+    },
+    {
+      "id": "p04",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "notice": 0,
+        "medical_result": 0,
+        "promo": 0,
+        "actionable": 0,
+        "personal": 1
+      },
+      "ms": 210.092,
+      "input_tokens": 848
+    },
+    {
+      "id": "p05",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "medical_result": 0,
+        "promo": 0,
+        "actionable": 0,
+        "personal": 1,
+        "notice": 0,
+        "otp": 0
+      },
+      "ms": 200.083,
+      "input_tokens": 849
+    },
+    {
+      "id": "p06",
+      "label": "personal",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 0.99,
+      "probabilities": {
+        "medical_result": 0,
+        "promo": 0,
+        "notice": 0,
+        "personal": 1,
+        "actionable": 0,
+        "otp": 0
+      },
+      "ms": 209.456,
+      "input_tokens": 848
+    },
+    {
+      "id": "p07",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "personal": 1,
+        "actionable": 0,
+        "otp": 0,
+        "notice": 0,
+        "medical_result": 0
+      },
+      "ms": 226.793,
+      "input_tokens": 849
+    },
+    {
+      "id": "p08",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 0.92,
+      "probabilities": {
+        "otp": 0,
+        "medical_result": 0,
+        "notice": 0,
+        "actionable": 0.06,
+        "personal": 0.94,
+        "promo": 0
+      },
+      "ms": 245.964,
+      "input_tokens": 855
+    },
+    {
+      "id": "p09",
+      "label": "personal",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "personal": 1,
+        "promo": 0,
+        "otp": 0,
+        "notice": 0,
+        "medical_result": 0
+      },
+      "ms": 278.719,
+      "input_tokens": 846
+    },
+    {
+      "id": "p10",
+      "label": "personal",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "actionable": 0,
+        "medical_result": 0,
+        "otp": 0,
+        "personal": 1,
+        "promo": 0
+      },
+      "ms": 218.571,
+      "input_tokens": 849
+    },
+    {
+      "id": "m01",
+      "label": "promo",
+      "app": "SMS",
+      "rule": "discard:promotion",
+      "sent": "raw",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "notice": 0,
+        "medical_result": 0,
+        "promo": 1,
+        "actionable": 0,
+        "otp": 0
+      },
+      "ms": 183.039,
+      "input_tokens": 885
+    },
+    {
+      "id": "m02",
+      "label": "promo",
+      "app": "KakaoTalk",
+      "rule": "discard:promotion",
+      "sent": "raw",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "otp": 0,
+        "promo": 1,
+        "personal": 0,
+        "actionable": 0,
+        "medical_result": 0
+      },
+      "ms": 176.745,
+      "input_tokens": 866
+    },
+    {
+      "id": "m03",
+      "label": "promo",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "medical_result": 0,
+        "actionable": 0,
+        "personal": 0,
+        "notice": 0,
+        "otp": 0,
+        "promo": 1
+      },
+      "ms": 208.914,
+      "input_tokens": 871
+    },
+    {
+      "id": "m04",
+      "label": "promo",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "personal": 0,
+        "notice": 0,
+        "otp": 0,
+        "promo": 1,
+        "medical_result": 0
+      },
+      "ms": 257.441,
+      "input_tokens": 863
+    },
+    {
+      "id": "m05",
+      "label": "promo",
+      "app": "SMS",
+      "rule": "discard:promotion",
+      "sent": "raw",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "otp": 0,
+        "actionable": 0,
+        "medical_result": 0,
+        "promo": 1,
+        "personal": 0
+      },
+      "ms": 194.954,
+      "input_tokens": 884
+    },
+    {
+      "id": "m06",
+      "label": "promo",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 0.98,
+      "probabilities": {
+        "personal": 0,
+        "promo": 0.99,
+        "otp": 0,
+        "actionable": 0.01,
+        "medical_result": 0,
+        "notice": 0
+      },
+      "ms": 189.031,
+      "input_tokens": 873
+    },
+    {
+      "id": "m07",
+      "label": "promo",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 1,
+        "personal": 0,
+        "medical_result": 0,
+        "actionable": 0,
+        "otp": 0,
+        "notice": 0
+      },
+      "ms": 230.229,
+      "input_tokens": 863
+    },
+    {
+      "id": "m08",
+      "label": "promo",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 1,
+        "notice": 0,
+        "otp": 0,
+        "actionable": 0,
+        "medical_result": 0,
+        "personal": 0
+      },
+      "ms": 229.864,
+      "input_tokens": 851
+    },
+    {
+      "id": "m09",
+      "label": "promo",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "personal": 0,
+        "promo": 1,
+        "otp": 0,
+        "notice": 0,
+        "medical_result": 0
+      },
+      "ms": 203.019,
+      "input_tokens": 870
+    },
+    {
+      "id": "o01",
+      "label": "otp",
+      "app": "SMS",
+      "rule": "discard:otp",
+      "sent": "raw",
+      "pred": "otp",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "personal": 0,
+        "promo": 0,
+        "otp": 1,
+        "notice": 0,
+        "medical_result": 0
+      },
+      "ms": 213.983,
+      "input_tokens": 849
+    },
+    {
+      "id": "o02",
+      "label": "otp",
+      "app": "SMS",
+      "rule": "discard:otp",
+      "sent": "raw",
+      "pred": "otp",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "personal": 0,
+        "promo": 0,
+        "otp": 1,
+        "notice": 0,
+        "medical_result": 0
+      },
+      "ms": 214.059,
+      "input_tokens": 852
+    },
+    {
+      "id": "o03",
+      "label": "otp",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "otp",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "otp": 1,
+        "notice": 0,
+        "medical_result": 0,
+        "actionable": 0,
+        "personal": 0
+      },
+      "ms": 289.234,
+      "input_tokens": 854
+    },
+    {
+      "id": "n01",
+      "label": "notice",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "notice",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "personal": 0,
+        "promo": 0,
+        "otp": 0,
+        "notice": 1,
+        "medical_result": 0
+      },
+      "ms": 328.328,
+      "input_tokens": 874
+    },
+    {
+      "id": "n02",
+      "label": "notice",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "notice",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "actionable": 0,
+        "medical_result": 0,
+        "otp": 0,
+        "promo": 0,
+        "notice": 1
+      },
+      "ms": 184.2,
+      "input_tokens": 859
+    },
+    {
+      "id": "n03",
+      "label": "notice",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "notice",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "actionable": 0,
+        "notice": 1,
+        "promo": 0,
+        "medical_result": 0,
+        "personal": 0
+      },
+      "ms": 191.947,
+      "input_tokens": 859
+    },
+    {
+      "id": "n04",
+      "label": "notice",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "notice",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "actionable": 0,
+        "personal": 0,
+        "otp": 0,
+        "notice": 1,
+        "medical_result": 0
+      },
+      "ms": 176.741,
+      "input_tokens": 866
+    },
+    {
+      "id": "m01",
+      "label": "medical_result",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "medical_result",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "actionable": 0,
+        "notice": 0,
+        "promo": 0,
+        "medical_result": 1,
+        "personal": 0
+      },
+      "ms": 292.26,
+      "input_tokens": 866
+    },
+    {
+      "id": "m02",
+      "label": "medical_result",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "medical_result",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "otp": 0,
+        "medical_result": 1,
+        "actionable": 0,
+        "notice": 0,
+        "personal": 0
+      },
+      "ms": 209.569,
+      "input_tokens": 865
+    },
+    {
+      "id": "m03",
+      "label": "medical_result",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "medical_result",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "notice": 0,
+        "actionable": 0,
+        "medical_result": 1,
+        "promo": 0,
+        "personal": 0
+      },
+      "ms": 222.148,
+      "input_tokens": 863
+    },
+    {
+      "id": "m04",
+      "label": "medical_result",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "medical_result",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "personal": 0,
+        "notice": 0,
+        "otp": 0,
+        "medical_result": 1,
+        "promo": 0
+      },
+      "ms": 178.028,
+      "input_tokens": 864
+    },
+    {
+      "id": "m05",
+      "label": "medical_result",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "medical_result",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "medical_result": 1,
+        "otp": 0,
+        "actionable": 0,
+        "promo": 0,
+        "personal": 0
+      },
+      "ms": 210.568,
+      "input_tokens": 860
+    },
+    {
+      "id": "m06",
+      "label": "medical_result",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "medical_result",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "otp": 0,
+        "promo": 0,
+        "personal": 0,
+        "actionable": 0,
+        "medical_result": 1
+      },
+      "ms": 209.592,
+      "input_tokens": 846
+    },
+    {
+      "id": "m07",
+      "label": "medical_result",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "medical_result",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "otp": 0,
+        "promo": 0,
+        "personal": 0,
+        "actionable": 0,
+        "medical_result": 1
+      },
+      "ms": 277.559,
+      "input_tokens": 854
+    },
+    {
+      "id": "m08",
+      "label": "medical_result",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "medical_result",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "medical_result": 1,
+        "notice": 0,
+        "actionable": 0,
+        "personal": 0,
+        "promo": 0
+      },
+      "ms": 192.182,
+      "input_tokens": 846
+    },
+    {
+      "id": "m09",
+      "label": "medical_result",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "medical_result",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 0,
+        "personal": 0,
+        "promo": 0,
+        "otp": 0,
+        "notice": 0,
+        "medical_result": 1
+      },
+      "ms": 273.166,
+      "input_tokens": 856
+    },
+    {
+      "id": "m10",
+      "label": "medical_result",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "medical_result",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "medical_result": 1,
+        "otp": 0,
+        "actionable": 0,
+        "promo": 0,
+        "personal": 0
+      },
+      "ms": 201.098,
+      "input_tokens": 856
+    }
+  ]
+}

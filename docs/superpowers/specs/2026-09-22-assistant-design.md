@@ -198,7 +198,7 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
 | `promo` | 광고 | — |
 | `medical_result` | 검사·검진 결과와 진단 내용 | 검사 **결과가 나왔다는** 안내("건강검진 결과가 준비되었습니다")도 medical_result로 폐기한다. 결과 안내만으로 검진 사실과 기관이 드러나 의료 결과지 제외 원칙(§2)에 가깝다 |
 
-서버 Jev 게이트 라벨(1단계, 2026-09-30 결정): `actionable` · `notice` · `personal` · `promo` · `otp` · `medical_result` **6종**(0b의 5종에 `medical_result` 추가). 정의 원본은 `_shared/classify.ts` `LABEL_CRITERIA`다. `otp`·`promo`·`medical_result` 경계는 위 표와 같다. 기기의 `notice`는 Jev에서 `actionable`(일정·예약·주문·결제·배송·기한 등 행동이나 기록이 필요한 것)과 `notice`(행동이 필요 없는 안내)로 나뉘고, 기기의 `personal` 중 날짜·장소를 정하거나 할 일을 부탁하는 대화는 Jev에서 `actionable`이다. `medical_result`를 더하는 이유: 기기 FM이 타임아웃이면 "검진 결과가 준비되었습니다"가 `rules`로 서버에 오는데 5종에는 해당 라벨이 없어 `notice`로 통과·저장된다.
+서버 Jev 게이트 라벨(1단계, 2026-09-30 결정): `actionable` · `notice` · `personal` · `promo` · `otp` · `medical_result` **6종**(0b의 5종에 `medical_result` 추가). 정의 원본은 `_shared/classify.ts` `LABEL_CRITERIA`다. `otp`·`promo`·`medical_result` 경계는 위 표와 같다. 기기의 `notice`는 Jev에서 `actionable`(일정·예약·주문·결제·배송·기한 등 행동이나 기록이 필요한 것)과 `notice`(행동이 필요 없는 안내)로 나뉘고, 기기의 `personal` 중 날짜·장소를 정하거나 할 일을 부탁하는 대화는 Jev에서 `actionable`이다. `medical_result`를 더하는 이유: 기기 FM이 타임아웃이면 "검진 결과가 준비되었습니다"가 `rules`로 서버에 오는데 5종에는 해당 라벨이 없어 `notice`로 통과·저장된다. 재평가(M1-④a, 2026-09-30, 합성 60 + 의료 10): t=0.8 actionable 유실 0, 의료 ≥0.8 폐기 10/10(6라벨 70/70, p50/p95 210/289ms) → 6종 채택(`supabase/eval/jev-results-6label.json`).
 
 ### 큐 (0단계 Task 3 실측 반영)
 
@@ -256,6 +256,9 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
       정확도(§16)의 정답을 얻기 위해서다. 트레이드오프: 개인 대화 원문이 암호화 상태로 7일 더 서버에 있다(지인 확대 시 재검토, §16).
       감사 로그 `discard`(item_id·사유 코드만). 추출 결과가 없으면 `discarded:server:empty`이고 원문은 남긴다(1b 검색 대상, 90일 만료 규칙
       그대로. 게이트를 저신뢰로 통과한 비행동 항목의 2차 방어선)
+      구현(M1-④a): 워커가 분류한 항목마다 items.gate_label·gate_confidence를 남기고, 게이트 폐기는 quarantine_until = 폐기 + 7일.
+      복구는 restore_discarded RPC(사용자 JWT) → status queued + process 잡 payload skip_gate + gate_feedback(wrong_discard).
+      pg_cron purge-quarantine-daily가 기한 지난 본문·청크를 지운다.
       **서버 분류 게이트(0b, 2026-09-29 사용자 결정 — Jev 채택)**: `Classifier` 인터페이스 `classify(text, meta) → {label, confidence} | null`.
       운영 공급자 `CLASSIFY_PROVIDER=jev`(TypeSafe Jev, 모델 `jev-1.13.0` 고정 — 버전이 바뀌면 confidence 분포가 바뀐다, 키 `JEV_API_KEY`.
       코드 기본값 none은 설정 누락 대비). 라벨은 0b 5종 actionable · personal · promo · otp · notice에 1단계에서 `medical_result`를 더해
@@ -340,7 +343,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 |---|---|---|
 | `connections` | provider, account_ref(unique with provider), status(active/reauth_required/disconnected), expires_at, created_at | 토큰은 `vault` `gmail_rt:<id>`(행 삭제 시 트리거로 삭제). `expires_at` = OAuth refresh token 만료(테스트 모드 7일, 게시 후 null) |
 | `sync_states` | connection_id(pk), cursor(historyId), last_success_at, watch_expires_at | `watch_expires_at` = Gmail watch 만료(7일, 매일 갱신). 0단계 `0006_gmail.sql`과 일치 |
-| `items` | source(GMAIL/MESSAGES/NOTIFICATION/SHARE/CHAT), app_name, sender, title, content_enc bytea, ocr_text_enc bytea, occurred_at, captured_at, device_filter, idempotency_key, status, storage_key, expires_at | 원문. `content_enc`·`ocr_text_enc`는 Edge Function이 사용자 데이터 키로 AES-256-GCM 암호화해 저장(§12). 90일 후 삭제, 행은 유지. status: queued → extracted \| discarded:server:<사유>(0b). 게이트 폐기 항목은 본문을 7일 격리 후 삭제(§7) |
+| `items` | source(GMAIL/MESSAGES/NOTIFICATION/SHARE/CHAT), app_name, sender, title, content_enc bytea, ocr_text_enc bytea, occurred_at, captured_at, device_filter, idempotency_key, status, storage_key, expires_at, gate_label, gate_confidence, quarantine_until | 원문. `content_enc`·`ocr_text_enc`는 Edge Function이 사용자 데이터 키로 AES-256-GCM 암호화해 저장(§12). 90일 후 삭제, 행은 유지. status: queued → extracted \| discarded:server:<사유>(0b). 게이트 폐기 항목은 본문을 7일 격리 후 삭제(§7). gate_label·gate_confidence = Jev 판정(분류한 항목만, 폐기·통과 모두), quarantine_until = 게이트 폐기 본문 보존 기한(규칙 폐기는 null, M1-④a `0010`) |
 | `user_keys` | user_id, wrapped_key bytea, created_at | 사용자별 데이터 키를 마스터 키로 감싼 값(봉투 암호화). 마스터 키는 Edge Function 시크릿에만 있고 DB에 없다 |
 | `utterances` / `memories` | (아래) | 평문. 사용자 삭제 시 연쇄 |
 | `item_chunks` | item_id, chunk_index, text, embedding vector(512), tsv tsvector | HNSW + GIN. 원문 만료 시 삭제 |
@@ -356,6 +359,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | `usage_counters` | month, vision_calls, extract_tokens, backfill_tokens, chat_tokens, reserved_krw | 비용 상한. 호출 전 예약(`reserve_usage(kind, est_krw)`, §13), 후 정산 |
 | `device_traces` | device_id, event, at, 속성 jsonb(본문 없음) | 진단 trace(1단계, `poc_traces`의 제품판). 30일 보관. 설정의 "진단 전송" 토글 기본 켜짐(1인 사용). 별도 마이그레이션(`0002_diagnostics`)이라 지인 확대 시 기본값만 끈다. 실기기 게이트(잠금 상태·업로드 경로·액션 결과) 판정 근거 |
 | `reauth_pushes` | connection_id, reason(expiring/invalid_grant), window_key, sent_at | 재인증 푸시 1회 기록(M1-③a). window_key = expires_at epoch 초 또는 `-`, 재연결 시 그 연결 행 삭제(0008) |
+| `gate_feedback` | item_id, verdict(wrong_discard/wrong_pass), at | Jev 정확도 정답(사용자 표시, 본문 없음). RLS 자기 행 |
 | `eval_judgments` | question_id, item_id, ok | 1b 검색 평가의 인용 판정(§9). 사용자가 앱 채팅에서 누른 👍/👎만, 본문 없음 |
 
 ### 삭제·만료 정책 (두 가지를 분리)

@@ -35,5 +35,13 @@ export function textDeps(sb: SupabaseClient, o: { classifier: Classifier; thresh
       const { error } = await sb.rpc("worker_set_item_status", { p_user: userId, p_item: itemId, p_status: status, p_wipe: wipe });
       if (error) throw new Error("worker_set_item_status " + error.code);
     },
+    async recordGate(userId, itemId, label, confidence) {
+      const { error } = await sb.rpc("worker_record_gate", { p_user: userId, p_item: itemId, p_label: label, p_confidence: confidence });
+      if (error) throw new Error("worker_record_gate " + error.code);
+    },
+    async quarantine(userId, itemId, status) {
+      const { error } = await sb.rpc("worker_quarantine_item", { p_user: userId, p_item: itemId, p_status: status });
+      if (error) throw new Error("worker_quarantine_item " + error.code);
+    },
   };
 }

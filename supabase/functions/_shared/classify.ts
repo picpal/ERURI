@@ -1,6 +1,6 @@
 // 서버 분류 게이트(스펙 §7 0b, 2026-09-29 사용자 결정: Jev 채택). 공급자 어댑터(jev.ts, classify-openai.ts)가 이 인터페이스를 구현한다.
-// 정책: 비행동 라벨(actionable 외)이고 confidence ≥ 임계(기본 0.8)일 때만 폐기(discarded:server:<label>). 그 외·오류·타임아웃은 추출로
-export const LABELS = ["actionable", "personal", "promo", "otp", "notice"] as const;
+// 정책: 비행동 라벨(actionable 외)이고 confidence ≥ 임계(기본 0.8)일 때만 폐기(discarded:server:<label>). 그 외·오류·타임아웃은 추출로. 라벨은 6라벨(1단계 medical_result 추가, 스펙 §6)
+export const LABELS = ["actionable", "personal", "promo", "otp", "notice", "medical_result"] as const;
 export type ClassifyLabel = typeof LABELS[number];
 export type ClassifyResult = { label: ClassifyLabel; confidence: number };
 // 발신자는 넣지 않는다(외부 분류기로 가는 개인정보 최소화, §12 통제 3)
@@ -52,7 +52,11 @@ export const LABEL_CRITERIA: Record<ClassifyLabel, { covers: string; not: string
   notice: {
     covers: "Informational notices from companies or institutions that require no action and carry no date the recipient must meet: "
       + "policy changes, maintenance completed, general alerts.",
-    not: "Notices with a deadline, appointment, bill, or delivery are actionable.",
+    not: "Notices with a deadline, appointment, bill, or delivery are actionable. A notice that medical test or checkup results are ready is medical_result.",
+  },
+  medical_result: {
+    covers: "Medical test, checkup, or diagnosis results, including a notice that results are ready (e.g., 건강검진 결과가 준비되었습니다).",
+    not: "Booking a checkup, appointment reminders, preparation instructions (e.g., fasting), or paying for a checkup are actionable.",
   },
 };
 

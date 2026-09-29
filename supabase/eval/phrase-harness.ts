@@ -16,6 +16,8 @@ export async function runPhrase(p: { id: string; text: string }, o: { classifier
     addTokens: async (_u, n) => { tokens += n; },
     saveFact: async (f) => { kind = f.kind; status = "extracted"; return { factId: "mem-fact", proposalId: f.kind === "purchase" ? null : "mem-proposal", created: true }; },
     setStatus: async (_u, _i, s) => { status = s; },
+    recordGate: async () => {},
+    quarantine: async (_u, _i, s) => { status = s; },
     enqueueNotify: async () => {},
     unpushedProposals: async () => [],
   };

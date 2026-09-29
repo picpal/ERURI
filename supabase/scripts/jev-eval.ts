@@ -1,8 +1,9 @@
 // Jev 분류 게이트 평가(2026-09-29 리포트, 0b Task 7 에서 운영 요청 형태로 정리). 합성 문구 60개(eval/phrases.json)를 운영 어댑터와 같은 요청
 // (_shared/jev.ts buildJevRequest: jev-1.13.0 고정, 발신자 미전송, 메신저 제목 미전송(classifierMeta), 경계 LABEL_CRITERIA)으로 분류해 라벨별 정밀도·재현율, 혼동 행렬, 지연, 비용,
 // 신뢰도 임계값별 폐기/추출 비율을 잰다. 서버 규칙(rules.ts)과 결합한 결과도 같이 낸다.
-// 사용: deno run -A --env-file=supabase/.env supabase/scripts/jev-eval.ts [prod|bare]
+// 사용: deno run -A --env-file=supabase/.env supabase/scripts/jev-eval.ts [prod|bare] [--with-medical]
 //   prod(기본): 운영 요청 그대로. bare: 라벨당 한 줄 설명만(기준 설명 의존도 확인용 대조군)
+//   --with-medical: 합성 60 + 의료 10(eval/phrases-medical.json), 6라벨 재평가(M1-④a) → eval/jev-results-6label.json
 // 출력: eval/jev-results-prod.json (bare 는 eval/jev-results-bare-prod.json). 리포트 원자료(jev-results.json·jev-results-bare.json)는 덮어쓰지 않는다.
 // 합성 값만. 키는 JEV_API_KEY 로만 읽고 출력하지 않는다.
 import { CLASSIFY_INSTRUCTIONS, classifierMeta, type ClassifyLabel, LABEL_CRITERIA, LABELS } from "../functions/_shared/classify.ts";
@@ -28,8 +29,10 @@ const BARE: Record<Label, string> = {
   promo: "Advertising",
   otp: "Verification code",
   notice: "Informational notice, no action needed",
+  medical_result: "Medical test or checkup results, including results-ready notices",
 };
 const VARIANT = Deno.args[0] === "bare" ? "bare" : "prod";
+const WITH_MEDICAL = Deno.args.includes("--with-medical");   // M1-④a: 6라벨 재평가(합성 60 + 의료 10)
 
 type State = { app: string; title: string | null; sender: string | null; body: string };   // sender 는 기록용. 요청에는 넣지 않는다
 
@@ -54,7 +57,10 @@ async function classify(state: State): Promise<{ res: SystemOneResponse; ms: num
 const pct = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.ceil(p * s.length) - 1)]; };
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
 
-const phrases: Phrase[] = JSON.parse(await Deno.readTextFile(new URL("../eval/phrases.json", import.meta.url))).phrases;
+const phrases: Phrase[] = [
+  ...JSON.parse(await Deno.readTextFile(new URL("../eval/phrases.json", import.meta.url))).phrases,
+  ...(WITH_MEDICAL ? JSON.parse(await Deno.readTextFile(new URL("../eval/phrases-medical.json", import.meta.url))).phrases : []),
+];
 
 // 워밍업 1회(TLS·연결 수립). 통계에서 제외
 await classify({ app: "SMS", title: null, sender: null, body: "테스트 문장입니다." });
@@ -80,7 +86,7 @@ const confusion = Object.fromEntries(LABELS.map((t) => [t, Object.fromEntries(LA
 const perLabel = Object.fromEntries(LABELS.map((l) => {
   const tp = rows.filter((r) => r.label === l && r.pred === l).length;
   const predN = rows.filter((r) => r.pred === l).length, trueN = rows.filter((r) => r.label === l).length;
-  return [l, { n: trueN, predicted: predN, tp, precision: predN ? r3(tp / predN) : null, recall: r3(tp / trueN) }];
+  return [l, { n: trueN, predicted: predN, tp, precision: predN ? r3(tp / predN) : null, recall: trueN ? r3(tp / trueN) : null }];
 }));
 const accuracy5 = r3(rows.filter((r) => r.label === r.pred).length / rows.length);
 // 게이트(이진): actionable → 추출로 통과, 그 외 → 폐기
@@ -123,5 +129,5 @@ const result = {
   rows: rows.map((r) => ({ id: r.id, label: r.label, app: r.app, rule: r.rule, sent: r.sent, pred: r.pred, confidence: r3(r.confidence),
     probabilities: Object.fromEntries(Object.entries(r.probabilities).map(([k, v]) => [k, r3(v)])), ms: r3(r.ms), input_tokens: r.input_tokens })),
 };
-await Deno.writeTextFile(new URL(VARIANT === "bare" ? "../eval/jev-results-bare-prod.json" : "../eval/jev-results-prod.json", import.meta.url), JSON.stringify(result, null, 2) + "\n");
+await Deno.writeTextFile(new URL(WITH_MEDICAL ? "../eval/jev-results-6label.json" : (VARIANT === "bare" ? "../eval/jev-results-bare-prod.json" : "../eval/jev-results-prod.json"), import.meta.url), JSON.stringify(result, null, 2) + "\n");
 console.log(JSON.stringify({ accuracy_5class: accuracy5, gate_accuracy: gateAccuracy, per_label: perLabel, latency_ms: result.latency_ms, cost: result.cost, threshold_policy: thresholdTable, pipeline: pipelineTable }, null, 1));

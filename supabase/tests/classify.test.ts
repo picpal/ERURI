@@ -36,15 +36,16 @@ Deno.test("threshold: default 0.8, valid override, invalid → default", () => {
 Deno.test("gate: non-actionable label at ≥ threshold discards with that label; actionable, low confidence, null pass", () => {
   assertEquals(gateDecision(null, 0.8), { discard: false });
   assertEquals(gateDecision({ label: "actionable", confidence: 0.99 }, 0.8), { discard: false });
-  for (const label of ["personal", "promo", "otp", "notice"] as const) {
+  for (const label of ["personal", "promo", "otp", "notice", "medical_result"] as const) {
     assertEquals(gateDecision({ label, confidence: 0.8 }, 0.8), { discard: true, reason: label });
     assertEquals(gateDecision({ label, confidence: 0.79 }, 0.8), { discard: false });
   }
 });
 
-Deno.test("isClassifyResult: 5 known labels and 0..1 confidence only; none classifier returns null", async () => {
+Deno.test("isClassifyResult: 6 known labels and 0..1 confidence only; none classifier returns null", async () => {
   assert(isClassifyResult({ label: "otp", confidence: 0 }));
-  assert(!isClassifyResult({ label: "medical_result", confidence: 0.9 }));
+  assert(isClassifyResult({ label: "medical_result", confidence: 0.9 }));
+  assert(!isClassifyResult({ label: "subscription", confidence: 0.9 }));
   assert(!isClassifyResult({ label: "notice", confidence: 1.2 }));
   assert(!isClassifyResult({ label: "notice" }));
   assertEquals(await noneClassifier.classify("x", META), null);
@@ -55,7 +56,7 @@ Deno.test("raceTimeout: returns first; times out even if the task ignores the ab
   await assertRejects(() => raceTimeout(() => new Promise<never>(() => {}), 20, "classify jev_timeout"), Error, "classify jev_timeout");
 });
 
-Deno.test("jev request: pinned model, choice question with the 5-label criteria, body ≤2000, sender never sent", () => {
+Deno.test("jev request: pinned model, choice question with the 6-label criteria, body ≤2000, sender never sent", () => {
   const r = buildJevRequest("가".repeat(2500), META);
   assertEquals([r.model, r.questions.kind.type, r.questions.kind.instructions], [JEV_MODEL, "choice", CLASSIFY_INSTRUCTIONS]);
   assertEquals(Object.keys(r.questions.kind.criteria).sort(), [...LABELS].sort());

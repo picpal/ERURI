@@ -19,7 +19,7 @@ async function seed(text: string, tag: string): Promise<string> {
 }
 const job = (itemId: string): Job => ({ id: `${RUN}:job`, kind: "process", user_id: USER, payload: { item_id: itemId }, attempts: 1, checkpoint: null });
 
-Deno.test("process end-to-end on hosted DB: event saved once across retries; personal wipes; low-confidence empty keeps ciphertext", async () => {
+Deno.test("process end-to-end on hosted DB: event saved once across retries; personal quarantined; low-confidence empty keeps ciphertext", async () => {
   const ev = await seed("[합성의원] 내일 오후 3시 진료 예약", "ev");
   const chat = await seed("ㅋㅋㅋ 합성 잡담", "chat");
   const empty = await seed("[합성앱] 합성 안내", "empty");
@@ -45,7 +45,7 @@ Deno.test("process end-to-end on hosted DB: event saved once across retries; per
 
     assertEquals(await processText(deps, job(chat)), "discarded:server:personal");
     assertEquals(await processText(deps, job(empty)), "discarded:server:empty");         // notice 0.5 → 게이트 통과 → 추출이 비어 empty
-    const { data: wiped } = await sb.from("items").select("id").eq("id", chat).is("content_enc", null);
+    const { data: wiped } = await sb.from("items").select("id").eq("id", chat).not("content_enc", "is", null).not("quarantine_until", "is", null);
     const { data: kept } = await sb.from("items").select("id").eq("id", empty).not("content_enc", "is", null);
     assertEquals([wiped!.length, kept!.length, extractCalls], [1, 1, 3]);               // 잡담은 추출 호출 없음
   } finally {

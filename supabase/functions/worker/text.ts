@@ -22,6 +22,8 @@ export type TextDeps = {
   enqueueNotify(userId: string, proposalId: string): Promise<void>;
   unpushedProposals(userId: string, itemId: string): Promise<string[]>;
   setStatus(userId: string, itemId: string, status: string, wipe: boolean): Promise<void>;
+  recordGate(userId: string, itemId: string, label: string, confidence: number): Promise<void>;
+  quarantine(userId: string, itemId: string, status: string): Promise<void>;
 };
 
 export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metrics) => void): Promise<string> {
@@ -52,15 +54,23 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   if (v.kind === "discard") return discard(deps, job, user, itemId, v.reason, true);
   const meta: TextMeta = { source: item.source, appName: item.appName, title: item.title };
 
-  // 2) 분류 게이트: 비행동 라벨 + confidence ≥ 임계만 폐기. 임계 미만·오류·타임아웃은 추출로(2026-09-29 사용자 결정, fail-open)
+  // 2) 분류 게이트: 비행동 라벨 + confidence ≥ 임계만 폐기(7일 격리). 임계 미만·오류·타임아웃은 추출로(fail-open).
+  //    사용자가 "최근 폐기"에서 복구한 항목(skip_gate)은 게이트를 건너뛴다(스펙 §7)
   let verdict: ClassifyResult | null = null;
-  try {
-    verdict = await deps.classifier.classify(v.masked, classifierMeta(meta));   // 메신저 제목(발신자 이름)은 빼고 보낸다
-  } catch (e) {
-    console.log(JSON.stringify({ job_id: job.id, classify_error: e instanceof Error ? e.message.slice(0, 60) : "error" }));
+  if (job.payload.skip_gate !== true) {
+    try {
+      verdict = await deps.classifier.classify(v.masked, classifierMeta(meta));   // 메신저 제목(발신자 이름)은 빼고 보낸다
+    } catch (e) {
+      console.log(JSON.stringify({ job_id: job.id, classify_error: e instanceof Error ? e.message.slice(0, 60) : "error" }));
+    }
+    if (verdict) await deps.recordGate(user, itemId, verdict.label, verdict.confidence);   // 실데이터 라벨 기록(본문 없음)
+    const gate = gateDecision(verdict, deps.threshold);
+    if (gate.discard) {
+      const status = `discarded:server:${gate.reason}`;
+      await deps.quarantine(user, itemId, status);
+      return log(job, status, { quarantine: true, confidence: verdict?.confidence ?? null });
+    }
   }
-  const gate = gateDecision(verdict, deps.threshold);
-  if (gate.discard) return discard(deps, job, user, itemId, gate.reason, true);
 
   // 3) 추출. 상대 날짜 기준일 = 받은 날(occurred_at, 서울)
   const { result, usage } = await deps.extract(v.masked, meta, receivedDay(item.occurredAt));
