@@ -1,5 +1,29 @@
 # PoC-5 알림 액션 → 백그라운드 EventKit 멱등 쓰기
 
+## 실기기: 서버 제안 푸시 경로 (0b, 2026-09-29~)
+
+판정 기준(스펙 §14 PoC-5): 잠금 화면 알림 액션으로 **앱을 열지 않고 캘린더에 1건만** 생성. 근거는 `poc5.action_handled`(`result`·`bg`·`dup`)와 캘린더 앱 확인.
+
+준비
+1. 서버: 0013·0014 적용, `worker` 배포(Task 4·5). 부록 D(APNs 키 교체)를 했으면 새 키, 아니면 현재 키 — 판정과 무관.
+2. 기기: TestFlight 설치본, 알림·캘린더 권한 허용, 설정 화면 PoC 계정 로그인, 알림 자동화에 Slack 포함, `devices` 행 확인:
+   `cd poc/server && deno run --allow-net --allow-env --allow-read --env-file=.env scripts/sql.ts 'select device_id, apns_env, build, last_seen_at from devices where user_id = $1' "$(grep '^POC_USER_ID=' .env | cut -d= -f2)"`
+3. 기기를 잠근다(20초 이상 기다려 잠금 유예 구간을 넘긴다).
+
+실행
+1. Mac: `cd poc/server && deno run --allow-net --allow-env --allow-read --env-file=.env scripts/send-phrases.ts --only push` (합성 병원 예약, 발송일 +3일 15:30 — Task 6).
+2. 1~2분 안에 잠금 화면에 `일정 제안` / `M월 D일(요) 15:30 · …` 알림이 뜬다. 안 뜨면 아래 조회 Q1·Q2로 어디서 멈췄는지 본다.
+3. 알림을 길게 눌러 **캘린더에 추가** → Face ID/암호 → 앱이 화면에 나오지 않는지 본다.
+4. 알림 센터에 같은 알림이 남아 있으면 한 번 더 **캘린더에 추가**(재탭 → `dup`).
+5. 캘린더 앱에서 그 날짜 15:30 일정이 **1건**인지 본다.
+
+조회(본문 없음, id·상태만. `<POC_USER_ID>`는 `grep '^POC_USER_ID=' .env | cut -d= -f2`)
+- Q1 항목·잡: `scripts/sql.ts 'select i.id, i.status, j.kind, j.status js, j.checkpoint from items i left join jobs j on j.payload->>$2 = i.id::text where i.user_id = $1 and i.captured_at > now() - make_interval(mins => 15) order by i.captured_at' "<POC_USER_ID>" item_id` → `extracted` / process `done` `proposed`
+- Q2 제안·푸시: `scripts/sql.ts 'select p.id, p.action, p.status, pp.device_id, pp.status push, pp.apns_status, pp.reason, pp.env from proposals p left join proposal_pushes pp on pp.proposal_id = p.id where p.user_id = $1 and p.created_at > now() - make_interval(mins => 15) order by p.created_at' "<POC_USER_ID>"` → `create_event` `proposed`, push `sent` 200
+- Q3 액션 trace: `scripts/sql.ts 'select at, fields from poc_traces where user_id = $1 and event = $2 and at > now() - make_interval(mins => 30) order by at' "<POC_USER_ID>" poc5.action_handled` → 첫 줄 `result=ok`·`bg=true`, 재탭 `result=dup`
+
+판정: 3단계에서 앱이 열리지 않고, Q3 `result=ok`·`bg=true`, 캘린더 1건이면 **통과**. 서버 보고 실패 후 재탭(스펙 §14 방법의 마지막 시나리오)은 `executions` 서버 보고가 없어 이 절차 밖이다(남은 실측으로 적는다).
+
 ## 시뮬레이터 재실측 (2026-09-24, Opus 재검증 반영 후) — 실제 배너·액션 탭
 
 이전 세션은 "알림 권한을 넘길 수단이 없다"고 보고 디버그 훅만 썼다. `simctl privacy … notifications`는 실제로
