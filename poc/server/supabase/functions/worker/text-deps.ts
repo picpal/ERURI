@@ -26,6 +26,11 @@ export function textDeps(sb: SupabaseClient, o: { classifier: Classifier; thresh
     addTokens: (userId, tokens) => addExtractTokens(sb, userId, tokens),
     saveFact: (f) => saveFact(sb, f),
     enqueueNotify: (userId, proposalId) => enqueueNotify(sb, userId, proposalId, o.leasePrefix ?? ""),
+    async unpushedProposals(userId, itemId) {
+      const { data, error } = await sb.rpc("worker_unpushed_proposals", { p_user: userId, p_item: itemId });
+      if (error) throw new Error("worker_unpushed_proposals " + error.code);
+      return data as string[];
+    },
     async setStatus(userId, itemId, status, wipe) {
       const { error } = await sb.rpc("worker_set_item_status", { p_user: userId, p_item: itemId, p_status: status, p_wipe: wipe });
       if (error) throw new Error("worker_set_item_status " + error.code);

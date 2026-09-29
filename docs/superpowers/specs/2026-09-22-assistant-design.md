@@ -283,9 +283,11 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   → proposals INSERT (event/task). uncertain 비어 있을 때만 잠금화면 "추가" 버튼 노출,
       아니면 REVIEW 카테고리로 앱에서 확인 유도
   → 백필(occurred_at이 수집 시각보다 3일 이상 과거)에서 나온 제안은 푸시하지 않고 보관함에만 표시
-  → jobs INSERT (kind = notify, lease `notify:<proposal_id>`. 텍스트·이미지 경로 모두, 제안이 있을 때마다 — 중복은 아래 기기별 1회가 막는다)
+  → jobs INSERT (kind = notify, lease `notify:<proposal_id>`. 텍스트·이미지 경로 모두, 제안이 있을 때마다 — 중복은 아래 기기별 1회가 막는다.
+      텍스트 process 잡이 재시도에서 이미 `extracted`인 항목을 만나면 푸시 기록이 없는 proposed 제안을 다시 넣는다(0016, save_fact 커밋 뒤 enqueue 전 종료 대비))
       → worker `notify`가 `_shared/apns.ts`로 사용자의 모든 기기(`devices`, 기기 환경·불일치 시 반대 환경 1회)에 발송(0b).
       기기별 1회(`proposal_pushes`, 0014): 400·403·404·410·413은 `rejected`(재시도 안 함), 429·5xx·연결 오류는 `failed`(잡 재시도 최대 5회).
+      잡 임대(180초) 안의 `sending`은 `in_flight`로 보고 잡을 실패시켜 재시도한다. 임대가 지난 `sending`(발송 중 워커 종료)은 다시 가져간다(0016)
       푸시하지 않는 경우: 제안 status ≠ proposed, 백필(captured_at − occurred_at ≥ 3일), 시작·기한이 지난 제안
       (날짜만이면 오늘(서울)은 지나지 않은 것으로 본다)
 ```
@@ -325,7 +327,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | `purchases` | fact_id, merchant, product[], ordered_at, amount, currency, order_no, status, delivery_status, recurrence | 구매·구독. `purchase_evidence(purchase_id, item_id)`로 다대다 |
 | `proposals` | fact_id, action(create_event/update_event/create_reminder/complete_reminder), payload, version, status(proposed/confirmed/succeeded/failed/stale), eventkit_id, idempotency_key | fact 변경 시 version 증가, 이전 제안은 stale |
 | `executions` | proposal_id, device_id, eventkit_id, executed_at | 기기가 쓰기 성공 직후 기록. 보고 실패 복구용 |
-| `proposal_pushes` | proposal_id, device_id(쌍 unique), status(sending/sent/failed/rejected), apns_status, reason, apns_id, env, claimed_at | 제안 푸시 기기별 1회(0014, 0b). failed와 5분 넘게 sending인 행(발송 중 워커 종료)만 다시 가져간다 |
+| `proposal_pushes` | proposal_id, device_id(쌍 unique), status(sending/sent/failed/rejected), apns_status, reason, apns_id, env, claimed_at | 제안 푸시 기기별 1회(0014, 0b). failed와 잡 임대(180초)가 지난 sending 행(발송 중 워커 종료)만 다시 가져간다. 임대 안의 sending은 잡을 재시도시킨다(0016) |
 | `jobs` | kind, payload, lease_key, leased_until, attempts, status(queued/running/done/dead), checkpoint | 영속 작업 큐 |
 | `utterances` | text, embedding, said_at, source(chat/siri/quick), kind(statement/question/correction) | 사용자 발화 전체 기록 |
 | `memories` | text, embedding, utterance_id, status(active/retracted), supersedes_id | "기억해줘" 또는 gpt-6-luna가 statement로 판정한 것만. 정정 발화는 이전 memory를 retracted 처리 |

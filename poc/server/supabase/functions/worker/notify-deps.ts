@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { sendAPNs } from "../_shared/apns.ts";
 import type { ProposalRow } from "../_shared/notify.ts";
-import type { Device, NotifyDeps } from "./notify.ts";
+import type { Claim, Device, NotifyDeps } from "./notify.ts";
 
 // notify 잡의 실제 의존성(service role). 모든 RPC에 user_id를 명시한다(스펙 §12 통제 4)
 export function notifyDeps(sb: SupabaseClient, o: Partial<Pick<NotifyDeps, "send" | "topic" | "now">> = {}): NotifyDeps {
@@ -19,7 +19,8 @@ export function notifyDeps(sb: SupabaseClient, o: Partial<Pick<NotifyDeps, "send
     async claimPush(userId, proposalId, deviceId) {
       const { data, error } = await sb.rpc("claim_proposal_push", { p_user: userId, p_proposal: proposalId, p_device: deviceId });
       if (error) throw new Error("claim_proposal_push " + error.code);
-      return data === true;
+      if (data !== "claimed" && data !== "closed" && data !== "in_flight") throw new Error("claim_proposal_push bad_result");
+      return data as Claim;
     },
     async finishPush(userId, proposalId, deviceId, r) {
       const { error } = await sb.rpc("finish_proposal_push", { p_user: userId, p_proposal: proposalId, p_device: deviceId, p_status: r.status,

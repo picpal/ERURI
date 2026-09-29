@@ -10,21 +10,27 @@ const EVENT_X: TextExtraction = { kind: "event", evidence: "합성 근거",
   event: { title: "진료", start: "2026-09-30T15:00:00+09:00", end: null, location: null, uncertain: [] } };
 const BUY_X: TextExtraction = { kind: "purchase", evidence: null,
   purchase: { merchant: "합성커피", products: [], ordered_at: null, amount: 32000, currency: "KRW", order_no: null, status: "paid" } };
-function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: ClassifyResult | null | Error; result?: TextExtraction } = {}) {
+function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: ClassifyResult | null | Error; result?: TextExtraction;
+  failEnqueue?: number; pushed?: boolean } = {}) {
   const calls = { decrypt: 0, classify: [] as string[], extract: [] as { text: string; today: string }[], saved: [] as FactInput[],
     status: [] as [string, boolean][], tokens: 0, notify: [] as string[] };
   const base: TextItem = { contentEnc: "enc", source: "NOTIFICATION", appName: "Slack", sender: null, title: null,
     occurredAt: "2026-09-28T15:30:00Z", capturedAt: "2026-09-28T15:30:05Z", status: "queued" };
+  // save_fact 처럼 status 를 extracted 로 바꾸고 제안을 기억한다 → 같은 fake 로 processText 를 다시 부르면 실제 재시도가 된다
+  const state = { status: o.item?.status ?? base.status, proposals: [] as string[], failEnqueue: o.failEnqueue ?? 0 };
   const d: TextDeps = {
-    getItem: async () => (o.item === null ? null : { ...base, ...o.item }),
+    getItem: async () => (o.item === null ? null : { ...base, ...o.item, status: state.status }),
     decrypt: async () => { calls.decrypt++; return o.text ?? "[합성의원] 내일 오후 3시 진료 예약"; },
     classifier: { provider: "jev", classify: async (t) => { calls.classify.push(t); if (o.verdict instanceof Error) throw o.verdict; return o.verdict ?? null; } },
     threshold: 0.8,
     extract: async (text, _m, today) => { calls.extract.push({ text, today }); return { result: o.result ?? EVENT_X, usage: { input_tokens: 900, output_tokens: 60 } }; },
     addTokens: async (_u, n) => { calls.tokens += n; },
-    saveFact: async (f) => { calls.saved.push(f); return { factId: "f1", proposalId: f.kind === "purchase" ? null : "p1", created: true }; },
+    saveFact: async (f) => { calls.saved.push(f); state.status = "extracted"; const proposalId = f.kind === "purchase" ? null : "p1";
+      if (proposalId && !state.proposals.includes(proposalId)) state.proposals.push(proposalId);
+      return { factId: "f1", proposalId, created: calls.saved.length === 1 }; },
     setStatus: async (_u, _i, s, w) => { calls.status.push([s, w]); },
-    enqueueNotify: async (_u, p) => { calls.notify.push(p); },
+    enqueueNotify: async (_u, p) => { if (state.failEnqueue > 0) { state.failEnqueue--; throw new Error("enqueue_job XX000"); } calls.notify.push(p); },
+    unpushedProposals: async () => (o.pushed ? [] : state.proposals),
   };
   return { d, calls };
 }
@@ -97,11 +103,27 @@ Deno.test("errors: no user_id, item not found", async () => {
   await assertRejects(() => processText(fake({ item: null }).d, job()), Error, "worker_get_text_item not_found");
 });
 
-Deno.test("notify job enqueued whenever a proposal exists (also on retry), never for purchase", async () => {
+Deno.test("notify job enqueued whenever a proposal exists, never for purchase", async () => {
   const ev = fake();
   await processText(ev.d, job());
   assertEquals(ev.calls.notify, ["p1"]);
   const buy = fake({ result: BUY_X });
   await processText(buy.d, job());
+  await processText(buy.d, job());                                                  // 재시도(extracted): 제안 없음 → 넣지 않음
   assertEquals(buy.calls.notify, []);
+});
+
+// Fix round 1: save_fact 가 extracted 를 커밋한 뒤 enqueue 가 실패 → 재시도가 already_processed 로 가도 notify 를 다시 넣는다
+Deno.test("retry after enqueue failure: item already extracted → notify re-enqueued once, no model calls", async () => {
+  const ev = fake({ failEnqueue: 1 });
+  await assertRejects(() => processText(ev.d, job()), Error, "enqueue_job");
+  assertEquals([ev.calls.notify, ev.calls.extract.length], [[], 1]);
+  assertEquals(await processText(ev.d, job()), "extracted");                       // 실제 재시도: status 는 이미 extracted
+  assertEquals([ev.calls.notify, ev.calls.extract.length, ev.calls.saved.length, ev.calls.decrypt], [["p1"], 1, 1, 1]);
+  // 이미 푸시 기록이 있으면(notify 가 돌았다) 다시 넣지 않는다. discarded 는 조회조차 안 한다
+  const done = fake({ item: { status: "extracted" }, pushed: true });
+  assertEquals([await processText(done.d, job()), done.calls.notify], ["extracted", []]);
+  const gone = fake({ item: { status: "discarded:server:otp" } });
+  gone.d.unpushedProposals = () => { throw new Error("must not query"); };
+  assertEquals(await processText(gone.d, job()), "discarded:server:otp");
 });

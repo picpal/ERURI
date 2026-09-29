@@ -69,12 +69,13 @@ Deno.test("apnsP8: inline APNS_P8 wins, else APNS_P8_PATH file, else coded error
 
 // ── notify 잡: 가짜 기기·발송 ──
 const TOK = (c: string) => c.repeat(64);
-function deps(o: { proposal?: ProposalRow | null; devices?: Device[]; claimed?: Set<string>; reply?: (token: string, env: ApnsEnv) => APNsResult | Error } = {}) {
+function deps(o: { proposal?: ProposalRow | null; devices?: Device[]; claimed?: Set<string>; inFlight?: Set<string>;
+  reply?: (token: string, env: ApnsEnv) => APNsResult | Error } = {}) {
   const calls = { sent: [] as [string, ApnsEnv, unknown][], finished: [] as [string, PushRecord][], listed: 0 };
   const d: NotifyDeps = {
     getProposal: async () => (o.proposal === undefined ? row() : o.proposal),
     listDevices: async () => { calls.listed++; return o.devices ?? [{ device_id: "d1", apns_token: TOK("a"), apns_env: "production" }]; },
-    claimPush: async (_u, _p, dev) => !(o.claimed?.has(dev)),
+    claimPush: async (_u, _p, dev) => (o.claimed?.has(dev) ? "closed" : o.inFlight?.has(dev) ? "in_flight" : "claimed"),
     finishPush: async (_u, _p, dev, r) => { calls.finished.push([dev, r]); },
     send: async (x) => { calls.sent.push([x.token, x.env, x.payload]); const r = o.reply?.(x.token, x.env) ?? { status: 200, apnsId: "id-1" };
       if (r instanceof Error) throw r; return r; },
@@ -101,6 +102,14 @@ Deno.test("notify: already claimed device is skipped (one push per proposal per 
   assertEquals(calls.sent.map(([t]) => t[0]), ["b"]);
 });
 
+// Fix round 1: 임대 안의 sending(다른 시도가 보내는 중이거나 막 죽음)을 '이미 보냄'으로 치고 성공하면 그 기기는 영영 못 받는다
+Deno.test("notify: in-flight device → not sent now, other devices sent, job throws so a later attempt retries it", async () => {
+  const devices: Device[] = [{ device_id: "d1", apns_token: TOK("a"), apns_env: "production" }, { device_id: "d2", apns_token: TOK("b"), apns_env: "production" }];
+  const { d, calls } = deps({ devices, inFlight: new Set(["d1"]) });
+  await assertRejects(() => notifyProposal(d, job()), Error, "notify transient failed=0 in_flight=1");
+  assertEquals([calls.sent.map(([t]) => t[0]), calls.finished.map(([dev]) => dev)], [["b"], ["d2"]]);
+});
+
 // Review Focus 5: 영구 오류 토큰은 rejected, 재시도 없음, 다른 기기는 계속
 Deno.test("notify: permanent failure (410 / BadDeviceToken both envs) → rejected, job succeeds, other device still sent", async () => {
   const devices: Device[] = [{ device_id: "old", apns_token: TOK("a"), apns_env: "production" }, { device_id: "bad", apns_token: TOK("c"), apns_env: "production" },
@@ -113,10 +122,10 @@ Deno.test("notify: permanent failure (410 / BadDeviceToken both envs) → reject
 
 Deno.test("notify: transient failure (503 or connection error) → failed recorded, job throws for retry", async () => {
   const a = deps({ reply: () => ({ status: 503, reason: "ServiceUnavailable" }) });
-  await assertRejects(() => notifyProposal(a.d, job()), Error, "notify transient 1");
+  await assertRejects(() => notifyProposal(a.d, job()), Error, "notify transient failed=1 in_flight=0");
   assertEquals(a.calls.finished[0][1].status, "failed");
   const b = deps({ reply: () => new Error("http2 GOAWAY") });
-  await assertRejects(() => notifyProposal(b.d, job()), Error, "notify transient 1");
+  await assertRejects(() => notifyProposal(b.d, job()), Error, "notify transient failed=1 in_flight=0");
   assertEquals([b.calls.finished[0][1].status, b.calls.finished[0][1].reason], ["failed", "network"]);
 });
 

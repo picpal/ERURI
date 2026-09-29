@@ -20,6 +20,7 @@ export type TextDeps = {
   addTokens(userId: string, tokens: number): Promise<void>;
   saveFact(f: FactInput): Promise<SavedFact>;
   enqueueNotify(userId: string, proposalId: string): Promise<void>;
+  unpushedProposals(userId: string, itemId: string): Promise<string[]>;
   setStatus(userId: string, itemId: string, status: string, wipe: boolean): Promise<void>;
 };
 
@@ -28,7 +29,12 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   const user = job.user_id, itemId = String(job.payload.item_id);
   const item = await deps.getItem(user, itemId);
   if (!item) throw new Error("worker_get_text_item not_found");
-  if (item.status !== "queued") return log(job, item.status, { reason: "already_processed" });   // 재시도 멱등: 모델 재호출 없음
+  if (item.status !== "queued") {                                  // 재시도 멱등: 모델 재호출 없음
+    // save_fact 가 extracted 를 커밋한 뒤 notify enqueue 전에 끊겼을 수 있다. 푸시 기록이 없는 제안은 다시 넣는다(기기별 1회가 중복을 막는다)
+    const again = item.status === "extracted" ? await deps.unpushedProposals(user, itemId) : [];
+    for (const p of again) await deps.enqueueNotify(user, p);
+    return log(job, item.status, { reason: "already_processed", renotify: again.length });
+  }
   if (item.contentEnc === null) return discard(deps, job, user, itemId, "empty", false);           // 원문 만료·미리보기 꺼짐
 
   const t0 = performance.now();
