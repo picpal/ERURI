@@ -6,3 +6,15 @@ poc/ios/.sim-udid
 poc/server/eval/images/
 poc/server/keys/
 poc/ios/keys/
+# 제품 서버(저장소 루트 supabase/)
+supabase/.temp/
+supabase/.branches/
+supabase/keys/
+supabase/eval/questions.json
+supabase/eval/*.local.*
+# 제품 앱(ios/)
+ios/build/
+ios/*.xcodeproj
+ios/.sim-udid
+ios/Config/Secrets.xcconfig
+ios/keys/

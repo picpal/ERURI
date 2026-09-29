@@ -13,6 +13,9 @@ Claude Code는 `CLAUDE.md`의 `@AGENTS.md`로, Codex는 이 파일을 직접 읽
 | 아키텍처 리포트 | `docs/superpowers/reports/2026-09-23-architecture-report.html` |
 | PoC 판정표 | `docs/superpowers/poc/results.md` (태스크마다 갱신) |
 | 에이전트 지시문·세션 상태 | `.context/` (gitignore) |
+| 1단계 계획 | `docs/superpowers/plans/2026-09-30-phase1.md` |
+| 1단계 게이트 기록 | `docs/superpowers/phase1/gates.md` |
+| 제품 코드 | 서버 `supabase/` (저장소 루트), 앱 `ios/` — `poc/` 는 동결 |
 
 스펙과 코드가 다르면 스펙을 먼저 고친다. 스펙에 없는 기능은 만들지 않는다.
 
@@ -100,8 +103,8 @@ herdr agent prompt codex-reviewer "Read .context/codex-review-N.prompt.md and fo
 - 대시보드 SQL 편집기나 로그로 `items.content_enc`를 복호화해 보지 않는다. 디버깅은 `item_id`·상태·오류 코드로만.
 - 사용자 본인이 제품 앱(chat 함수 경로·보관함)으로 자기 데이터를 보는 것은 제품 기능이라 금지 대상이 아니다. 검색 평가는 이 구분으로 한다(스펙 §9 평가 절차): 에이전트는 메타데이터·id·점수·집계만 보고, 답변 본문 파일(`eval/answers.local.json`)은 열지 않는다.
 - 테스트 데이터는 합성 문구를 쓴다. 실제 메일·문자 원문을 픽스처에 넣지 않는다.
-- `.env`, `.context/`, `poc/ios/.sim-udid`, `poc/server/eval/images/`는 커밋하지 않는다.
-- 호스팅 DB 테스트는 자기가 만든 행만 지운다: 전용 테스트 사용자(`poc-test-<n>@example.com`, `tests/_testenv.ts`)와 실행 태그(`lease_key`·`idempotency_key`·`device_id` 접두 `test:<run>`)로 식별하고, `truncate`·조건 없는 `delete` 금지. 실측 데이터(`POC_USER_ID`의 items·jobs·connections)는 테스트가 만들거나 지우지 않는다. 전역 함수는 범위 인자(`claim_jobs(p_lease_prefix)`, `gmail_enqueue_all(p_user)`)로 좁힌다.
+- `.env`(`supabase/.env` 포함), `.context/`, `poc/ios/.sim-udid`·`ios/.sim-udid`, `poc/server/eval/images/`, `supabase/keys/`·`ios/keys/`, `supabase/eval/questions.json`·`supabase/eval/*.local.*`는 커밋하지 않는다.
+- 호스팅 DB 테스트는 자기가 만든 행만 지운다: 전용 테스트 사용자(`poc-test-<n>@example.com`, `tests/_testenv.ts`)와 실행 태그(`lease_key`·`idempotency_key`·`device_id` 접두 `test:<run>`)로 식별하고, `truncate`·조건 없는 `delete` 금지. 실측 데이터(제품 `ERURI_USER_ID`·PoC `POC_USER_ID`의 items·jobs·connections)는 테스트가 만들거나 지우지 않는다. 전역 함수는 범위 인자(`claim_jobs(p_lease_prefix)`, `gmail_enqueue_all(p_user)`)로 좁힌다.
 - 비밀값은 `.env`와 `supabase secrets`에만. 코드·프롬프트 파일·커밋 메시지에 넣지 않는다.
 
 ## 8. 버전 규칙 (사용자 지시 2026-09-27)

@@ -1,0 +1,94 @@
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { parseCapturedAt } from "./handler.ts";
+
+// 진단 trace(스펙 §8 device_traces). POST /functions/v1/ingest/trace, 사용자 JWT 필수. 본문 없음, 30일 보관(0002_diagnostics).
+// body = [{ device_id, event, fields, at }] (1~200건). fields는 jsonb 그대로 두되 문자열은 200자에서 자르고,
+// content·text·body 키는 어느 깊이에서든 거부한다(본문 유입 방지)
+export const MAX_TRACES = 200;
+const MAX_STRING = 200;
+const MAX_FIELDS_BYTES = 4096;
+const FORBIDDEN_KEYS = new Set(["content", "text", "body"]);
+const EVENT = /^(capture|device|action|share|upload)\.[a-z0-9_.]{1,60}$/;   // 제품 이름공간(앱 EruriCore Trace 와 같은 값)
+
+export type TraceRow = { user_id: string; device_id: string; event: string; fields: Record<string, unknown>; at: string };
+export type TraceDeps = {
+  authUser(token: string): Promise<string | null>;
+  insertTraces(userToken: string, rows: TraceRow[]): Promise<number>;   // 새로 들어간 행 수(중복 제외)
+  touchDevices(userToken: string, deviceIds: string[]): Promise<void>;  // devices.last_seen_at 갱신(스펙 §8: 7일 넘으면 발송 제외)
+};
+
+// 사용자 JWT 클라이언트로 넣는다(RLS). 같은 (user_id, device_id, event, at)는 무시한다(0002 device_traces_idem)
+export async function upsertTraces(client: SupabaseClient, rows: TraceRow[]): Promise<number> {
+  const { error, count } = await client.from("device_traces")
+    .upsert(rows, { onConflict: "user_id,device_id,event,at", ignoreDuplicates: true, count: "exact" });
+  if (error) throw new Error("device_traces insert " + error.code);
+  return count ?? 0;
+}
+
+// 사용자 JWT 클라이언트로 갱신한다. RLS 가 자기 기기 행만 허용하고, 등록 안 된 device_id 는 0행이다
+export async function touchDevices(client: SupabaseClient, deviceIds: string[]): Promise<void> {
+  const { error } = await client.from("devices").update({ last_seen_at: new Date().toISOString() }).in("device_id", deviceIds);
+  if (error) throw new Error("devices touch " + error.code);
+}
+
+export function isTracePath(url: URL): boolean {
+  return /\/ingest\/trace\/?$/.test(url.pathname);
+}
+
+class Bad extends Error { constructor(readonly code: string, readonly index?: number) { super(code); } }
+
+function hasForbiddenKey(v: unknown): boolean {
+  if (Array.isArray(v)) return v.some(hasForbiddenKey);
+  if (v && typeof v === "object") {
+    return Object.entries(v).some(([k, x]) => FORBIDDEN_KEYS.has(k.toLowerCase()) || hasForbiddenKey(x));
+  }
+  return false;
+}
+function truncate(v: unknown): unknown {
+  if (typeof v === "string") return v.length > MAX_STRING ? v.slice(0, MAX_STRING) : v;
+  if (Array.isArray(v)) return v.map(truncate);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, truncate(x)]));
+  return v;
+}
+
+function toRow(user: string, e: unknown, i: number): TraceRow {
+  if (!e || typeof e !== "object" || Array.isArray(e)) throw new Bad("bad_item", i);
+  const o = e as Record<string, unknown>;
+  if (typeof o.device_id !== "string" || o.device_id.length === 0 || o.device_id.length > 100) throw new Bad("bad_device_id", i);
+  if (typeof o.event !== "string" || !EVENT.test(o.event)) throw new Bad("bad_event", i);
+  const at = parseCapturedAt(o.at);
+  if (!at) throw new Bad("bad_at", i);
+  const raw = o.fields ?? {};
+  if (typeof raw !== "object" || Array.isArray(raw) || raw === null) throw new Bad("bad_fields", i);
+  if (hasForbiddenKey(raw)) throw new Bad("forbidden_field", i);
+  const fields = truncate(raw) as Record<string, unknown>;
+  if (new TextEncoder().encode(JSON.stringify(fields)).length > MAX_FIELDS_BYTES) throw new Bad("fields_too_large", i);
+  return { user_id: user, device_id: o.device_id, event: o.event, fields, at };
+}
+
+export async function handleTrace(req: Request, deps: TraceDeps): Promise<Response> {
+  const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const user = token ? await deps.authUser(token) : null;
+  if (!user || !token) return new Response(null, { status: 401 });
+  let body: unknown;
+  try { body = await req.json(); } catch { return Response.json({ error: "bad_json" }, { status: 400 }); }
+  let rows: TraceRow[];
+  try {
+    if (!Array.isArray(body)) throw new Bad("not_array");
+    if (body.length === 0) throw new Bad("empty");
+    if (body.length > MAX_TRACES) throw new Bad("too_many");
+    rows = body.map((e, i) => toRow(user, e, i));
+  } catch (e) {
+    if (!(e instanceof Bad)) throw e;
+    return Response.json({ error: e.code, ...(e.index === undefined ? {} : { index: e.index }) }, { status: 400 });
+  }
+  const inserted = await deps.insertTraces(token, rows);
+  const duplicates = rows.length - inserted;
+  try {                                                                   // 추적은 이미 저장됨. 갱신 실패로 재전송시키지 않는다
+    await deps.touchDevices(token, [...new Set(rows.map((r) => r.device_id))]);
+  } catch (e) {
+    console.log(JSON.stringify({ ingest: "trace", touch_error: e instanceof Error ? e.message.slice(0, 60) : "error" }));
+  }
+  console.log(JSON.stringify({ ingest: "trace", count: rows.length, duplicates }));   // 이벤트 내용은 남기지 않는다
+  return Response.json({ inserted, duplicates }, { status: 202 });
+}
