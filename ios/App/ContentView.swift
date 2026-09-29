@@ -15,6 +15,7 @@ struct ContentView: View {
   @State private var confirmSource = false
   @State private var confirmAccount = false
   @State private var deleteResult = ""
+  @State private var usage = ""
 
   var body: some View {
     NavigationStack {
@@ -32,6 +33,9 @@ struct ContentView: View {
           if !gmail.isEmpty { Text(gmail).font(.caption).foregroundStyle(gmail.contains("다시 연결") ? .orange : .secondary) }
           Button("Gmail 연결") { connectGmail(false) }.disabled(busy || !GmailConnect.configured)
           Button("다시 연결 (동의 다시 받기)") { connectGmail(true) }.disabled(busy || !GmailConnect.configured)
+        }
+        Section("이번 달 사용") {                                              // 스펙 §13 월 상한(M2-⑦)
+          Text(usage.isEmpty ? "-" : usage).font(.caption).foregroundStyle(usage.contains("중단") ? .red : .secondary)
         }
         Section("진단") {
           Toggle("진단 전송", isOn: $diagnostics).onChange(of: diagnostics) { _, v in
@@ -73,6 +77,12 @@ struct ContentView: View {
     // 실패 문구는 세션이 없을 때만 남긴다(다른 경로로 세션이 생기면 "로그인됨")
     account = signedIn ? "로그인됨" : (account.hasPrefix("로그인 실패") ? account : "로그인 필요")
     gmail = signedIn ? await gmailStatus() : ""
+    usage = signedIn ? await usageStatus() : ""
+  }
+  /// rpc/usage_status(0014, auth.uid() 기준): 이번 달 예약 금액 / 상한 · 강등·중단 표시
+  private func usageStatus() async -> String {
+    guard let r = await API.send("rest/v1/rpc/usage_status", method: "POST", json: [String: String]()), r.status == 200 else { return "" }
+    return UsageStatus.label(r.data) ?? ""
   }
   /// 연결 상태(RLS: 자기 connections). 계정 주소는 사용자 본인 화면에만 보인다
   private func gmailStatus() async -> String {
