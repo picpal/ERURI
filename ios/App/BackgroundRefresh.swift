@@ -15,6 +15,7 @@ enum BackgroundRefresh {
     let base: [String: Any] = ["trigger": UploadTrigger.bgRefresh.rawValue, "pending": captures]
     Trace.log("upload.wake", base.merging(st.traceFields) { _, new in new })
     if captures > 0 || traces > 0 { await Uploader.shared.flush(trigger: .bgRefresh) }
+    await DeviceRegistrar.shared.register()   // 24시간 지났으면 재등록(M1-⑤)
   }
 
   /// 같은 식별자 요청이 이미 있으면 새 요청으로 바뀐다

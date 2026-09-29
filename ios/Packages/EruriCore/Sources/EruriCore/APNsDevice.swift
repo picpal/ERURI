@@ -40,7 +40,9 @@ public enum APNsDevice {
   // MARK: App Group 저장 (앱 재실행·로그인 뒤 재전송에 쓴다)
 
   static let tokenKey = "apnsToken", envKey = "apnsEnv", registeredKey = "apnsRegistered", statusKey = "apnsStatus"
-  static let registeredEnvKey = "apnsRegisteredEnv", registeredBuildKey = "apnsRegisteredBuild", registeredSha8Key = "apnsRegisteredTokenSha8"
+  static let registeredEnvKey = "apnsRegisteredEnv", registeredBuildKey = "apnsRegisteredBuild", registeredSha8Key = "apnsRegisteredTokenSha8",
+    registeredAtKey = "apnsRegisteredAt"
+  public static let refreshInterval: TimeInterval = 24 * 3600
 
   public static func store(token: String, env: Env, defaults: UserDefaults = IngestSettings.shared) {
     defaults.set(token, forKey: tokenKey); defaults.set(env.rawValue, forKey: envKey)
@@ -48,17 +50,24 @@ public enum APNsDevice {
   public static func token(defaults: UserDefaults = IngestSettings.shared) -> String? { defaults.string(forKey: tokenKey) }
   public static func env(defaults: UserDefaults = IngestSettings.shared) -> Env? { defaults.string(forKey: envKey).flatMap(Env.init) }
 
-  /// 마지막 등록의 (환경, build, token_sha8) 중 하나라도 지금과 다르면 true. 업데이트 설치(build)·토큰 갱신·환경 전환 모두 다시 등록한다(0.2.1).
-  public static func needsRegistration(build: String, defaults: UserDefaults = IngestSettings.shared) -> Bool {
+  /// 마지막 등록의 (환경, build, token_sha8) 중 하나가 다르거나 24시간이 지났으면 true. 업데이트 설치(build)·토큰 갱신·환경 전환 모두 다시 등록한다(0.2.1).
+  /// 24시간 규칙: 진단 전송을 끄면 trace 가 last_seen_at 을 갱신하지 않아 7일 뒤 발송 대상에서 빠지므로 등록을 하루 1회 다시 보낸다(M1-⑤)
+  public static func needsRegistration(build: String, now: Date = Date(), defaults: UserDefaults = IngestSettings.shared) -> Bool {
     guard let t = token(defaults: defaults), let e = env(defaults: defaults) else { return false }
+    guard let at = defaults.object(forKey: registeredAtKey) as? Date, now.timeIntervalSince(at) < refreshInterval else { return true }
     return defaults.string(forKey: registeredEnvKey) != e.rawValue || defaults.string(forKey: registeredBuildKey) != build
       || defaults.string(forKey: registeredSha8Key) != Trace.sha8(t)
   }
-  public static func markRegistered(token: String, env: Env, build: String, defaults: UserDefaults = IngestSettings.shared) {
+  public static func markRegistered(token: String, env: Env, build: String, now: Date = Date(), defaults: UserDefaults = IngestSettings.shared) {
     defaults.set(env.rawValue, forKey: registeredEnvKey)
     defaults.set(build, forKey: registeredBuildKey)
     defaults.set(Trace.sha8(token), forKey: registeredSha8Key)
+    defaults.set(now, forKey: registeredAtKey)
     defaults.removeObject(forKey: registeredKey)   // 0.2.0 이하 형식("env:token") 정리
+  }
+  /// 로그아웃: 다음 로그인(다른 사용자일 수 있음)에서 반드시 다시 등록한다
+  public static func clearRegistration(defaults: UserDefaults = IngestSettings.shared) {
+    for k in [registeredEnvKey, registeredBuildKey, registeredSha8Key, registeredAtKey, registeredKey] { defaults.removeObject(forKey: k) }
   }
 
   /// 화면에 보일 마지막 상태 한 줄(토큰 원문 없음).

@@ -19,7 +19,7 @@ struct ContentView: View {
         Section("계정") {
           Text(account).font(.caption).foregroundStyle(account.hasPrefix("로그인 실패") ? .red : .secondary)
           Button("Apple로 로그인") { busy = true; Task { account = await AppleSignIn.shared.run(); busy = false; await refresh() } }.disabled(busy)
-          Button("로그아웃", role: .destructive) { Task { await SupabaseSession.shared.logout(); account = "로그인 필요"; await refresh() } }
+          Button("로그아웃", role: .destructive) { Task { await SupabaseSession.shared.logout(); APNsDevice.clearRegistration(); account = "로그인 필요"; await refresh() } }
         }
         Section("권한") {
           Button("권한 요청 (알림·캘린더·연락처)") { requestPermissions() }

@@ -80,4 +80,15 @@ final class APNsDeviceTests: XCTestCase {
     XCTAssertEqual(d.string(forKey: "apnsRegisteredTokenSha8"), Trace.sha8("aa"))  // 토큰 원문이 아니라 sha8
     XCTAssertEqual(d.string(forKey: "apnsRegisteredBuild"), b)
   }
+
+  func testReRegistersAfter24HoursAndAfterClear() {
+    let d = tempDefaults(), b = "0.4.1 (1)", t0 = Date(timeIntervalSince1970: 1_800_000_000)
+    APNsDevice.store(token: "aa", env: .production, defaults: d)
+    APNsDevice.markRegistered(token: "aa", env: .production, build: b, now: t0, defaults: d)
+    XCTAssertFalse(APNsDevice.needsRegistration(build: b, now: t0.addingTimeInterval(23 * 3600), defaults: d))
+    XCTAssertTrue(APNsDevice.needsRegistration(build: b, now: t0.addingTimeInterval(24 * 3600), defaults: d))   // 진단 꺼짐에도 last_seen 갱신
+    APNsDevice.markRegistered(token: "aa", env: .production, build: b, now: t0.addingTimeInterval(24 * 3600), defaults: d)
+    APNsDevice.clearRegistration(defaults: d)                                                                    // 로그아웃
+    XCTAssertTrue(APNsDevice.needsRegistration(build: b, now: t0.addingTimeInterval(24 * 3600 + 60), defaults: d))
+  }
 }

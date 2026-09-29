@@ -30,6 +30,7 @@ final class PushDelegate: NSObject, UIApplicationDelegate {
     let base: [String: Any] = ["trigger": UploadTrigger.silentPush.rawValue, "pending": pending]
     Trace.log("upload.wake", base.merging(st.traceFields) { _, new in new })
     let r = await Uploader.shared.flush(trigger: .silentPush)
+    await DeviceRegistrar.shared.register()   // 24시간 지났으면 재등록(M1-⑤)
     return r.claimed > 0 ? (r.direct > 0 ? .newData : .failed) : .noData
   }
 
@@ -96,7 +97,7 @@ enum PushRegistration {
 }
 
 /// 저장된 토큰을 `POST /functions/v1/ingest/device` 로 보낸다. 세션(JWT)이 없으면 대기로 두고
-/// 로그인·앱 활성화 때(`register()` 재호출) 보낸다. 같은 (환경, build, 토큰)은 한 번만 보낸다(`force` 는 버튼용).
+/// 로그인·앱 활성화 때(`register()` 재호출) 보낸다. 같은 (환경, build, 토큰)은 24시간에 한 번만 보낸다(`force` 는 로그인용).
 actor DeviceRegistrar {
   static let shared = DeviceRegistrar()
   private var inFlight = false
