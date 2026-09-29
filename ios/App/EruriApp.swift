@@ -20,8 +20,11 @@ struct EruriApp: App {
 
   var body: some Scene {
     WindowGroup {
-      ContentView()
-        .onOpenURL { url in _ = GIDSignIn.sharedInstance.handle(url) }   // Google 로그인 리디렉션
+      TabView {                                                            // 채팅 | 보관함(M2-⑨b) | 설정
+        ChatView().tabItem { Label("채팅", systemImage: "bubble.left.and.bubble.right") }
+        ContentView().tabItem { Label("설정", systemImage: "gearshape") }
+      }
+      .onOpenURL { url in _ = GIDSignIn.sharedInstance.handle(url) }       // Google 로그인 리디렉션
     }
     .onChange(of: scenePhase) { _, newPhase in
       if newPhase == .active {

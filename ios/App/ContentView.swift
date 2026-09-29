@@ -65,7 +65,7 @@ struct ContentView: View {
         }
         Section { Text("ERURI \(Self.version) (\(Trace.build))").font(.caption).foregroundStyle(.secondary) }
       }
-      .navigationTitle("ERURI")
+      .navigationTitle("설정")
       .task { await refresh() }
     }
   }
