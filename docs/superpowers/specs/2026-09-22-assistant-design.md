@@ -388,8 +388,10 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 ```text
 질문 → gpt-6-luna가 필터 추출 {date_range, sources, kinds, merchant?}
-     → facts SQL 우선 (구조화 질문. 1단계는 facts(kind=purchase).payload jsonb 조회, 2단계부터 purchases 테이블)
-     → 하이브리드: tsvector(simple + pg_trgm) ∪ pgvector cosine, RRF 융합, 상위 12개
+        (date_range = 메일·문자를 받은/저장한 기간을 말할 때만. 일정·기한 날짜는 null)
+     → facts SQL 우선 (구조화 질문. 1단계는 facts(kind=purchase).payload jsonb 조회, 2단계부터 purchases 테이블.
+        기간은 event=start·task=due, 그 밖은 받은 시각으로 거른다)
+     → 하이브리드: tsvector(simple + pg_trgm) ∪ pgvector cosine, RRF 융합, 상위 12개(기간 필터로 0건이면 기간 없이 1회 더)
      → memories(active만) 상위 5개 포함. utterances의 question/correction은 검색 풀에서 제외
      → gpt-6-sol 답변(effort low). Responses API `text.format` json_schema strict로
         {sentences:[{text, source_item_ids[]}]} 출력. 검색 결과는 <document id="item_id"> 블록으로 넣는다
@@ -415,7 +417,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   5. 합격선은 위 지표 그대로(Top-5 ≥ 90%, 무근거 거절 ≥ 90%). 인용 정확도가 PoC-7 수준에 못 미치면 문장-문서 재검증(§16)을 추가한다.
 - 수집된 메일·웹·알림 안의 지시문은 데이터로만 취급한다. 검색 결과는 `<document>` 블록으로 감싸 user 턴에 넣고 시스템 프롬프트는 고정해 앞에 두어 OpenAI 자동 프롬프트 캐시(캐시 입력 단가 1/10)에 걸리게 한다. 도구 호출 권한은 chat 함수에 없다(읽기 전용).
 - 모든 발화는 `utterances`에 기록하되, 사실로 검색되는 것은 `memories`(statement 판정 또는 "기억해줘")뿐이다. "아니 그거 안 샀어" 같은 정정은 이전 memory를 retracted로 바꾼다.
-- 구현(M2-⑧b, 0017): `POST /chat` `{question}`(≤500자) → `{answer_id, answer, refused, source_item_ids, citations(출처 메타 item_id·source·app_name·title·sender·occurred_at·expired = 원문 만료 여부), proposals(인용 항목의 제안 id·item_id·action·status·payload, proposed·succeeded), hits(문서 순서 = facts 우선 + 하이브리드, item 단위 중복 제거, 최대 12)}`. `POST /chat/item` `{item_id}` → 본인 항목 원문 `{item_id, source, app_name, title, sender, occurred_at, expired, text}`(원문 만료면 text null, 남의 항목·형식 오류 404, 복호화 감사 actor `chat`). 필터는 gpt-6-luna(effort none, {date_from, date_to, sources, kinds, merchant}, 서울 날짜), facts 는 종류·가맹점 조건이 있을 때만(`search_facts`, 상위 5), 답변은 예산 80% 미만 gpt-6-sol·이상 gpt-6-luna(effort low). 문서로 읽은 item_id 목록은 `audit_log(action='read', target=목록 SHA-256)`. 예산 소진 `429 budget_exhausted`, LLM 슬롯 없음은 서버가 1초·2초 두 번 기다렸다 다시 시도한 뒤에도 없으면 `503 llm_busy`(retry-after 30). 답변 형식은 `{answer, source_item_ids, refused}`(PoC-7 측정 형식, Ruling 5) — 위 그림의 문장별 인용·"근거 미확인"은 1단계 계획 "스펙 확인 필요" #5로 보류. `memories` 단계는 1단계 제외(Ruling 7).
+- 구현(M2-⑧b, 0017): `POST /chat` `{question}`(≤500자) → `{answer_id, answer, refused, source_item_ids, citations(출처 메타 item_id·source·app_name·title·sender·occurred_at·expired = 원문 만료 여부), proposals(인용 항목의 제안 id·item_id·action·status·payload, proposed·succeeded), hits(문서 순서 = facts 우선 + 하이브리드, item 단위 중복 제거, 최대 12)}`. `POST /chat/item` `{item_id}` → 본인 항목 원문 `{item_id, source, app_name, title, sender, occurred_at, expired, text}`(원문 만료면 text null, 남의 항목·형식 오류 404, 복호화 감사 actor `chat`). 필터는 gpt-6-luna(effort none, {date_from, date_to, sources, kinds, merchant}, 서울 날짜). 기간은 메일·문자를 **받은/저장한** 기간을 말할 때만 채우고 일정·약속·기한의 날짜("10월 20일 미팅", "다음 주 약속")는 null 이다(Ruling D, 0019). 그래도 기간이 일정 날짜로 채워질 때를 대비해 facts 는 event 의 `payload.start`·task 의 `payload.due`(날짜만이면 서울 0시, 해석 불가면 받은 시각)로, 그 밖의 종류는 받은 시각으로 기간을 거르고(`fact_when`), 하이브리드는 기간 필터로 0건이면 기간만 빼고(출처 유지) 한 번 더 검색한다 — 9/10 에 받은 10/20 미팅 메일이 두 경로 모두에서 잡힌다. facts 는 종류·가맹점 조건이 있을 때만(`search_facts`, 상위 5, 가맹점은 부분 문자열), 답변은 예산 80% 미만 gpt-6-sol·이상 gpt-6-luna(effort low). 서버가 읽은 item_id 목록(facts + 하이브리드, 모델에 넣지 않고 12개 밖으로 버린 것 포함)은 `audit_log(action='read', target=목록 SHA-256)`. 예산 소진 `429 budget_exhausted`, LLM 슬롯 없음은 서버가 1초·2초 두 번 기다렸다 다시 시도한 뒤에도 없으면 `503 llm_busy`(retry-after 30). 답변 형식은 `{answer, source_item_ids, refused}`(PoC-7 측정 형식, Ruling 5) — 위 그림의 문장별 인용·"근거 미확인"은 1단계 계획 "스펙 확인 필요" #5로 보류. `memories` 단계는 1단계 제외(Ruling 7).
 
 ## 10. 실행
 

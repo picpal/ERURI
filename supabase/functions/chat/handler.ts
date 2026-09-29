@@ -2,7 +2,7 @@ import { type BudgetDeps, type BudgetLevel, costKrw, Deferred, guarded } from ".
 import type { Filters } from "./filters.ts";
 export type { Filters } from "./filters.ts";
 
-// 채팅(스펙 §9): 필터 추출 → facts SQL(구조화 조건이 있을 때) → 하이브리드 상위 12 → gpt-6-sol 답변(예산 80% 이상이면 gpt-6-luna, §13)
+// 채팅(스펙 §9): 필터 추출 → facts SQL(구조화 조건이 있을 때) → 하이브리드 상위 12(기간 필터로 0건이면 기간 없이 1회 더) → gpt-6-sol 답변(예산 80% 이상이면 gpt-6-luna, §13)
 // → 서버 인용 검증(이번 문서 집합에 없는 id 제거, 근거 0개면 거절) → 출처 메타·제안 카드. 수집 문서 안의 지시는 데이터(<document> 블록).
 // 로그에 질문·문서·답변 본문을 남기지 않는다. 문서로 읽은 item_id 목록은 감사(read)
 export type ChatHit = { item_id: string; text: string; occurred_at: string };
@@ -78,13 +78,17 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps): Pro
   const { value } = await guarded(deps.budget, userId, "chat", CHAT_EST_KRW, crypto.randomUUID(), async (level) => {
     const { filters, usage: fu } = await deps.filters(question, today);
     const factDocs = await deps.facts(userId, filters);
-    const hits = await deps.search(userId, { question, from: filters.date_from, to: filters.date_to, sources: filters.sources });
-    const docs = dedupe([...factDocs, ...hits]).slice(0, 12);
+    const q = { question, from: filters.date_from, to: filters.date_to, sources: filters.sources };
+    let hits = await deps.search(userId, q);
+    // 기간은 받은 시각 조건이라 일정 날짜로 잘못 채워지면 0건이 된다 → 기간만 빼고 한 번 더(Ruling D)
+    if (hits.length === 0 && (q.from !== null || q.to !== null)) hits = await deps.search(userId, { ...q, from: null, to: null });
+    const read = dedupe([...factDocs, ...hits]);
+    const docs = read.slice(0, 12);
     if (docs.length === 0) {
       return { value: { answer: REFUSAL, source_item_ids: [], refused: true, forced_refusal: false, dropped_ids: 0, hits: [], citations: [],
         proposals: [], model: null } as ChatResult, actualKrw: spent(null, undefined, fu) };
     }
-    await deps.audit(userId, docs.map((d) => d.item_id));
+    await deps.audit(userId, read.map((d) => d.item_id));                // 모델에 넣지 않고 버린 것까지 서버가 읽은 전부(§12 통제 4)
     const raw = await deps.answer({ question, today, documents: docs }, level);
     const v = validateAnswer(raw, docs);
     const [meta, proposals] = v.refused ? [[], []] as [Meta[], ProposalCard[]]

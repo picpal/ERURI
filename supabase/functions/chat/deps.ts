@@ -25,6 +25,16 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
     if (error) throw new Error(fn + " " + error.code);
     return data;
   };
+  // 기간 폴백 재검색이 같은 질문을 두 번 임베딩하지 않게 마지막 질의 벡터만 기억한다(같은 문장이면 사용자와 무관하게 같은 벡터)
+  let lastQuery: { text: string; v: Promise<number[]> } | null = null;
+  const queryVector = (text: string) => {
+    if (lastQuery?.text !== text) {
+      const v = embed([text], "query").then(([x]) => x);
+      v.catch(() => { if (lastQuery?.v === v) lastQuery = null; });
+      lastQuery = { text, v };
+    }
+    return lastQuery.v;
+  };
   return {
     authUser: async (t) => { const { data, error } = await sb.auth.getUser(t); return error ? null : data.user?.id ?? null; },
     filters: (q, today) => extractFilters(q, today),
@@ -34,7 +44,7 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
       return rows.map((r) => ({ item_id: r.item_id, occurred_at: r.occurred_at, text: factText(r) }));
     },
     async search(u, q): Promise<ChatHit[]> {
-      const [v] = await embed([q.question], "query");
+      const v = await queryVector(q.question);
       const hits = (await rpc("hybrid_search", { p_user: u, p_query: q.question, p_embedding: toPgVector(v), p_limit: 12,
         p_from: q.from, p_to: q.to, p_sources: q.sources.length ? q.sources : null })) as { chunk_id: string }[];
       const order = hits.map((r) => r.chunk_id);

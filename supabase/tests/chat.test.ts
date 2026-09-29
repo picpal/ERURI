@@ -1,7 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import type { BudgetDeps } from "../functions/_shared/budget.ts";
 import { answerQuestion, type ChatDeps, type ChatHit, type Filters, formatDocuments, handleChat, REFUSAL, validateAnswer } from "../functions/chat/handler.ts";
-import { normalizeFilters } from "../functions/chat/filters.ts";
+import { extractFilters, FILTER_SCHEMA, FILTER_SYSTEM, normalizeFilters } from "../functions/chat/filters.ts";
 
 const hits: ChatHit[] = [
   { item_id: "i1", occurred_at: "2026-07-03T12:14:00Z", text: "[쿠팡] 에어팟 프로 2세대 주문 329,000원" },
@@ -28,7 +28,7 @@ Deno.test("documents are wrapped as <document id date> blocks and cannot close t
   assertEquals(s.match(/<\/document>/g)!.length, 1);                  // 본문 안의 닫는 태그는 무력화
 });
 
-function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; raw?: { answer: string; source_item_ids: string[]; refused: boolean };
+function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; searches?: ChatHit[][]; raw?: { answer: string; source_item_ids: string[]; refused: boolean };
   level?: "ok" | "degraded" | "refused"; filters?: Partial<Filters>; slots?: (number | null)[] } = {}) {
   const seen = { answer: [] as { docs: string[]; level: string }[], audit: [] as string[][], search: [] as unknown[], sleeps: [] as number[],
     settled: [] as number[] };
@@ -39,7 +39,7 @@ function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; raw?: { answer: string; 
     authUser: async (t) => (t === "good" ? "user-1" : null),
     filters: async () => ({ filters: { date_from: null, date_to: null, sources: [], kinds: [], merchant: null, ...o.filters } }),
     facts: async () => o.facts ?? [],
-    search: async (_u, q) => { seen.search.push(q); return o.hits ?? hits; },
+    search: async (_u, q) => { seen.search.push(q); return o.searches ? o.searches.shift() ?? [] : o.hits ?? hits; },
     answer: async (x, level) => { seen.answer.push({ docs: x.documents.map((d) => d.item_id), level });
       return { ...(o.raw ?? { answer: "쿠팡", source_item_ids: ["i1"], refused: false }), model: level === "degraded" ? "gpt-6-luna" : "gpt-6-sol" }; },
     meta: async (_u, ids) => ids.map((id) => ({ item_id: id, source: "GMAIL", app_name: null, title: "합성", sender: null, occurred_at: "2026-07-03T12:14:00Z", expired: false })),
@@ -75,6 +75,48 @@ Deno.test("answerQuestion: date/source filters go to search; degraded budget →
   assertEquals(seen.search[0], { question: "지난달 견적 메일", from: "2026-09-01T00:00:00+09:00", to: "2026-09-30T23:59:59+09:00", sources: ["GMAIL"] });
   assertEquals([seen.answer[0].level, r.model], ["degraded", "gpt-6-luna"]);
 });
+
+Deno.test("answerQuestion: date filter finds nothing → searches once more without the dates (sources kept); no retry without dates or with hits", async () => {
+  const f = { date_from: "2026-10-20T00:00:00+09:00", date_to: "2026-10-20T23:59:59+09:00", sources: ["GMAIL"] };
+  const miss = deps({ filters: f, searches: [[], [hits[0]]] });
+  const r = await answerQuestion("user-1", "10월 20일 미팅 어디야", miss.d);
+  assertEquals(miss.seen.search, [{ question: "10월 20일 미팅 어디야", from: f.date_from, to: f.date_to, sources: ["GMAIL"] },
+                                  { question: "10월 20일 미팅 어디야", from: null, to: null, sources: ["GMAIL"] }]);
+  assertEquals([r.hits, r.refused], [["i1"], false]);
+  const hit = deps({ filters: f });
+  await answerQuestion("user-1", "10월 20일 미팅 어디야", hit.d);
+  assertEquals(hit.seen.search.length, 1);
+  const noDates = deps({ searches: [[]] });
+  const n = await answerQuestion("user-1", "여권 만료일", noDates.d);
+  assertEquals([noDates.seen.search.length, n.refused], [1, true]);
+});
+
+Deno.test("answerQuestion: audit covers every item the server read, not only the 12 given to the model", async () => {
+  const many = Array.from({ length: 13 }, (_, i) => ({ item_id: `h${i}`, occurred_at: "2026-09-01T00:00:00Z", text: "합성" }));
+  const { d, seen } = deps({ facts: [{ item_id: "f1", occurred_at: "2026-09-01T00:00:00Z", text: "[event] 합성" }], hits: many,
+    raw: { answer: "합성", source_item_ids: ["f1"], refused: false } });
+  await answerQuestion("user-1", "합성", d);
+  assertEquals([seen.answer[0].docs.length, seen.audit[0].length], [12, 14]);
+});
+
+Deno.test("filter prompt: dates mean when mail/texts were received or saved; schedule and deadline dates stay null (Ruling D)", () => {
+  for (const k of ["date_from", "date_to"] as const) {
+    const desc = FILTER_SCHEMA.properties[k].description;
+    assert(desc.includes("받은/저장한 기간을 말할 때만"), desc);
+    assert(desc.includes("일정·약속·기한의 날짜") && desc.includes("10월 20일 미팅") && desc.includes("null"), desc);
+  }
+  assert(FILTER_SYSTEM.includes("받은/저장한 시각") && FILTER_SYSTEM.includes("날짜는 null"));
+});
+
+// 실제 gpt-6-luna 호출(합성 질문만, 약 0.1원/건). LIVE_LLM=1 일 때만
+Deno.test({ name: "extractFilters (live): schedule date → no date filter; 'received last month' → date filter", ignore: Deno.env.get("LIVE_LLM") !== "1", fn: async () => {
+  const meeting = (await extractFilters("10월 20일 미팅 어디야?", "2026-10-01")).filters;
+  assertEquals([meeting.date_from, meeting.date_to, meeting.kinds.includes("event")], [null, null, true]);
+  const plan = (await extractFilters("다음 주 약속 뭐 있어?", "2026-10-01")).filters;
+  assertEquals([plan.date_from, plan.date_to], [null, null]);
+  const mail = (await extractFilters("지난달 받은 견적 메일 찾아줘", "2026-10-01")).filters;
+  assertEquals([mail.date_from, mail.date_to, mail.sources], ["2026-09-01T00:00:00+09:00", "2026-09-30T23:59:59+09:00", ["GMAIL"]]);
+} });
 
 Deno.test("answerQuestion: citations follow the answer's citation order, not the meta row order", async () => {
   const { d } = deps({ raw: { answer: "둘 다", source_item_ids: ["i2", "i1"], refused: false } });
