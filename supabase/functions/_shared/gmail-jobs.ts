@@ -71,7 +71,12 @@ export async function gmailFetch(sb: RpcClient, job: Job, deps = defaultGmailDep
   if (!token) return "skipped";
   const api = deps.api(token);
   let stored = 0, discarded = 0;
+  let n = 0;
   for (const id of job.payload.ids as string[]) {
+    if (n++ % 10 === 0) {
+      const st = await call(sb, "gmail_state", { p_user: user, p_connection: conn }) as unknown[];
+      if (st.length === 0) { console.log(JSON.stringify({ connection_id: conn, gmail_fetch: "connection_gone" })); return "connection_gone"; }
+    }
     const it = gmailToItem(await api.getMessage(id));             // /ingest와 같은 서버 규칙 필터
     if (it.kind === "discard") {
       discarded++;

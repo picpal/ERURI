@@ -372,6 +372,8 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | 항목·출처 삭제 | 사용자가 항목 또는 출처(예: Gmail 연결) 삭제 | 해당 items·chunks·facts·purchases·purchase_evidence·proposals·executions·jobs(payload 포함)·Storage 객체 | 다른 출처 데이터, memories |
 | 전체 삭제 | 사용자가 계정 삭제 | 위 전부 + utterances·memories·connections(Gmail 토큰 revoke 호출 포함)·devices·audit_log 본문 없는 행만 유지 + `user_keys` 행 삭제(crypto-shredding) + 기기에 삭제 푸시(로컬 큐·executions 정리) | 감사 로그의 사유 코드 |
 
+구현(M2-⑥a): 원문 만료 = pg_cron purge-expired-daily(purge_expired + Storage는 purge-media 잡), 출처 삭제 = Edge account/source → delete_gmail_source(잡 → facts → items → 연결 순, 한 트랜잭션), 전체 삭제 = Edge account/delete(revoke → 기기 삭제 푸시 eruri_wipe → Storage → 감사 → Auth 사용자 삭제). 이미지·PDF 항목은 insert 때 expires_at = 30일.
+
 만료 후 검색은 facts·purchases·memories만 대상이며 출처는 facts.evidence 인용문과 "원문 만료됨" 표시로 대체한다. 만료된 항목의 의미 검색은 되지 않는다(벡터 삭제). 백업은 Supabase 일일 백업 보관 기간(무료 7일) 동안 삭제 전 상태를 담고 있으며, `user_keys`가 지워진 뒤에는 백업의 `content_enc`를 복호화할 수 없다. 평문 파생물(청크·facts)은 백업 보관 기간 후에 완전히 사라진다. 이 사실을 §12 통제 5의 화면에 그대로 적는다.
 
 용량 추정(1인 1년): 메일 일 20건 × 4KB 원문 + 청크 복제 + 512차원 벡터(2KB)×청크 3개 ≈ 연 90MB. 500MB 안이지만 `pg_database_size`를 주간 잡으로 기록해 400MB에서 경고한다.
@@ -503,7 +505,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 ### 통제 5. 투명성과 사용자 통제
 
 - 설정 화면 "내 데이터"(3단계): 출처별로 **서버 보관 기간·LLM 전송 여부·마지막 동기화 시각·항목 수**를 표로 보여준다.
-- 연결 해제(수집 중지, 데이터 유지) / 수집 중지 / 출처별 삭제 / 전체 삭제 / 내보내기(JSON)를 분리 제공한다. 삭제는 §8 연쇄 규칙과 키 파기까지 포함한다. **1단계**는 전체 삭제(계정 + crypto-shred + Gmail revoke)와 출처 삭제를 설정 화면 버튼 2개로 둔다(M2 "보관·삭제 잡" 태스크). 내보내기(JSON)는 3단계.
+- 연결 해제(수집 중지, 데이터 유지) / 수집 중지 / 출처별 삭제 / 전체 삭제 / 내보내기(JSON)를 분리 제공한다. 삭제는 §8 연쇄 규칙과 키 파기까지 포함한다. **1단계**는 전체 삭제(계정 + crypto-shred + Gmail revoke)와 출처 삭제를 설정 화면 버튼 2개로 둔다(M2 "보관·삭제 잡" 태스크)(M2-⑥). 내보내기(JSON)는 3단계.
 - 잠금 화면 알림에 본문 대신 요약("일정 제안 1건")만 노출하는 옵션을 둔다(3단계).
 - 지인 확대(3단계) 선행 조건: 개인정보 처리방침, Google API Services User Data Policy(Limited Use) 준수 문구, Gmail 앱 검증(CASA), OpenAI ZDR 신청(통제 3), 위 "내 데이터" 표·내보내기(§15 3단계).
 

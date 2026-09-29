@@ -11,6 +11,7 @@ import { withHeartbeat } from "./heartbeat.ts";
 import { mediaDeps } from "./media-deps.ts";
 import { notifyProposal } from "./notify.ts";
 import { notifyDeps } from "./notify-deps.ts";
+import { purgeMedia } from "./purge.ts";
 import { reauthPush } from "./reauth.ts";
 import { reauthDeps } from "./reauth-deps.ts";
 import { type Metrics, processText } from "./text.ts";
@@ -41,6 +42,8 @@ const handlers: Record<string, (job: Job) => Promise<string>> = {
   "gmail-watch": (j) => gmailWatch(sb, j),
   // 재인증 푸시(스펙 §7): 연결·사유·만료 창마다 1회
   "gmail-reauth": (j) => reauthPush(reauth, j),
+  // 원문 만료(스펙 §8): 기한 지난 이미지·PDF 의 Storage 객체. purge-expired-daily cron 이 넣는다
+  "purge-media": () => purgeMedia(sb),
 };
 Deno.serve(async (req) => {
   if (!isServiceCaller(req)) return new Response(null, { status: 403 });

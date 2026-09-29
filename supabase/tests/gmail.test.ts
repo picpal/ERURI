@@ -161,7 +161,7 @@ Deno.test("gmail-fetch: rules → encrypt → insert_item; discarded messages ar
     b: gmsg("b", "인증번호 483920 을 입력하세요", "본인 확인"),
     c: gmsg("c", "가을 세일", "세일", ["INBOX", "CATEGORY_PROMOTIONS"]),
   };
-  const { rpc, calls } = fakeRpc({ gmail_get_refresh_token: "rt-1", insert_item: "item-a" });
+  const { rpc, calls } = fakeRpc({ gmail_get_refresh_token: "rt-1", insert_item: "item-a", gmail_state: [{ cursor: "1", last_success_at: "2026-09-20T00:00:00Z" }] });
   const { deps } = fakeDeps({ api: { getMessage: async (id) => bodies[id] } });
   assertEquals(await gmailFetch(rpc, job("gmail-fetch", { ids: ["a", "b", "c"] }), deps), "fetched");
   const ins = calls.filter((c) => c.fn === "insert_item");
@@ -175,7 +175,7 @@ Deno.test("gmail-fetch: rules → encrypt → insert_item; discarded messages ar
 });
 
 Deno.test("gmail-fetch: backfill job stores items into the backfill lane (p_backfill true)", async () => {
-  const { rpc, calls } = fakeRpc({ gmail_get_refresh_token: "rt-1", insert_item: "item-a" });
+  const { rpc, calls } = fakeRpc({ gmail_get_refresh_token: "rt-1", insert_item: "item-a", gmail_state: [{ cursor: "1", last_success_at: "2026-09-20T00:00:00Z" }] });
   const { deps } = fakeDeps({ api: { getMessage: async (id) => gmsg(id, "합성 안내 메일", "합성 제목") } });
   await gmailFetch(rpc, job("gmail-fetch", { ids: ["a"], backfill: true }), deps);
   assertEquals(calls.filter((c) => c.fn === "insert_item").map((c) => c.args.p_backfill), [true]);
@@ -424,4 +424,11 @@ Deno.test("gmail_save_connection keeps the refresh token in vault, readable only
   assertEquals([b.data, c.data], [null, null]);
   await sb.from("jobs").delete().eq("lease_key", "gmail:" + id);
   await sb.from("connections").delete().eq("id", id);                         // 삭제 트리거가 vault 토큰도 지운다
+});
+
+Deno.test("gmail-fetch: stops without storing when the connection disappears mid-job (source deleted)", async () => {
+  const { rpc, calls } = fakeRpc({ gmail_get_refresh_token: "rt-1", gmail_state: [] });
+  const { deps } = fakeDeps({ api: { getMessage: async (id) => gmsg(id, "합성 안내", "합성 제목") } });
+  assertEquals(await gmailFetch(rpc, job("gmail-fetch", { ids: ["a", "b"] }), deps), "connection_gone");
+  assertEquals(calls.filter((c) => c.fn === "insert_item").length, 0);
 });
