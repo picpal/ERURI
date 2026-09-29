@@ -9,7 +9,8 @@ export async function purgeMedia(sb: SupabaseClient): Promise<string> {
     const [bucket, ...rest] = r.storage_key.split("/");
     const { error: e } = await sb.storage.from(bucket).remove([rest.join("/")]);
     if (e) continue;
-    await sb.rpc("worker_clear_storage_key", { p_user: r.user_id, p_item: r.item_id });
+    const { error: c } = await sb.rpc("worker_clear_storage_key", { p_user: r.user_id, p_item: r.item_id });
+    if (c) continue;                            // 다음 날 재시도(없는 객체 remove 는 성공)
     removed++;
   }
   console.log(JSON.stringify({ purge_media: removed }));

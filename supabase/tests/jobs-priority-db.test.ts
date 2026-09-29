@@ -37,6 +37,9 @@ Deno.test("claim order: notify > gmail-sync > process > backfill; backfill one p
 });
 
 Deno.test("insert_item p_backfill: process job goes to the backfill lane (lease backfill:<user>, priority 40)", async () => {
+  // GMAIL insert 는 살아 있는 gmail 연결이 있어야 한다(0013)
+  const { data: conn } = await sb.rpc("gmail_save_connection", { p_user: USER, p_account_ref: `${RUN}-bf-${crypto.randomUUID()}@example.com`,
+    p_refresh_token: "synthetic-rt", p_history_id: "1" });
   const { data: item } = await sb.rpc("insert_item", { p_user: USER, p_source: "GMAIL", p_idempotency_key: `${RUN}:bf-item`,
     p_sender: null, p_title: null, p_content_enc: toBytea(await encrypt(USER, "합성 메일")), p_occurred_at: "2026-08-01T00:00:00Z",
     p_backfill: true });
@@ -46,6 +49,7 @@ Deno.test("insert_item p_backfill: process job goes to the backfill lane (lease 
   } finally {
     await sb.from("jobs").delete().eq("user_id", USER).eq("payload->>item_id", item as string);
     await sb.from("items").delete().eq("user_id", USER).eq("id", item as string);
+    await sb.from("connections").delete().eq("id", conn);
   }
 });
 
