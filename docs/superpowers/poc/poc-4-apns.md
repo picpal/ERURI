@@ -2,7 +2,7 @@
 
 판정 기준(스펙 §14): 프로덕션 리전에서 100회 발송(동시 10 포함), **성공률 ≥ 99%, h2 스트림 오류 0**. 대안: Cloudflare Worker 릴레이.
 
-## 서버 경로 실측 (2026-09-26~27, 실기기 토큰 없음)
+## 서버 경로 실측 (2026-09-26~27 가짜 토큰, 2026-09-30 실기기 production 토큰)
 
 가짜 기기 토큰(무작위 64자 hex)으로 sandbox(`api.sandbox.push.apple.com`)에 보냈다. APNs는 TLS·HTTP/2·JWT(.p8 ES256) 인증을
 모두 통과한 요청에만 `400 BadDeviceToken`과 `apns-id`를 돌려주므로, 이 응답이 서버 경로 동작의 증거다.
@@ -16,6 +16,8 @@
 | 로컬 Deno, 100회 동시 10 | 400 98/100, `dispatch task is gone` 2 | p50 4.2초 |
 | `curl --http1.1` 대조군 | 연결 실패(000) — APNs는 HTTP/1.1을 받지 않는다 | — |
 | `curl --http2` 대조군 | 400 `BadDeviceToken`, proto=2 | — |
+| **실기기 production 토큰**, 배포 Edge 100회 동시 10 1회차 (2026-09-30 00:29:40 KST, silent priority 5) | 200 100/100, `apns-id` 100, h2 오류 0, fetch 오류 0, envRetries 0 | p50 367ms, p95 755ms, max 756ms (함수 total 3,549ms) |
+| **실기기 production 토큰**, 배포 Edge 100회 동시 10 2회차 (2026-09-30 00:29:46 KST, silent priority 5) | 200 100/100, `apns-id` 100, h2 오류 0, fetch 오류 0, envRetries 0 | p50 291ms, p95 594ms, max 595ms (함수 total 2,934ms) |
 
 **h2 판정: 동작한다.** Deno `fetch`(로컬·Edge 모두)는 HTTP/2로 협상한다. HTTP/1.1이면 APNs가 연결 단계에서 거부하므로
 400 응답과 `apns-id`를 받을 수 없다. 오류 메시지도 `http2 error: …`로 hyper h2 클라이언트임을 보여 준다.
