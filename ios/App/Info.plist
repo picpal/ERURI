@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>ko</string>
+  <key>CFBundleDisplayName</key><string>ERURI</string>
+  <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>UILaunchScreen</key><dict/>
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+  </array>
+  <key>NSCalendarsFullAccessUsageDescription</key><string>제안된 일정을 캘린더에 추가합니다.</string>
+  <key>NSContactsUsageDescription</key><string>연락처에 있는 발신자의 메시지를 제외합니다.</string>
+  <key>ITSAppUsesNonExemptEncryption</key><false/>
+  <!-- 무음 푸시(remote-notification)·BGAppRefreshTask(fetch)·BGTaskScheduler(processing) -->
+  <key>UIBackgroundModes</key>
+  <array>
+    <string>remote-notification</string>
+    <string>fetch</string>
+    <string>processing</string>
+  </array>
+  <key>BGTaskSchedulerPermittedIdentifiers</key>
+  <array>
+    <string>com.picpal.eruri.refresh</string>
+  </array>
+  <!-- Google Sign-In(Gmail 연결): 값은 Config/Secrets.xcconfig (sim.sh config) -->
+  <key>GIDClientID</key><string>$(GID_CLIENT_ID)</string>
+  <key>GIDServerClientID</key><string>$(GID_SERVER_CLIENT_ID)</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLSchemes</key>
+      <array><string>$(GID_REVERSED_CLIENT_ID)</string></array>
+    </dict>
+  </array>
+  <key>EruriSupabaseHost</key><string>$(ERURI_SUPABASE_HOST)</string>
+  <key>EruriSupabaseAnonKey</key><string>$(ERURI_SUPABASE_ANON_KEY)</string>
+  <key>EruriIngestDefaultURL</key><string>$(ERURI_INGEST_DEFAULT_URL)</string>
+</dict>
+</plist>

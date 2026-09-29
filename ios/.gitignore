@@ -1,0 +1,8 @@
+# sim.sh config 가 supabase/.env 에서 만든다. 공개 가능 값(클라이언트 ID·publishable 키)이지만 저장소에는 두지 않는다
+Config/Secrets.xcconfig
+# App Store Connect API 키(AuthKey_<KEY_ID>.p8, issuer-id). 커밋하지 않는다
+keys/
+# xcodegen 산출물·빌드·pane 전용 시뮬레이터
+*.xcodeproj
+build/
+.sim-udid

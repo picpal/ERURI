@@ -1,0 +1,81 @@
+name: Eruri
+options:
+  bundleIdPrefix: com.picpal.eruri
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "26.3"
+settings:
+  base:
+    DEVELOPMENT_TEAM: 6626BYCJG4
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "6.0"
+    # 제품 앱은 0.3.0부터(0.2.x 는 PoC, 스펙 §11). 메이저 금지(AGENTS.md §8). 빌드 번호는 scripts/testflight.sh 가 $(date +%Y%m%d%H%M)
+    MARKETING_VERSION: 0.3.0
+    CURRENT_PROJECT_VERSION: "1"
+packages:
+  EruriCore:
+    path: Packages/EruriCore
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    majorVersion: 8.0.0
+targets:
+  Eruri:
+    type: application
+    platform: iOS
+    sources: [App]
+    dependencies:
+      - package: EruriCore
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - target: ShareExtension
+    # GID_*·ERURI_SUPABASE_* (sim.sh config 가 supabase/.env 에서 공개 값만 생성, gitignore)
+    configFiles:
+      Debug: Config/Secrets.xcconfig
+      Release: Config/Secrets.xcconfig
+    # 자동 서명(-allowProvisioningUpdates)이 App ID 에 켤 capability. Sign in with Apple 은 entitlements + App ID 등록(U3)
+    attributes:
+      SystemCapabilities:
+        com.apple.ApplicationGroups.iOS: { enabled: 1 }
+        com.apple.Push: { enabled: 1 }
+        com.apple.BackgroundModes: { enabled: 1 }
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.picpal.eruri
+        CODE_SIGN_ENTITLEMENTS: App/App.entitlements
+        INFOPLIST_FILE: App/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
+        ERURI_INGEST_DEFAULT_URL: https://$(ERURI_SUPABASE_HOST)/functions/v1
+  ShareExtension:
+    type: app-extension
+    platform: iOS
+    sources: [ShareExtension]
+    dependencies:
+      - package: EruriCore
+    attributes:
+      SystemCapabilities:
+        com.apple.ApplicationGroups.iOS: { enabled: 1 }
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.picpal.eruri.share
+        CODE_SIGN_ENTITLEMENTS: ShareExtension/ShareExtension.entitlements
+        INFOPLIST_FILE: ShareExtension/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+  EruriCoreTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Packages/EruriCore/Tests/EruriCoreTests]
+    dependencies:
+      - package: EruriCore
+      - target: Eruri
+    settings:
+      base:
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Eruri.app/Eruri
+        BUNDLE_LOADER: $(TEST_HOST)
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Eruri:
+    build:
+      targets: { Eruri: all, ShareExtension: all, EruriCoreTests: [test] }
+    test:
+      targets: [EruriCoreTests]
