@@ -41,6 +41,9 @@ struct ItemDetailView: View {
   }
 
   private func load() async {
+    // .task 는 화면이 다시 보일 때마다 불린다. 이미 받았으면 다시 복호화·audit_read 를 만들지 않는다
+    guard meta.isEmpty else { return }
+    loadError = nil
     let r = await API.send("functions/v1/chat/item", method: "POST", json: ["item_id": itemID], timeout: 20)
     if let r, r.status == 200, let o = try? JSONSerialization.jsonObject(with: r.data) as? [String: Any] { meta = o }
     else { loadError = r?.status == 404 ? "항목을 찾을 수 없습니다" : "원문을 불러오지 못했습니다" }

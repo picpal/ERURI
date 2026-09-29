@@ -1,4 +1,5 @@
 import SwiftUI
+import EventKit
 import EruriCore
 
 /// 채팅(스펙 §9): 질문 → 답변 + 출처(탭하면 원문) + 인용마다 👍/👎(eval_judgments, §9 평가 절차 4) + 인용 항목의 제안 카드(Ruling 8)
@@ -9,7 +10,9 @@ struct ChatView: View {
   @State private var turns: [Turn] = []
   @State private var busy = false
   @State private var judged: [String: Bool] = [:]      // "<answer_id>|<item_id>" → ok
-  @State private var added: Set<String> = []           // 이 화면에서 캘린더 추가를 누른 제안 id
+  @State private var judging: Set<String> = []         // 기록 요청 중인 키 — 연타가 도착 순서 경합을 만들지 않게 막는다
+  @State private var adds: [String: AddState] = [:]    // 제안 id → 캘린더 추가 진행·결과
+  enum AddState { case running, finished(String), failed(String) }
 
   var body: some View {
     NavigationStack {
@@ -50,15 +53,30 @@ struct ChatView: View {
         judgeButton(a.answer_id, c.item_id, false, "👎")
       }
     }
-    ForEach(a.proposals) { p in
-      if let start = ChatReply.calendarStart(p) {
-        let title = p.payload["title"]?.string ?? "일정"
-        Button(added.contains(p.id) ? "추가 요청함 · \(title)" : "캘린더에 추가 · \(title) \(ChatReply.seoulLabel(start))") {
-          added.insert(p.id)
-          // 알림 액션과 같은 §10 경로(서버 상태 확인 → 표식 조회 → 저장 → 보고). 결과는 그 경로의 알림으로 안내된다
-          Task { await NotificationActions.handleAdd(fields: ["proposal_id": p.id, "title": title, "start": start]) }
+    // 푸시 "추가" 액션과 같이 캘린더 전체 접근이 없으면 카드를 숨긴다(§10 권한 철회)
+    if EKEventStore.authorizationStatus(for: .event) == .fullAccess {
+      ForEach(a.proposals) { p in
+        if let start = ChatReply.calendarStart(p) { proposalCard(p, title: p.payload["title"]?.string ?? "일정", start: start) }
+      }
+    }
+  }
+
+  @ViewBuilder private func proposalCard(_ p: ChatReply.Proposal, title: String, start: String) -> some View {
+    let state = adds[p.id]
+    VStack(alignment: .leading, spacing: 4) {
+      Button(state.isRunning ? "추가하는 중… · \(title)" : "캘린더에 추가 · \(title) \(ChatReply.seoulLabel(start))") {
+        adds[p.id] = .running
+        Task {
+          // 알림 액션과 같은 §10 경로(서버 상태 확인 → 표식 조회 → 저장 → 보고). 결과를 카드에 쓰고, 실패면 버튼을 다시 켠다
+          let fb = ChatReply.addFeedback(await NotificationActions.handleAdd(fields: ["proposal_id": p.id, "title": title, "start": start]))
+          adds[p.id] = fb.retry ? .failed(fb.text) : .finished(fb.text)
         }
-        .disabled(added.contains(p.id))
+      }
+      .disabled(state.isRunning || state.isFinished)
+      switch state {
+      case .finished(let t)?: Text(t).font(.caption).foregroundStyle(.secondary)
+      case .failed(let t)?: Text(t).font(.caption).foregroundStyle(.red)
+      default: EmptyView()
       }
     }
   }
@@ -68,24 +86,27 @@ struct ChatView: View {
     return Button(label) {
       let before = judged[key]
       judged[key] = ok
+      judging.insert(key)
       Task {
+        defer { judging.remove(key) }
         // 같은 인용을 다시 누르면 바꾼다(unique user_id·question_id·item_id, merge-duplicates). 실패하면 표시를 되돌린다
         let r = await API.send("rest/v1/eval_judgments?on_conflict=user_id,question_id,item_id", method: "POST",
                                json: ["question_id": answer, "item_id": item, "ok": ok],
                                headers: ["Prefer": "resolution=merge-duplicates,return=minimal"])
-        if !(200..<300).contains(r?.status ?? -1), judged[key] == ok { judged[key] = before }
+        if !(200..<300).contains(r?.status ?? -1) { judged[key] = before }
       }
     }
-    .buttonStyle(.borderless).opacity(judged[key] == nil || judged[key] == ok ? 1 : 0.3)
+    .buttonStyle(.borderless).disabled(judging.contains(key)).opacity(judged[key] == nil || judged[key] == ok ? 1 : 0.3)
   }
 
   private func send() {
     let q = input.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !q.isEmpty, !busy else { return }
+    // 서버 한도(⑧b bad_question). 넘으면 입력을 지우지 않고 고칠 수 있게 둔다
+    guard q.utf16.count <= 500 else { turns.append(Turn(question: q, error: ChatReply.errorMessage(status: 400))); return }
     input = ""
     turns.append(Turn(question: q))
     let idx = turns.count - 1
-    guard q.utf16.count <= 500 else { turns[idx].error = ChatReply.errorMessage(status: 400); return }   // 서버 한도(⑧b bad_question)
     busy = true
     Task {
       defer { busy = false }
@@ -109,4 +130,9 @@ struct ChatView: View {
       }
     }
   }
+}
+
+private extension Optional where Wrapped == ChatView.AddState {
+  var isRunning: Bool { if case .running? = self { return true }; return false }
+  var isFinished: Bool { if case .finished? = self { return true }; return false }
 }

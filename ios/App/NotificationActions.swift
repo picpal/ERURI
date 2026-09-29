@@ -20,18 +20,20 @@ enum NotificationActions {
 
   /// 스펙 §10 순서 1~5. fields: proposal_id·title·start(+09:00)·version
   /// 백그라운드 실행 시간 안에 EventKit 쓰기와 완료 핸들러가 끝나도록 네트워크 구간마다 마감을 둔다(M1-②c 리뷰):
-  /// 순서 1 조회 5초 + 순서 4 보고 5초, 둘 다 토큰 갱신 포함
-  static func handleAdd(fields f: [String: String]) async {
+  /// 순서 1 조회 5초 + 순서 4 보고 5초, 둘 다 토큰 갱신 포함.
+  /// 반환: AddEventGate 결과 · "skip_<why>" · "invalid_payload". 알림 액션은 버리고(완료 핸들러 경로 그대로), 채팅 카드는 화면에 쓴다
+  @discardableResult
+  static func handleAdd(fields f: [String: String]) async -> String {
     let started = Date()
     guard let pid = f["proposal_id"], UUID(uuidString: pid) != nil, let title = f["title"], let s = f["start"],
           let start = ISO8601DateFormatter().date(from: s) else {
-      Trace.log("action.handled", ["result": "invalid_payload"]); return
+      Trace.log("action.handled", ["result": "invalid_payload"]); return "invalid_payload"
     }
     // 1. 서버 최신 상태(토큰 갱신 포함 5초). 넘기거나 오프라인이면 건너뛰고 받은 버전으로 실행(순서 5)
     let server = await Deadline.run(seconds: 5) { await serverProposal(pid) }
     if case .stop(let why) = ProposalFlow.check(serverStatus: server?.status) {
       await ExecutionReporter.notice(title: "이미 처리된 제안", body: why == "stale" ? "제안이 바뀌어 추가하지 않았습니다." : "이미 캘린더에 추가된 제안입니다.")
-      trace("skip_\(why)", pid: pid, started: started); return
+      trace("skip_\(why)", pid: pid, started: started); return "skip_\(why)"
     }
     // 기록·보고 version 은 실제로 넣은 내용(푸시 페이로드)의 것. 서버가 더 새 version 이면 보고 결과 changed 로 알린다(순서 5)
     let version = Int(f["version"] ?? "") ?? server?.version ?? 1
@@ -40,6 +42,7 @@ enum NotificationActions {
     trace(outcome, pid: pid, started: started)
     // 4. 이 제안 1건만 보고(5초). 실패·마감·나머지 미보고분은 앱 활성화 flush 가 보낸다
     if !outcome.hasPrefix("fail") { await ExecutionReporter.shared.report(proposalId: pid, within: 5) }
+    return outcome
   }
 
   private struct ServerProposal: Sendable { let status: String?; let version: Int? }
