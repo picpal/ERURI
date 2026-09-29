@@ -93,7 +93,7 @@ function deps(o: { storageKey?: string | null; ocr?: string | null; allowed?: bo
     download: async () => { calls.download++; return new Uint8Array(o.bytes ?? 4); },
     extract: async (input) => { calls.extract.push(input); return { event: EVENT, usage: { input_tokens: 1000, output_tokens: 50 } }; },
     addTokens: async (_u, n) => { calls.tokens += n; },
-    saveEvent: async (_u, item, ev, via) => { calls.saved.push([item, ev.title, via]); },
+    saveEvent: async (_u, item, ev, via) => { calls.saved.push([item, ev.title, via]); return { factId: "f1", proposalId: "p1", created: true }; },
   };
   return { d, calls };
 }

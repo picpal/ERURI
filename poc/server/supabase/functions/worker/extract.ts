@@ -1,5 +1,6 @@
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 import type { ExtractedEvent, ExtractInput, ExtractUsage } from "../_shared/extract.ts";
+import type { SavedFact } from "../_shared/facts.ts";
 import type { Job } from "../_shared/job.ts";
 
 // extract 잡(스펙 §7 이미지/PDF): items.storage_key → Storage → gpt-6-luna vision.
@@ -15,7 +16,7 @@ export type MediaDeps = {
   download(storageKey: string): Promise<Uint8Array>;
   extract(input: ExtractInput): Promise<{ event: ExtractedEvent; usage: ExtractUsage }>;
   addTokens(userId: string, tokens: number): Promise<void>;
-  saveEvent(userId: string, itemId: string, event: ExtractedEvent, via: "vision" | "ocr"): Promise<void>;
+  saveEvent(userId: string, itemId: string, event: ExtractedEvent, via: "vision" | "ocr"): Promise<SavedFact>;
 };
 
 export function mediaTypeOf(key: string): "image/jpeg" | "image/png" | "application/pdf" | null {

@@ -1,7 +1,14 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { decrypt } from "../_shared/crypto.ts";
 import { extractEventDetailed } from "../_shared/extract.ts";
+import { eventFact, saveFact } from "../_shared/facts.ts";
 import { type MediaDeps, VISION_MONTHLY_LIMIT } from "./extract.ts";
+
+// 토큰 정산(§13). process·extract 두 잡이 같이 쓴다
+export async function addExtractTokens(sb: SupabaseClient, userId: string, tokens: number): Promise<void> {
+  const { error } = await sb.rpc("add_extract_tokens", { p_user: userId, p_tokens: tokens });
+  if (error) throw new Error("add_extract_tokens " + error.code);
+}
 
 // extract 잡의 실제 의존성(service role). 사용자 범위는 모든 RPC에 user_id를 명시해 좁힌다(스펙 §12 통제 4)
 export function mediaDeps(sb: SupabaseClient, extract: MediaDeps["extract"] = (i) => extractEventDetailed(i)): MediaDeps {
@@ -27,13 +34,7 @@ export function mediaDeps(sb: SupabaseClient, extract: MediaDeps["extract"] = (i
       return new Uint8Array(await data.arrayBuffer());
     },
     extract,
-    async addTokens(userId, tokens) {
-      const { error } = await sb.rpc("add_extract_tokens", { p_user: userId, p_tokens: tokens });
-      if (error) throw new Error("add_extract_tokens " + error.code);
-    },
-    async saveEvent(userId, itemId, event, via) {
-      const { error } = await sb.rpc("save_event_fact", { p_user: userId, p_item: itemId, p_payload: { ...event, via } });
-      if (error) throw new Error("save_event_fact " + error.code);
-    },
+    addTokens: (userId, tokens) => addExtractTokens(sb, userId, tokens),
+    saveEvent: (userId, itemId, event, via) => saveFact(sb, eventFact(userId, itemId, event, via)),
   };
 }

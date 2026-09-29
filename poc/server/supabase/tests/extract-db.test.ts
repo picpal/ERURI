@@ -81,7 +81,7 @@ Deno.test("extract job end-to-end on hosted DB: vision under cap, OCR fallback o
     const again = await sb.from("proposals").select("id", { count: "exact", head: true }).eq("fact_id", fa.id);
     assertEquals(again.count, 1);
     const { data: item } = await sb.from("items").select("status").eq("id", a.itemId).single();
-    assertEquals(item!.status, "proposed");
+    assertEquals(item!.status, "extracted");
 
     // OCR 복호화 감사가 남는다
     const { count } = await sb.from("audit_log").select("id", { count: "exact", head: true }).eq("user_id", USER).eq("target", a.itemId).eq("action", "decrypt");
