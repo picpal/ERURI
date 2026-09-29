@@ -17,7 +17,7 @@ export type TextDeps = {
   classifier: Classifier;
   threshold: number;
   extract(text: string, meta: TextMeta, today: string): Promise<{ result: TextExtraction; usage: ExtractUsage }>;
-  addTokens(userId: string, tokens: number): Promise<void>;
+  addTokens(userId: string, tokens: number, backfill: boolean): Promise<void>;
   saveFact(f: FactInput): Promise<SavedFact>;
   enqueueNotify(userId: string, proposalId: string): Promise<void>;
   unpushedProposals(userId: string, itemId: string): Promise<string[]>;
@@ -64,7 +64,7 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
 
   // 3) 추출. 상대 날짜 기준일 = 받은 날(occurred_at, 서울)
   const { result, usage } = await deps.extract(v.masked, meta, receivedDay(item.occurredAt));
-  await deps.addTokens(user, usage.input_tokens + usage.output_tokens);
+  await deps.addTokens(user, usage.input_tokens + usage.output_tokens, job.payload.backfill === true);
   const fact = textFact(user, itemId, result);
   if (fact === null) return discard(deps, job, user, itemId, "empty", false);   // 남길 것 없음: 원문 유지(1a 검색 대상)
 

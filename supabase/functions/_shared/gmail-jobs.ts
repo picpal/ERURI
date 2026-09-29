@@ -42,6 +42,7 @@ async function accessToken(sb: RpcClient, deps: GmailJobDeps, user: string, conn
   catch (e) {
     if (!(e instanceof ReauthRequired)) throw e;
     await call(sb, "gmail_update", { p_user: user, p_connection: conn, p_status: "reauth_required" });
+    await call(sb, "gmail_enqueue_reauth", { p_user: user });   // 끊김 즉시 재인증 푸시(스펙 §7)
     console.log(JSON.stringify({ connection_id: conn, gmail: "reauth_required" }));
     return null;
   }
@@ -81,6 +82,7 @@ export async function gmailFetch(sb: RpcClient, job: Job, deps = defaultGmailDep
         p_sender: it.sender, p_title: it.title,                    // 제목은 카드·계좌 마스킹된 값
         p_content_enc: toBytea(await deps.encrypt(user, it.text)), // 평문 본문은 DB로 가지 않는다
         p_occurred_at: it.occurredAt,
+        p_backfill: job.payload.backfill === true,   // 연결 시 90일 백필 → 백필 레인(§7)
       });
       stored++;
     }

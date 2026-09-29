@@ -4,9 +4,9 @@ import { extractEventDetailed } from "../_shared/extract.ts";
 import { enqueueNotify, eventFact, saveFact } from "../_shared/facts.ts";
 import { type MediaDeps, VISION_MONTHLY_LIMIT } from "./extract.ts";
 
-// 토큰 정산(§13). process·extract 두 잡이 같이 쓴다
-export async function addExtractTokens(sb: SupabaseClient, userId: string, tokens: number): Promise<void> {
-  const { error } = await sb.rpc("add_extract_tokens", { p_user: userId, p_tokens: tokens });
+// 토큰 정산(§13). process·extract 두 잡이 같이 쓴다. 백필 항목은 1회 백필 카운터로
+export async function addExtractTokens(sb: SupabaseClient, userId: string, tokens: number, backfill = false): Promise<void> {
+  const { error } = await sb.rpc("add_extract_tokens", { p_user: userId, p_tokens: tokens, p_backfill: backfill });
   if (error) throw new Error("add_extract_tokens " + error.code);
 }
 

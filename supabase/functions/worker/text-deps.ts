@@ -23,7 +23,7 @@ export function textDeps(sb: SupabaseClient, o: { classifier: Classifier; thresh
     classifier: o.classifier,
     threshold: o.threshold,
     extract: o.extract ?? ((text, meta, today) => extractTextDetailed(text, meta, today)),
-    addTokens: (userId, tokens) => addExtractTokens(sb, userId, tokens),
+    addTokens: (userId, tokens, backfill) => addExtractTokens(sb, userId, tokens, backfill),
     saveFact: (f) => saveFact(sb, f),
     enqueueNotify: (userId, proposalId) => enqueueNotify(sb, userId, proposalId, o.leasePrefix ?? ""),
     async unpushedProposals(userId, itemId) {

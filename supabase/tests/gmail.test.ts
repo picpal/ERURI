@@ -143,8 +143,9 @@ Deno.test("gmail-sync: invalid_grant → connection reauth_required, job ends as
   const { rpc, calls } = fakeRpc({ gmail_get_refresh_token: "rt-1" });
   const { deps } = fakeDeps({ refresh: async () => { throw new ReauthRequired("invalid_grant"); } });
   assertEquals(await gmailSync(rpc, job("gmail-sync"), deps), "skipped");
-  assertEquals(calls.map((c) => c.fn), ["gmail_get_refresh_token", "gmail_update"]);
+  assertEquals(calls.map((c) => c.fn), ["gmail_get_refresh_token", "gmail_update", "gmail_enqueue_reauth"]);
   assertEquals(calls[1].args, { p_user: USER, p_connection: CONN, p_status: "reauth_required" });
+  assertEquals(calls[2].args, { p_user: USER });
 });
 
 Deno.test("gmail jobs skip inactive connections (no refresh token)", async () => {
@@ -167,9 +168,17 @@ Deno.test("gmail-fetch: rules → encrypt → insert_item; discarded messages ar
   assertEquals(ins.length, 1);
   const a = ins[0].args;
   assertEquals([a.p_user, a.p_source, a.p_idempotency_key, a.p_title], [USER, "GMAIL", "gmail:a", "결제 ************0366 완료"]);
+  assertEquals(a.p_backfill, false);
   // 본문은 마스킹 후 암호화된 bytea로만 간다
   assertEquals(a.p_content_enc, "\\x" + Array.from(new TextEncoder().encode("ENC(카드 ****-****-****-0366 승인 32,000원)"), (x) => x.toString(16).padStart(2, "0")).join(""));
   assert(!JSON.stringify(a).includes("4532-0151"));
+});
+
+Deno.test("gmail-fetch: backfill job stores items into the backfill lane (p_backfill true)", async () => {
+  const { rpc, calls } = fakeRpc({ gmail_get_refresh_token: "rt-1", insert_item: "item-a" });
+  const { deps } = fakeDeps({ api: { getMessage: async (id) => gmsg(id, "합성 안내 메일", "합성 제목") } });
+  await gmailFetch(rpc, job("gmail-fetch", { ids: ["a"], backfill: true }), deps);
+  assertEquals(calls.filter((c) => c.fn === "insert_item").map((c) => c.args.p_backfill), [true]);
 });
 
 Deno.test("gmail-watch: renews watch on the topic and stores the new expiration", async () => {
@@ -237,7 +246,7 @@ Deno.test("gmail-connect: exchange → scope check → profile → save(vault) �
   assertEquals(rpcCalls.map((c) => c.fn), ["gmail_save_connection", "gmail_update", "enqueue_job", "enqueue_job", "gmail_enqueue_for_account"]);
   // watch 전에 저장한다: 커서는 profile의 historyId(watch 이후 도착분도 history가 받는다)
   assertEquals(rpcCalls[0].args, { p_user: USER, p_account_ref: "poc@example.com", p_refresh_token: "rt", p_history_id: "400" });
-  assertEquals(rpcCalls[2].args.p_payload, { connection_id: CONN, ids: ["m1", "m2"] });
+  assertEquals([rpcCalls[2].args.p_lease_key, rpcCalls[2].args.p_payload], ["backfill:" + USER, { connection_id: CONN, ids: ["m1", "m2"], backfill: true }]);
   assertEquals(revoked, []);
 });
 

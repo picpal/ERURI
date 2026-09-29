@@ -13,7 +13,8 @@ const BUY_X: TextExtraction = { kind: "purchase", evidence: null,
 function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: ClassifyResult | null | Error; result?: TextExtraction;
   failEnqueue?: number; pushed?: boolean } = {}) {
   const calls = { decrypt: 0, classify: [] as string[], extract: [] as { text: string; today: string }[], saved: [] as FactInput[],
-    status: [] as [string, boolean][], tokens: 0, notify: [] as string[], classifyMeta: [] as ClassifyMeta[], extractMeta: [] as TextMeta[] };
+    status: [] as [string, boolean][], tokens: 0, notify: [] as string[], classifyMeta: [] as ClassifyMeta[], extractMeta: [] as TextMeta[],
+    backfill: [] as boolean[] };
   const base: TextItem = { contentEnc: "enc", source: "NOTIFICATION", appName: "Slack", sender: null, title: null,
     occurredAt: "2026-09-28T15:30:00Z", capturedAt: "2026-09-28T15:30:05Z", status: "queued" };
   // save_fact 처럼 status 를 extracted 로 바꾸고 제안을 기억한다 → 같은 fake 로 processText 를 다시 부르면 실제 재시도가 된다
@@ -24,7 +25,7 @@ function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: Cla
     classifier: { provider: "jev", classify: async (t, m) => { calls.classify.push(t); calls.classifyMeta.push(m); if (o.verdict instanceof Error) throw o.verdict; return o.verdict ?? null; } },
     threshold: 0.8,
     extract: async (text, m, today) => { calls.extract.push({ text, today }); calls.extractMeta.push(m); return { result: o.result ?? EVENT_X, usage: { input_tokens: 900, output_tokens: 60 } }; },
-    addTokens: async (_u, n) => { calls.tokens += n; },
+    addTokens: async (_u, n, bf) => { calls.tokens += n; calls.backfill.push(bf); },
     saveFact: async (f) => { calls.saved.push(f); state.status = "extracted"; const proposalId = f.kind === "purchase" ? null : "p1";
       if (proposalId && !state.proposals.includes(proposalId)) state.proposals.push(proposalId);
       return { factId: "f1", proposalId, created: calls.saved.length === 1 }; },
@@ -35,6 +36,13 @@ function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: Cla
   return { d, calls };
 }
 const job = (o: Partial<Job> = {}): Job => ({ id: "j1", kind: "process", user_id: "u1", payload: { item_id: "i1" }, attempts: 1, checkpoint: null, ...o });
+
+Deno.test("backfill job: extraction tokens go to the backfill counter", async () => {
+  const { d, calls } = fake();
+  await processText(d, job({ payload: { item_id: "i1", backfill: true } }));
+  await processText(fake().d, job());
+  assertEquals(calls.backfill, [true]);
+});
 
 Deno.test("event → proposed; fact via text; tokens counted; status left to save_fact", async () => {
   const { d, calls } = fake({ verdict: { label: "actionable", confidence: 0.99 } });

@@ -86,8 +86,8 @@ export async function handleConnect(req: Request, deps: ConnectDeps): Promise<Re
         const l = await api.listMessageIds(BACKFILL_QUERY, pageToken);
         const ids = (l.messages ?? []).map((m) => m.id);
         if (ids.length) {
-          const e = await deps.rpc.rpc("enqueue_job", { p_user: user, p_kind: "gmail-fetch", p_lease_key: "gmail:" + connId,
-            p_payload: { connection_id: connId, ids } });
+          const e = await deps.rpc.rpc("enqueue_job", { p_user: user, p_kind: "gmail-fetch", p_lease_key: "backfill:" + user,
+            p_payload: { connection_id: connId, ids, backfill: true } });   // 백필 레인: 사용자당 1개, 우선순위 40(§7)
           if (e.error) return err(500, "enqueue_failed");
         }
         pageToken = l.nextPageToken; pages++; count += ids.length;
