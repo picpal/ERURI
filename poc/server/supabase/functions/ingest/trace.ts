@@ -14,6 +14,7 @@ export type TraceRow = { user_id: string; device_id: string; event: string; fiel
 export type TraceDeps = {
   authUser(token: string): Promise<string | null>;
   insertTraces(userToken: string, rows: TraceRow[]): Promise<number>;   // 새로 들어간 행 수(중복 제외)
+  touchDevices(userToken: string, deviceIds: string[]): Promise<void>;  // devices.last_seen_at 갱신(스펙 §8: 7일 넘으면 발송 제외)
 };
 
 // 사용자 JWT 클라이언트로 넣는다(RLS). 같은 (user_id, device_id, event, at)는 무시한다(0015)
@@ -22,6 +23,12 @@ export async function upsertTraces(client: SupabaseClient, rows: TraceRow[]): Pr
     .upsert(rows, { onConflict: "user_id,device_id,event,at", ignoreDuplicates: true, count: "exact" });
   if (error) throw new Error("poc_traces insert " + error.code);
   return count ?? 0;
+}
+
+// 사용자 JWT 클라이언트로 갱신한다. RLS 가 자기 기기 행만 허용하고, 등록 안 된 device_id 는 0행이다
+export async function touchDevices(client: SupabaseClient, deviceIds: string[]): Promise<void> {
+  const { error } = await client.from("devices").update({ last_seen_at: new Date().toISOString() }).in("device_id", deviceIds);
+  if (error) throw new Error("devices touch " + error.code);
 }
 
 export function isTracePath(url: URL): boolean {
@@ -77,6 +84,11 @@ export async function handleTrace(req: Request, deps: TraceDeps): Promise<Respon
   }
   const inserted = await deps.insertTraces(token, rows);
   const duplicates = rows.length - inserted;
+  try {                                                                   // 추적은 이미 저장됨. 갱신 실패로 재전송시키지 않는다
+    await deps.touchDevices(token, [...new Set(rows.map((r) => r.device_id))]);
+  } catch (e) {
+    console.log(JSON.stringify({ ingest: "trace", touch_error: e instanceof Error ? e.message.slice(0, 60) : "error" }));
+  }
   console.log(JSON.stringify({ ingest: "trace", count: rows.length, duplicates }));   // 이벤트 내용은 남기지 않는다
   return Response.json({ inserted, duplicates }, { status: 202 });
 }

@@ -47,6 +47,21 @@ Deno.test("claim/finish: one claim wins; sent/rejected closed; failed and sendin
   } finally { await cleanup([item]); }
 });
 
+// 스펙 §8 devices: 발송 대상은 last_seen_at 7일 안인 기기만(버려진 개발 설치·시뮬레이터)
+Deno.test("worker_list_devices excludes devices not seen for over 7 days", async () => {
+  const day = 86_400_000, at = (d: number) => new Date(Date.now() - d * day).toISOString();
+  await sb.from("devices").insert([
+    { user_id: USER, device_id: `${RUN}:fresh`, apns_token: "a".repeat(64), apns_env: "production", last_seen_at: at(6.9) },
+    { user_id: USER, device_id: `${RUN}:stale`, apns_token: "b".repeat(64), apns_env: "sandbox", last_seen_at: at(7.1) },
+  ]);
+  try {
+    const { data, error } = await sb.rpc("worker_list_devices", { p_user: USER });
+    assertEquals(error, null);
+    const mine = (data as { device_id: string }[]).map((d) => d.device_id).filter((id) => id.startsWith(RUN));
+    assertEquals(mine, [`${RUN}:fresh`]);
+  } finally { await cleanup([]); }
+});
+
 // Fix round 1: 발송 중 워커가 죽은 뒤의 재시도(임대 만료 뒤)가 '이미 보냄'으로 성공하면 행이 sending 에 남아 그 기기는 영영 못 받는다
 Deno.test("notify job on hosted DB: sending row inside the lease → job fails without sending; past the lease → resent and job succeeds", async () => {
   const { item, proposal } = await seedProposal("stale");

@@ -2,17 +2,18 @@ import { assert, assertEquals } from "jsr:@std/assert";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { SERVER_AUTH } from "../functions/_shared/crypto.ts";
 import { RUN, service, testUser } from "./_testenv.ts";
-import { handleTrace, isTracePath, MAX_TRACES, type TraceDeps, type TraceRow, upsertTraces } from "../functions/ingest/trace.ts";
+import { handleTrace, isTracePath, MAX_TRACES, touchDevices, type TraceDeps, type TraceRow, upsertTraces } from "../functions/ingest/trace.ts";
 
 // ── 순수: 허용·거부 경로 ────────────────────────────────────────────
 
-function deps(o: { user?: string | null; fresh?: number } = {}) {
-  const inserted: { token: string; rows: TraceRow[] }[] = [];
+function deps(o: { user?: string | null; fresh?: number; touchFails?: boolean } = {}) {
+  const inserted: { token: string; rows: TraceRow[] }[] = [], touched: { token: string; ids: string[] }[] = [];
   const d: TraceDeps = {
     authUser: async (t) => (t === "good" ? (o.user === undefined ? "user-1" : o.user) : null),
     insertTraces: async (token, rows) => { inserted.push({ token, rows }); return o.fresh ?? rows.length; },
+    touchDevices: async (token, ids) => { if (o.touchFails) throw new Error("devices touch 500"); touched.push({ token, ids }); },
   };
-  return { d, inserted };
+  return { d, inserted, touched };
 }
 const req = (body: unknown, token: string | null = "good", raw?: string) => new Request("http://x/ingest/trace", {
   method: "POST", body: raw ?? JSON.stringify(body),
@@ -45,6 +46,17 @@ Deno.test("202 stores a batch with the caller's user_id, the caller's token, and
   assertEquals(a, { user_id: "user-1", device_id: "dev-1", event: "poc1.intent_fired",
     fields: { locked: true, bg: false, source: "NOTIFICATION", elapsed_ms: 12, text_len: 48, text_sha8: "a1b2c3d4" }, at: "2026-09-27T00:00:00.000Z" });
   assertEquals([b.event, b.fields, b.at], ["poc5.action_handled", {}, "2025-09-19T18:40:00.000Z"]);   // Swift 기준 초
+});
+
+Deno.test("202 refreshes devices.last_seen_at once per distinct device_id with the caller's token; touch failure does not fail the upload", async () => {
+  const { d, touched } = deps();
+  await handleTrace(req([ev(), ev({ event: "poc9.wake" }), ev({ device_id: "dev-2" })]), d);
+  assertEquals(touched, [{ token: "good", ids: ["dev-1", "dev-2"] }]);
+  const bad = deps({ touchFails: true });
+  assertEquals((await handleTrace(req([ev()]), bad.d)).status, 202);
+  const none = deps();
+  await handleTrace(req([ev({ event: "BAD" })]), none.d);
+  assertEquals(none.touched, []);
 });
 
 Deno.test("202 reports duplicates the store ignored", async () => {
@@ -141,6 +153,27 @@ Deno.test("DB: same (device_id, event, at) twice → stored once; second upload 
     assertEquals(count, 2);
   } finally {
     await service.from("poc_traces").delete().eq("device_id", dev);
+    await user.auth.signOut();
+  }
+});
+
+Deno.test("DB: touchDevices bumps last_seen_at of the caller's own device only (RLS)", async () => {
+  const user = createClient(URL_, Deno.env.get("SUPABASE_ANON_KEY")!, SERVER_AUTH);
+  const [t1, t2] = [await testUser(1), await testUser(2)];
+  assertEquals((await user.auth.signInWithPassword({ email: t1.email, password: t1.password })).error, null);
+  const dev = `${RUN}:${crypto.randomUUID()}`, old = "2026-01-01T00:00:00.000Z";
+  await service.from("devices").insert([
+    { user_id: t1.id, device_id: dev, apns_token: "a".repeat(64), apns_env: "production", last_seen_at: old },
+    { user_id: t2.id, device_id: dev, apns_token: "b".repeat(64), apns_env: "production", last_seen_at: old },
+  ]);
+  try {
+    await touchDevices(user, [dev]);
+    const { data } = await service.from("devices").select("user_id, last_seen_at").eq("device_id", dev);
+    const at = Object.fromEntries(data!.map((r) => [r.user_id, Date.parse(r.last_seen_at)]));
+    assert(at[t1.id] > Date.now() - 60_000);
+    assertEquals(at[t2.id], Date.parse(old));
+  } finally {
+    await service.from("devices").delete().in("user_id", [t1.id, t2.id]).eq("device_id", dev);
     await user.auth.signOut();
   }
 });

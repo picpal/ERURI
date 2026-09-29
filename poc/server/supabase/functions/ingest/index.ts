@@ -2,7 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { encrypt, SERVER_AUTH, toBytea } from "../_shared/crypto.ts";
 import { handleIngest } from "./handler.ts";
 import { handleDevice, isDevicePath } from "./device.ts";
-import { handleTrace, isTracePath, upsertTraces } from "./trace.ts";
+import { handleTrace, isTracePath, touchDevices, upsertTraces } from "./trace.ts";
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, SERVER_AUTH);
 // 사용자 JWT로 만든 클라이언트: RLS를 그대로 적용한다
 const userDb = (userToken: string) => createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!,
@@ -28,6 +28,7 @@ Deno.serve((req) => {
     return handleTrace(req, {
       authUser,
       insertTraces: (userToken, rows) => upsertTraces(userDb(userToken), rows),
+      touchDevices: (userToken, ids) => touchDevices(userDb(userToken), ids),
     });
   }
   return handleIngest(req, {

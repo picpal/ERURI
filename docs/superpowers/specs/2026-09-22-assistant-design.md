@@ -340,7 +340,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | `jobs` | kind, payload, lease_key, leased_until, attempts, status(queued/running/done/dead), checkpoint | 영속 작업 큐 |
 | `utterances` | text, embedding, said_at, source(chat/siri/quick), kind(statement/question/correction) | 사용자 발화 전체 기록 |
 | `memories` | text, embedding, utterance_id, status(active/retracted), supersedes_id | "기억해줘" 또는 gpt-6-luna가 statement로 판정한 것만. 정정 발화는 이전 memory를 retracted 처리 |
-| `devices` | device_id(unique with user_id), apns_token, apns_env(sandbox/production), build, last_seen_at | 개발 설치 = sandbox, TestFlight·App Store = production 토큰. 발송은 기기 환경으로, 환경 불일치 응답이면 반대 환경 1회 재시도. 0단계 `0011_devices.sql`과 일치. 앱은 App Group에 마지막 등록의 환경·build·token_sha8을 두고 셋 중 하나라도 바뀌면(업데이트 설치·토큰 갱신) 앱 활성화·토큰 수신 때 자동 재등록한다(0.2.1. 0.2.0은 토큰이 같으면 생략해 build가 0.1.1로 남았다) |
+| `devices` | device_id(unique with user_id), apns_token, apns_env(sandbox/production), build, last_seen_at | 개발 설치 = sandbox, TestFlight·App Store = production 토큰. 발송은 기기 환경으로, 환경 불일치 응답이면 반대 환경 1회 재시도. 0단계 `0011_devices.sql`과 일치. 앱은 App Group에 마지막 등록의 환경·build·token_sha8을 두고 셋 중 하나라도 바뀌면(업데이트 설치·토큰 갱신) 앱 활성화·토큰 수신 때 자동 재등록한다(0.2.1. 0.2.0은 토큰이 같으면 생략해 build가 0.1.1로 남았다). 발송 대상은 `last_seen_at`이 7일 안인 기기만이다(버려진 개발 설치·시뮬레이터 제외, 0b). `last_seen_at`은 등록과 추적 업로드(`/ingest/trace`, 같은 device_id)가 갱신한다 |
 | `usage_counters` | month, vision_calls, extract_tokens, chat_tokens, reserved_krw | 비용 상한. 호출 전 예약, 후 정산 |
 
 ### 삭제·만료 정책 (두 가지를 분리)
