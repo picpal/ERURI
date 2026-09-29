@@ -411,7 +411,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   0단계 앱은 `ADD_EVENT`만 등록하므로 `REVIEW`·`ADD_REMINDER`는 버튼 없는 알림으로 보인다. 제품 앱(1단계 M1)은 세 카테고리를 모두 등록하고
   `ADD_REMINDER`·`REVIEW`의 액션은 앱 열기만 한다
 - 액션 핸들러 순서 (멱등):
-  1. 서버에서 proposal 최신 버전 조회. `stale`·`succeeded`면 중단하고 안내.
+  1. 서버에서 proposal 최신 버전 조회(토큰 갱신 포함 5초 마감, 넘으면 받은 버전으로 진행). `stale`·`succeeded`면 중단하고 안내. 서버 version이 더 새로워도 여기서 중단하지 않고, 푸시로 받은 version(실제로 넣은 내용)으로 기록·보고해 순서 5의 불일치 판정에 맡긴다. 핸들러 안 보고는 방금 처리한 1건만, 나머지 미보고분은 앱 활성화 때 보낸다.
   2. 로컬 `executions` 테이블(App Group SQLite)에 proposal_id가 있으면 재쓰기 없이 보고만 재시도.
   3. EventKit 쓰기 → 성공 즉시 로컬 executions에 (proposal_id, eventkit_id) 기록.
      **2~3단계는 한 직렬 구간에서 원자적으로 수행한다.** 확인 → 저장 → 기록을 하나의 actor 메서드 안에서 `await` 없이 처리한다(PoC `AddEventGate`). 액션 핸들러는 동시에 여러 번 불릴 수 있어(같은 proposal_id의 알림 두 개를 연달아 탭) 둘 다 "기록 없음"을 보고 저장하면 `INSERT OR IGNORE`로 기록은 1건이어도 이벤트는 2건이 된다. 시뮬레이터 실측: 동시 두 번 탭에서 이벤트 +1만 생성(PoC-5).
