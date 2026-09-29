@@ -22,7 +22,15 @@
 - Q2 제안·푸시: `scripts/sql.ts 'select p.id, p.action, p.status, pp.device_id, pp.status push, pp.apns_status, pp.reason, pp.env from proposals p left join proposal_pushes pp on pp.proposal_id = p.id where p.user_id = $1 and p.created_at > now() - make_interval(mins => 15) order by p.created_at' "<POC_USER_ID>"` → `create_event` `proposed`, push `sent` 200
 - Q3 액션 trace: `scripts/sql.ts 'select at, fields from poc_traces where user_id = $1 and event = $2 and at > now() - make_interval(mins => 30) order by at' "<POC_USER_ID>" poc5.action_handled` → 첫 줄 `result=ok`·`bg=true`, 재탭 `result=dup`
 
-판정: 3단계에서 앱이 열리지 않고, Q3 `result=ok`·`bg=true`, 캘린더 1건이면 **통과**. 서버 보고 실패 후 재탭(스펙 §14 방법의 마지막 시나리오)은 `executions` 서버 보고가 없어 이 절차 밖이다(남은 실측으로 적는다).
+판정: 3단계에서 앱이 열리지 않고, Q3 `result=ok`·`bg=true`, 캘린더 1건이며 **해당 시각에 크래시 리포트(TestFlight "앱이 충돌함" 안내, 기기 분석 데이터 `EruriPoC-*.ips`)가 없으면** **통과**. 서버 보고 실패 후 재탭(스펙 §14 방법의 마지막 시나리오)은 `executions` 서버 보고가 없어 이 절차 밖이다(남은 실측으로 적는다).
+
+### 실기기 0.2.1 결과 (2026-09-29) — 크래시, 0.2.2 수정
+
+- 0.2.1(202609291603)에서 두 제안 알림(18:04:53·18:05:02 KST)을 잠금 화면에서 탭했다. 두 건 모두 캘린더 1건 저장, `poc5.action_handled` `result=ok`·`bg=true`·`auth=3`까지 정상이었다.
+- 그런데 두 번 다 TestFlight 충돌 안내가 떴다. 원인은 async 판 `didReceive` 이다. 컴파일러 thunk 가 완료 핸들러를 Swift 협력 스레드에서 불렀고, UIKit 스냅샷 갱신(`_performBlockAfterCATransactionCommitSynchronizes:`)이 메인 스레드 단언으로 SIGABRT 했다.
+- 09-24 시뮬레이터 실측도 매번 같은 크래시(`~/Library/Logs/DiagnosticReports/AssistantPoC-2026-09-24-*.ips` 3건)를 냈다. 판정이 로그 줄만 봐서 놓쳤다.
+- 0.2.2: delegate 를 completion-handler 판으로 바꾸고 완료를 모든 경로에서 메인 큐로 1회 호출한다. `eventIdentifier` 암시적 언래핑도 제거했다.
+- 시뮬레이터 XCUITest(백그라운드 탭·재탭 dup·콜드 스타트)에서 새 `.ips` 가 0건이다. 이제 판정에 "크래시 리포트 없음"을 포함한다.
 
 ## 시뮬레이터 재실측 (2026-09-24, Opus 재검증 반영 후) — 실제 배너·액션 탭
 
@@ -90,6 +98,7 @@ seek→write라 동시 쓰기에서 서로 덮어썼다(호스트 재현: 200줄
 ## 판정 기준 (스펙 §14 PoC-5)
 
 - **통과**: 잠금 상태의 `authenticationRequired` 액션에서 앱을 열지 않고 캘린더에 1건만 생성(두 번 탭·보고 실패 후 재탭 포함).
+  **해당 시각에 앱 크래시 리포트가 없어야 한다**(로그·trace 가 정상이어도 완료 뒤 크래시가 날 수 있다. 0.2.1 사례).
 - **실패 → 대안**: `foreground` 액션으로 앱을 열어 실행.
 
 ## 계획서와 달라진 점
