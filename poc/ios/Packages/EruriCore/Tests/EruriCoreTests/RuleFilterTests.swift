@@ -71,6 +71,11 @@ final class RuleFilterReviewTests: XCTestCase {
     pass("[신한카드] 승인번호 12345678 32,000원 일시불", "[신한카드] 승인번호 ******** 32,000원 일시불")
   }
   func testApprovalNumberWithoutPaymentContextDiscarded() { otp("[OO은행] 승인번호 123456 을 입력하세요") }
+  // 0b: 문장 끝 마침표 앞 OTP(Jev 평가 o02, 서버 rules.ts 와 같은 수정), 대괄호 OTP(09-29 실기기 d07) 회귀
+  func testOTPBeforeSentencePeriod() { otp("[Web발신] Your verification code is 603918. Do not share it with anyone.") }
+  func testOTPKoreanSentencePeriod() { otp("인증번호는 482913.") }
+  func testOTPBracketed() { otp("[네이버] 인증번호 [482913]를 입력해 주세요. 타인에게 절대 알리지 마세요.") }
+  func testDottedDateNearKeywordPasses() { pass("예약 확인번호 안내: 2026. 10. 2. 방문", "예약 확인번호 안내: 2026. 10. 2. 방문") }
 }
 
 // fix-2: title 에도 규칙 적용(판정은 제목+본문 합쳐서, 마스킹은 각각), 연락처 정규화(공백·"님/씨").

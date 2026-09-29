@@ -92,3 +92,15 @@ Deno.test("maskSensitive for titles and luhn helper", () => {
   assertEquals(luhn("4532015112830366"), true);
   assertEquals(luhn("1234567890123"), false);
 });
+// 0b: 문장 끝 마침표 앞 OTP(Jev 평가 o02)와 대괄호·괄호 OTP(09-29 d07)는 폐기. 점 날짜·버전은 키워드 옆이어도 통과
+Deno.test("OTP: digits before a sentence-final period, bracketed or parenthesized digits are discarded", () => {
+  for (const t of ["[Web발신] Your verification code is 603918. Do not share it with anyone.", "인증번호는 482913.",
+    "[네이버] 인증번호 [482913]를 입력해 주세요. 타인에게 절대 알리지 마세요.", "인증번호 (482913)"]) {
+    assertEquals(applyRules(t), { kind: "discard", reason: "otp" }, t);
+  }
+});
+Deno.test("OTP: dotted dates and versions near a keyword still pass", () => {
+  for (const t of ["예약 확인번호 안내: 2026. 10. 2. 방문", "인증 절차 안내 2026.10.02 공지", "보안코드 변경 v1.2345.6"]) {
+    assertEquals(applyRules(t).kind, "pass", t);
+  }
+});
