@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { parseSenderArgs, runSender, sha8 } from "../../scripts/_phrase-sender.ts";
 
 Deno.test("sha8 matches iOS Trace.sha8 (SHA-256 hex first 8)", async () => {
@@ -8,6 +8,10 @@ Deno.test("sha8 matches iOS Trace.sha8 (SHA-256 hex first 8)", async () => {
 Deno.test("args: defaults, --only, --gap, --dry-run", () => {
   assertEquals(parseSenderArgs([], 25), { only: null, gapSec: 25, dryRun: false });
   assertEquals(parseSenderArgs(["--only", "d02,d09", "--gap", "5", "--dry-run"], 25), { only: ["d02", "d09"], gapSec: 5, dryRun: true });
+  // 최종 리뷰 triage(Task 6 minor): 값 없는 --only 는 전체 발송이 아니라 오류
+  for (const a of [["--only"], ["--only", ""], ["--only", " , "], ["--only", "--dry-run"]]) {
+    assertThrows(() => parseSenderArgs(a, 25), Error, "--only needs phrase ids");
+  }
 });
 
 Deno.test("runSender: default = d01~d10 in order; --only keeps fixture order; push renders a future date; no text printed; dry-run; unknown id", async () => {

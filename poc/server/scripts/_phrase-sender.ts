@@ -13,7 +13,14 @@ export function sendable(today: string): { id: string; text: string }[] {
 export function parseSenderArgs(args: string[], defaultGapSec: number): SenderArgs {
   const at = (k: string) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
   const gap = Number(at("--gap") ?? defaultGapSec);
-  return { only: at("--only")?.split(",").map((s) => s.trim()).filter((s) => s.length > 0) ?? null,
+  // `--only` 뒤 값이 없거나(`--only` 가 끝, 다음이 플래그) 비어 있으면 전체 발송으로 넘어가지 않고 멈춘다(실기기 측정 오염 방지)
+  let only: string[] | null = null;
+  if (args.includes("--only")) {
+    const v = at("--only");
+    only = v === undefined || v.startsWith("--") ? [] : v.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+    if (only.length === 0) throw new Error("--only needs phrase ids (e.g. --only d02,d09 or --only push)");
+  }
+  return { only,
     gapSec: Number.isFinite(gap) && gap >= 0 ? gap : defaultGapSec, dryRun: args.includes("--dry-run") };
 }
 
