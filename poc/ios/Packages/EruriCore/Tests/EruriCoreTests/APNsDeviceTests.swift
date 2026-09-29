@@ -54,19 +54,30 @@ final class APNsDeviceTests: XCTestCase {
     XCTAssertNil(APNsDevice.profileAPSEnvironment(Data("no plist".utf8)))
   }
 
-  func testNeedsRegistrationUntilMarkedAndAgainWhenTokenChanges() {
-    let d = tempDefaults()
-    XCTAssertFalse(APNsDevice.needsRegistration(defaults: d))            // 토큰 없음
+  func testNeedsRegistrationTracksEnvBuildAndTokenSha8() {
+    let d = tempDefaults(), b1 = "0.2.1 (202609291530)", b2 = "0.2.1 (202609301200)"
+    XCTAssertFalse(APNsDevice.needsRegistration(build: b1, defaults: d))           // 토큰 없음
+    APNsDevice.store(token: "aa", env: .production, defaults: d)
+    XCTAssertTrue(APNsDevice.needsRegistration(build: b1, defaults: d))
+    APNsDevice.markRegistered(token: "aa", env: .production, build: b1, defaults: d)
+    XCTAssertFalse(APNsDevice.needsRegistration(build: b1, defaults: d))
+    XCTAssertTrue(APNsDevice.needsRegistration(build: b2, defaults: d))            // 빌드만 바뀜(09-28 결함)
+    APNsDevice.store(token: "bb", env: .production, defaults: d)
+    XCTAssertTrue(APNsDevice.needsRegistration(build: b1, defaults: d))            // 토큰 갱신
     APNsDevice.store(token: "aa", env: .sandbox, defaults: d)
-    XCTAssertTrue(APNsDevice.needsRegistration(defaults: d))
-    APNsDevice.markRegistered(token: "aa", env: .sandbox, defaults: d)
-    XCTAssertFalse(APNsDevice.needsRegistration(defaults: d))
-    APNsDevice.store(token: "aa", env: .production, defaults: d)          // 환경이 바뀌면 다시 등록
-    XCTAssertTrue(APNsDevice.needsRegistration(defaults: d))
-    APNsDevice.markRegistered(token: "aa", env: .production, defaults: d)
-    APNsDevice.store(token: "bb", env: .production, defaults: d)          // 토큰 갱신
-    XCTAssertTrue(APNsDevice.needsRegistration(defaults: d))
-    XCTAssertEqual(APNsDevice.token(defaults: d), "bb")
-    XCTAssertEqual(APNsDevice.env(defaults: d), .production)
+    XCTAssertTrue(APNsDevice.needsRegistration(build: b1, defaults: d))            // 환경 바뀜
+    XCTAssertEqual(APNsDevice.token(defaults: d), "aa")
+    XCTAssertEqual(APNsDevice.env(defaults: d), .sandbox)
+  }
+
+  func testLegacyRegisteredKeyNeedsOneRegistrationAndIsCleared() {
+    let d = tempDefaults(), b = "0.2.1 (1)"
+    APNsDevice.store(token: "aa", env: .production, defaults: d)
+    d.set("production:aa", forKey: "apnsRegistered")                              // 0.2.0 형식
+    XCTAssertTrue(APNsDevice.needsRegistration(build: b, defaults: d))
+    APNsDevice.markRegistered(token: "aa", env: .production, build: b, defaults: d)
+    XCTAssertNil(d.string(forKey: "apnsRegistered"))
+    XCTAssertEqual(d.string(forKey: "apnsRegisteredTokenSha8"), Trace.sha8("aa"))  // 토큰 원문이 아니라 sha8
+    XCTAssertEqual(d.string(forKey: "apnsRegisteredBuild"), b)
   }
 }

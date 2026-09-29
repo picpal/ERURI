@@ -98,14 +98,14 @@ enum PushRegistration {
 }
 
 /// 저장된 토큰을 `POST /functions/v1/ingest/device` 로 보낸다. 세션(JWT)이 없으면 대기로 두고
-/// 로그인·앱 활성화 때(`register()` 재호출) 보낸다. 같은 (환경, 토큰)은 한 번만 보낸다(`force` 는 버튼용).
+/// 로그인·앱 활성화 때(`register()` 재호출) 보낸다. 같은 (환경, build, 토큰)은 한 번만 보낸다(`force` 는 버튼용).
 actor DeviceRegistrar {
   static let shared = DeviceRegistrar()
   private var inFlight = false
 
   func register(force: Bool = false) async {
     guard let token = APNsDevice.token(), let env = APNsDevice.env() else { return }
-    guard force || APNsDevice.needsRegistration(), !inFlight, let cfg = SupabaseSession.config else { return }
+    guard force || APNsDevice.needsRegistration(build: PushRegistration.build), !inFlight, let cfg = SupabaseSession.config else { return }
     inFlight = true
     defer { inFlight = false }
     guard let jwt = await SupabaseSession.shared.accessToken() else {
@@ -128,11 +128,11 @@ actor DeviceRegistrar {
     } catch { code = "network_\((error as NSError).code)" }
     let elapsed = Int(Date().timeIntervalSince(started) * 1000)
     if status == 200 {
-      APNsDevice.markRegistered(token: token, env: env)
+      APNsDevice.markRegistered(token: token, env: env, build: PushRegistration.build)
       APNsDevice.setStatus("등록됨 \(env.rawValue) · \(sha8)")
       PoCLog.append("device registered env=\(env.rawValue) token_sha8=\(sha8)")
       Trace.log("poc4.device_registered", ["token_sha8": sha8, "apns_env": env.rawValue, "distribution": PushRegistration.distribution,
-                                           "elapsed_ms": elapsed])
+                                           "build": PushRegistration.build, "elapsed_ms": elapsed])
     } else {
       APNsDevice.setStatus("등록 실패 status=\(status) \(code)")
       PoCLog.append("device register failed status=\(status) \(code)")

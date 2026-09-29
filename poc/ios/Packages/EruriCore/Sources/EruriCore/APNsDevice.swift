@@ -40,6 +40,7 @@ public enum APNsDevice {
   // MARK: App Group 저장 (앱 재실행·로그인 뒤 재전송에 쓴다)
 
   static let tokenKey = "apnsToken", envKey = "apnsEnv", registeredKey = "apnsRegistered", statusKey = "apnsStatus"
+  static let registeredEnvKey = "apnsRegisteredEnv", registeredBuildKey = "apnsRegisteredBuild", registeredSha8Key = "apnsRegisteredTokenSha8"
 
   public static func store(token: String, env: Env, defaults: UserDefaults = IngestSettings.shared) {
     defaults.set(token, forKey: tokenKey); defaults.set(env.rawValue, forKey: envKey)
@@ -47,13 +48,17 @@ public enum APNsDevice {
   public static func token(defaults: UserDefaults = IngestSettings.shared) -> String? { defaults.string(forKey: tokenKey) }
   public static func env(defaults: UserDefaults = IngestSettings.shared) -> Env? { defaults.string(forKey: envKey).flatMap(Env.init) }
 
-  /// 저장된 (환경, 토큰)이 아직 서버에 등록되지 않았는가. 토큰·환경이 바뀌면 다시 true.
-  public static func needsRegistration(defaults: UserDefaults = IngestSettings.shared) -> Bool {
+  /// 마지막 등록의 (환경, build, token_sha8) 중 하나라도 지금과 다르면 true. 업데이트 설치(build)·토큰 갱신·환경 전환 모두 다시 등록한다(0.2.1).
+  public static func needsRegistration(build: String, defaults: UserDefaults = IngestSettings.shared) -> Bool {
     guard let t = token(defaults: defaults), let e = env(defaults: defaults) else { return false }
-    return defaults.string(forKey: registeredKey) != "\(e.rawValue):\(t)"
+    return defaults.string(forKey: registeredEnvKey) != e.rawValue || defaults.string(forKey: registeredBuildKey) != build
+      || defaults.string(forKey: registeredSha8Key) != Trace.sha8(t)
   }
-  public static func markRegistered(token: String, env: Env, defaults: UserDefaults = IngestSettings.shared) {
-    defaults.set("\(env.rawValue):\(token)", forKey: registeredKey)
+  public static func markRegistered(token: String, env: Env, build: String, defaults: UserDefaults = IngestSettings.shared) {
+    defaults.set(env.rawValue, forKey: registeredEnvKey)
+    defaults.set(build, forKey: registeredBuildKey)
+    defaults.set(Trace.sha8(token), forKey: registeredSha8Key)
+    defaults.removeObject(forKey: registeredKey)   // 0.2.0 이하 형식("env:token") 정리
   }
 
   /// 화면에 보일 마지막 상태 한 줄(토큰 원문 없음).
