@@ -353,7 +353,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | `user_keys` | user_id, wrapped_key bytea, created_at | 사용자별 데이터 키를 마스터 키로 감싼 값(봉투 암호화). 마스터 키는 Edge Function 시크릿에만 있고 DB에 없다 |
 | `utterances` / `memories` | (아래) | 평문. 사용자 삭제 시 연쇄 |
 | `item_chunks` | item_id, chunk_index, text, embedding vector(512), tsv tsvector | HNSW + GIN. 원문 만료 시 삭제. worker embed 잡이 제목+본문 512자 청크로 채운다(M2-⑧a `0015`, 대상 = extracted·discarded:server:empty 이고 원문 있음) |
-| `facts` | item_id, kind, payload jsonb, evidence(원문 인용 ≤300자), status(active/cancelled/superseded), supersedes_id | 추출 결과, 무기한. evidence가 만료 후 출처 역할 |
+| `facts` | item_id, kind, payload jsonb, evidence(원문 인용 ≤300자), status(active/cancelled/superseded), supersedes_id | 추출 결과, 무기한(원문 만료 뒤에도 남는다). evidence가 만료 후 출처 역할. items 행이 지워지면(출처·전체 삭제) 함께 지워진다(`item_id` on delete cascade, 0020) |
 | `purchases` | fact_id, merchant, product[], ordered_at, amount, currency, order_no, status, delivery_status, recurrence | **2단계**(facts 백필 마이그레이션과 함께). 구매·구독. `purchase_evidence(purchase_id, item_id)`로 다대다. 1단계는 `facts(kind=purchase).payload` |
 | `proposals` | fact_id, action(create_event/update_event/create_reminder/complete_reminder), payload, version, status(proposed/confirmed/succeeded/failed/stale), eventkit_id, idempotency_key | fact 변경 시 version 증가, 이전 제안은 stale |
 | `executions` | user_id, proposal_id(unique), device_id, eventkit_id, version, executed_at, reported_at | 기기가 쓰기 성공 직후 기록(로컬 SQLite), 서버는 `report_execution`으로 받는다. 보고 실패 복구·version 불일치(§10 순서 5) 판정용 |
@@ -378,7 +378,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | 항목·출처 삭제 | 사용자가 항목 또는 출처(예: Gmail 연결) 삭제 | 해당 items·chunks·facts·purchases·purchase_evidence·proposals·executions·jobs(payload 포함)·Storage 객체 | 다른 출처 데이터, memories |
 | 전체 삭제 | 사용자가 계정 삭제 | 위 전부 + utterances·memories·connections(Gmail 토큰 revoke 호출 포함)·devices·audit_log 본문 없는 행만 유지 + `user_keys` 행 삭제(crypto-shredding) + 기기에 삭제 푸시(로컬 큐·executions 정리) | 감사 로그의 사유 코드 |
 
-구현(M2-⑥a): 원문 만료 = pg_cron purge-expired-daily(purge_expired + Storage는 purge-media 잡), 출처 삭제 = Edge account/source → delete_gmail_source(연결 행 잠금 → 잡 → facts → items → 연결 순, 한 트랜잭션. 범위는 사용자의 Gmail 항목 전부. 연결이 이미 없어도 항목 삭제는 수행), Gmail 항목 insert 는 살아 있는 gmail 연결이 있을 때만(삭제와 직렬화 — 삭제 뒤 진행 중 fetch 가 되살리지 못함), 전체 삭제 = Edge account/delete(기기 목록 선조회 → revoke → Storage(오류면 중단) → Auth 사용자 삭제 → 감사 → 보관한 토큰으로 기기 삭제 푸시 eruri_wipe. 사용자 삭제 실패 시 기기·감사는 건드리지 않음). 이미지·PDF 항목은 insert 때 expires_at = 30일.
+구현(M2-⑥a): 원문 만료 = pg_cron purge-expired-daily(purge_expired + Storage는 purge-media 잡), 출처 삭제 = Edge account/source → delete_gmail_source(연결 행 잠금 → 잡 → facts → items → 연결 순, 한 트랜잭션. 범위는 사용자의 Gmail 항목 전부. 연결이 이미 없어도 항목 삭제는 수행), Gmail 항목 insert 는 살아 있는 gmail 연결이 있을 때만(삭제와 직렬화 — 삭제 뒤 진행 중 fetch 가 되살리지 못함), 진행 중 추출의 fact 는 `facts.item_id` cascade 로 item 과 함께 지워진다(삭제가 facts 를 지운 뒤 커밋된 fact 포함 — 최종 리뷰 I-1, 0020), 전체 삭제 = Edge account/delete(기기 목록 선조회 → revoke → Storage(오류면 중단) → Auth 사용자 삭제 → 감사 → 보관한 토큰으로 기기 삭제 푸시 eruri_wipe. 사용자 삭제 실패 시 기기·감사는 건드리지 않음). 이미지·PDF 항목은 insert 때 expires_at = 30일.
 
 만료 후 검색은 facts·purchases·memories만 대상이며 출처는 facts.evidence 인용문과 "원문 만료됨" 표시로 대체한다. 만료된 항목의 의미 검색은 되지 않는다(벡터 삭제). 백업은 Supabase 일일 백업 보관 기간(무료 7일) 동안 삭제 전 상태를 담고 있으며, `user_keys`가 지워진 뒤에는 백업의 `content_enc`를 복호화할 수 없다. 평문 파생물(청크·facts)은 백업 보관 기간 후에 완전히 사라진다. 이 사실을 §12 통제 5의 화면에 그대로 적는다.
 

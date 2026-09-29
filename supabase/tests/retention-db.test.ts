@@ -1,5 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import { encrypt, toBytea } from "../functions/_shared/crypto.ts";
+import { delay } from "jsr:@std/async/delay";
+import postgres from "npm:postgres@3";
 import { deleteRunJobs, RUN, service as sb, testUser, userClient } from "./_testenv.ts";
 
 const bytes = async (u: string, t: string) => toBytea(await encrypt(u, t));
@@ -43,6 +45,9 @@ Deno.test("delete_gmail_source: Gmail items, their facts/proposals, and all Gmai
     { kind: "process", lease_key: `item:${g2}`, payload: { item_id: g2 } },
     { kind: "notify", lease_key: `notify:${proposal}`, payload: { proposal_id: proposal } },
     { kind: "process", lease_key: `item:${n1}`, payload: { item_id: n1 } },
+    // 최종 리뷰 m-7: embed 잡(일반 embed:<id>·백필 레인)도 payload.item_id 로 지운다
+    { kind: "embed", lease_key: `embed:${g1}`, payload: { item_id: g1 } },
+    { kind: "embed", lease_key: `backfill:${me}`, payload: { item_id: g2, backfill: true } },
     // 브리프 이탈 (a) 회귀 보호: watch·태그 붙은 reauth 잡도 payload.connection_id 로 지운다
     { kind: "gmail-watch", lease_key: `${RUN}:watch:${conn}`, payload: { connection_id: conn } },
     { kind: "gmail-reauth", lease_key: `${RUN}:reauth:${conn}`, payload: { connection_id: conn } },
@@ -50,7 +55,7 @@ Deno.test("delete_gmail_source: Gmail items, their facts/proposals, and all Gmai
   const { data: jrows } = await sb.from("jobs").insert(jobs).select("id, lease_key");
   try {
     const { data: r } = await sb.rpc("delete_gmail_source", { p_user: me, p_connection: conn });
-    assertEquals(r, { items: 2, facts: 1, jobs: 6 });
+    assertEquals(r, { items: 2, facts: 1, jobs: 8 });
     const { count: gi } = await sb.from("items").select("id", { count: "exact", head: true }).eq("user_id", me).in("id", [g1, g2]);
     const { count: ni } = await sb.from("items").select("id", { count: "exact", head: true }).eq("id", n1);
     const { count: pr } = await sb.from("proposals").select("id", { count: "exact", head: true }).eq("id", proposal);
@@ -62,6 +67,66 @@ Deno.test("delete_gmail_source: Gmail items, their facts/proposals, and all Gmai
   } finally {
     await sb.from("jobs").delete().in("id", jrows!.map((j) => j.id));
     await sb.from("items").delete().eq("user_id", me).in("id", [g1, g2, n1]);
+    await sb.from("connections").delete().eq("id", conn);
+    await sb.from("audit_log").delete().eq("user_id", me).eq("action", "source_delete");
+  }
+});
+
+// 경합 재현용 직접 트랜잭션. 연결 정보는 scripts/sql.ts 와 같다(pooler-url + DB 비밀번호)
+async function pg() {
+  const url = new URL((await Deno.readTextFile(new URL("../.temp/pooler-url", import.meta.url))).trim());
+  return postgres({ host: url.hostname, port: Number(url.port || 5432), database: url.pathname.slice(1) || "postgres",
+    username: decodeURIComponent(url.username), password: Deno.env.get("SUPABASE_DB_PASSWORD")!, ssl: "require", prepare: false,
+    onnotice: () => {} });
+}
+
+// 최종 리뷰 I-1: 출처 삭제(T1)가 facts 를 지운 뒤 items 를 지우기 전에 진행 중이던 save_fact(T2)가 커밋되면,
+// 그 fact·제안이 item_id null 로 살아남으면 안 된다(스펙 §8 출처 삭제 → facts·proposals, §12 통제 5). 삭제 뒤 save_fact 는 실패한다
+Deno.test("delete_gmail_source vs in-flight save_fact: the racing fact and proposal go with the item; save_fact after delete fails", async () => {
+  const me = (await testUser()).id;
+  const { data: conn } = await sb.rpc("gmail_save_connection", { p_user: me, p_account_ref: `${RUN}-race-${crypto.randomUUID()}@example.com`,
+    p_refresh_token: "synthetic-rt", p_history_id: "1" });
+  const { data: g } = await sb.rpc("insert_item", { p_user: me, p_source: "GMAIL", p_idempotency_key: `gmail:${RUN}-race`, p_sender: null,
+    p_title: null, p_content_enc: await bytes(me, "합성"), p_occurred_at: new Date().toISOString(), p_enqueue: false });
+  const payload = JSON.stringify({ title: "합성", start: "2026-12-01T10:00:00+09:00", uncertain: [] });
+  const sql = await pg();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const saved: { fact?: string; proposal?: string; err?: unknown } = {};
+  try {
+    // T2 = 워커의 save_fact: fact insert(FK 가 item 행에 KEY SHARE)까지 하고 커밋 전에 멈춘다
+    const t2 = sql.begin(async (tx) => {
+      const [r] = await tx.unsafe(`select out_fact_id, out_proposal_id from save_fact($1::uuid, $2::uuid, 'event', $3::text::jsonb, '합성', 'create_event')`,
+        [me, g as string, payload]);
+      saved.fact = r.out_fact_id;
+      saved.proposal = r.out_proposal_id;
+      await gate;
+    }).catch((e) => { saved.err = e; });
+    while (!saved.fact && !saved.err) await delay(50);
+    if (saved.err) throw saved.err;
+    // T1 = 출처 삭제: facts 삭제(T2 의 fact 는 아직 안 보임) 뒤 items 삭제에서 T2 를 기다린다
+    let settled = false;
+    const t1 = sb.rpc("delete_gmail_source", { p_user: me, p_connection: conn }).then((x) => (settled = true, x));
+    await delay(1500);
+    assert(!settled, "delete should wait on the in-flight fact insert");
+    release();
+    await t2;
+    const { data: r, error } = await t1;
+    assert(error === null && (r as { items: number }).items >= 1);            // 범위는 사용자 Gmail 항목 전부(이전 실행 잔여 포함)
+    const { count: facts } = await sb.from("facts").select("id", { count: "exact", head: true }).eq("id", saved.fact!);
+    const { count: props } = await sb.from("proposals").select("id", { count: "exact", head: true }).eq("id", saved.proposal!);
+    const { count: orphans } = await sb.from("facts").select("id", { count: "exact", head: true }).eq("user_id", me).is("item_id", null);
+    // 워커가 이어서 적재한 notify 잡은 제안을 못 찾아 skipped 로 끝난다(worker/notify.ts not_found)
+    const { data: wp } = await sb.rpc("worker_get_proposal", { p_user: me, p_proposal: saved.proposal! });
+    assertEquals([facts, props, orphans, (wp as unknown[]).length], [0, 0, 0, 0]);
+    const late = await sb.rpc("save_fact", { p_user: me, p_item: g, p_kind: "event", p_payload: JSON.parse(payload), p_evidence: "합성",
+      p_action: "create_event" });
+    assert(late.error !== null, "save_fact on a deleted item must fail");
+  } finally {
+    release();
+    await sql.end();
+    if (saved.fact) await sb.from("facts").delete().eq("user_id", me).eq("id", saved.fact);
+    await sb.from("items").delete().eq("user_id", me).eq("id", g as string);
     await sb.from("connections").delete().eq("id", conn);
     await sb.from("audit_log").delete().eq("user_id", me).eq("action", "source_delete");
   }
