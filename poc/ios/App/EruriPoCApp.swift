@@ -125,7 +125,7 @@ struct EruriPoCApp: App {
     }
     .onChange(of: scenePhase) { _, newPhase in
       if newPhase == .active {
-        ContactsLoader.refresh(); Uploader.shared.flush()
+        AppState.prepareProbe(); ContactsLoader.refresh(); Uploader.shared.flush()
         Task { await DeviceRegistrar.shared.register() }   // 미로그인으로 대기 중이던 토큰 등록
       }
       if newPhase == .background { BackgroundRefresh.schedule() }

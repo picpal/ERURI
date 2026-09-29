@@ -29,7 +29,8 @@ final class PushDelegate: NSObject, UIApplicationDelegate {
     guard ((userInfo["aps"] as? [String: Any])?["content-available"] as? Int) == 1 else { return .noData }
     let pending = (try? CaptureQueue.shared().captureCount()) ?? -1
     let st = await AppState.snapshot()
-    Trace.log("poc9.wake", ["trigger": UploadTrigger.silentPush.rawValue, "pending": pending, "bg": st.bg, "locked": st.locked])
+    let base: [String: Any] = ["trigger": UploadTrigger.silentPush.rawValue, "pending": pending]
+    Trace.log("poc9.wake", base.merging(st.traceFields) { _, new in new })
     let r = await Uploader.shared.flush(trigger: .silentPush)
     return r.claimed > 0 ? (r.direct > 0 ? .newData : .failed) : .noData
   }

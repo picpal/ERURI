@@ -12,7 +12,8 @@ enum BackgroundRefresh {
     let q = try? CaptureQueue.shared()
     let captures = (try? q?.captureCount()) ?? -1, traces = (try? q?.traceCount()) ?? -1
     let st = await AppState.snapshot()
-    Trace.log("poc9.wake", ["trigger": UploadTrigger.bgRefresh.rawValue, "pending": captures, "bg": st.bg, "locked": st.locked])
+    let base: [String: Any] = ["trigger": UploadTrigger.bgRefresh.rawValue, "pending": captures]
+    Trace.log("poc9.wake", base.merging(st.traceFields) { _, new in new })
     if captures > 0 || traces > 0 { await Uploader.shared.flush(trigger: .bgRefresh) }
   }
 

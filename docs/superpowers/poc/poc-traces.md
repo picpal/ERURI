@@ -37,7 +37,7 @@ content-type: application/json
 
 | 키 | 타입 | 뜻 |
 |---|---|---|
-| `locked` | bool | 관찰 시 기기 잠금 여부(`UIApplication.shared.isProtectedDataAvailable == false` 등) |
+| `locked` | bool 또는 null | 0.2.1: .complete 보호 파일 읽기로 판정(null = unknown). 함께 lock_state(locked/unlocked/unknown)·lock_probe(readable/denied/missing/error:<code>)·locked_app(UIKit 값, 비교용) |
 | `bg` | bool | 앱이 백그라운드에서 실행됐는지 |
 | `source` | string | `NOTIFICATION`·`MESSAGES`·`SHARE`·`CHAT` 등 수집 경로 |
 | `elapsed_ms` | number | 해당 단계 소요 시간 |

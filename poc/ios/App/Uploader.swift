@@ -178,10 +178,10 @@ final class UploadDelegate: NSObject, URLSessionTaskDelegate, Sendable {
     var f: [String: Any] = ["ok": ok, "status": status, "kind": kind, "item_id": tag.id, "bytes": bytes,
                             "path": path.rawValue, "trigger": tag.trigger.rawValue, "via": viaBackgroundSession ? "bg_session" : "direct",
                             "age_ms": ageMs, "error_code": errorCode]
-    if let l = tag.locked { f["intent_locked"] = l }
+    f["intent_locked"] = tag.locked.map { $0 as Any } ?? NSNull()   // nil = 인텐트 시작 시 판정 실패(unknown) 또는 0.1.x 태스크
     // PoC-9: 완료 시점의 잠금·백그라운드 상태
     let st = await AppState.snapshot()
-    f["bg"] = st.bg; f["locked"] = st.locked
+    f.merge(st.traceFields) { _, new in new }
     Trace.log("poc9.upload_done", f)
   }
 }

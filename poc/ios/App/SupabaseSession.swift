@@ -124,10 +124,3 @@ enum Keychain {
     SecItemAdd(q as CFDictionary, nil)
   }
 }
-
-/// Trace 공통 필드 중 UIKit 이 필요한 값. UIApplication 은 메인 액터 전용이라 스냅샷으로 가져온다.
-enum AppState {
-  static func snapshot() async -> (locked: Bool, bg: Bool) {
-    await MainActor.run { (!UIApplication.shared.isProtectedDataAvailable, UIApplication.shared.applicationState == .background) }
-  }
-}

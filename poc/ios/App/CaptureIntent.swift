@@ -19,22 +19,22 @@ struct CaptureIntent: AppIntent {
   /// 대화상자를 돌려주지 않는다: 자동화 실행마다 단축어가 결과 배너를 띄웠다. 결과 표시는 설정 "저장 결과 알림"(기본 off)일 때만 로컬 알림으로
   func perform() async throws -> some IntentResult {
     let started = Date()
-    let (locked, bg) = await AppState.snapshot()
+    let st = await AppState.snapshot()
     // PoC-1/2 판정용 필드 메타. 값은 남기지 않고 존재·길이만 남긴다(AGENTS §7)
-    let meta = "src=\(source) app=\(appName ?? "nil") titleLen=\(title?.count ?? -1) textLen=\(text.count) sender=\(sender == nil ? "nil" : "set") locked=\(locked)"
-    BFULog.append("CaptureIntent start textLen=\(text.count) locked=\(locked)")
+    let meta = "src=\(source) app=\(appName ?? "nil") titleLen=\(title?.count ?? -1) textLen=\(text.count) sender=\(sender == nil ? "nil" : "set") lock=\(st.lock.rawValue)"
+    BFULog.append("CaptureIntent start textLen=\(text.count) lock=\(st.lock.rawValue)")
     do {
       let result = try await runPipeline()
       PoCLog.append("CaptureIntent \(result) \(Int(Date().timeIntervalSince(started) * 1000))ms \(meta)")
-      trace(result: result, started: started, locked: locked, bg: bg)
-      await upload(locked: locked)
+      trace(result: result, started: started, state: st)
+      await upload(locked: st.lock.boolValue)
       await notifyResult(result)
       return .result()
     } catch {
       PoCLog.append("CaptureIntent error \(type(of: error)) \(meta)")
       BFULog.append("CaptureIntent error \(type(of: error)) textLen=\(text.count)")
-      trace(result: "error:\(type(of: error))", started: started, locked: locked, bg: bg)
-      await upload(locked: locked)
+      trace(result: "error:\(type(of: error))", started: started, state: st)
+      await upload(locked: st.lock.boolValue)
       throw error
     }
   }
@@ -47,19 +47,20 @@ struct CaptureIntent: AppIntent {
   }
 
   /// PoC-9(0.2.0): 인텐트가 깨어 있는 동안 바로 올린다(직접 요청 → 실패 시 background 세션). 폐기돼도 trace·남은 큐를 올린다.
-  /// `locked` 는 인텐트 시작 시점 값. 그래도 남은 항목은 BG refresh 가 줍는다
-  private func upload(locked: Bool) async {
+  /// `locked` 는 인텐트 시작 시점 판정(nil = unknown). 그래도 남은 항목은 BG refresh 가 줍는다
+  private func upload(locked: Bool?) async {
     let r = await Uploader.shared.flush(trigger: .intent, locked: locked)
     if r.handedOff + r.failed > 0 { BackgroundRefresh.schedule() }
   }
 
   /// PoC-1(알림)/PoC-2(메시지) 판정 필드: 앱명·제목·본문·발신자가 도착했는지와 길이만. 원문은 보내지 않는다
-  private func trace(result: String, started: Date, locked: Bool, bg: Bool) {
-    Trace.log(source == "MESSAGES" ? "poc2.intent_fired" : "poc1.intent_fired", [
+  private func trace(result: String, started: Date, state: AppState.Snapshot) {
+    let base: [String: Any] = [
       "source": source, "app": appName ?? "", "app_set": appName != nil, "title_len": title?.count ?? -1,
       "text_len": text.count, "text_sha8": Trace.sha8(text), "sender_set": sender != nil, "sender_len": sender?.count ?? -1,
-      "result": result, "elapsed_ms": Int(Date().timeIntervalSince(started) * 1000), "locked": locked, "bg": bg,
-    ])
+      "result": result, "elapsed_ms": Int(Date().timeIntervalSince(started) * 1000),
+    ]
+    Trace.log(source == "MESSAGES" ? "poc2.intent_fired" : "poc1.intent_fired", base.merging(state.traceFields) { _, new in new })
   }
 
   /// 반환: "queued:<fm|rules>" 또는 "discarded:<reason>"

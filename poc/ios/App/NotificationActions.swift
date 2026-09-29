@@ -21,13 +21,14 @@ enum NotificationActions {
       return
     }
     let line = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, start: start))
-    let (locked, bg) = await AppState.snapshot()
+    let st = await AppState.snapshot()
     let auth = EKEventStore.authorizationStatus(for: .event).rawValue
-    PoCLog.append("\(line) bg=\(bg) auth=\(auth)")
+    PoCLog.append("\(line) bg=\(st.bg) auth=\(auth)")
     // PoC-5 판정 필드: 백그라운드 실행·권한·중복 여부(제안 제목은 보내지 않는다)
     let result = line.hasPrefix("ADD ok") ? "ok" : line.hasPrefix("ADD dup") ? "dup" : "fail"
-    Trace.log("poc5.action_handled", ["result": result, "dup": result == "dup", "proposal_id": pid, "auth": auth,
-                                      "bg": bg, "locked": locked, "elapsed_ms": Int(Date().timeIntervalSince(started) * 1000)])
+    let base: [String: Any] = ["result": result, "dup": result == "dup", "proposal_id": pid, "auth": auth,
+                               "elapsed_ms": Int(Date().timeIntervalSince(started) * 1000)]
+    Trace.log("poc5.action_handled", base.merging(st.traceFields) { _, new in new })
   }
 
   /// PoC-5 실측용 로컬 알림(APNs 없이 배너·액션 경로를 탄다)
