@@ -77,3 +77,32 @@ Deno.test("embed job with real deps: chunks + 512-dim vectors saved, decrypt aud
     await sb.from("llm_slots").delete().eq("user_id", USER);
   }
 });
+
+// 배포 워커(cron 매분): 새 알림 항목 → process(추출·저장) → embed 잡 → 청크. 실측 게이트 "새 항목 5분 안에 embedded"의 서버 쪽 대체(기기 수집 제외)
+Deno.test({ name: "deployed worker: new item gets chunks with vectors within 5 minutes (process → embed)", ignore: Deno.env.get("DEPLOYED") !== "1", fn: async () => {
+  const t0 = Date.now();
+  const { data: item } = await sb.rpc("insert_item", { p_user: USER, p_source: "NOTIFICATION", p_idempotency_key: `${RUN}:emb-deployed`, p_sender: null,
+    p_title: null, p_content_enc: toBytea(await encrypt(USER, "[합성의원] 모레 오후 3시 진료 예약이 확정되었습니다.")), p_occurred_at: new Date().toISOString() });
+  try {
+    let jobs: { kind: string; status: string; checkpoint: string | null }[] = [];
+    for (let t = 0; t < 300 && !jobs.some((j) => j.kind === "embed" && j.status === "done"); t += 10) {
+      await new Promise((r) => setTimeout(r, 10_000));
+      jobs = (await sb.from("jobs").select("kind, status, checkpoint").eq("user_id", USER).eq("payload->>item_id", item as string)).data ?? [];
+    }
+    const secs = Math.round((Date.now() - t0) / 1000);
+    console.log(JSON.stringify({ item, secs, jobs }));
+    assert(jobs.some((j) => j.kind === "embed" && j.status === "done" && j.checkpoint === "embedded"));
+    const { data: chunks } = await sb.from("item_chunks").select("id").eq("item_id", item as string).not("embedding", "is", null);
+    assert(chunks!.length >= 1);
+  } finally {
+    const { data: props } = await sb.from("proposals").select("id, facts!inner(item_id)").eq("facts.item_id", item as string);
+    const proposalIds = (props ?? []).map((p) => p.id as string);
+    await sb.from("jobs").delete().eq("user_id", USER).eq("payload->>item_id", item as string);
+    if (proposalIds.length) await sb.from("jobs").delete().eq("user_id", USER).eq("kind", "notify").in("payload->>proposal_id", proposalIds);
+    await sb.from("facts").delete().eq("user_id", USER).eq("item_id", item as string);
+    await sb.from("items").delete().eq("user_id", USER).eq("id", item as string);
+    await sb.from("audit_log").delete().eq("user_id", USER).eq("action", "decrypt").eq("target", item as string);
+    await sb.from("usage_counters").delete().eq("user_id", USER);
+    await sb.from("llm_slots").delete().eq("user_id", USER);
+  }
+} });
