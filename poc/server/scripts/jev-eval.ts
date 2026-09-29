@@ -1,12 +1,15 @@
-// Jev 분류 게이트 평가(2026-09-29). 합성 문구 60개(eval/phrases.json)를 TypeSafe Jev(POST /v1/systemone, Choice 1문항)로
-// 분류해 라벨별 정밀도·재현율, 혼동 행렬, 지연, 비용, 신뢰도 임계값별 폐기/추출 비율을 잰다. 서버 규칙(rules.ts)과 결합한 결과도 같이 낸다.
-// 사용: cd poc/server && deno run -A --env-file=.env scripts/jev-eval.ts [rubric|bare]
-//   rubric(기본): 라벨마다 covers/not 경계 설명. bare: 라벨당 한 줄 설명만(기준 설명 의존도 확인용 대조군)
-// 출력: eval/jev-results.json (bare 는 eval/jev-results-bare.json). 합성 값만. 키는 JEV_API_KEY 로만 읽고 출력하지 않는다.
+// Jev 분류 게이트 평가(2026-09-29 리포트, 0b Task 7 에서 운영 요청 형태로 정리). 합성 문구 60개(eval/phrases.json)를 운영 어댑터와 같은 요청
+// (_shared/jev.ts buildJevRequest: jev-1.13.0 고정, 발신자 미전송, 경계 LABEL_CRITERIA)으로 분류해 라벨별 정밀도·재현율, 혼동 행렬, 지연, 비용,
+// 신뢰도 임계값별 폐기/추출 비율을 잰다. 서버 규칙(rules.ts)과 결합한 결과도 같이 낸다.
+// 사용: cd poc/server && deno run -A --env-file=.env scripts/jev-eval.ts [prod|bare]
+//   prod(기본): 운영 요청 그대로. bare: 라벨당 한 줄 설명만(기준 설명 의존도 확인용 대조군)
+// 출력: eval/jev-results-prod.json (bare 는 eval/jev-results-bare-prod.json). 리포트 원자료(jev-results.json·jev-results-bare.json)는 덮어쓰지 않는다.
+// 합성 값만. 키는 JEV_API_KEY 로만 읽고 출력하지 않는다.
+import { CLASSIFY_INSTRUCTIONS, type ClassifyLabel, LABEL_CRITERIA, LABELS } from "../supabase/functions/_shared/classify.ts";
+import { buildJevRequest, JEV_ENDPOINT, JEV_MODEL } from "../supabase/functions/_shared/jev.ts";
 import { applyRules } from "../supabase/functions/_shared/rules.ts";
 
-const LABELS = ["actionable", "personal", "promo", "otp", "notice"] as const;
-type Label = typeof LABELS[number];
+type Label = ClassifyLabel;
 type Phrase = {
   id: string; label: Label; app: "SMS" | "Slack" | "KakaoTalk"; title: string | null; sender: string | null; text: string;
   device10?: { topic: string; device: string };
@@ -14,40 +17,11 @@ type Phrase = {
 type ChoiceAnswer = { type: "choice"; choice: Label; confidence: number; probabilities: Record<Label, number> };
 type SystemOneResponse = { model: string; answers: { kind: ChoiceAnswer }; usage: { input_tokens: number; output_tokens: number } };
 
-const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
-const MODEL = "jev-latest";
+const ENDPOINT = JEV_ENDPOINT, MODEL = JEV_MODEL, INSTRUCTIONS = CLASSIFY_INSTRUCTIONS, CRITERIA = LABEL_CRITERIA;
 const USD_PER_INPUT_TOKEN = 0.042 / 1e6;   // docs.typesafe.ai/models: $42/Btok 입력, 출력 무료 (jev-1.13.0)
 const THRESHOLDS = [0, 0.6, 0.8, 0.9];
 const KEY = Deno.env.get("JEV_API_KEY");
 if (!KEY) throw new Error("JEV_API_KEY 없음 (--env-file=.env)");
-
-// 결정 스키마: 라벨 집합 = Choice criteria 키. 설명은 영어(문서상 영어가 주 학습 언어), 경계는 covers/not 으로 준다.
-const CRITERIA: Record<Label, { covers: string; not: string }> = {
-  actionable: {
-    covers: "Anything the recipient may need to act on or record: a schedule, appointment, meeting, reservation or booking, "
-      + "a to-do or deadline, an order, purchase, payment, card approval, bill, subscription, delivery status, or pickup. "
-      + "Includes messages from friends or family that fix a concrete date/time/place or ask the recipient to do something.",
-    not: "Casual chat with no concrete plan; advertising; login codes; informational notices that need no action.",
-  },
-  personal: {
-    covers: "Casual conversation written by a person (friend, family, coworker): greetings, jokes, reactions, small talk.",
-    not: "A person's message that sets a concrete appointment or asks for a specific task with a date is actionable.",
-  },
-  promo: {
-    covers: "Advertising or marketing: discounts, coupons, sales, events to sign up for, loan or real-estate offers, "
-      + "often marked (광고) or with an opt-out number.",
-    not: "Confirmation of something the recipient already ordered, booked, or paid for is actionable.",
-  },
-  otp: {
-    covers: "One-time passwords, verification or login codes (numeric or alphanumeric).",
-    not: "Order numbers, approval numbers of card payments, or tracking numbers.",
-  },
-  notice: {
-    covers: "Informational notices from companies or institutions that require no action and carry no date the recipient must meet: "
-      + "policy changes, maintenance completed, general alerts.",
-    not: "Notices with a deadline, appointment, bill, or delivery are actionable.",
-  },
-};
 const BARE: Record<Label, string> = {
   actionable: "Schedule, task, purchase, payment, bill, reservation, or delivery",
   personal: "Casual personal chat",
@@ -55,14 +29,13 @@ const BARE: Record<Label, string> = {
   otp: "Verification code",
   notice: "Informational notice, no action needed",
 };
-const VARIANT = Deno.args[0] === "bare" ? "bare" : "rubric";
-const INSTRUCTIONS = "Classify this Korean phone notification or text message (app, title, sender, body) for a personal assistant "
-  + "that extracts calendar events, tasks, and purchases. Pick the single best category.";
+const VARIANT = Deno.args[0] === "bare" ? "bare" : "prod";
 
-type State = { app: string; title: string | null; sender: string | null; body: string };
+type State = { app: string; title: string | null; sender: string | null; body: string };   // sender 는 기록용. 요청에는 넣지 않는다
 
 async function classify(state: State): Promise<{ res: SystemOneResponse; ms: number; retries: number }> {
-  const body = JSON.stringify({ state, model: MODEL, questions: { kind: { type: "choice", instructions: INSTRUCTIONS, criteria: VARIANT === "bare" ? BARE : CRITERIA } } });
+  const body = JSON.stringify(buildJevRequest(state.body, { source: "NOTIFICATION", appName: state.app, title: state.title },
+    VARIANT === "bare" ? BARE : CRITERIA));
   for (let attempt = 0; ; attempt++) {
     const t0 = performance.now();
     const r = await fetch(ENDPOINT, { method: "POST", headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" }, body });
@@ -150,5 +123,5 @@ const result = {
   rows: rows.map((r) => ({ id: r.id, label: r.label, app: r.app, rule: r.rule, sent: r.sent, pred: r.pred, confidence: r3(r.confidence),
     probabilities: Object.fromEntries(Object.entries(r.probabilities).map(([k, v]) => [k, r3(v)])), ms: r3(r.ms), input_tokens: r.input_tokens })),
 };
-await Deno.writeTextFile(new URL(VARIANT === "bare" ? "../eval/jev-results-bare.json" : "../eval/jev-results.json", import.meta.url), JSON.stringify(result, null, 2) + "\n");
+await Deno.writeTextFile(new URL(VARIANT === "bare" ? "../eval/jev-results-bare-prod.json" : "../eval/jev-results-prod.json", import.meta.url), JSON.stringify(result, null, 2) + "\n");
 console.log(JSON.stringify({ accuracy_5class: accuracy5, gate_accuracy: gateAccuracy, per_label: perLabel, latency_ms: result.latency_ms, cost: result.cost, threshold_policy: thresholdTable, pipeline: pipelineTable }, null, 1));
