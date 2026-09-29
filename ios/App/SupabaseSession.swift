@@ -71,7 +71,8 @@ actor SupabaseSession {
     guard let cfg = Self.config, var c = URLComponents(url: cfg.url.appendingPathComponent("auth/v1/token"), resolvingAgainstBaseURL: false)
     else { lastError = "session_config_missing"; DiagLog.append("session config_missing"); return false }
     c.queryItems = [URLQueryItem(name: "grant_type", value: type)]
-    var r = URLRequest(url: c.url!)
+    // 기본 60초 대신 10초. 알림 액션은 이 갱신까지 포함해 Deadline 으로 5초 마감을 따로 건다(§10 순서 1)
+    var r = URLRequest(url: c.url!, timeoutInterval: 10)
     r.httpMethod = "POST"
     r.setValue(cfg.anonKey, forHTTPHeaderField: "apikey")
     r.setValue("application/json", forHTTPHeaderField: "Content-Type")

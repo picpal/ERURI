@@ -10,9 +10,16 @@ final class AppleSignIn: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
   static let shared = AppleSignIn()
   private var continuation: CheckedContinuation<String, Never>?
   private var rawNonce = ""
+  /// run() 이 창을 확인한 뒤에만 요청을 시작하므로 presentationAnchor 시점엔 항상 있다
+  private var anchor: ASPresentationAnchor?
 
   /// 반환: 화면 문구("로그인됨" 또는 "로그인 실패: <코드>")
   func run() async -> String {
+    // iOS 26: 빈 ASPresentationAnchor() 폐기. 창이 없으면(씬 0개) 요청하지 않고 실패로 돌려준다
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    guard let a = scenes.compactMap({ $0.keyWindow ?? $0.windows.first }).first ?? scenes.first.map(ASPresentationAnchor.init(windowScene:))
+    else { finish("로그인 실패: no_window"); return "로그인 실패: no_window" }
+    anchor = a
     rawNonce = Self.randomNonce()
     let req = ASAuthorizationAppleIDProvider().createRequest()
     req.requestedScopes = [.email]
@@ -37,11 +44,7 @@ final class AppleSignIn: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
   func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
     finish("로그인 실패: apple_\((error as NSError).code)")                  // 1001 = 사용자 취소
   }
-  func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-    // 버튼을 누른 화면이 떠 있으므로 씬은 항상 있다(iOS 26: 빈 ASPresentationAnchor() 폐기)
-    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-    return scenes.compactMap { $0.keyWindow ?? $0.windows.first }.first ?? ASPresentationAnchor(windowScene: scenes[0])
-  }
+  func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor { anchor! }
   private func finish(_ s: String) {
     DiagLog.append("apple signin \(s.hasPrefix("로그인됨") ? "ok" : s)")
     continuation?.resume(returning: s); continuation = nil

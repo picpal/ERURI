@@ -19,7 +19,7 @@ struct ContentView: View {
         Section("계정") {
           Text(account).font(.caption).foregroundStyle(account.hasPrefix("로그인 실패") ? .red : .secondary)
           Button("Apple로 로그인") { busy = true; Task { account = await AppleSignIn.shared.run(); busy = false; await refresh() } }.disabled(busy)
-          Button("로그아웃", role: .destructive) { Task { await SupabaseSession.shared.logout(); await refresh() } }
+          Button("로그아웃", role: .destructive) { Task { await SupabaseSession.shared.logout(); account = "로그인 필요"; await refresh() } }
         }
         Section("권한") {
           Button("권한 요청 (알림·캘린더·연락처)") { requestPermissions() }
@@ -53,7 +53,8 @@ struct ContentView: View {
 
   private func refresh() async {
     let signedIn = await SupabaseSession.shared.accessToken() != nil
-    if !account.hasPrefix("로그인 실패") { account = signedIn ? "로그인됨" : "로그인 필요" }
+    // 실패 문구는 세션이 없을 때만 남긴다(다른 경로로 세션이 생기면 "로그인됨")
+    account = signedIn ? "로그인됨" : (account.hasPrefix("로그인 실패") ? account : "로그인 필요")
     gmail = signedIn ? await gmailStatus() : ""
   }
   /// 연결 상태(RLS: 자기 connections). 계정 주소는 사용자 본인 화면에만 보인다

@@ -7,8 +7,9 @@ enum API {
   static func send(_ path: String, method: String = "GET", json: Any? = nil, timeout: TimeInterval = 8) async -> (status: Int, data: Data)? {
     guard let cfg = SupabaseSession.config else { return nil }
     for attempt in 0..<2 {
-      guard let jwt = await SupabaseSession.shared.accessToken() else { return nil }
-      var r = URLRequest(url: URL(string: path, relativeTo: cfg.url.appendingPathComponent("/"))!, timeoutInterval: timeout)
+      guard let url = URL(string: path, relativeTo: cfg.url.appendingPathComponent("/")),
+            let jwt = await SupabaseSession.shared.accessToken() else { return nil }
+      var r = URLRequest(url: url, timeoutInterval: timeout)
       r.httpMethod = method
       r.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
       r.setValue(cfg.anonKey, forHTTPHeaderField: "apikey")

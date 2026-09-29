@@ -26,7 +26,7 @@ struct EruriApp: App {
     .onChange(of: scenePhase) { _, newPhase in
       if newPhase == .active {
         AppState.prepareProbe(); ContactsLoader.refresh(); Uploader.shared.flush(); NotificationActions.register()
-        Task { await DeviceRegistrar.shared.register(); await ExecutionReporter.flush() }
+        Task { await DeviceRegistrar.shared.register(); await ExecutionReporter.shared.flush() }
       }
       if newPhase == .background { BackgroundRefresh.schedule() }
     }
