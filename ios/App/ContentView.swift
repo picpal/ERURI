@@ -12,6 +12,9 @@ struct ContentView: View {
   @State private var diagnostics = Diagnostics.isEnabled()
   @State private var resultNotice = CaptureResultNotice.isEnabled()
   @State private var copied = false
+  @State private var confirmSource = false
+  @State private var confirmAccount = false
+  @State private var deleteResult = ""
 
   var body: some View {
     NavigationStack {
@@ -41,9 +44,20 @@ struct ContentView: View {
         Section("보관") {
           NavigationLink("최근 폐기") { RecentDiscardsView() }
         }
-        Section("데이터") {
-          Button("계정 전체 삭제", role: .destructive) {}.disabled(true)        // 자리: M2-⑥b 에서 연결(스펙 §12 통제 5)
-          Text("삭제 기능은 다음 버전에서 제공됩니다").font(.caption).foregroundStyle(.secondary)
+        Section("데이터") {                                                    // 스펙 §12 통제 5 1단계 버튼 2개(M2-⑥)
+          Button("Gmail 데이터 삭제 (연결 해제)", role: .destructive) { confirmSource = true }
+          Button("계정 전체 삭제", role: .destructive) { confirmAccount = true }
+          if !deleteResult.isEmpty { Text(deleteResult).font(.caption).foregroundStyle(.secondary) }
+          Text("서버 백업(최대 7일)에는 삭제 전 상태가 남습니다. 계정 삭제는 암호화 키를 파기해 백업의 원문도 복구할 수 없게 합니다.")
+            .font(.caption2).foregroundStyle(.secondary)
+        }
+        .alert("Gmail에서 가져온 메일과 추출 결과를 모두 지우고 연결을 끊을까요?", isPresented: $confirmSource) {
+          Button("삭제", role: .destructive) { Task { deleteResult = await deleteSource() } }
+          Button("취소", role: .cancel) {}
+        }
+        .alert("모든 데이터와 계정을 지울까요? 되돌릴 수 없습니다.", isPresented: $confirmAccount) {
+          Button("전체 삭제", role: .destructive) { Task { deleteResult = await deleteAccount() } }
+          Button("취소", role: .cancel) {}
         }
         Section { Text("ERURI \(Self.version) (\(Trace.build))").font(.caption).foregroundStyle(.secondary) }
       }
@@ -67,6 +81,22 @@ struct ContentView: View {
     guard let c = rows.first else { return "연결 안 됨" }
     let st = c["status"] as? String ?? "-"
     return st == "active" ? "연결됨 · \(c["account_ref"] as? String ?? "")" : "다시 연결 필요 (\(st))"
+  }
+  /// Edge account/source(M2-⑥a): 토큰 revoke → Gmail 항목·사실·잡·연결 삭제. 응답은 개수만
+  private func deleteSource() async -> String {
+    guard let r = await API.send("functions/v1/account/source", method: "POST", json: ["provider": "gmail"], timeout: 60), r.status == 200,
+          let o = try? JSONSerialization.jsonObject(with: r.data) as? [String: Any] else { return "삭제 실패" }
+    await refresh()
+    return "Gmail 데이터 삭제됨 (연결 \(o["connections"] as? Int ?? 0)개)"
+  }
+  /// Edge account/delete(M2-⑥a): 서버 삭제가 끝난 뒤에만 기기를 정리한다(삭제 푸시가 늦거나 안 와도 이 기기는 정리)
+  private func deleteAccount() async -> String {
+    guard let r = await API.send("functions/v1/account/delete", method: "POST", timeout: 60), r.status == 200 else { return "삭제 실패" }
+    LocalWipe.runShared()
+    APNsDevice.clearRegistration()
+    await SupabaseSession.shared.logout()
+    await refresh()
+    return "계정과 데이터가 삭제되었습니다"
   }
   private func connectGmail(_ force: Bool) {
     busy = true

@@ -24,6 +24,11 @@ final class PushDelegate: NSObject, UIApplicationDelegate {
 
   /// 무음 푸시(`content-available:1`, apns-send `silent:true`)로 깨어나면 큐를 flush 한다. 약 30초 안에 끝내야 한다
   func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) async -> UIBackgroundFetchResult {
+    if (userInfo["eruri_wipe"] as? Bool) == true {                 // 계정 전체 삭제(서버) → 로컬 정리(스펙 §8, M2-⑥)
+      LocalWipe.runShared()
+      await SupabaseSession.shared.logout()
+      return .newData
+    }
     guard ((userInfo["aps"] as? [String: Any])?["content-available"] as? Int) == 1 else { return .noData }
     let pending = (try? CaptureQueue.shared().captureCount()) ?? -1
     let st = await AppState.snapshot()
