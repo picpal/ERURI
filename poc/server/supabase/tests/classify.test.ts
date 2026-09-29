@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
-import { CLASSIFY_INSTRUCTIONS, classifyThreshold, gateDecision, isClassifyResult, LABEL_CRITERIA, LABELS, noneClassifier, raceTimeout }
+import { CLASSIFY_INSTRUCTIONS, classifierMeta, classifyThreshold, isMessenger, gateDecision, isClassifyResult, LABEL_CRITERIA, LABELS, noneClassifier, raceTimeout }
   from "../functions/_shared/classify.ts";
 import { classifierFromEnv, classifierOrNone } from "../functions/_shared/classifier-env.ts";
 import { buildJevRequest, JEV_ENDPOINT, JEV_MODEL, jevClassifier, jevHttpTransport, parseJevResponse } from "../functions/_shared/jev.ts";
@@ -112,3 +112,14 @@ Deno.test({ name: "jev live smoke (synthetic phrase)", ignore: Deno.env.get("JEV
   assert(r !== null && isClassifyResult(r));
   console.log(JSON.stringify({ live: r.label, confidence: r.confidence }));
 } });
+
+Deno.test("classifierMeta: messenger apps (ko/en, MESSAGES source) drop title; other apps keep it; sender never in instructions", () => {
+  for (const app of ["메시지", "Messages", "SMS", "iMessage", "카카오톡", "KakaoTalk", "Slack", "Instagram", "Telegram", "LINE", "Kakao Talk"]) {
+    assert(isMessenger({ source: "NOTIFICATION", appName: app }), app);
+    assertEquals(classifierMeta({ source: "NOTIFICATION", appName: app, title: "합성이름" }).title, null);
+  }
+  assertEquals(classifierMeta({ source: "MESSAGES", appName: null, title: "합성이름" }).title, null);
+  assertEquals(classifierMeta({ source: "NOTIFICATION", appName: "합성쇼핑", title: "주문 안내" }).title, "주문 안내");
+  assertEquals(classifierMeta({ source: "SHARE", appName: null, title: "합성" }).title, "합성");
+  assert(!CLASSIFY_INSTRUCTIONS.includes("sender"));
+});

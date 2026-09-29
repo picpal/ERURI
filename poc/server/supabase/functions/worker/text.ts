@@ -1,4 +1,4 @@
-import { type Classifier, type ClassifyResult, gateDecision } from "../_shared/classify.ts";
+import { type Classifier, classifierMeta, type ClassifyResult, gateDecision } from "../_shared/classify.ts";
 import type { ExtractUsage } from "../_shared/extract.ts";
 import type { TextExtraction, TextMeta } from "../_shared/extract-text.ts";
 import { type FactInput, type SavedFact, textFact } from "../_shared/facts.ts";
@@ -55,7 +55,7 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   // 2) 분류 게이트: 비행동 라벨 + confidence ≥ 임계만 폐기. 임계 미만·오류·타임아웃은 추출로(2026-09-29 사용자 결정, fail-open)
   let verdict: ClassifyResult | null = null;
   try {
-    verdict = await deps.classifier.classify(v.masked, meta);
+    verdict = await deps.classifier.classify(v.masked, classifierMeta(meta));   // 메신저 제목(발신자 이름)은 빼고 보낸다
   } catch (e) {
     console.log(JSON.stringify({ job_id: job.id, classify_error: e instanceof Error ? e.message.slice(0, 60) : "error" }));
   }

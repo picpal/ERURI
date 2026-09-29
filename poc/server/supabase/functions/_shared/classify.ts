@@ -5,6 +5,19 @@ export type ClassifyLabel = typeof LABELS[number];
 export type ClassifyResult = { label: ClassifyLabel; confidence: number };
 // 발신자는 넣지 않는다(외부 분류기로 가는 개인정보 최소화, §12 통제 3)
 export type ClassifyMeta = { source: string; appName: string | null; title: string | null };
+
+// 메신저 알림은 title 이 곧 발신자 표시 이름·단톡방 이름이다(스펙 §6 연락처 행, PoC-2 기록). 분류기에는 보내지 않는다(최종 리뷰 I1).
+// 앱 이름은 기기 로캘에 따라 한국어·영어로 온다. 비교는 공백 제거·소문자
+export const MESSENGER_APPS: ReadonlySet<string> = new Set([
+  "메시지", "messages", "sms", "imessage", "카카오톡", "kakaotalk", "slack", "슬랙", "instagram", "인스타그램", "telegram", "텔레그램",
+  "line", "라인", "whatsapp", "왓츠앱", "messenger", "메신저", "discord", "디스코드", "teams", "microsoftteams", "팀즈",
+].map((a) => a.replace(/\s+/g, "").toLowerCase()));
+export function isMessenger(meta: { source: string; appName: string | null }): boolean {
+  return meta.source === "MESSAGES" || (meta.appName !== null && MESSENGER_APPS.has(meta.appName.replace(/\s+/g, "").toLowerCase()));
+}
+export function classifierMeta(meta: ClassifyMeta): ClassifyMeta {
+  return isMessenger(meta) ? { ...meta, title: null } : meta;
+}
 // openai 는 교체 후보(Task 8, 조건부). 어댑터가 생기기 전에는 classifierFromEnv 가 classify openai_not_built 로 실패한다
 export type ClassifyProvider = "none" | "jev" | "openai";
 export type Classifier = { provider: ClassifyProvider; classify(text: string, meta: ClassifyMeta): Promise<ClassifyResult | null> };
@@ -13,7 +26,8 @@ export const DEFAULT_THRESHOLD = 0.8;
 export const CLASSIFY_TIMEOUT_MS = 3000;   // 늦으면 게이트를 건너뛴다(스펙 §6 FM 타임아웃과 같은 원칙: 먼저 끝난 쪽이 결과)
 
 // 라벨 경계(2026-09-29 Jev 평가 rubric 그대로. 영어 — Jev 문서상 영어가 주 학습 언어). 어댑터 공용
-export const CLASSIFY_INSTRUCTIONS = "Classify this Korean phone notification or text message (app, title, sender, body) for a personal assistant "
+// state 의 sender 는 항상 null, 메신저 앱은 title 도 null(classifierMeta)
+export const CLASSIFY_INSTRUCTIONS = "Classify this Korean phone notification or text message (app, title, body) for a personal assistant "
   + "that extracts calendar events, tasks, and purchases. Pick the single best category.";
 export const LABEL_CRITERIA: Record<ClassifyLabel, { covers: string; not: string }> = {
   actionable: {

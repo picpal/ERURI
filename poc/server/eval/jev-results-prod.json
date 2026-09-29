@@ -1,5 +1,5 @@
 {
-  "run_at": "2026-09-29T07:02:18.505Z",
+  "run_at": "2026-09-29T07:25:55.750Z",
   "endpoint": "https://api.typesafe.ai/v1/systemone",
   "model_alias": "jev-1.13.0",
   "variant": "prod",
@@ -14,7 +14,7 @@
     "otp",
     "notice"
   ],
-  "instructions": "Classify this Korean phone notification or text message (app, title, sender, body) for a personal assistant that extracts calendar events, tasks, and purchases. Pick the single best category.",
+  "instructions": "Classify this Korean phone notification or text message (app, title, body) for a personal assistant that extracts calendar events, tasks, and purchases. Pick the single best category.",
   "criteria": {
     "actionable": {
       "covers": "Anything the recipient may need to act on or record: a schedule, appointment, meeting, reservation or booking, a to-do or deadline, an order, purchase, payment, card approval, bill, subscription, delivery status, or pickup. Includes messages from friends or family that fix a concrete date/time/place or ask the recipient to do something.",
@@ -114,17 +114,17 @@
     }
   },
   "latency_ms": {
-    "p50": 218.043,
-    "p95": 302.461,
-    "max": 356.377,
-    "min": 182.036
+    "p50": 216.186,
+    "p95": 313.78,
+    "max": 372.932,
+    "min": 186.002
   },
   "retries": 0,
   "cost": {
-    "input_tokens_total": 45915,
-    "input_tokens_mean": 765.25,
-    "usd_per_request": 0.0000321405,
-    "usd_total": 0.0019284300000000003
+    "input_tokens_total": 45641,
+    "input_tokens_mean": 760.683,
+    "usd_per_request": 0.0000319487,
+    "usd_total": 0.0019169220000000002
   },
   "threshold_policy": [
     {
@@ -151,14 +151,14 @@
     },
     {
       "threshold": 0.8,
-      "discarded": 29,
-      "passed": 31,
+      "discarded": 30,
+      "passed": 30,
       "discard_precision": 1,
-      "pass_rate": 0.517,
+      "pass_rate": 0.5,
       "actionable_lost": [],
-      "non_actionable_passed": 1,
-      "non_actionable_filtered_rate": 0.967,
-      "gate_accuracy": 0.983
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 1
     },
     {
       "threshold": 0.9,
@@ -197,14 +197,14 @@
     },
     {
       "threshold": 0.8,
-      "discarded": 29,
-      "passed": 31,
+      "discarded": 30,
+      "passed": 30,
       "discard_precision": 1,
-      "pass_rate": 0.517,
+      "pass_rate": 0.5,
       "actionable_lost": [],
-      "non_actionable_passed": 1,
-      "non_actionable_filtered_rate": 0.967,
-      "gate_accuracy": 0.983
+      "non_actionable_passed": 0,
+      "non_actionable_filtered_rate": 1,
+      "gate_accuracy": 1
     },
     {
       "threshold": 0.9,
@@ -321,14 +321,14 @@
       "pred": "actionable",
       "confidence": 1,
       "probabilities": {
-        "actionable": 1,
-        "personal": 0,
-        "promo": 0,
         "otp": 0,
+        "promo": 0,
+        "personal": 0,
+        "actionable": 1,
         "notice": 0
       },
-      "ms": 271.946,
-      "input_tokens": 778
+      "ms": 277.541,
+      "input_tokens": 772
     },
     {
       "id": "d02",
@@ -339,14 +339,14 @@
       "pred": "actionable",
       "confidence": 1,
       "probabilities": {
-        "actionable": 1,
         "otp": 0,
         "personal": 0,
-        "notice": 0,
-        "promo": 0
+        "actionable": 1,
+        "promo": 0,
+        "notice": 0
       },
-      "ms": 204.723,
-      "input_tokens": 780
+      "ms": 297.709,
+      "input_tokens": 774
     },
     {
       "id": "d03",
@@ -363,8 +363,8 @@
         "otp": 0,
         "notice": 0
       },
-      "ms": 208.633,
-      "input_tokens": 778
+      "ms": 224.569,
+      "input_tokens": 772
     },
     {
       "id": "d04",
@@ -375,14 +375,14 @@
       "pred": "actionable",
       "confidence": 0.98,
       "probabilities": {
+        "personal": 0,
         "otp": 0,
-        "notice": 0.01,
         "promo": 0,
-        "actionable": 0.99,
-        "personal": 0
+        "notice": 0.01,
+        "actionable": 0.99
       },
-      "ms": 194.125,
-      "input_tokens": 786
+      "ms": 208.12,
+      "input_tokens": 780
     },
     {
       "id": "d05",
@@ -393,14 +393,14 @@
       "pred": "actionable",
       "confidence": 1,
       "probabilities": {
-        "personal": 0,
-        "actionable": 1,
-        "notice": 0,
         "promo": 0,
-        "otp": 0
+        "actionable": 1,
+        "otp": 0,
+        "personal": 0,
+        "notice": 0
       },
-      "ms": 192.323,
-      "input_tokens": 782
+      "ms": 316.31,
+      "input_tokens": 776
     },
     {
       "id": "d06",
@@ -411,14 +411,14 @@
       "pred": "promo",
       "confidence": 1,
       "probabilities": {
-        "personal": 0,
-        "notice": 0,
-        "promo": 1,
         "otp": 0,
-        "actionable": 0
+        "promo": 1,
+        "notice": 0,
+        "actionable": 0,
+        "personal": 0
       },
-      "ms": 241.207,
-      "input_tokens": 776
+      "ms": 313.78,
+      "input_tokens": 770
     },
     {
       "id": "d07",
@@ -429,17 +429,179 @@
       "pred": "otp",
       "confidence": 1,
       "probabilities": {
+        "promo": 0,
         "otp": 1,
-        "notice": 0,
-        "personal": 0,
         "actionable": 0,
-        "promo": 0
+        "notice": 0,
+        "personal": 0
       },
-      "ms": 323.753,
-      "input_tokens": 766
+      "ms": 290.121,
+      "input_tokens": 760
     },
     {
       "id": "d08",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "otp": 0,
+        "promo": 0,
+        "notice": 0,
+        "actionable": 1
+      },
+      "ms": 265.71,
+      "input_tokens": 756
+    },
+    {
+      "id": "d09",
+      "label": "personal",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "notice": 0,
+        "personal": 1,
+        "promo": 0,
+        "actionable": 0,
+        "otp": 0
+      },
+      "ms": 231.079,
+      "input_tokens": 733
+    },
+    {
+      "id": "d10",
+      "label": "personal",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "personal",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "otp": 0,
+        "actionable": 0,
+        "notice": 0,
+        "personal": 1
+      },
+      "ms": 195.593,
+      "input_tokens": 736
+    },
+    {
+      "id": "a01",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "promo": 0,
+        "otp": 0,
+        "actionable": 1,
+        "notice": 0
+      },
+      "ms": 271.275,
+      "input_tokens": 768
+    },
+    {
+      "id": "a02",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "personal": 0,
+        "notice": 0,
+        "promo": 0,
+        "otp": 0
+      },
+      "ms": 193.639,
+      "input_tokens": 759
+    },
+    {
+      "id": "a03",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 0.96,
+      "probabilities": {
+        "actionable": 0.97,
+        "personal": 0,
+        "otp": 0,
+        "promo": 0,
+        "notice": 0.03
+      },
+      "ms": 327.751,
+      "input_tokens": 770
+    },
+    {
+      "id": "a04",
+      "label": "actionable",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "otp": 0,
+        "actionable": 1,
+        "personal": 0,
+        "notice": 0,
+        "promo": 0
+      },
+      "ms": 229.214,
+      "input_tokens": 772
+    },
+    {
+      "id": "a05",
+      "label": "actionable",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "actionable": 1,
+        "personal": 0,
+        "promo": 0,
+        "otp": 0,
+        "notice": 0
+      },
+      "ms": 296.165,
+      "input_tokens": 768
+    },
+    {
+      "id": "a06",
+      "label": "actionable",
+      "app": "Slack",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "actionable",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 0,
+        "actionable": 1,
+        "otp": 0,
+        "personal": 0,
+        "notice": 0
+      },
+      "ms": 209.114,
+      "input_tokens": 755
+    },
+    {
+      "id": "a07",
       "label": "actionable",
       "app": "Slack",
       "rule": "pass",
@@ -453,170 +615,8 @@
         "otp": 0,
         "notice": 0
       },
-      "ms": 267.876,
-      "input_tokens": 762
-    },
-    {
-      "id": "d09",
-      "label": "personal",
-      "app": "Slack",
-      "rule": "pass",
-      "sent": "masked",
-      "pred": "personal",
-      "confidence": 1,
-      "probabilities": {
-        "otp": 0,
-        "personal": 1,
-        "notice": 0,
-        "promo": 0,
-        "actionable": 0
-      },
-      "ms": 198.71,
-      "input_tokens": 739
-    },
-    {
-      "id": "d10",
-      "label": "personal",
-      "app": "Slack",
-      "rule": "pass",
-      "sent": "masked",
-      "pred": "personal",
-      "confidence": 1,
-      "probabilities": {
-        "actionable": 0,
-        "notice": 0,
-        "promo": 0,
-        "otp": 0,
-        "personal": 1
-      },
-      "ms": 255.285,
-      "input_tokens": 742
-    },
-    {
-      "id": "a01",
-      "label": "actionable",
-      "app": "SMS",
-      "rule": "pass",
-      "sent": "masked",
-      "pred": "actionable",
-      "confidence": 1,
-      "probabilities": {
-        "notice": 0,
-        "personal": 0,
-        "promo": 0,
-        "actionable": 1,
-        "otp": 0
-      },
-      "ms": 188.63,
-      "input_tokens": 770
-    },
-    {
-      "id": "a02",
-      "label": "actionable",
-      "app": "KakaoTalk",
-      "rule": "pass",
-      "sent": "masked",
-      "pred": "actionable",
-      "confidence": 1,
-      "probabilities": {
-        "promo": 0,
-        "notice": 0,
-        "personal": 0,
-        "actionable": 1,
-        "otp": 0
-      },
-      "ms": 216.507,
-      "input_tokens": 767
-    },
-    {
-      "id": "a03",
-      "label": "actionable",
-      "app": "SMS",
-      "rule": "pass",
-      "sent": "masked",
-      "pred": "actionable",
-      "confidence": 0.97,
-      "probabilities": {
-        "actionable": 0.98,
-        "personal": 0,
-        "notice": 0.02,
-        "promo": 0,
-        "otp": 0
-      },
-      "ms": 216.407,
-      "input_tokens": 772
-    },
-    {
-      "id": "a04",
-      "label": "actionable",
-      "app": "KakaoTalk",
-      "rule": "pass",
-      "sent": "masked",
-      "pred": "actionable",
-      "confidence": 1,
-      "probabilities": {
-        "personal": 0,
-        "notice": 0,
-        "otp": 0,
-        "actionable": 1,
-        "promo": 0
-      },
-      "ms": 248.139,
-      "input_tokens": 777
-    },
-    {
-      "id": "a05",
-      "label": "actionable",
-      "app": "SMS",
-      "rule": "pass",
-      "sent": "masked",
-      "pred": "actionable",
-      "confidence": 1,
-      "probabilities": {
-        "notice": 0,
-        "otp": 0,
-        "actionable": 1,
-        "promo": 0,
-        "personal": 0
-      },
-      "ms": 235.236,
-      "input_tokens": 770
-    },
-    {
-      "id": "a06",
-      "label": "actionable",
-      "app": "Slack",
-      "rule": "pass",
-      "sent": "masked",
-      "pred": "actionable",
-      "confidence": 1,
-      "probabilities": {
-        "otp": 0,
-        "actionable": 1,
-        "notice": 0,
-        "promo": 0,
-        "personal": 0
-      },
-      "ms": 266.755,
-      "input_tokens": 763
-    },
-    {
-      "id": "a07",
-      "label": "actionable",
-      "app": "Slack",
-      "rule": "pass",
-      "sent": "masked",
-      "pred": "actionable",
-      "confidence": 1,
-      "probabilities": {
-        "actionable": 1,
-        "otp": 0,
-        "notice": 0,
-        "personal": 0,
-        "promo": 0
-      },
-      "ms": 226.279,
-      "input_tokens": 766
+      "ms": 191.742,
+      "input_tokens": 760
     },
     {
       "id": "a08",
@@ -625,16 +625,16 @@
       "rule": "pass",
       "sent": "masked",
       "pred": "actionable",
-      "confidence": 0.66,
+      "confidence": 0.67,
       "probabilities": {
+        "actionable": 0.74,
         "personal": 0,
-        "actionable": 0.73,
-        "notice": 0.27,
+        "promo": 0,
         "otp": 0,
-        "promo": 0
+        "notice": 0.26
       },
-      "ms": 224.607,
-      "input_tokens": 778
+      "ms": 273.996,
+      "input_tokens": 776
     },
     {
       "id": "a09",
@@ -647,12 +647,12 @@
       "probabilities": {
         "otp": 0,
         "promo": 0,
-        "personal": 0,
         "notice": 0,
-        "actionable": 1
+        "actionable": 1,
+        "personal": 0
       },
-      "ms": 315.483,
-      "input_tokens": 773
+      "ms": 372.932,
+      "input_tokens": 765
     },
     {
       "id": "a10",
@@ -663,14 +663,14 @@
       "pred": "actionable",
       "confidence": 1,
       "probabilities": {
-        "promo": 0,
-        "actionable": 1,
         "personal": 0,
+        "otp": 0,
         "notice": 0,
-        "otp": 0
+        "promo": 0,
+        "actionable": 1
       },
-      "ms": 182.036,
-      "input_tokens": 783
+      "ms": 216.186,
+      "input_tokens": 781
     },
     {
       "id": "a11",
@@ -681,14 +681,14 @@
       "pred": "actionable",
       "confidence": 1,
       "probabilities": {
-        "promo": 0,
-        "notice": 0,
         "personal": 0,
         "actionable": 1,
-        "otp": 0
+        "promo": 0,
+        "otp": 0,
+        "notice": 0
       },
-      "ms": 293.489,
-      "input_tokens": 765
+      "ms": 192.523,
+      "input_tokens": 763
     },
     {
       "id": "a12",
@@ -701,12 +701,12 @@
       "probabilities": {
         "personal": 0,
         "notice": 0,
-        "otp": 0,
+        "promo": 0,
         "actionable": 1,
-        "promo": 0
+        "otp": 0
       },
-      "ms": 222.737,
-      "input_tokens": 761
+      "ms": 244.263,
+      "input_tokens": 756
     },
     {
       "id": "a13",
@@ -719,12 +719,12 @@
       "probabilities": {
         "otp": 0,
         "promo": 0,
-        "actionable": 1,
         "notice": 0,
+        "actionable": 1,
         "personal": 0
       },
-      "ms": 191.827,
-      "input_tokens": 761
+      "ms": 253.39,
+      "input_tokens": 756
     },
     {
       "id": "a14",
@@ -735,14 +735,14 @@
       "pred": "actionable",
       "confidence": 0.99,
       "probabilities": {
-        "actionable": 0.99,
-        "personal": 0,
-        "promo": 0,
         "otp": 0,
-        "notice": 0.01
+        "promo": 0,
+        "notice": 0.01,
+        "actionable": 0.99,
+        "personal": 0
       },
-      "ms": 195.773,
-      "input_tokens": 778
+      "ms": 212.774,
+      "input_tokens": 776
     },
     {
       "id": "a15",
@@ -754,13 +754,13 @@
       "confidence": 1,
       "probabilities": {
         "promo": 0,
-        "otp": 0,
         "notice": 0,
-        "personal": 0,
-        "actionable": 1
+        "actionable": 1,
+        "otp": 0,
+        "personal": 0
       },
-      "ms": 277.101,
-      "input_tokens": 778
+      "ms": 202.774,
+      "input_tokens": 776
     },
     {
       "id": "a16",
@@ -771,14 +771,14 @@
       "pred": "actionable",
       "confidence": 1,
       "probabilities": {
-        "notice": 0,
         "otp": 0,
-        "promo": 0,
         "actionable": 1,
-        "personal": 0
+        "personal": 0,
+        "promo": 0,
+        "notice": 0
       },
-      "ms": 254.736,
-      "input_tokens": 773
+      "ms": 242.64,
+      "input_tokens": 767
     },
     {
       "id": "a17",
@@ -789,14 +789,14 @@
       "pred": "actionable",
       "confidence": 1,
       "probabilities": {
+        "otp": 0,
+        "promo": 0,
         "personal": 0,
         "actionable": 1,
-        "notice": 0,
-        "otp": 0,
-        "promo": 0
+        "notice": 0
       },
-      "ms": 194.445,
-      "input_tokens": 784
+      "ms": 234.634,
+      "input_tokens": 782
     },
     {
       "id": "a18",
@@ -807,14 +807,14 @@
       "pred": "actionable",
       "confidence": 1,
       "probabilities": {
-        "actionable": 1,
         "otp": 0,
+        "notice": 0,
         "promo": 0,
-        "personal": 0,
-        "notice": 0
+        "actionable": 1,
+        "personal": 0
       },
-      "ms": 235.25,
-      "input_tokens": 775
+      "ms": 288.917,
+      "input_tokens": 767
     },
     {
       "id": "a19",
@@ -826,13 +826,13 @@
       "confidence": 0.99,
       "probabilities": {
         "promo": 0,
-        "otp": 0,
-        "notice": 0,
-        "actionable": 1,
-        "personal": 0
+        "notice": 0.01,
+        "personal": 0,
+        "actionable": 0.99,
+        "otp": 0
       },
-      "ms": 209.127,
-      "input_tokens": 769
+      "ms": 187.725,
+      "input_tokens": 767
     },
     {
       "id": "a20",
@@ -844,13 +844,13 @@
       "confidence": 1,
       "probabilities": {
         "otp": 0,
-        "actionable": 1,
         "personal": 0,
-        "notice": 0,
-        "promo": 0
+        "actionable": 1,
+        "promo": 0,
+        "notice": 0
       },
-      "ms": 356.377,
-      "input_tokens": 769
+      "ms": 208.445,
+      "input_tokens": 767
     },
     {
       "id": "a21",
@@ -861,14 +861,14 @@
       "pred": "actionable",
       "confidence": 1,
       "probabilities": {
+        "notice": 0,
         "otp": 0,
         "actionable": 1,
-        "personal": 0,
-        "notice": 0,
-        "promo": 0
+        "promo": 0,
+        "personal": 0
       },
-      "ms": 204.886,
-      "input_tokens": 770
+      "ms": 245.095,
+      "input_tokens": 764
     },
     {
       "id": "a22",
@@ -879,14 +879,14 @@
       "pred": "actionable",
       "confidence": 1,
       "probabilities": {
-        "personal": 0,
         "notice": 0,
+        "personal": 0,
+        "promo": 0,
         "otp": 0,
-        "actionable": 1,
-        "promo": 0
+        "actionable": 1
       },
-      "ms": 278.872,
-      "input_tokens": 773
+      "ms": 209.497,
+      "input_tokens": 771
     },
     {
       "id": "a23",
@@ -898,13 +898,13 @@
       "confidence": 1,
       "probabilities": {
         "otp": 0,
-        "actionable": 1,
         "notice": 0,
         "personal": 0,
+        "actionable": 1,
         "promo": 0
       },
-      "ms": 202.182,
-      "input_tokens": 770
+      "ms": 211.358,
+      "input_tokens": 765
     },
     {
       "id": "a24",
@@ -915,14 +915,14 @@
       "pred": "actionable",
       "confidence": 1,
       "probabilities": {
+        "actionable": 1,
+        "notice": 0,
         "promo": 0,
         "otp": 0,
-        "actionable": 1,
-        "personal": 0,
-        "notice": 0
+        "personal": 0
       },
-      "ms": 226.993,
-      "input_tokens": 759
+      "ms": 232.196,
+      "input_tokens": 757
     },
     {
       "id": "p01",
@@ -934,13 +934,13 @@
       "confidence": 1,
       "probabilities": {
         "actionable": 0,
-        "personal": 1,
+        "notice": 0,
         "promo": 0,
         "otp": 0,
-        "notice": 0
+        "personal": 1
       },
-      "ms": 276.454,
-      "input_tokens": 755
+      "ms": 275.98,
+      "input_tokens": 750
     },
     {
       "id": "p02",
@@ -949,16 +949,16 @@
       "rule": "pass",
       "sent": "masked",
       "pred": "personal",
-      "confidence": 0.64,
+      "confidence": 0.8,
       "probabilities": {
-        "personal": 0.72,
-        "actionable": 0.28,
+        "notice": 0,
+        "personal": 0.84,
         "promo": 0,
-        "otp": 0,
-        "notice": 0
+        "actionable": 0.16,
+        "otp": 0
       },
-      "ms": 190.334,
-      "input_tokens": 749
+      "ms": 221.143,
+      "input_tokens": 744
     },
     {
       "id": "p03",
@@ -969,14 +969,14 @@
       "pred": "personal",
       "confidence": 0.99,
       "probabilities": {
-        "otp": 0,
-        "notice": 0,
         "promo": 0,
+        "otp": 0,
         "actionable": 0.01,
+        "notice": 0,
         "personal": 0.99
       },
-      "ms": 213.357,
-      "input_tokens": 747
+      "ms": 202.286,
+      "input_tokens": 742
     },
     {
       "id": "p04",
@@ -988,13 +988,13 @@
       "confidence": 1,
       "probabilities": {
         "actionable": 0,
-        "otp": 0,
-        "notice": 0,
         "personal": 1,
-        "promo": 0
+        "otp": 0,
+        "promo": 0,
+        "notice": 0
       },
-      "ms": 189.013,
-      "input_tokens": 751
+      "ms": 207.703,
+      "input_tokens": 743
     },
     {
       "id": "p05",
@@ -1005,14 +1005,14 @@
       "pred": "personal",
       "confidence": 1,
       "probabilities": {
-        "promo": 0,
-        "otp": 0,
         "actionable": 0,
-        "notice": 0,
-        "personal": 1
+        "personal": 1,
+        "otp": 0,
+        "promo": 0,
+        "notice": 0
       },
-      "ms": 270.037,
-      "input_tokens": 749
+      "ms": 186.163,
+      "input_tokens": 744
     },
     {
       "id": "p06",
@@ -1021,16 +1021,16 @@
       "rule": "pass",
       "sent": "masked",
       "pred": "personal",
-      "confidence": 1,
+      "confidence": 0.99,
       "probabilities": {
         "promo": 0,
-        "actionable": 0,
-        "personal": 1,
         "notice": 0,
+        "personal": 1,
+        "actionable": 0,
         "otp": 0
       },
-      "ms": 236.646,
-      "input_tokens": 750
+      "ms": 228.816,
+      "input_tokens": 743
     },
     {
       "id": "p07",
@@ -1041,14 +1041,14 @@
       "pred": "personal",
       "confidence": 1,
       "probabilities": {
-        "actionable": 0,
         "personal": 1,
+        "actionable": 0,
         "promo": 0,
-        "otp": 0,
-        "notice": 0
+        "notice": 0,
+        "otp": 0
       },
-      "ms": 285.722,
-      "input_tokens": 749
+      "ms": 200.242,
+      "input_tokens": 744
     },
     {
       "id": "p08",
@@ -1057,16 +1057,16 @@
       "rule": "pass",
       "sent": "masked",
       "pred": "personal",
-      "confidence": 0.91,
+      "confidence": 0.93,
       "probabilities": {
-        "otp": 0,
-        "personal": 0.93,
-        "actionable": 0.07,
+        "personal": 0.94,
+        "notice": 0,
+        "actionable": 0.06,
         "promo": 0,
-        "notice": 0
+        "otp": 0
       },
-      "ms": 221.1,
-      "input_tokens": 755
+      "ms": 203.73,
+      "input_tokens": 750
     },
     {
       "id": "p09",
@@ -1077,14 +1077,14 @@
       "pred": "personal",
       "confidence": 1,
       "probabilities": {
-        "actionable": 0,
-        "personal": 1,
-        "promo": 0,
         "otp": 0,
-        "notice": 0
+        "promo": 0,
+        "notice": 0,
+        "actionable": 0,
+        "personal": 1
       },
-      "ms": 302.461,
-      "input_tokens": 746
+      "ms": 226.803,
+      "input_tokens": 741
     },
     {
       "id": "p10",
@@ -1096,13 +1096,13 @@
       "confidence": 1,
       "probabilities": {
         "personal": 1,
-        "actionable": 0,
         "notice": 0,
+        "actionable": 0,
         "promo": 0,
         "otp": 0
       },
-      "ms": 201.869,
-      "input_tokens": 750
+      "ms": 191.412,
+      "input_tokens": 744
     },
     {
       "id": "m01",
@@ -1113,14 +1113,14 @@
       "pred": "promo",
       "confidence": 1,
       "probabilities": {
-        "actionable": 0,
         "personal": 0,
-        "promo": 1,
         "otp": 0,
-        "notice": 0
+        "actionable": 0,
+        "notice": 0,
+        "promo": 1
       },
-      "ms": 204.479,
-      "input_tokens": 782
+      "ms": 223.598,
+      "input_tokens": 780
     },
     {
       "id": "m02",
@@ -1131,37 +1131,19 @@
       "pred": "promo",
       "confidence": 1,
       "probabilities": {
-        "otp": 0,
-        "notice": 0,
         "personal": 0,
         "actionable": 0,
+        "notice": 0,
+        "otp": 0,
         "promo": 1
       },
-      "ms": 208.06,
-      "input_tokens": 767
+      "ms": 192.174,
+      "input_tokens": 761
     },
     {
       "id": "m03",
       "label": "promo",
       "app": "SMS",
-      "rule": "pass",
-      "sent": "masked",
-      "pred": "promo",
-      "confidence": 1,
-      "probabilities": {
-        "personal": 0,
-        "notice": 0,
-        "actionable": 0,
-        "promo": 1,
-        "otp": 0
-      },
-      "ms": 231.326,
-      "input_tokens": 768
-    },
-    {
-      "id": "m04",
-      "label": "promo",
-      "app": "KakaoTalk",
       "rule": "pass",
       "sent": "masked",
       "pred": "promo",
@@ -1173,8 +1155,26 @@
         "otp": 0,
         "notice": 0
       },
-      "ms": 202,
-      "input_tokens": 764
+      "ms": 192.37,
+      "input_tokens": 766
+    },
+    {
+      "id": "m04",
+      "label": "promo",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 0.99,
+      "probabilities": {
+        "promo": 1,
+        "otp": 0,
+        "notice": 0,
+        "personal": 0,
+        "actionable": 0
+      },
+      "ms": 208.052,
+      "input_tokens": 758
     },
     {
       "id": "m05",
@@ -1185,14 +1185,14 @@
       "pred": "promo",
       "confidence": 1,
       "probabilities": {
-        "notice": 0,
-        "otp": 0,
+        "personal": 0,
         "actionable": 0,
+        "otp": 0,
         "promo": 1,
-        "personal": 0
+        "notice": 0
       },
-      "ms": 196.752,
-      "input_tokens": 781
+      "ms": 216.989,
+      "input_tokens": 779
     },
     {
       "id": "m06",
@@ -1204,52 +1204,16 @@
       "confidence": 0.98,
       "probabilities": {
         "personal": 0,
-        "actionable": 0.01,
-        "otp": 0,
-        "promo": 0.99,
-        "notice": 0
+        "actionable": 0.02,
+        "notice": 0,
+        "promo": 0.98,
+        "otp": 0
       },
-      "ms": 212.924,
-      "input_tokens": 773
+      "ms": 238.319,
+      "input_tokens": 768
     },
     {
       "id": "m07",
-      "label": "promo",
-      "app": "SMS",
-      "rule": "pass",
-      "sent": "masked",
-      "pred": "promo",
-      "confidence": 1,
-      "probabilities": {
-        "otp": 0,
-        "promo": 1,
-        "notice": 0,
-        "actionable": 0,
-        "personal": 0
-      },
-      "ms": 187.176,
-      "input_tokens": 760
-    },
-    {
-      "id": "m08",
-      "label": "promo",
-      "app": "KakaoTalk",
-      "rule": "pass",
-      "sent": "masked",
-      "pred": "promo",
-      "confidence": 1,
-      "probabilities": {
-        "promo": 1,
-        "otp": 0,
-        "notice": 0,
-        "actionable": 0,
-        "personal": 0
-      },
-      "ms": 202.997,
-      "input_tokens": 752
-    },
-    {
-      "id": "m09",
       "label": "promo",
       "app": "SMS",
       "rule": "pass",
@@ -1263,8 +1227,44 @@
         "promo": 1,
         "otp": 0
       },
-      "ms": 246.618,
-      "input_tokens": 767
+      "ms": 215.252,
+      "input_tokens": 758
+    },
+    {
+      "id": "m08",
+      "label": "promo",
+      "app": "KakaoTalk",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "personal": 0,
+        "notice": 0,
+        "promo": 1,
+        "otp": 0,
+        "actionable": 0
+      },
+      "ms": 200.773,
+      "input_tokens": 746
+    },
+    {
+      "id": "m09",
+      "label": "promo",
+      "app": "SMS",
+      "rule": "pass",
+      "sent": "masked",
+      "pred": "promo",
+      "confidence": 1,
+      "probabilities": {
+        "promo": 1,
+        "otp": 0,
+        "actionable": 0,
+        "personal": 0,
+        "notice": 0
+      },
+      "ms": 196.023,
+      "input_tokens": 765
     },
     {
       "id": "o01",
@@ -1275,14 +1275,14 @@
       "pred": "otp",
       "confidence": 1,
       "probabilities": {
-        "promo": 0,
-        "otp": 1,
         "personal": 0,
         "actionable": 0,
-        "notice": 0
+        "promo": 0,
+        "notice": 0,
+        "otp": 1
       },
-      "ms": 188.203,
-      "input_tokens": 746
+      "ms": 206.399,
+      "input_tokens": 744
     },
     {
       "id": "o02",
@@ -1294,13 +1294,13 @@
       "confidence": 1,
       "probabilities": {
         "otp": 1,
-        "promo": 0,
-        "notice": 0,
+        "personal": 0,
         "actionable": 0,
-        "personal": 0
+        "promo": 0,
+        "notice": 0
       },
-      "ms": 218.043,
-      "input_tokens": 749
+      "ms": 280.785,
+      "input_tokens": 747
     },
     {
       "id": "o03",
@@ -1311,14 +1311,14 @@
       "pred": "otp",
       "confidence": 1,
       "probabilities": {
+        "promo": 0,
         "actionable": 0,
         "personal": 0,
-        "promo": 0,
-        "otp": 1,
-        "notice": 0
+        "notice": 0,
+        "otp": 1
       },
-      "ms": 208.153,
-      "input_tokens": 754
+      "ms": 186.002,
+      "input_tokens": 749
     },
     {
       "id": "n01",
@@ -1329,14 +1329,14 @@
       "pred": "notice",
       "confidence": 1,
       "probabilities": {
-        "personal": 0,
-        "actionable": 0,
-        "notice": 1,
         "promo": 0,
-        "otp": 0
+        "notice": 1,
+        "otp": 0,
+        "personal": 0,
+        "actionable": 0
       },
-      "ms": 191.23,
-      "input_tokens": 771
+      "ms": 285.027,
+      "input_tokens": 769
     },
     {
       "id": "n02",
@@ -1347,14 +1347,14 @@
       "pred": "notice",
       "confidence": 1,
       "probabilities": {
-        "notice": 1,
         "otp": 0,
         "actionable": 0,
-        "promo": 0,
-        "personal": 0
+        "personal": 0,
+        "notice": 1,
+        "promo": 0
       },
-      "ms": 237.677,
-      "input_tokens": 762
+      "ms": 198.634,
+      "input_tokens": 754
     },
     {
       "id": "n03",
@@ -1365,14 +1365,14 @@
       "pred": "notice",
       "confidence": 1,
       "probabilities": {
-        "otp": 0,
-        "promo": 0,
-        "personal": 0,
         "actionable": 0,
-        "notice": 1
+        "notice": 1,
+        "promo": 0,
+        "otp": 0,
+        "personal": 0
       },
-      "ms": 247.3,
-      "input_tokens": 756
+      "ms": 194.507,
+      "input_tokens": 754
     },
     {
       "id": "n04",
@@ -1383,14 +1383,14 @@
       "pred": "notice",
       "confidence": 1,
       "probabilities": {
+        "promo": 0,
         "actionable": 0,
         "otp": 0,
-        "notice": 1,
         "personal": 0,
-        "promo": 0
+        "notice": 1
       },
-      "ms": 278.037,
-      "input_tokens": 769
+      "ms": 211.27,
+      "input_tokens": 761
     }
   ]
 }

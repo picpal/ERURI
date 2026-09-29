@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert";
-import type { ClassifyResult } from "../functions/_shared/classify.ts";
-import type { TextExtraction } from "../functions/_shared/extract-text.ts";
+import type { ClassifyMeta, ClassifyResult } from "../functions/_shared/classify.ts";
+import type { TextExtraction, TextMeta } from "../functions/_shared/extract-text.ts";
 import type { FactInput } from "../functions/_shared/facts.ts";
 import type { Job } from "../functions/_shared/job.ts";
 import { processText, type TextDeps, type TextItem } from "../functions/worker/text.ts";
@@ -13,7 +13,7 @@ const BUY_X: TextExtraction = { kind: "purchase", evidence: null,
 function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: ClassifyResult | null | Error; result?: TextExtraction;
   failEnqueue?: number; pushed?: boolean } = {}) {
   const calls = { decrypt: 0, classify: [] as string[], extract: [] as { text: string; today: string }[], saved: [] as FactInput[],
-    status: [] as [string, boolean][], tokens: 0, notify: [] as string[] };
+    status: [] as [string, boolean][], tokens: 0, notify: [] as string[], classifyMeta: [] as ClassifyMeta[], extractMeta: [] as TextMeta[] };
   const base: TextItem = { contentEnc: "enc", source: "NOTIFICATION", appName: "Slack", sender: null, title: null,
     occurredAt: "2026-09-28T15:30:00Z", capturedAt: "2026-09-28T15:30:05Z", status: "queued" };
   // save_fact 처럼 status 를 extracted 로 바꾸고 제안을 기억한다 → 같은 fake 로 processText 를 다시 부르면 실제 재시도가 된다
@@ -21,9 +21,9 @@ function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: Cla
   const d: TextDeps = {
     getItem: async () => (o.item === null ? null : { ...base, ...o.item, status: state.status }),
     decrypt: async () => { calls.decrypt++; return o.text ?? "[합성의원] 내일 오후 3시 진료 예약"; },
-    classifier: { provider: "jev", classify: async (t) => { calls.classify.push(t); if (o.verdict instanceof Error) throw o.verdict; return o.verdict ?? null; } },
+    classifier: { provider: "jev", classify: async (t, m) => { calls.classify.push(t); calls.classifyMeta.push(m); if (o.verdict instanceof Error) throw o.verdict; return o.verdict ?? null; } },
     threshold: 0.8,
-    extract: async (text, _m, today) => { calls.extract.push({ text, today }); return { result: o.result ?? EVENT_X, usage: { input_tokens: 900, output_tokens: 60 } }; },
+    extract: async (text, m, today) => { calls.extract.push({ text, today }); calls.extractMeta.push(m); return { result: o.result ?? EVENT_X, usage: { input_tokens: 900, output_tokens: 60 } }; },
     addTokens: async (_u, n) => { calls.tokens += n; },
     saveFact: async (f) => { calls.saved.push(f); state.status = "extracted"; const proposalId = f.kind === "purchase" ? null : "p1";
       if (proposalId && !state.proposals.includes(proposalId)) state.proposals.push(proposalId);
@@ -40,6 +40,19 @@ Deno.test("event → proposed; fact via text; tokens counted; status left to sav
   const { d, calls } = fake({ verdict: { label: "actionable", confidence: 0.99 } });
   assertEquals(await processText(d, job()), "proposed");
   assertEquals([calls.saved.length, calls.saved[0].kind, calls.saved[0].payload.via, calls.tokens, calls.status], [1, "event", "text", 960, []]);
+});
+
+// 최종 리뷰 I1: 메신저 알림의 title 은 발신자 표시 이름이다 → 분류기(Jev)에는 null, 비메신저는 그대로
+Deno.test("gate: messenger title (sender display name) never reaches the classifier; other apps keep title", async () => {
+  for (const [source, appName] of [["NOTIFICATION", "메시지"], ["NOTIFICATION", "카카오톡"], ["NOTIFICATION", "KakaoTalk"], ["MESSAGES", "SMS"],
+    ["NOTIFICATION", "Slack"], ["MESSAGES", null]] as [string, string | null][]) {
+    const { d, calls } = fake({ item: { source, appName, title: "합성이름" }, verdict: { label: "actionable", confidence: 0.99 } });
+    await processText(d, job());
+    assertEquals(calls.classifyMeta[0], { source, appName, title: null });
+  }
+  const shop = fake({ item: { appName: "합성쇼핑", title: "주문 안내" }, verdict: { label: "actionable", confidence: 0.99 } });
+  await processText(shop.d, job());
+  assertEquals(shop.calls.classifyMeta[0].title, "주문 안내");
 });
 
 // Review Focus 1: 추출 기준일 = 받은 날(서울)
