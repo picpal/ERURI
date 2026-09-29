@@ -204,7 +204,9 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
 - 완료 콜백은 `markSent`(삭제), 실패 콜백은 `markFailed`(attempts+1, lease를 백오프 시각으로 덮어씀)로 lease를 끝낸다. 콜백 없이 lease가 만료된 항목(앱 강제 종료로 전송 취소)은 다음 flush가 다시 가져간다.
 - 그래서 "보냈는데 콜백을 못 받은" 항목은 두 번 갈 수 있다. 서버 `/ingest`는 기기 항목의 `external_id`로 큐 항목 `id`(UUID)를 받아 멱등 키(§7)로 중복을 막는다.
 - 전송 경로(0.2.0, 실기기 09-28 "잠금 중 도착이 해제·앱 열기까지 밀림" 대응): flush 트리거는 `intent`·`silent_push`·`bg_refresh`·`foreground` 넷이다. 각 트리거는 먼저 프로세스 안 직접 요청을 보내고, 네트워크 오류·타임아웃일 때만 background 세션에 넘긴다. 백그라운드에서 시작한 background 세션 전송은 iOS가 discretionary로 다뤄 늦어질 수 있어서다. HTTP 오류 응답은 넘기지 않고 `markFailed`로 백오프한다. 넘긴 전송은 앱이 없어도 iOS가 끝내고, `handleEventsForBackgroundURLSession`으로 앱을 깨워 완료 콜백을 전달한다. 인텐트 뒤 남은 항목이 있으면 BGAppRefreshTask(`com.picpal.assistant.poc.refresh`, 최소 15분)를 예약하고, 실행될 때마다 다시 예약한다. 무음 푸시는 `apns-send`의 `silent:true`(priority 5, `apns-push-type: background`)로 보낸다. 주기 발송(cron)은 아직 정하지 않았다.
-- PoC trace `poc9.upload_done.path`: `intent_direct`(인텐트 실행 중 직접 요청 완료) · `bg_upload`(인텐트가 background 세션에 넘긴 전송) · `silent_push` · `bg_refresh` · `foreground`. `via`(direct/bg_session), `age_ms`(캡처→완료), `intent_locked`(인텐트 시작 시점 잠금)를 함께 남긴다. 잠금 판정(0.2.1)은 `.complete` 보호 파일 읽기 결과다: 읽힘 = false, 권한 거부 = true, 파일 없음·기타 오류 = null(`lock_state=unknown`). `UIApplication.isProtectedDataAvailable`는 백그라운드로 깨어난 프로세스에서 잠금 중에도 false로 찍혀(09-29) `locked_app`에 비교용으로만 남긴다. 잠금 후 약 10초 유예 구간은 잠금 해제로 보인다(한계)
+- PoC trace `poc9.upload_done.path`: `intent_direct`(인텐트 실행 중 직접 요청 완료) · `bg_upload`(인텐트가 background 세션에 넘긴 전송) · `silent_push` · `bg_refresh` · `foreground`. `via`(direct/bg_session), `age_ms`(캡처→완료), `intent_locked`(인텐트 시작 시점 잠금)를 함께 남긴다. 잠금 판정(0.2.1)은 `.complete` 보호 파일 읽기 결과다: 읽힘 = false, 권한 거부 = true, 파일 없음·기타 오류 = null(`lock_state=unknown`). `UIApplication.isProtectedDataAvailable`는 백그라운드로 깨어난 프로세스에서 잠금 중에도 true로 찍혀 `locked=false`가 되므로(09-29 관찰) `locked_app`에 비교용으로만 남긴다. 잠금 후 약 10초 유예 구간은 잠금 해제로 보인다(한계)
+- PoC trace 멱등(0b, 서버): `ingest/trace`는 `(user_id, device_id, event, at)`가 같은 행을 무시하고 `202 {inserted, duplicates}`를 준다(0015).
+  기기 `at`은 ms 정밀도라 같은 기기·같은 이벤트가 같은 ms에 두 번 나지 않는다. 09-29 앱 열기 때의 전체 재업로드 같은 중복이 판정 집계를 부풀리지 않게 한다
 - 서버 멱등: 같은 `source:id` 재수신은 200 + 기존 `item_id`(`duplicate:true`). 기기는 2xx면 큐에서 지우므로 직접 요청이 타임아웃된 뒤 background 세션이 다시 보내도 실패로 남지 않는다.
 - 업로드 서버 주소는 App Group `UserDefaults`(`group.com.picpal.assistant`) 키 `ingestURL`에 저장하고 앱 화면에서 바꾼다. PoC 앱은 저장값이 없을 때만 스킴 환경변수 `INGEST_URL`을 초기값으로 쓰고, 둘 다 없으면 `http://localhost:8787`이다. 홈 화면에서 다시 열어도 저장값이 유지된다.
 
@@ -270,6 +272,9 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
       취소·변경 문구 → 기존 fact status = cancelled/superseded, 새 fact에 supersedes_id
   → 청크(512자) → item_chunks. 임베딩 `text-embedding-3-large`(`dimensions: 512`). 활성화 조건(PoC-7 통과)은 2026-09-27 충족,
       worker 연결은 1a에서 한다. 그 전까지 실제 데이터의 embedding은 null(검색은 키워드 경로, §16)
+  → 저장(0b): 이미지(extract 잡)·텍스트(process 잡) 공용 `save_fact`(0013). fact 1건(같은 항목·같은 종류의 active fact는 1개) +
+      event → `create_event`, task → `create_reminder` 제안(purchase는 제안 없음. 0단계에는 `purchases` 테이블 없이 facts.payload),
+      items.status = `extracted`. 재시도는 새 행 없이 같은 fact·제안 id를 돌려주고 status만 `extracted`로 맞춘다
   → proposals INSERT (event/task). uncertain 비어 있을 때만 잠금화면 "추가" 버튼 노출,
       아니면 REVIEW 카테고리로 앱에서 확인 유도
   → 백필(occurred_at이 수집 시각보다 3일 이상 과거)에서 나온 제안은 푸시하지 않고 보관함에만 표시
@@ -303,7 +308,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 |---|---|---|
 | `connections` | provider, account_ref(unique with provider), status(active/reauth_required/disconnected), expires_at, created_at | 토큰은 `vault` `gmail_rt:<id>`(행 삭제 시 트리거로 삭제). `expires_at` = OAuth refresh token 만료(테스트 모드 7일, 게시 후 null) |
 | `sync_states` | connection_id(pk), cursor(historyId), last_success_at, watch_expires_at | `watch_expires_at` = Gmail watch 만료(7일, 매일 갱신). 0단계 `0006_gmail.sql`과 일치 |
-| `items` | source(GMAIL/MESSAGES/NOTIFICATION/SHARE/CHAT), app_name, sender, title, content_enc bytea, ocr_text_enc bytea, occurred_at, captured_at, device_filter, idempotency_key, status, storage_key, expires_at | 원문. `content_enc`·`ocr_text_enc`는 Edge Function이 사용자 데이터 키로 AES-256-GCM 암호화해 저장(§12). 90일 후 삭제, 행은 유지 |
+| `items` | source(GMAIL/MESSAGES/NOTIFICATION/SHARE/CHAT), app_name, sender, title, content_enc bytea, ocr_text_enc bytea, occurred_at, captured_at, device_filter, idempotency_key, status, storage_key, expires_at | 원문. `content_enc`·`ocr_text_enc`는 Edge Function이 사용자 데이터 키로 AES-256-GCM 암호화해 저장(§12). 90일 후 삭제, 행은 유지. status: queued → extracted | discarded:server:<사유>(0b) |
 | `user_keys` | user_id, wrapped_key bytea, created_at | 사용자별 데이터 키를 마스터 키로 감싼 값(봉투 암호화). 마스터 키는 Edge Function 시크릿에만 있고 DB에 없다 |
 | `utterances` / `memories` | (아래) | 평문. 사용자 삭제 시 연쇄 |
 | `item_chunks` | item_id, chunk_index, text, embedding vector(512), tsv tsvector | HNSW + GIN. 원문 만료 시 삭제 |
