@@ -15,21 +15,32 @@ final class DiagnosticsTests: XCTestCase {
     return try CaptureQueue(url: url)
   }
 
-  func testDefaultOnAndToggle() {
-    let d = tempDefaults()
+  func testDefaultOnAndToggle() throws {
+    let d = tempDefaults(), q = try tempQueue()                          // 끄기는 큐 trace 를 지운다: 앱 공유 큐 대신 임시 큐
     XCTAssertTrue(Diagnostics.isEnabled(defaults: d))
-    Diagnostics.set(false, defaults: d); XCTAssertFalse(Diagnostics.isEnabled(defaults: d))
-    Diagnostics.set(true, defaults: d); XCTAssertTrue(Diagnostics.isEnabled(defaults: d))
+    Diagnostics.set(false, defaults: d, queue: q); XCTAssertFalse(Diagnostics.isEnabled(defaults: d))
+    Diagnostics.set(true, defaults: d, queue: q); XCTAssertTrue(Diagnostics.isEnabled(defaults: d))
   }
 
   func testDisabledTraceIsNotQueued() throws {
     let d = tempDefaults(), q = try tempQueue()
-    Diagnostics.set(false, defaults: d)
+    Diagnostics.set(false, defaults: d, queue: q)
     Trace.log("capture.intent_fired", ["result": "queued:rules"], queue: q, defaults: d)
     XCTAssertEqual(try q.traceCount(), 0)
-    Diagnostics.set(true, defaults: d)
+    Diagnostics.set(true, defaults: d, queue: q)
     Trace.log("capture.intent_fired", ["result": "queued:rules"], queue: q, defaults: d)
     XCTAssertEqual(try q.traceCount(), 1)
+  }
+
+  /// M1-②a 리뷰 Minor ③: 끄면 이미 큐에 쌓인 trace 도 올리지 않는다(스펙 §8 "진단 전송"). 캡처 행은 남는다
+  func testDisablingPurgesQueuedTraces() throws {
+    let d = tempDefaults(), q = try tempQueue()
+    Trace.log("capture.intent_fired", ["result": "queued:rules"], queue: q, defaults: d)
+    try q.enqueue(CaptureItem(id: "c1", source: "SHARE", appName: nil, sender: nil, title: nil, text: "합성 문구", localFile: nil, ocrText: nil, capturedAt: Date(), attempts: 0))
+    XCTAssertEqual(try q.traceCount(), 1)
+    Diagnostics.set(false, defaults: d, queue: q)
+    XCTAssertEqual(try q.traceCount(), 0)
+    XCTAssertEqual(try q.captureCount(), 1)
   }
 
   func testProductEventNamesOnly() {

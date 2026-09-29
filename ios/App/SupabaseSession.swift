@@ -52,6 +52,21 @@ actor SupabaseSession {
   /// 서버가 401 을 준 access token 을 버려 다음 `accessToken()` 이 갱신하게 한다.
   func invalidate() { access = nil }
 
+  /// Sign in with Apple(스펙 §2): Apple identity token + 원본 nonce → Supabase grant_type=id_token. 토큰·nonce 는 로그에 남기지 않는다
+  func signInWithApple(idToken: String, rawNonce: String) async -> Bool {
+    await grant("id_token", ["provider": "apple", "id_token": idToken, "nonce": rawNonce])
+  }
+  /// access token 의 sub(사용자 id). 기기 등록이 사용자 변경을 알아채는 데만 쓴다(M1-⑤)
+  var userID: String? {
+    guard let t = access?.token else { return nil }
+    let parts = t.split(separator: ".")
+    guard parts.count == 3 else { return nil }
+    var b = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+    while b.count % 4 != 0 { b += "=" }
+    guard let d = Data(base64Encoded: b), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
+    return o["sub"] as? String
+  }
+
   private func grant(_ type: String, _ body: [String: String]) async -> Bool {
     guard let cfg = Self.config, var c = URLComponents(url: cfg.url.appendingPathComponent("auth/v1/token"), resolvingAgainstBaseURL: false)
     else { lastError = "session_config_missing"; DiagLog.append("session config_missing"); return false }

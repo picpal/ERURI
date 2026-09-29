@@ -4,56 +4,83 @@ import UIKit
 import EruriCore
 
 enum NotificationActions {
-  static let category = "ADD_EVENT"
+  static let addEvent = "ADD_EVENT", addReminder = "ADD_REMINDER", review = "REVIEW"
+  /// 세 카테고리(스펙 §10). ADD_REMINDER·REVIEW 는 버튼 없이 탭하면 앱이 열린다(1단계 제품 앱).
+  /// 캘린더 전체 접근이 없으면 "추가" 버튼을 숨긴다(§10 권한 철회). 앱 활성화마다 다시 등록한다
   static func register() {
+    let calendarOK = EKEventStore.authorizationStatus(for: .event) == .fullAccess
     let add = UNNotificationAction(identifier: "ADD", title: "캘린더에 추가", options: [.authenticationRequired])
     let ignore = UNNotificationAction(identifier: "IGNORE", title: "무시", options: [])
-    let cat = UNNotificationCategory(identifier: category, actions: [add, ignore], intentIdentifiers: [])
-    UNUserNotificationCenter.current().setNotificationCategories([cat])
+    UNUserNotificationCenter.current().setNotificationCategories([
+      UNNotificationCategory(identifier: addEvent, actions: calendarOK ? [add, ignore] : [], intentIdentifiers: []),
+      UNNotificationCategory(identifier: addReminder, actions: [], intentIdentifiers: []),
+      UNNotificationCategory(identifier: review, actions: [], intentIdentifiers: []),
+    ])
   }
 
-  static func handleAdd(userInfo: [AnyHashable: Any]) async {
+  /// 스펙 §10 순서 1~5. fields: proposal_id·title·start(+09:00)·version
+  static func handleAdd(fields f: [String: String]) async {
     let started = Date()
-    guard let pid = userInfo["proposal_id"] as? String, let title = userInfo["title"] as? String,
-          let startISO = userInfo["start"] as? String, let start = ISO8601DateFormatter().date(from: startISO) else {
-      DiagLog.append("ADD invalid payload keys=\(userInfo.keys.map { "\($0)" }.sorted())")
-      Trace.log("action.handled", ["result": "invalid_payload"])
-      return
+    guard let pid = f["proposal_id"], let title = f["title"], let s = f["start"], let start = ISO8601DateFormatter().date(from: s) else {
+      Trace.log("action.handled", ["result": "invalid_payload"]); return
     }
-    let line = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, start: start))
-    let st = await AppState.snapshot()
-    let auth = EKEventStore.authorizationStatus(for: .event).rawValue
-    DiagLog.append("\(line) bg=\(st.bg) auth=\(auth)")
-    // 진단 필드: 백그라운드 실행·권한·중복 여부(제안 제목은 보내지 않는다)
-    let result = line.hasPrefix("ADD ok") ? "ok" : line.hasPrefix("ADD dup") ? "dup" : "fail"
-    let base: [String: Any] = ["result": result, "dup": result == "dup", "proposal_id": pid, "auth": auth,
-                               "elapsed_ms": Int(Date().timeIntervalSince(started) * 1000)]
-    Trace.log("action.handled", base.merging(st.traceFields) { _, new in new })
+    // 1. 서버 최신 상태(5초). 오프라인이면 건너뛰고 받은 버전으로 실행(순서 5)
+    var version = Int(f["version"] ?? "") ?? 1, serverStatus: String? = nil
+    if let r = await API.send("rest/v1/proposals?id=eq.\(pid)&select=status,version", timeout: 5), r.status == 200,
+       let row = (try? JSONSerialization.jsonObject(with: r.data) as? [[String: Any]])?.first {
+      serverStatus = row["status"] as? String
+      version = row["version"] as? Int ?? version
+    }
+    if case .stop(let why) = ProposalFlow.check(serverStatus: serverStatus) {
+      await ExecutionReporter.notice(title: "이미 처리된 제안", body: why == "stale" ? "제안이 바뀌어 추가하지 않았습니다." : "이미 캘린더에 추가된 제안입니다.")
+      trace("skip_\(why)", pid: pid, started: started); return
+    }
+    // 2~3. 확인 → 표식 조회 → 저장 → 기록(한 actor 구간, await 없음)
+    let outcome = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, start: start, version: version))
+    trace(outcome, pid: pid, started: started)
+    // 4. 보고(실패하면 다음 앱 실행 때)
+    if !outcome.hasPrefix("fail") { await ExecutionReporter.flush() }
+  }
+
+  private static func trace(_ result: String, pid: String, started: Date) {
+    Task {
+      let st = await AppState.snapshot()
+      let auth = EKEventStore.authorizationStatus(for: .event).rawValue
+      DiagLog.append("ADD \(result) \(pid) bg=\(st.bg) auth=\(auth)")
+      let base: [String: Any] = ["result": result, "dup": result == "dup", "proposal_id": pid, "auth": auth,
+                                 "elapsed_ms": Int(Date().timeIntervalSince(started) * 1000)]
+      Trace.log("action.handled", base.merging(st.traceFields) { _, new in new })
+    }
   }
 }
 
-struct AddEventRequest: Sendable { let pid: String; let title: String; let start: Date }
+struct AddEventRequest: Sendable { let pid: String; let title: String; let start: Date; let version: Int }
 
-/// 확인 → 저장 → 기록을 await 없이 한 actor 안에서 처리해, 같은 proposal_id 로 동시에 두 번 탭해도 이벤트는 1건만 생긴다.
+/// 확인 → 표식 조회 → 저장 → 기록을 await 없이 한 actor 안에서 처리한다(스펙 §10 순서 2~3, PoC-5 실측: 동시 두 번 탭 +1).
+/// 반환: "ok" · "recovered"(저장 후 기록 전 종료 복구) · "dup" · "fail:<코드>"
 actor AddEventGate {
   static let shared = AddEventGate()
   func add(_ r: AddEventRequest) -> String {
     do {
       let ex = try Executions.shared()
-      if let e = try ex.existing(proposalId: r.pid) {
-        return "ADD dup skip \(r.pid) \(e) unreported=\((try? ex.unreported().count) ?? -1)"
-      }
+      if try ex.existing(proposalId: r.pid) != nil { return "dup" }
       let store = EKEventStore()
+      let (from, to) = ProposalFlow.searchWindow(start: r.start)
+      let events = store.events(matching: store.predicateForEvents(withStart: from, end: to, calendars: nil))
+      if let found = ProposalFlow.matchMarker(pid: r.pid, events: events.map { (id: $0.eventIdentifier ?? $0.calendarItemIdentifier, url: $0.url) }) {
+        try ex.record(proposalId: r.pid, eventkitId: found, version: r.version)
+        return "recovered"
+      }
+      guard let cal = store.defaultCalendarForNewEvents, cal.allowsContentModifications else { return "fail:no_writable_calendar" }  // §10 읽기 전용 제외
       let ev = EKEvent(eventStore: store)
       ev.title = r.title; ev.startDate = r.start; ev.endDate = r.start.addingTimeInterval(3600)
-      ev.calendar = store.defaultCalendarForNewEvents
-      ev.url = URL(string: "assistant://proposal/\(r.pid)")   // 저장 후 기록 전 종료 시 1단계에서 EventKit 조회로 복구할 표식
+      ev.calendar = cal
+      ev.url = ProposalFlow.marker(r.pid)
       try store.save(ev, span: .thisEvent, commit: true)
-      // eventIdentifier 는 SDK 상 null_unspecified(String!) 라 그대로 넘기면 nil 일 때 암시적 언래핑으로 죽는다
-      let eid: String = ev.eventIdentifier ?? ev.calendarItemIdentifier
-      try ex.record(proposalId: r.pid, eventkitId: eid)
-      return "ADD ok \(r.pid) \(eid)"
-    } catch { return "ADD fail \(r.pid) \(error)" }
+      let eid: String = ev.eventIdentifier ?? ev.calendarItemIdentifier   // SDK 상 String! — nil 이면 암시적 언래핑으로 죽는다
+      try ex.record(proposalId: r.pid, eventkitId: eid, version: r.version)
+      return "ok"
+    } catch { return "fail:\(type(of: error))" }
   }
 }
 
@@ -69,13 +96,14 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     guard action == "ADD" else { DispatchQueue.main.async { done.value() }; return }
     // userInfo 는 Sendable 이 아니므로 Task 밖에서 문자열 값만 뽑아 넘긴다(handleAdd 가 쓰는 키 그대로)
     let info = response.notification.request.content.userInfo
-    let fields = ["proposal_id", "title", "start"].reduce(into: [String: String]()) { d, k in
+    var fields = ["proposal_id", "title", "start"].reduce(into: [String: String]()) { d, k in
       if let v = info[k] as? String { d[k] = v }
     }
+    if let v = info["version"] as? Int { fields["version"] = String(v) }
     // 키가 빠진 payload 는 handleAdd 의 invalid_payload 경로로 간다. 원래 키 목록은 여기서 남긴다
-    if fields.count < 3 { DiagLog.append("ADD payload keys=\(info.keys.map { "\($0)" }.sorted())") }
+    if fields["proposal_id"] == nil || fields["title"] == nil || fields["start"] == nil { DiagLog.append("ADD payload keys=\(info.keys.map { "\($0)" }.sorted())") }
     Task {
-      await NotificationActions.handleAdd(userInfo: fields)
+      await NotificationActions.handleAdd(fields: fields)
       DispatchQueue.main.async { done.value() }
     }
   }

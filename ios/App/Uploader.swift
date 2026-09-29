@@ -130,6 +130,7 @@ actor TraceUploader {
     guard !inFlight else { return }
     inFlight = true
     defer { inFlight = false }
+    guard Diagnostics.isEnabled() else { return }   // 진단 전송 꺼짐: 큐에 남은 trace 도 올리지 않는다(스펙 §8)
     guard let q = try? CaptureQueue.shared(), ((try? q.traceCount()) ?? 0) > 0, let cfg = SupabaseSession.config else { return }
     guard let token = await SupabaseSession.shared.accessToken() else {
       if !warnedNoSession { warnedNoSession = true; DiagLog.append("trace flush skipped: no session") }
@@ -167,6 +168,13 @@ actor TraceUploader {
       t.resume()
       DiagLog.append("trace handoff n=\(ids.count)")
     }
+  }
+}
+
+extension TraceUploader {
+  /// 진단 전송을 끄면 background 세션에 넘긴 trace 배치도 취소한다(큐 행은 `Diagnostics.set(false)` 가 지운다)
+  func cancelHandedOff() async {
+    for t in await Uploader.shared.session.allTasks where t.taskDescription?.hasPrefix(TraceFlushGate.prefix) == true { t.cancel() }
   }
 }
 

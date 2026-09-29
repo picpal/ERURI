@@ -108,6 +108,8 @@ enum GmailConnect {
 
   // MARK: - 설정·표시
 
+  static var configured: Bool { config() != nil }
+
   private static func config() -> Config? {
     func info(_ k: String) -> String? {
       guard let v = Bundle.main.object(forInfoDictionaryKey: k) as? String, !v.isEmpty, !v.hasPrefix("$(") else { return nil }

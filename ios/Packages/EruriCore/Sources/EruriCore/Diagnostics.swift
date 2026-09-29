@@ -6,5 +6,11 @@ public enum Diagnostics {
   public static func isEnabled(defaults: UserDefaults = IngestSettings.shared) -> Bool {
     defaults.object(forKey: key) == nil ? true : defaults.bool(forKey: key)
   }
-  public static func set(_ on: Bool, defaults: UserDefaults = IngestSettings.shared) { defaults.set(on, forKey: key) }
+  /// 끄면 이미 큐에 쌓인 trace 도 지운다 — 끈 뒤에는 한 건도 올라가지 않는다(M1-②a 리뷰 Minor ③). 캡처 행은 건드리지 않는다
+  public static func set(_ on: Bool, defaults: UserDefaults = IngestSettings.shared, queue: CaptureQueue? = nil) {
+    defaults.set(on, forKey: key)
+    guard !on else { return }
+    do { try (queue ?? CaptureQueue.shared()).purgeTraces() }
+    catch { DiagLog.append("trace purge error \(type(of: error))") }
+  }
 }

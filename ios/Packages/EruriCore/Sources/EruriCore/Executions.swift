@@ -10,6 +10,8 @@ public final class Executions {
   public init(url: URL) throws {
     guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else { throw Error.sqlite(String(cString: sqlite3_errmsg(db))) }
     guard sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS executions(proposal_id TEXT PRIMARY KEY, eventkit_id TEXT NOT NULL, executed_at REAL NOT NULL, reported INTEGER NOT NULL DEFAULT 0)", nil, nil, nil) == SQLITE_OK else { throw Error.sqlite(msg) }
+    // 제안 version(스펙 §10 순서 5, M1-②b). 이미 열이 있으면 실패해도 된다
+    sqlite3_exec(db, "ALTER TABLE executions ADD COLUMN version INTEGER NOT NULL DEFAULT 1", nil, nil, nil)
   }
   deinit { sqlite3_close(db) }
   public static func shared() throws -> Executions { try Executions(url: try AppGroup.containerURL().appendingPathComponent("executions.sqlite")) }
@@ -20,17 +22,27 @@ public final class Executions {
     sqlite3_bind_text(s, 1, proposalId, -1, Self.transient)
     return sqlite3_step(s) == SQLITE_ROW ? String(cString: sqlite3_column_text(s, 0)) : nil
   }
-  public func record(proposalId: String, eventkitId: String) throws {
-    try run("INSERT OR IGNORE INTO executions(proposal_id,eventkit_id,executed_at) VALUES(?,?,?)") { s in
+  public func record(proposalId: String, eventkitId: String, version: Int) throws {
+    try run("INSERT OR IGNORE INTO executions(proposal_id,eventkit_id,executed_at,version) VALUES(?,?,?,?)") { s in
       sqlite3_bind_text(s, 1, proposalId, -1, Self.transient); sqlite3_bind_text(s, 2, eventkitId, -1, Self.transient); sqlite3_bind_double(s, 3, Date().timeIntervalSince1970)
+      sqlite3_bind_int(s, 4, Int32(version))
     }
   }
-  public func unreported() throws -> [(proposalId: String, eventkitId: String)] {
+  public func unreported() throws -> [(proposalId: String, eventkitId: String, version: Int)] {
     var s: OpaquePointer?; defer { sqlite3_finalize(s) }
-    guard sqlite3_prepare_v2(db, "SELECT proposal_id, eventkit_id FROM executions WHERE reported=0", -1, &s, nil) == SQLITE_OK else { throw Error.sqlite(msg) }
-    var out: [(String, String)] = []
-    while sqlite3_step(s) == SQLITE_ROW { out.append((String(cString: sqlite3_column_text(s, 0)), String(cString: sqlite3_column_text(s, 1)))) }
-    return out.map { (proposalId: $0.0, eventkitId: $0.1) }
+    guard sqlite3_prepare_v2(db, "SELECT proposal_id, eventkit_id, version, executed_at FROM executions WHERE reported=0", -1, &s, nil) == SQLITE_OK else { throw Error.sqlite(msg) }
+    var out: [(proposalId: String, eventkitId: String, version: Int)] = []
+    while sqlite3_step(s) == SQLITE_ROW {
+      out.append((proposalId: String(cString: sqlite3_column_text(s, 0)), eventkitId: String(cString: sqlite3_column_text(s, 1)), version: Int(sqlite3_column_int(s, 2))))
+    }
+    return out
+  }
+  /// 보고의 p_executed_at(스펙 §10 순서 4). 기록이 없으면 nil
+  public func executedAt(proposalId: String) throws -> Date? {
+    var s: OpaquePointer?; defer { sqlite3_finalize(s) }
+    guard sqlite3_prepare_v2(db, "SELECT executed_at FROM executions WHERE proposal_id=?", -1, &s, nil) == SQLITE_OK else { throw Error.sqlite(msg) }
+    sqlite3_bind_text(s, 1, proposalId, -1, Self.transient)
+    return sqlite3_step(s) == SQLITE_ROW ? Date(timeIntervalSince1970: sqlite3_column_double(s, 0)) : nil
   }
   public func markReported(proposalId: String) throws {
     try run("UPDATE executions SET reported=1 WHERE proposal_id=?") { sqlite3_bind_text($0, 1, proposalId, -1, Self.transient) }

@@ -115,6 +115,8 @@ public final class CaptureQueue {
     guard rc == SQLITE_DONE else { throw Error.sqlite(msg) }
     return out.sorted { $0.at < $1.at }.map { ($0.id, $0.payload) }   // RETURNING 순서는 보장되지 않는다
   }
+  /// 진단 전송을 끌 때 큐의 trace 를 모두 지운다(스펙 §8)
+  public func purgeTraces() throws { try exec("DELETE FROM queue WHERE kind = 'trace'") }
   /// 캡처 행 수(lease 중인 것 포함). BG refresh 가 깨어났을 때 flush 할지 판단한다.
   public func captureCount() throws -> Int { try count("capture") }
   public func traceCount() throws -> Int { try count("trace") }
