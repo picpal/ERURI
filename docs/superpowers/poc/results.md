@@ -16,7 +16,7 @@
 | PoC-6 | Gmail watch → Pub/Sub → history 동기화 | 10 | 부분 | 실계정: 연결·watch +7일, 백필 85 ID → 76행·429 없음·`content_enc` null 0, 웹훅 약 8초(1회), 404 재동기화로 누락 1건 복구·중복 0 | 웹훅 지연 5회 평균, watch 갱신(수동+다음 날 cron), 6일 `expiring`·8일 `invalid_grant`, 규칙 필터 OTP·카드 메일. 백필이 증분 동기화를 굶기는 문제(스펙 §16) | `ea6c762` `87673fe` `cdd7c79` | 2026-09-27 |
 | PoC-7 | 한국어 하이브리드 검색 Top-5 정확도 | 11 | 통과 | 합성 500건·질문 50: 하이브리드 + `text-embedding-3-large`(512) Top-5 38/40(95%), 무근거 거절 10/10, 인용 36/36·정밀도 39/39, 날짜 필터 오판 0, 검색 p95 70~111ms | — (1a에서 실데이터 검색 평가) | `4c00aa7` `cf786bb` `9e8ab9f` | 2026-09-27 |
 | PoC-8 | 이미지·PDF → OCR/추출 → 일정 | 7, 12 | 부분 | 서버: 합성 7종(이미지 5·PDF 2) vision+OCR 21/21, OCR만 21/21, `uncertain` 21/21, p50 1.95s·p95 2.53s, 건당 $0.00042, worker extract 7/7. 기기(시뮬레이터): 사진 앱 공유 시트 → 확장 `ocrLen=43`·큐 `SHARE` 행 | 실기기 공유 시트 → 큐·업로드(App Group 서명), 오프라인 후 복구 유실 0 | `f28814d` `0d2a293` `affe7e9` `7f533f1` | 2026-09-27 |
-| PoC-9 | 앱 종료 후 background URLSession 업로드 완료 | 7 | 통과 | 앱 프로세스 종료를 `ps`로 확인한 뒤 3.68초 후 목 서버에 정확한 바이트 수로 도착. 실기기(09-28): 로그인 직후 큐 7건 일괄 업로드(`poc9.upload_done` ×7), 잠금 중 수신분은 해제·앱 열기 후 업로드(45초 뒤), 서버 `process` 잡 전부 `done` | — (실기기 회귀: 스와이프 종료·비행기 모드, 파일 업로드는 서버 `upload/<id>` 엔드포인트 구현 후) | `f28814d` | 2026-09-28 |
+| PoC-9 | 앱 종료 후 background URLSession 업로드 완료 | 7 | 통과 | 앱 프로세스 종료를 `ps`로 확인한 뒤 3.68초 후 목 서버에 정확한 바이트 수로 도착. 실기기(09-28): 로그인 직후 큐 7건 일괄 업로드(`poc9.upload_done` ×7), 잠금 중 수신분은 해제·앱 열기 후 업로드(45초 뒤), 서버 `process` 잡 전부 `done` | — (실기기 회귀: 스와이프 종료·비행기 모드, 파일 업로드는 서버 `upload/<id>` 엔드포인트 구현 후) | `f28814d` | 2026-09-28 **0.2.0 실기기(09-29)**: 잠금 중 Slack 알림 → `path=intent_direct` 0.86초 즉시 업로드(앱 미실행). 비행기 모드에서 공유 확장으로 큐 적재 → 잠금 화면에서 네트워크 복구 → 서버 무음 푸시(APNs 200) → 33초 뒤 `poc9.wake`·`poc9.upload_done path=silent_push` 도착(앱 미실행). 앱이 떠 있으면 `path=foreground` 16초. trace `locked` 값은 잠금 중에도 false 로 찍혀 신뢰 불가(버그) |
 | PoC-10 | jobs 큐 lease/재시도/dead 처리 | 8 | 통과 | 같은 lease_key 동시 클레임 1건, 5회 실패 후 `dead`, 임대 180초+하트비트로 90초 잡 재클레임 0·attempts 1, 복호화 p50 0.7ms·p95 56ms | — (판정 기준 밖: 150초 강제 종료 잡 재클레임, 24시간 활동 유지) | `2d9a45a` `6ca66d8` | 2026-09-26 |
 
 **집계: 통과 5(PoC-1·2·7·9·10) · 부분 5(PoC-3·4·5·6·8) · 실패 0 · 미검증 0.** 부분 5건과 PoC-1·2·9 실기기 보완 항목은 아래 "실기기·장기 실측 대기"(8개 PoC)로 넘어간다.
@@ -34,7 +34,7 @@
 | PoC-5 | **신규 실측**: 잠금 화면 `.authenticationRequired` 액션 → Face ID/암호 → 1건 | 실기기, 기기 암호 | `poc5.action_handled`의 `result`·`dup`·`bg`·`locked` | `poc-5-notification-eventkit.md` |
 | PoC-6 | **반복 항목**: 웹훅 지연 5회 평균, watch 갱신 2회(수동·cron), 6일 `expiring`, 8일 `invalid_grant`→`reauth_required`, 규칙 필터 OTP·카드 메일 | 연결 후 8일(달력), 실측 중 테스트 DB 초기화 금지 | `sync_states`·`connections`·`jobs`, `gmail_reauth_due()` | `poc-6-gmail.md` |
 | PoC-8 | **실기기 회귀**: 사진 공유 시트 → 큐·OCR, 업로드 바이트 일치, 비행기 모드 후 유실 0 | 실기기, 서버 파일 업로드 엔드포인트(`PUT upload/<id>`, Supabase에 없음 — 09-28 발견) | `poc8.share_received`, `poc9.upload_done` | `poc-8-9-share-upload.md` |
-| PoC-9 | **실기기 회귀**: 공유 직후 스와이프 종료 → 도착 또는 취소 기록, 재실행 후 유실 0(텍스트 업로드는 09-28 확인) | 위와 같음 + 서버 `upload/<id>` | `poc9.upload_done`, `/received`의 `at` | `poc-8-9-share-upload.md` |
+| PoC-9 | **실기기 회귀**: 공유 직후 스와이프 종료 → 도착 또는 취소 기록, 재실행 후 유실 0(텍스트 업로드 09-28, 무음 푸시·직접 업로드 09-29 확인; BGAppRefresh 경로는 미관측) | 위와 같음 + 서버 `upload/<id>` | `poc9.upload_done`, `/received`의 `at` | `poc-8-9-share-upload.md` |
 
 권장 순서(한 세션): TestFlight 설치 → 권한·PoC 사용자 로그인 → 단축어 자동화 3개(PoC-1·2)와 백그라운드 FM 10~20회 → PoC-4 토큰 등록·발송(production) → 잠금 화면 로컬 알림 액션(PoC-5) → 공유·업로드(PoC-8·9) → FM ⌘U 벤치마크(PoC-3, 케이블·개발 설치가 TestFlight 앱을 덮어쓰므로 후반) → 재부팅 BFU(PoC-2 시나리오 3). PoC-6은 세션과 별개로 연결일 기준 6일·8일째에 확인한다.
 
