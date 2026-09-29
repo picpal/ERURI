@@ -14,7 +14,7 @@ final class CapturePipelineTests: XCTestCase {
     XCTAssertTrue(try q.pending(limit: 1).isEmpty)
   }
 
-  // HIGH-1 / 스펙 §6 폴백: FM 불가·에러는 채팅 앱만 폐기, 그 외는 rules 로 적재. 타임아웃은 출처 무관 rules 적재(0.2.3)
+  // HIGH-1 / 스펙 §6 폴백: FM 불가는 채팅 앱만 폐기, 그 외는 rules 로 적재. 타임아웃·에러는 출처 무관 rules 적재(0.2.3)
   func testRouteFallbacks() {
     let notice = FMOutcome.verdict(FMVerdict(kind: .notice, confidence: 0.9))
     let personal = FMOutcome.verdict(FMVerdict(kind: .personal, confidence: 0.9))
@@ -24,11 +24,11 @@ final class CapturePipelineTests: XCTestCase {
     XCTAssertEqual(CapturePipeline.route(.error("guardrail"), appName: nil), .queue(deviceFilter: "rules"))
     XCTAssertEqual(CapturePipeline.route(.timeout, appName: "Coupang"), .queue(deviceFilter: "rules"))
     XCTAssertEqual(CapturePipeline.route(.unavailable("modelNotReady"), appName: "Instagram"), .discard(reason: "fm-unavailable"))
-    XCTAssertEqual(CapturePipeline.route(.error("assets"), appName: "카카오톡"), .discard(reason: "fm-error"))
+    XCTAssertEqual(CapturePipeline.route(.error("assets"), appName: "카카오톡"), .queue(deviceFilter: "rules"))
     XCTAssertEqual(CapturePipeline.route(.timeout, appName: "KakaoTalk"), .queue(deviceFilter: "rules"))
     XCTAssertEqual(CapturePipeline.route(.timeout, appName: "Instagram"), .queue(deviceFilter: "rules"))
     XCTAssertEqual(CapturePipeline.route(.unavailable("modelNotReady"), appName: "KakaoTalk"), .discard(reason: "fm-unavailable"))
-    XCTAssertEqual(CapturePipeline.route(.error("rateLimited"), appName: "Instagram"), .discard(reason: "fm-error"))
+    XCTAssertEqual(CapturePipeline.route(.error("rateLimited"), appName: "Instagram"), .queue(deviceFilter: "rules"))
   }
   func testDeviceFilterPersisted() throws {
     let q = try CaptureQueue(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
