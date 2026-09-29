@@ -42,7 +42,7 @@ Outlook, Android, Mac 허브, 카카오톡 개인 대화 수집, App Store 공�
 | 보관 | 원문 90일(사용자별 키 암호화), 이미지 30일, 추출 사실·벡터 무기한 | 사용자 확정(1년) → 개인정보 검토로 90일 단축 |
 | 진입점 | 채팅, Share, 푸시, Siri 질문, 액션버튼/컨트롤센터 빠른 기억 | 사용자 확정 |
 | 비용 | 월 1만원. 기기 Foundation Models → OpenAI `gpt-6-luna` 분류·추출 → `gpt-6-sol` 채팅 | 사용자 확정. 벤더는 2026-09-26 Anthropic+Voyage → OpenAI 단일로 교체(사용자 결정) |
-| AI 벤더 | OpenAI 단일. 키 `OPENAI_API_KEY` 하나. Responses API(`/v1/responses`) + Structured Outputs(`text.format` json_schema, `strict: true`), 모든 호출 `store: false` | 키·약관·청구 한 곳. §3 검증 표 |
+| AI 벤더 | OpenAI 단일. 키 `OPENAI_API_KEY` 하나. Responses API(`/v1/responses`) + Structured Outputs(`text.format` json_schema, `strict: true`), 모든 호출 `store: false`. 분류 게이트(0b)는 TypeSafe Jev(jev-1.13.0, 키 JEV_API_KEY) 추가 — 2026-09-29 사용자 결정(평가 리포트 확인 후). OpenAI 소형 모델은 같은 인터페이스의 교체 후보로만 | 키·약관·청구 한 곳. §3 검증 표 |
 | 임베딩 | OpenAI `text-embedding-3-large`, `dimensions: 512` (2026-09-27 결정) | Supabase 내장 gte-small은 영어 전용. PoC-7 합성 평가 하이브리드 Top-5가 large 38/40 vs small 31~33/40이고, 1인 사용량에서 가격 차이(1M 토큰당 $0.13 vs $0.02)는 월 수십 원 수준. `vector(512)` 스키마 유지, HNSW 2000차원 한도 안 |
 
 ## 3. 공식 문서 검증 결과 (2026-09-22)
@@ -179,6 +179,8 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
 - **`availability()`가 `available`이어도 `respond()`가 에셋 오류를 낼 수 있다**(시뮬레이터에서 실측, §16). 그래서 가용성 판정(벤치마크 실행 여부, 설정 화면의 FM 상태 표시)은 짧은 합성 문장 1건을 먼저 호출하는 사전 점검 결과로 한다. 인텐트 경로는 건별 에러를 폴백으로 흡수하므로 사전 점검 없이도 안전하다.
 - `rateLimited`는 앱이 백그라운드에서 시스템 한도를 넘을 때만 난다. `.background` 인텐트가 바로 그 경로이므로 빈도를 PoC-3 실기기에서 잰다.
 - 폴백 여부는 큐 항목의 `device_filter`("fm" 또는 "rules")로 서버에 전달된다.
+- 서버 분류 게이트(Jev, §7)가 생겨도 기기 FM 분류는 유지한다. 개인 대화·광고를 기기에서 먼저 걸러 서버·외부 공급자로 가는 원문을 줄이는
+  **개인정보 방어선**이다(2026-09-29 사용자 결정, 대체 아님)
 
 **분류 라벨 정의** (기기 FM과 서버 LLM 분류(§7)가 같은 정의를 쓴다)
 
@@ -202,7 +204,7 @@ CaptureIntent(text = "", appName?, title?, sender?, source)
 - 완료 콜백은 `markSent`(삭제), 실패 콜백은 `markFailed`(attempts+1, lease를 백오프 시각으로 덮어씀)로 lease를 끝낸다. 콜백 없이 lease가 만료된 항목(앱 강제 종료로 전송 취소)은 다음 flush가 다시 가져간다.
 - 그래서 "보냈는데 콜백을 못 받은" 항목은 두 번 갈 수 있다. 서버 `/ingest`는 기기 항목의 `external_id`로 큐 항목 `id`(UUID)를 받아 멱등 키(§7)로 중복을 막는다.
 - 전송 경로(0.2.0, 실기기 09-28 "잠금 중 도착이 해제·앱 열기까지 밀림" 대응): flush 트리거는 `intent`·`silent_push`·`bg_refresh`·`foreground` 넷이다. 각 트리거는 먼저 프로세스 안 직접 요청을 보내고, 네트워크 오류·타임아웃일 때만 background 세션에 넘긴다. 백그라운드에서 시작한 background 세션 전송은 iOS가 discretionary로 다뤄 늦어질 수 있어서다. HTTP 오류 응답은 넘기지 않고 `markFailed`로 백오프한다. 넘긴 전송은 앱이 없어도 iOS가 끝내고, `handleEventsForBackgroundURLSession`으로 앱을 깨워 완료 콜백을 전달한다. 인텐트 뒤 남은 항목이 있으면 BGAppRefreshTask(`com.picpal.assistant.poc.refresh`, 최소 15분)를 예약하고, 실행될 때마다 다시 예약한다. 무음 푸시는 `apns-send`의 `silent:true`(priority 5, `apns-push-type: background`)로 보낸다. 주기 발송(cron)은 아직 정하지 않았다.
-- PoC trace `poc9.upload_done.path`: `intent_direct`(인텐트 실행 중 직접 요청 완료) · `bg_upload`(인텐트가 background 세션에 넘긴 전송) · `silent_push` · `bg_refresh` · `foreground`. `via`(direct/bg_session), `age_ms`(캡처→완료), `intent_locked`(인텐트 시작 시점 잠금)를 함께 남긴다.
+- PoC trace `poc9.upload_done.path`: `intent_direct`(인텐트 실행 중 직접 요청 완료) · `bg_upload`(인텐트가 background 세션에 넘긴 전송) · `silent_push` · `bg_refresh` · `foreground`. `via`(direct/bg_session), `age_ms`(캡처→완료), `intent_locked`(인텐트 시작 시점 잠금)를 함께 남긴다. 잠금 판정(0.2.1)은 `.complete` 보호 파일 읽기 결과다: 읽힘 = false, 권한 거부 = true, 파일 없음·기타 오류 = null(`lock_state=unknown`). `UIApplication.isProtectedDataAvailable`는 백그라운드로 깨어난 프로세스에서 잠금 중에도 false로 찍혀(09-29) `locked_app`에 비교용으로만 남긴다. 잠금 후 약 10초 유예 구간은 잠금 해제로 보인다(한계)
 - 서버 멱등: 같은 `source:id` 재수신은 200 + 기존 `item_id`(`duplicate:true`). 기기는 2xx면 큐에서 지우므로 직접 요청이 타임아웃된 뒤 background 세션이 다시 보내도 실패로 남지 않는다.
 - 업로드 서버 주소는 App Group `UserDefaults`(`group.com.picpal.assistant`) 키 `ingestURL`에 저장하고 앱 화면에서 바꾼다. PoC 앱은 저장값이 없을 때만 스킴 환경변수 `INGEST_URL`을 초기값으로 쓰고, 둘 다 없으면 `http://localhost:8787`이다. 홈 화면에서 다시 열어도 저장값이 유지된다.
 
@@ -235,6 +237,16 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
       (계획서 Task 12 Step 3, 추출값은 저장하지 않고 유무·개수만 로그). 분류는 1a에서 도입하고 순서는 위(분류 → 삭제 → 추출)를 따른다.
       근거: 분류도 같은 공급자·약관(§12 통제 3, `store: false`)으로 항목당 1회 전송하므로 노출 범위가 같고, 0단계에는 discard 삭제가
       원래 없어 보관 상태도 같다. PoC 코드는 폐기 대상이라 순서를 맞추려고 고치지 않는다
+      **서버 분류 게이트(0b, 2026-09-29 사용자 결정 — Jev 채택)**: `Classifier` 인터페이스 `classify(text, meta) → {label, confidence} | null`.
+      운영 공급자 `CLASSIFY_PROVIDER=jev`(TypeSafe Jev, 모델 `jev-1.13.0` 고정 — 버전이 바뀌면 confidence 분포가 바뀐다, 키 `JEV_API_KEY`.
+      코드 기본값 none은 설정 누락 대비). 라벨 5종 actionable · personal · promo · otp · notice(경계는 `_shared/classify.ts` LABEL_CRITERIA,
+      평가 rubric 그대로). **정책: 비행동 라벨(actionable 외)이고 confidence ≥ 0.8일 때만 폐기(`discarded:server:<label>`). 그 외, 오류
+      (401·422, 짧은 재시도 뒤에도 429·529), 타임아웃(3초)은 폐기하지 않고 추출로 넘긴다(fail-open — 행동 항목 유실이 가장 비싼 오류).**
+      Jev에는 마스킹된 본문(≤2,000자)·제목·앱 이름만 보내고 발신자는 보내지 않는다.
+      평가(합성 60문구, `docs/superpowers/reports/2026-09-29-jev-classification-eval.html`): 게이트 정확도 **60/60**(2회 동일, 5라벨도 60/60),
+      지연 **p50 211ms**·p95 269ms, **건당 약 $0.00003**(입력 평균 769토큰 × $0.042/1M, 월 약 $0.06), t=0.8에서 actionable 유실 0·비행동 누수 1/60.
+      60/60은 상한값이다(같은 작성자의 문구, Jev 문서상 한국어는 주 언어 아님) — 실데이터 200건 재측정 전에는 폐기 권한을 넓히지 않는다.
+      기기 FM 분류기(§6)는 개인정보 방어선으로 유지한다. OpenAI 소형 모델은 같은 인터페이스의 교체 후보로만 둔다(교체 조건 §16)
   → 추출 (gpt-6-luna, Responses API `text.format` json_schema strict. `store: false`)
       event: title, start, end, allDay, location, tz, evidence, uncertain[]  (예: year, ampm, end, tz, date, location)
       uncertain은 모델 판단이 아니라 서버가 정한다(0단계 PoC-8 실측: 모델의 uncertain 표시가 반복마다 흔들림). 스키마에 사실 플래그
@@ -244,6 +256,10 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
       서버 음력 변환표(한국천문연구원 기준)로 한다. 종료 시각이 문서에 없으면 end는 null이고 uncertain에 넣지 않는다
       task: title, due, evidence, uncertain[]
       purchase: merchant, product[], ordered_at, amount, currency, order_no, status, recurrence?, evidence
+      텍스트 항목(0b, 2026-09-29): 한 항목에서 event·task·purchase 중 하나(없으면 none)를 고르는 단일 strict 스키마 `text_fact`.
+      상대 날짜('내일'·'목요일')와 연도 없는 날짜의 기준일은 **받은 시각(occurred_at)의 서울 날짜**다(오프라인 큐·지연 처리로
+      처리 시각이 늦어도 날짜가 밀리지 않게). 모델 입력은 출처·앱 이름·제목·본문(4,000자에서 절단)이고 발신자는 보내지 않는다.
+      event는 시작 일시가 없으면, task는 제목이 없으면, purchase는 가맹점·금액이 모두 없으면 none. evidence는 마스킹된 본문의 구절 ≤300자
   → 이미지/PDF: gpt-6-luna vision(`input_image`·`input_file`). 월 상한 100건(usage_counters). 초과 시 기기에서 같이 올라온 OCR 텍스트 사용
       기기 OCR 텍스트가 있으면 이미지·PDF와 함께 넣는다(0단계 실측 vision+OCR 21/21, vision만 19/21 — 스캔 PDF 제목 오류).
       건당 입력 3.8~4.3k 토큰, 약 $0.00042, 지연 p50 1.95s·p95 2.53s(PoC-8). 상한은 호출 전 예약(`reserve_vision_call`, 한 문장 upsert)
@@ -394,6 +410,9 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   - 남용 모니터링 로그 최대 30일 보관(법적 요구 시 연장 가능). 이 30일은 끌 수 없으며 ZDR·수정 남용 모니터링은 OpenAI 사전 승인이 필요하다.
   - Responses API는 `store` 기본값이면 응답을 30일 보관하므로 **모든 호출에 `store: false`**를 넣는다. `previous_response_id` 대화 이어가기는 쓰지 않는다(대화 문맥은 서버가 직접 구성).
   - 이미지 입력은 CSAM 분류기에 걸리면 ZDR이어도 수동 검토용으로 보관된다. 사용자가 공유한 이미지만 보내는 현재 범위에서 수용한다.
+  - 분류 게이트 공급자 TypeSafe Jev(0b)는 OpenAI와 **다른 두 번째 수신자**다(2026-09-29 사용자 결정으로 채택). 보내는 것: 마스킹된 본문(≤2,000자)·
+    제목·앱 이름(발신자 없음). 약관(평가 리포트 ⑦): 학습에 쓰지 않음, 보관 기간은 DPA에 "필요한 기간"만 있고 명시 없음, ZDR은 엔터프라이즈 전용,
+    하위 처리자·처리 리전 미확인 — 문의 중. OpenAI(store:false, 남용 모니터링 최대 30일)보다 약하다고 확인되면 §16 교체 조건에 해당한다
 - 임베딩(`/v1/embeddings`)은 분류·추출과 **같은 공급자·같은 약관**이다. 분류 단계에서 이미 같은 텍스트가 OpenAI로 가므로 임베딩이 새 수신자를 만들지 않는다. 따라서 약관 사유의 임베딩 보류는 해제한다(§16). 마스킹은 개인정보 전송 제한이 아니므로 근거로 삼지 않는다.
 - 프롬프트·요청 본문을 Supabase 로그에 남기지 않는다(`console.log`에 본문 금지, 요청 ID만).
 - 지인 확대 시 OpenAI ZDR(`/v1/responses`·`/v1/embeddings` 모두 대상) 신청을 검토한다. 승인되지 않으면 30일 남용 모니터링 보관을 처리방침에 적는다.
