@@ -105,3 +105,12 @@ Deno.test("OTP: dotted dates and versions near a keyword still pass", () => {
     assertEquals(applyRules(t).kind, "pass", t);
   }
 });
+// 최종 리뷰 I2: 영문 날짜의 연도(`Oct 3, 2026.`)는 OTP 숫자가 아니다. 연도 형태가 아니거나 `숫자,` 뒤가 아니면 여전히 OTP
+Deno.test("OTP: year of an English date after 'd, ' passes; other 4-digit or non-year digits still discarded", () => {
+  for (const t of ["Booking code R7X2K, check-in Oct 3, 2026.", "Use code SAVE10 by Dec 31, 2026.", "Use code SAVE10 by Dec 31,2026."]) {
+    assertEquals(applyRules(t).kind, "pass", t);
+  }
+  for (const t of ["Your code is 2026.", "Your code, 2026", "code 12, 482913", "code Oct 3, 202611", "code 3, 3026"]) {
+    assertEquals(applyRules(t), { kind: "discard", reason: "otp" }, t);
+  }
+});

@@ -78,6 +78,13 @@ final class RuleFilterReviewTests: XCTestCase {
   func testDottedDateNearKeywordPasses() { pass("예약 확인번호 안내: 2026. 10. 2. 방문", "예약 확인번호 안내: 2026. 10. 2. 방문") }
   func testOTPBeforePeriodThenDigitSentence() { otp("인증번호는 482913. 3분 내 입력해 주세요.") }
   func testOTPBeforePeriodThenDigitSentenceEnglish() { otp("Your code is 603918. 5 minutes left.") }
+  // 최종 리뷰 I2(서버 rules.ts 와 같은 수정): 영문 날짜의 연도는 OTP 숫자가 아니다
+  func testEnglishDateYearNearCodePasses() {
+    for s in ["Booking code R7X2K, check-in Oct 3, 2026.", "Use code SAVE10 by Dec 31, 2026.", "Use code SAVE10 by Dec 31,2026."] { pass(s, s) }
+  }
+  func testNonYearOrNotAfterDayCommaStillOTP() {
+    for s in ["Your code is 2026.", "Your code, 2026", "code 12, 482913", "code Oct 3, 202611", "code 3, 3026"] { otp(s) }
+  }
 }
 
 // fix-2: title 에도 규칙 적용(판정은 제목+본문 합쳐서, 마스킹은 각각), 연락처 정규화(공백·"님/씨").
