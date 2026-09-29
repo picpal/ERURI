@@ -53,7 +53,7 @@ Deno.test("extract job end-to-end on hosted DB: vision under cap, OCR fallback o
   const a = await seedMedia("png", "합성 OCR: 2026년 10월 17일 오후 1시 합성홀");
   const b = await seedMedia("pdf", "합성 OCR: 안내문");
   const seen: string[][] = [];
-  const deps = mediaDeps(sb, async (input) => { seen.push(Object.keys(input).sort()); return { event: fakeEvent, usage: { input_tokens: 900, output_tokens: 40 } }; });
+  const deps = mediaDeps(sb, async (input) => { seen.push(Object.keys(input).sort()); return { event: fakeEvent, usage: { input_tokens: 900, output_tokens: 40 } }; }, { leasePrefix: `${RUN}:` });
   try {
     const { data: jobs, error } = await sb.rpc("claim_jobs", { p_limit: 5, p_lease_seconds: 60, p_lease_prefix: `${RUN}:extract` });
     assertEquals(error, null);

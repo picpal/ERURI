@@ -5,7 +5,7 @@ import type { TextExtraction } from "../functions/_shared/extract-text.ts";
 import type { Job } from "../functions/_shared/job.ts";
 import { processText } from "../functions/worker/text.ts";
 import { textDeps } from "../functions/worker/text-deps.ts";
-import { RUN, service as sb, testUser } from "./_testenv.ts";
+import { deleteRunJobs, RUN, service as sb, testUser } from "./_testenv.ts";
 
 // 호스팅 DB. 전용 테스트 사용자·실행 태그만(AGENTS.md §7). 분류·추출은 가짜(합성), 저장·상태·복호화는 실제 RPC
 const USER = (await testUser()).id;
@@ -27,6 +27,7 @@ Deno.test("process end-to-end on hosted DB: event saved once across retries; per
   const verdict = (t: string): ClassifyResult =>
     t.startsWith("ㅋㅋㅋ") ? { label: "personal", confidence: 0.97 } : t.startsWith("[합성앱]") ? { label: "notice", confidence: 0.5 } : { label: "actionable", confidence: 0.99 };
   const deps = textDeps(sb, {
+    leasePrefix: `${RUN}:`,
     classifier: { provider: "jev", classify: async (t) => verdict(t) },
     threshold: 0.8,
     extract: async (t) => { extractCalls++; return { result: t.startsWith("[합성의원]") ? EVENT_X : { kind: "none" }, usage: { input_tokens: 10, output_tokens: 5 } }; },
@@ -52,5 +53,6 @@ Deno.test("process end-to-end on hosted DB: event saved once across retries; per
     await sb.from("facts").delete().eq("user_id", USER).in("item_id", ids);
     await sb.from("items").delete().eq("user_id", USER).in("id", ids);
     await sb.from("usage_counters").delete().eq("user_id", USER);
+    await deleteRunJobs();
   }
 });

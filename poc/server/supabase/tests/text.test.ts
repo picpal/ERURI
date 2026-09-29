@@ -12,7 +12,7 @@ const BUY_X: TextExtraction = { kind: "purchase", evidence: null,
   purchase: { merchant: "합성커피", products: [], ordered_at: null, amount: 32000, currency: "KRW", order_no: null, status: "paid" } };
 function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: ClassifyResult | null | Error; result?: TextExtraction } = {}) {
   const calls = { decrypt: 0, classify: [] as string[], extract: [] as { text: string; today: string }[], saved: [] as FactInput[],
-    status: [] as [string, boolean][], tokens: 0 };
+    status: [] as [string, boolean][], tokens: 0, notify: [] as string[] };
   const base: TextItem = { contentEnc: "enc", source: "NOTIFICATION", appName: "Slack", sender: null, title: null,
     occurredAt: "2026-09-28T15:30:00Z", capturedAt: "2026-09-28T15:30:05Z", status: "queued" };
   const d: TextDeps = {
@@ -24,6 +24,7 @@ function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: Cla
     addTokens: async (_u, n) => { calls.tokens += n; },
     saveFact: async (f) => { calls.saved.push(f); return { factId: "f1", proposalId: f.kind === "purchase" ? null : "p1", created: true }; },
     setStatus: async (_u, _i, s, w) => { calls.status.push([s, w]); },
+    enqueueNotify: async (_u, p) => { calls.notify.push(p); },
   };
   return { d, calls };
 }
@@ -94,4 +95,13 @@ Deno.test("nothing to keep → discarded:server:empty without wipe; missing ciph
 Deno.test("errors: no user_id, item not found", async () => {
   await assertRejects(() => processText(fake().d, job({ user_id: null })), Error, "process job without user_id");
   await assertRejects(() => processText(fake({ item: null }).d, job()), Error, "worker_get_text_item not_found");
+});
+
+Deno.test("notify job enqueued whenever a proposal exists (also on retry), never for purchase", async () => {
+  const ev = fake();
+  await processText(ev.d, job());
+  assertEquals(ev.calls.notify, ["p1"]);
+  const buy = fake({ result: BUY_X });
+  await processText(buy.d, job());
+  assertEquals(buy.calls.notify, []);
 });

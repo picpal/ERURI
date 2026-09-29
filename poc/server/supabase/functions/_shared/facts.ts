@@ -34,3 +34,11 @@ export async function saveFact(sb: SupabaseClient, f: FactInput): Promise<SavedF
   if (!row) throw new Error("save_fact empty");
   return { factId: row.out_fact_id, proposalId: row.out_proposal_id, created: row.out_created };
 }
+
+// 제안이 있을 때마다 notify 잡(스펙 §7). 재시도로 여러 번 들어와도 기기별 1회(proposal_pushes)가 막는다.
+// 테스트는 leasePrefix 에 실행 태그('test:<run>:')를 줘서 워커 cron 이 가져가지 않게 한다
+export async function enqueueNotify(sb: SupabaseClient, userId: string, proposalId: string, leasePrefix = ""): Promise<void> {
+  const { error } = await sb.rpc("enqueue_job", { p_user: userId, p_kind: "notify", p_lease_key: `${leasePrefix}notify:${proposalId}`,
+    p_payload: { proposal_id: proposalId } });
+  if (error) throw new Error("enqueue_job " + error.code);
+}

@@ -8,6 +8,8 @@ import type { Job } from "../_shared/job.ts";
 import { extractMedia } from "./extract.ts";
 import { withHeartbeat } from "./heartbeat.ts";
 import { mediaDeps } from "./media-deps.ts";
+import { notifyProposal } from "./notify.ts";
+import { notifyDeps } from "./notify-deps.ts";
 import { type Metrics, processText } from "./text.ts";
 import { textDeps } from "./text-deps.ts";
 
@@ -20,6 +22,7 @@ const media = mediaDeps(sb);
 const env = (k: string) => Deno.env.get(k);
 // 분류 게이트(스펙 §7 0b, Jev). 설정이 잘못돼도 워커 전체를 멈추지 않고 none 으로 돈다(오류 코드는 로그)
 const text = textDeps(sb, { classifier: classifierOrNone(env), threshold: classifyThreshold(env) });
+const notify = notifyDeps(sb);
 const handlers: Record<string, (job: Job) => Promise<string>> = {
   noop: async () => "done",
   sleep: async (j) => { await new Promise((r) => setTimeout(r, Number(j.payload.ms ?? 0))); return "done"; },
@@ -27,6 +30,8 @@ const handlers: Record<string, (job: Job) => Promise<string>> = {
   process: (j) => processText(text, j, (m) => { metrics = m; }),
   // 이미지·PDF(스펙 §7): Storage → vision(월 100건) → 초과 시 OCR 텍스트 → facts·proposals
   extract: (j) => extractMedia(media, j),
+  // 제안 푸시(스펙 §7 notify 0b): 기기별 1회
+  notify: (j) => notifyProposal(notify, j),
   "gmail-sync": (j) => gmailSync(sb, j),
   "gmail-fetch": (j) => gmailFetch(sb, j),
   "gmail-watch": (j) => gmailWatch(sb, j),

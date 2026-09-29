@@ -19,6 +19,7 @@ export type TextDeps = {
   extract(text: string, meta: TextMeta, today: string): Promise<{ result: TextExtraction; usage: ExtractUsage }>;
   addTokens(userId: string, tokens: number): Promise<void>;
   saveFact(f: FactInput): Promise<SavedFact>;
+  enqueueNotify(userId: string, proposalId: string): Promise<void>;
   setStatus(userId: string, itemId: string, status: string, wipe: boolean): Promise<void>;
 };
 
@@ -63,6 +64,7 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
 
   // 4) 저장(items.status = extracted 는 save_fact 가 한다)
   const saved = await deps.saveFact(fact);
+  if (saved.proposalId) await deps.enqueueNotify(user, saved.proposalId);
   return log(job, saved.proposalId ? "proposed" : "extracted", { kind: fact.kind, created: saved.created,
     label: verdict?.label ?? null, confidence: verdict?.confidence ?? null, tokens: usage.input_tokens + usage.output_tokens });
 }

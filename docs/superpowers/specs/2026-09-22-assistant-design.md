@@ -283,7 +283,11 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   → proposals INSERT (event/task). uncertain 비어 있을 때만 잠금화면 "추가" 버튼 노출,
       아니면 REVIEW 카테고리로 앱에서 확인 유도
   → 백필(occurred_at이 수집 시각보다 3일 이상 과거)에서 나온 제안은 푸시하지 않고 보관함에만 표시
-  → jobs INSERT (kind = notify) → APNs 발송, 실패 시 재시도
+  → jobs INSERT (kind = notify, lease `notify:<proposal_id>`. 텍스트·이미지 경로 모두, 제안이 있을 때마다 — 중복은 아래 기기별 1회가 막는다)
+      → worker `notify`가 `_shared/apns.ts`로 사용자의 모든 기기(`devices`, 기기 환경·불일치 시 반대 환경 1회)에 발송(0b).
+      기기별 1회(`proposal_pushes`, 0014): 400·403·404·410·413은 `rejected`(재시도 안 함), 429·5xx·연결 오류는 `failed`(잡 재시도 최대 5회).
+      푸시하지 않는 경우: 제안 status ≠ proposed, 백필(captured_at − occurred_at ≥ 3일), 시작·기한이 지난 제안
+      (날짜만이면 오늘(서울)은 지나지 않은 것으로 본다)
 ```
 
 서버 규칙 필터와 source: `rules.ts`의 `applyRules`는 source·app_name으로 분기하지 않고 모든 항목에 같은 OTP·카드·계좌·`(광고)` 규칙을 적용한다. 따라서 알림 자동화로 온 문자(`source=NOTIFICATION, app_name=메시지`)도 `MESSAGES`와 같은 규칙을 받는다(2026-09-28 확인, 코드 변경 불필요). 연락처 규칙은 기기에서 `title`(표시 이름)로도 비교하므로 알림 경로에서도 `discarded:contact`가 동작한다(실측). **TODO(1a)**: source로 문자를 구분하는 코드(분류·추출·검색 표시)를 만들 때 `NOTIFICATION + app_name=메시지`를 `MESSAGES`와 같이 취급하고, 선택 사항인 메시지 트리거를 함께 켠 사용자의 2건 중복(발신자 번호 ≠ 표시 이름이라 멱등 키가 다름) 처리를 정한다.
@@ -321,6 +325,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | `purchases` | fact_id, merchant, product[], ordered_at, amount, currency, order_no, status, delivery_status, recurrence | 구매·구독. `purchase_evidence(purchase_id, item_id)`로 다대다 |
 | `proposals` | fact_id, action(create_event/update_event/create_reminder/complete_reminder), payload, version, status(proposed/confirmed/succeeded/failed/stale), eventkit_id, idempotency_key | fact 변경 시 version 증가, 이전 제안은 stale |
 | `executions` | proposal_id, device_id, eventkit_id, executed_at | 기기가 쓰기 성공 직후 기록. 보고 실패 복구용 |
+| `proposal_pushes` | proposal_id, device_id(쌍 unique), status(sending/sent/failed/rejected), apns_status, reason, apns_id, env, claimed_at | 제안 푸시 기기별 1회(0014, 0b). failed와 5분 넘게 sending인 행(발송 중 워커 종료)만 다시 가져간다 |
 | `jobs` | kind, payload, lease_key, leased_until, attempts, status(queued/running/done/dead), checkpoint | 영속 작업 큐 |
 | `utterances` | text, embedding, said_at, source(chat/siri/quick), kind(statement/question/correction) | 사용자 발화 전체 기록 |
 | `memories` | text, embedding, utterance_id, status(active/retracted), supersedes_id | "기억해줘" 또는 gpt-6-luna가 statement로 판정한 것만. 정정 발화는 이전 memory를 retracted 처리 |
@@ -366,6 +371,10 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 ## 10. 실행
 
 - 푸시 카테고리 `ADD_EVENT`, `ADD_REMINDER`, `REVIEW`. 액션 "추가"는 `authenticationRequired`, "무시", "앱에서 수정"은 `foreground`. `uncertain`이 있는 제안은 REVIEW로만 보낸다.
+- 제안 푸시 페이로드(0b): `aps.alert` 제목 `일정 제안`·`일정 확인 필요`·`할 일 제안`, 본문 `M월 D일(요) HH:mm · <추출 제목 ≤40자>`
+  (원문 본문 금지, §12). `aps.category`: `ADD_EVENT`(시각 있는 시작 + uncertain 없음) · `REVIEW`(날짜만이거나 uncertain 있음) · `ADD_REMINDER`(할 일).
+  최상위 키 `proposal_id`, `title`, `start`(`ADD_EVENT`면 항상 `YYYY-MM-DDTHH:mm:ss+09:00`) 또는 `due`.
+  0단계 앱은 `ADD_EVENT`만 등록하므로 `REVIEW`·`ADD_REMINDER`는 버튼 없는 알림으로 보인다
 - 액션 핸들러 순서 (멱등):
   1. 서버에서 proposal 최신 버전 조회. `stale`·`succeeded`면 중단하고 안내.
   2. 로컬 `executions` 테이블(App Group SQLite)에 proposal_id가 있으면 재쓰기 없이 보고만 재시도.

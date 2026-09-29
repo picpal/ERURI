@@ -17,6 +17,7 @@ export type MediaDeps = {
   extract(input: ExtractInput): Promise<{ event: ExtractedEvent; usage: ExtractUsage }>;
   addTokens(userId: string, tokens: number): Promise<void>;
   saveEvent(userId: string, itemId: string, event: ExtractedEvent, via: "vision" | "ocr"): Promise<SavedFact>;
+  enqueueNotify(userId: string, proposalId: string): Promise<void>;
 };
 
 export function mediaTypeOf(key: string): "image/jpeg" | "image/png" | "application/pdf" | null {
@@ -53,7 +54,8 @@ export async function extractMedia(deps: MediaDeps, job: Job): Promise<string> {
   }
   const { event, usage } = await deps.extract(input);
   await deps.addTokens(user, usage.input_tokens + usage.output_tokens);
-  await deps.saveEvent(user, itemId, event, via);
+  const saved = await deps.saveEvent(user, itemId, event, via);
+  if (saved.proposalId) await deps.enqueueNotify(user, saved.proposalId);
   return log(job, "proposed", { via, has_start: event.start !== null, uncertain: event.uncertain.length,
     tokens: usage.input_tokens + usage.output_tokens });
 }

@@ -85,7 +85,7 @@ Deno.test("parse: completed → normalized event; incomplete/refusal → error w
 // ── worker extract 잡: Storage → vision(월 100건) → 초과 시 OCR 폴백 → facts/proposals ──
 const EVENT = { title: "결혼식", start: "2026-10-17T13:00:00+09:00", end: null, location: "더채플", uncertain: [] as string[] };
 function deps(o: { storageKey?: string | null; ocr?: string | null; allowed?: boolean; bytes?: number } = {}) {
-  const calls = { reserve: 0, download: 0, extract: [] as Record<string, unknown>[], saved: [] as unknown[], tokens: 0 };
+  const calls = { reserve: 0, download: 0, extract: [] as Record<string, unknown>[], saved: [] as unknown[], tokens: 0, notify: [] as string[] };
   const d: MediaDeps = {
     getItem: async () => ({ storage_key: o.storageKey === undefined ? "poc/u1/a.png" : o.storageKey, ocr_text_enc: o.ocr === null ? null : "enc" }),
     decrypt: async () => o.ocr ?? "합성 OCR 텍스트",
@@ -94,6 +94,7 @@ function deps(o: { storageKey?: string | null; ocr?: string | null; allowed?: bo
     extract: async (input) => { calls.extract.push(input); return { event: EVENT, usage: { input_tokens: 1000, output_tokens: 50 } }; },
     addTokens: async (_u, n) => { calls.tokens += n; },
     saveEvent: async (_u, item, ev, via) => { calls.saved.push([item, ev.title, via]); return { factId: "f1", proposalId: "p1", created: true }; },
+    enqueueNotify: async (_u, p) => { calls.notify.push(p); },
   };
   return { d, calls };
 }
@@ -106,6 +107,7 @@ Deno.test("extract job: vision path sends image + OCR text, counts tokens, saves
   assertEquals(Object.keys(calls.extract[0]).sort(), ["imageBase64", "mediaType", "ocrText"]);
   assertEquals(calls.extract[0].mediaType, "image/png");
   assertEquals(calls.saved, [["i1", "결혼식", "vision"]]);
+  assertEquals(calls.notify, ["p1"]);
 });
 
 Deno.test("extract job: PDF goes as pdfBase64", async () => {

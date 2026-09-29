@@ -17,6 +17,17 @@ export function normalizeP8(p8: string): string {
   return p8.replace(/\\n/g, "\n");
 }
 
+// Edge 는 secret APNS_P8(PEM 본문). 로컬 테스트·스크립트는 .env 의 APNS_P8_PATH(키 파일 경로)를 쓴다 —
+// .p8 을 .env 한 줄에 넣었다가 셸 파싱 오류로 키가 출력된 사고(스펙 §16 운영 기록 09-27·28) 재발 방지
+export function apnsP8(env: (k: string) => string | undefined = (k) => Deno.env.get(k),
+                       readFile: (p: string) => string = (p) => Deno.readTextFileSync(p)): string {
+  const inline = env("APNS_P8");
+  if (inline) return inline;
+  const path = env("APNS_P8_PATH");
+  if (!path) throw new Error("apns p8_missing");
+  return readFile(path);
+}
+
 export function makeJWT(o: { keyId: string; teamId: string; p8: string }, now = Math.floor(Date.now() / 1000)): Promise<string> {
   const bucket = now - (now % REFRESH_SECONDS);
   if (cached && cached.keyId === o.keyId && cached.bucket === bucket) return cached.jwt;
@@ -52,7 +63,7 @@ export function defaultApnsEnv(): ApnsEnv {
 }
 
 export async function sendAPNs(o: { token: string; payload: unknown; topic: string; priority?: 5 | 10; env?: ApnsEnv; pushType?: ApnsPushType }): Promise<APNsResult> {
-  const jwt = await makeJWT({ keyId: Deno.env.get("APNS_KEY_ID")!, teamId: Deno.env.get("APNS_TEAM_ID")!, p8: Deno.env.get("APNS_P8")! });
+  const jwt = await makeJWT({ keyId: Deno.env.get("APNS_KEY_ID")!, teamId: Deno.env.get("APNS_TEAM_ID")!, p8: apnsP8() });
   const r = await fetch(`https://${apnsHost(o.env ?? defaultApnsEnv())}/3/device/${o.token}`, { method: "POST",
     headers: { authorization: `bearer ${jwt}`, "apns-topic": o.topic, "apns-priority": String(o.priority ?? 10), "apns-push-type": o.pushType ?? "alert" },
     body: JSON.stringify(o.payload) });

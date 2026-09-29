@@ -1,8 +1,8 @@
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert";
 import { stub } from "jsr:@std/testing/mock";
-import { __resetJWTCache, type ApnsEnv, apnsHost, defaultApnsEnv, makeJWT, normalizeP8, sendAPNs, sendWithEnvFallback } from "../functions/_shared/apns.ts";
+import { __resetJWTCache, type ApnsEnv, apnsHost, apnsP8, defaultApnsEnv, makeJWT, normalizeP8, sendAPNs, sendWithEnvFallback } from "../functions/_shared/apns.ts";
 
-const P8 = Deno.env.get("APNS_P8")!;
+const P8 = apnsP8();
 const opts = { keyId: "ABC123DEFG", teamId: "6626BYCJG4", p8: P8 };
 const b64urlDecode = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - s.length % 4) % 4)), (c) => c.charCodeAt(0));
 const json = (s: string) => JSON.parse(new TextDecoder().decode(b64urlDecode(s)));
