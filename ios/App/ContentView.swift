@@ -52,17 +52,18 @@ struct ContentView: View {
           Text("서버 백업(최대 7일)에는 삭제 전 상태가 남습니다. 계정 삭제는 암호화 키를 파기해 백업의 원문도 복구할 수 없게 합니다.")
             .font(.caption2).foregroundStyle(.secondary)
         }
-        .alert("Gmail에서 가져온 메일과 추출 결과를 모두 지우고 연결을 끊을까요?", isPresented: $confirmSource) {
-          Button("삭제", role: .destructive) { Task { deleteResult = await deleteSource() } }
-          Button("취소", role: .cancel) {}
-        }
-        .alert("모든 데이터와 계정을 지울까요? 되돌릴 수 없습니다.", isPresented: $confirmAccount) {
-          Button("전체 삭제", role: .destructive) { Task { deleteResult = await deleteAccount() } }
-          Button("취소", role: .cancel) {}
-        }
         Section { Text("ERURI \(Self.version) (\(Trace.build))").font(.caption).foregroundStyle(.secondary) }
       }
       .navigationTitle("설정")
+      // 확인창은 List 에 단다. Section(List 행 컨테이너)에 달면 표시되지 않는다(최종 리뷰 M2-⑥b)
+      .alert("Gmail에서 가져온 메일과 추출 결과를 모두 지우고 연결을 끊을까요?", isPresented: $confirmSource) {
+        Button("삭제", role: .destructive) { Task { deleteResult = await deleteSource() } }
+        Button("취소", role: .cancel) {}
+      }
+      .alert("모든 데이터와 계정을 지울까요? 되돌릴 수 없습니다.", isPresented: $confirmAccount) {
+        Button("전체 삭제", role: .destructive) { Task { deleteResult = await deleteAccount() } }
+        Button("취소", role: .cancel) {}
+      }
       .task { await refresh() }
     }
   }

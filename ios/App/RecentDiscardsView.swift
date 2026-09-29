@@ -25,7 +25,7 @@ struct RecentDiscardsView: View {
   }
 
   private func load() async {
-    guard let r = await API.send(RecentDiscards.query), r.status == 200, let v = RecentDiscards.decode(r.data) else {
+    guard let r = await API.send(RecentDiscards.query()), r.status == 200, let v = RecentDiscards.decode(r.data) else {
       message = "불러오지 못했습니다"; return
     }
     rows = v

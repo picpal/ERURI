@@ -13,9 +13,12 @@ public enum RecentDiscards {
     }
   }
 
-  /// RLS 로 자기 행만. 본문 열은 요청하지 않는다. 격리 기한(quarantine_until)이 있는 것 = 게이트 폐기 후 복구 가능 기간(0010)
-  public static let query = "rest/v1/items?select=id,source,app_name,sender,title,gate_label,gate_confidence,occurred_at"
-    + "&quarantine_until=not.is.null&order=occurred_at.desc&limit=300"
+  /// RLS 로 자기 행만. 본문 열은 요청하지 않는다. 격리 기한(quarantine_until)이 지금보다 뒤 = 게이트 폐기 후 복구 가능 기간(0010).
+  /// 기한이 지난 행은 purge(일 1회)가 null 로 만들기 전까지 남아 있으므로 not.is.null 로는 거르지 못한다(최종 리뷰 M1-④b)
+  public static func query(now: Date = Date()) -> String {
+    "rest/v1/items?select=id,source,app_name,sender,title,gate_label,gate_confidence,occurred_at"
+      + "&quarantine_until=gt.\(ISO8601DateFormatter().string(from: now))&order=occurred_at.desc&limit=300"
+  }
 
   public static func decode(_ data: Data) -> [Row]? { try? JSONDecoder().decode([Row].self, from: data) }
 

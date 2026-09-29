@@ -44,8 +44,15 @@ final class RecentDiscardsTests: XCTestCase {
   }
   // 본문 열(content_enc·ocr_text_enc)을 요청하지 않는다(스펙 §7 "본문 없음")
   func testQueryHasNoBody() {
-    XCTAssertTrue(RecentDiscards.query.hasPrefix("rest/v1/items?select=id,source,app_name,sender,title,gate_label,gate_confidence,occurred_at&"))
-    XCTAssertTrue(RecentDiscards.query.contains("quarantine_until=not.is.null"))
-    XCTAssertFalse(RecentDiscards.query.contains("content_enc") || RecentDiscards.query.contains("ocr_text"))
+    let q = RecentDiscards.query()
+    XCTAssertTrue(q.hasPrefix("rest/v1/items?select=id,source,app_name,sender,title,gate_label,gate_confidence,occurred_at&"))
+    XCTAssertFalse(q.contains("content_enc") || q.contains("ocr_text"))
+  }
+  // 기한이 지난 격리 항목(purge 전)은 목록에 없어야 한다 → quarantine_until > now. UTC Z 표기라 '+' 인코딩 문제가 없다
+  func testQueryExcludesExpiredQuarantine() {
+    let q = RecentDiscards.query(now: Date(timeIntervalSince1970: 1_790_000_000))
+    XCTAssertTrue(q.contains("&quarantine_until=gt.2026-09-21T14:13:20Z&"))
+    XCTAssertFalse(q.contains("not.is.null"))
+    XCTAssertNotNil(URL(string: q))
   }
 }

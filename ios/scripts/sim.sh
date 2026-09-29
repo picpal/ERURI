@@ -11,12 +11,14 @@ case "${1:-}" in
   # 앱에 넣을 공개 값만(iOS 클라이언트 ID·Web 클라이언트 ID·Supabase 호스트·publishable 키). service role·비밀번호는 넣지 않는다
   config)
     mkdir -p Config
-    cid=$(v GOOGLE_CLIENT_ID); url=$(v SUPABASE_URL)
+    cid=$(v GOOGLE_CLIENT_ID); url=$(v SUPABASE_URL); url=${url%/}
+    # 앱은 https://<호스트> 로 붙인다. 다른 스킴이면 호스트를 비워 testflight.sh 의 빈 호스트 검사에 걸리게 한다
+    case "$url" in https://*) url=${url#https://} ;; *) [ -n "$url" ] && echo "SUPABASE_URL 이 https:// 로 시작하지 않음 — 호스트를 비움" >&2; url= ;; esac
     { echo "// sim.sh config 가 supabase/.env 에서 만든다. 커밋하지 않는다"
       echo "GID_CLIENT_ID = $cid"
       echo "GID_REVERSED_CLIENT_ID = ${cid:+com.googleusercontent.apps.${cid%.apps.googleusercontent.com}}"
       echo "GID_SERVER_CLIENT_ID = $(v GOOGLE_WEB_CLIENT_ID)"
-      echo "ERURI_SUPABASE_HOST = ${url#https://}"
+      echo "ERURI_SUPABASE_HOST = $url"
       echo "ERURI_SUPABASE_ANON_KEY = $(v SUPABASE_ANON_KEY)"
     } > Config/Secrets.xcconfig
     echo "wrote Config/Secrets.xcconfig (gid=$([ -n "$cid" ] && echo set || echo empty))" ;;
