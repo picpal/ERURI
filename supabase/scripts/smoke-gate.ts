@@ -52,4 +52,5 @@ try {
   }
   await sb.from("devices").delete().eq("user_id", u.id).eq("device_id", deviceId);
   await sb.from("usage_counters").delete().eq("user_id", u.id);                           // 테스트 사용자 행만
+  await sb.from("llm_slots").delete().eq("user_id", u.id);                                // 추출이 LLM 슬롯 행을 만든다
 }

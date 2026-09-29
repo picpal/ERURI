@@ -1,3 +1,4 @@
+import { type BudgetDeps, costKrw, guarded } from "../_shared/budget.ts";
 import { type Classifier, classifierMeta, type ClassifyResult, gateDecision } from "../_shared/classify.ts";
 import type { ExtractUsage } from "../_shared/extract.ts";
 import type { TextExtraction, TextMeta } from "../_shared/extract-text.ts";
@@ -24,6 +25,7 @@ export type TextDeps = {
   setStatus(userId: string, itemId: string, status: string, wipe: boolean): Promise<void>;
   recordGate(userId: string, itemId: string, label: string, confidence: number): Promise<void>;
   quarantine(userId: string, itemId: string, status: string): Promise<void>;
+  budget: BudgetDeps;
 };
 
 export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metrics) => void): Promise<string> {
@@ -72,8 +74,13 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
     }
   }
 
-  // 3) 추출. 상대 날짜 기준일 = 받은 날(occurred_at, 서울)
-  const { result, usage } = await deps.extract(v.masked, meta, receivedDay(item.occurredAt));
+  // 3) 추출. 비용 예약(§13): 백필 항목은 1회 예산, 그 외는 월 예산. 소진이면 Deferred(다음 달) — 잡은 queued 로 남는다
+  const kind = job.payload.backfill === true ? "backfill" : "extract";
+  const est = costKrw("gpt-6-luna", { input: v.masked.length + 1200, output: 400 });
+  const { value: { result, usage } } = await guarded(deps.budget, user, kind, est, job.id, async () => {
+    const x = await deps.extract(v.masked, meta, receivedDay(item.occurredAt));   // 상대 날짜 기준일 = 받은 날(서울)
+    return { value: x, actualKrw: costKrw("gpt-6-luna", { input: x.usage.input_tokens, output: x.usage.output_tokens }) };
+  });
   await deps.addTokens(user, usage.input_tokens + usage.output_tokens, job.payload.backfill === true);
   const fact = textFact(user, itemId, result);
   if (fact === null) return discard(deps, job, user, itemId, "empty", false);   // 남길 것 없음: 원문 유지(1a 검색 대상)

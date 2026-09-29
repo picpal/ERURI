@@ -7,13 +7,13 @@ import { gmailFetch, gmailSync, gmailWatch } from "../_shared/gmail-jobs.ts";
 import type { Job } from "../_shared/job.ts";
 import { runBatches } from "./batch.ts";
 import { extractMedia } from "./extract.ts";
-import { withHeartbeat } from "./heartbeat.ts";
 import { mediaDeps } from "./media-deps.ts";
 import { notifyProposal } from "./notify.ts";
 import { notifyDeps } from "./notify-deps.ts";
 import { purgeMedia } from "./purge.ts";
 import { reauthPush } from "./reauth.ts";
 import { reauthDeps } from "./reauth-deps.ts";
+import { runJob } from "./run.ts";
 import { type Metrics, processText } from "./text.ts";
 import { textDeps } from "./text-deps.ts";
 
@@ -61,20 +61,17 @@ Deno.serve(async (req) => {
   const run = async (j: Job) => {
     const tj = performance.now();
     metrics = null;
-    try {
-      const h = handlers[j.kind] ?? (async () => { throw new Error("unknown kind " + j.kind); });
-      const beat = async () => {
-        const { data, error } = await sb.rpc("heartbeat_job", { p_id: j.id, p_lease_seconds: LEASE_SECONDS });
-        if (error || data !== true) console.log(JSON.stringify({ job_id: j.id, heartbeat: error ? error.code : "lost" }));
-      };
-      const cp = await withHeartbeat(beat, () => h(j));
-      await sb.rpc("complete_job", { p_id: j.id, p_checkpoint: cp });
-      results.push([j.id, "done", Math.round(performance.now() - tj), metrics]);
-    } catch (e) {
-      // 오류 메시지는 코드·식별자만 담도록 각 모듈이 만든다. 길이도 제한한다
-      await sb.rpc("fail_job", { p_id: j.id, p_error: (e instanceof Error ? e.message : "error").slice(0, 200) });
-      results.push([j.id, "fail", Math.round(performance.now() - tj)]);
-    }
+    const h = handlers[j.kind] ?? (async () => { throw new Error("unknown kind " + j.kind); });
+    const outcome = await runJob(j, h, {
+      heartbeat: async (id) => {
+        const { data, error } = await sb.rpc("heartbeat_job", { p_id: id, p_lease_seconds: LEASE_SECONDS });
+        if (error || data !== true) console.log(JSON.stringify({ job_id: id, heartbeat: error ? error.code : "lost" }));
+      },
+      complete: async (id, cp) => { await sb.rpc("complete_job", { p_id: id, p_checkpoint: cp }); },
+      fail: async (id, err) => { await sb.rpc("fail_job", { p_id: id, p_error: err }); },
+      defer: async (id, until, code) => { await sb.rpc("defer_job", { p_id: id, p_until: until, p_code: code }); },
+    });
+    results.push([j.id, outcome, Math.round(performance.now() - tj), metrics]);
   };
   const claimed = await runBatches(claim, run);
   if (claimError && claimed === 0) return new Response(claimError, { status: 500 });

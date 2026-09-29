@@ -20,6 +20,7 @@ export async function runPhrase(p: { id: string; text: string }, o: { classifier
     quarantine: async (_u, _i, s) => { status = s; },
     enqueueNotify: async () => {},
     unpushedProposals: async () => [],
+    budget: { reserve: async () => "ok", settle: async () => {}, acquire: async () => 1, release: async () => {}, now: () => new Date() },
   };
   await processText(deps, { id: `eval-${p.id}`, kind: "process", user_id: "eval", payload: { item_id: p.id }, attempts: 1, checkpoint: null });
   return { status, kind, tokens };

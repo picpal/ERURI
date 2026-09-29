@@ -11,7 +11,7 @@ const EVENT_X: TextExtraction = { kind: "event", evidence: "합성 근거",
 const BUY_X: TextExtraction = { kind: "purchase", evidence: null,
   purchase: { merchant: "합성커피", products: [], ordered_at: null, amount: 32000, currency: "KRW", order_no: null, status: "paid" } };
 function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: ClassifyResult | null | Error; result?: TextExtraction;
-  failEnqueue?: number; pushed?: boolean } = {}) {
+  failEnqueue?: number; pushed?: boolean; budget?: "ok" | "degraded" | "refused" } = {}) {
   const calls = { decrypt: 0, classify: [] as string[], extract: [] as { text: string; today: string }[], saved: [] as FactInput[],
     status: [] as [string, boolean][], tokens: 0, notify: [] as string[], classifyMeta: [] as ClassifyMeta[], extractMeta: [] as TextMeta[],
     backfill: [] as boolean[], gate: [] as [string, number][], quarantine: [] as string[] };
@@ -34,6 +34,8 @@ function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: Cla
     quarantine: async (_u, _i, s) => { calls.quarantine.push(s); state.status = s; },
     enqueueNotify: async (_u, p) => { if (state.failEnqueue > 0) { state.failEnqueue--; throw new Error("enqueue_job XX000"); } calls.notify.push(p); },
     unpushedProposals: async () => (o.pushed ? [] : state.proposals),
+    budget: { reserve: async () => o.budget ?? "ok", settle: async () => {}, acquire: async () => 1, release: async () => {},
+      now: () => new Date("2026-10-15T00:00:00Z") },
   };
   return { d, calls };
 }
@@ -165,4 +167,10 @@ Deno.test("retry after enqueue failure: item already extracted → notify re-enq
   const gone = fake({ item: { status: "discarded:server:otp" } });
   gone.d.unpushedProposals = () => { throw new Error("must not query"); };
   assertEquals(await processText(gone.d, job()), "discarded:server:otp");
+});
+
+Deno.test("budget exhausted → Deferred to next month before extraction (job stays queued)", async () => {
+  const { d, calls } = fake({ budget: "refused" });
+  await assertRejects(() => processText(d, job()), Error, "budget_exhausted");
+  assertEquals([calls.extract.length, calls.saved.length], [0, 0]);
 });

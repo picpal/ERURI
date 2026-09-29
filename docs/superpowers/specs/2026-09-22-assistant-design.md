@@ -353,11 +353,12 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | `proposals` | fact_id, action(create_event/update_event/create_reminder/complete_reminder), payload, version, status(proposed/confirmed/succeeded/failed/stale), eventkit_id, idempotency_key | fact 변경 시 version 증가, 이전 제안은 stale |
 | `executions` | user_id, proposal_id(unique), device_id, eventkit_id, version, executed_at, reported_at | 기기가 쓰기 성공 직후 기록(로컬 SQLite), 서버는 `report_execution`으로 받는다. 보고 실패 복구·version 불일치(§10 순서 5) 판정용 |
 | `proposal_pushes` | proposal_id, device_id(쌍 unique), status(sending/sent/failed/rejected), apns_status, reason, apns_id, env, claimed_at | 제안 푸시 기기별 1회(0014, 0b). failed와 잡 임대(180초)가 지난 sending 행(발송 중 워커 종료)만 다시 가져간다. 임대 안의 sending은 잡을 재시도시킨다(0016) |
-| `jobs` | kind, payload, priority, lease_key, leased_until, attempts, status(queued/running/done/dead), checkpoint, claimed_at, not_before | 영속 작업 큐. `priority`는 1단계(§7: notify > gmail-sync > process > backfill). claimed_at(첫 클레임, 웹훅→sync 지연 측정). not_before(이 시각 전에는 클레임 안 함: 실패 백오프 attempts × 60초, M2-⑦ 예산·슬롯 미루기) |
+| `jobs` | kind, payload, priority, lease_key, leased_until, attempts, status(queued/running/done/dead), checkpoint, claimed_at, not_before | 영속 작업 큐. `priority`는 1단계(§7: notify > gmail-sync > process > backfill). claimed_at(첫 클레임, 웹훅→sync 지연 측정). not_before(이 시각 전에는 클레임 안 함: 실패 백오프 attempts × 60초(`fail_job`, attempts 소비), M2-⑦ 예산·슬롯 미루기(`defer_job`, attempts 되돌림) — 이유는 last_error 로 구분) |
 | `utterances` | text, embedding, said_at, source(chat/siri/quick), kind(statement/question/correction) | 사용자 발화 전체 기록 |
 | `memories` | text, embedding, utterance_id, status(active/retracted), supersedes_id | "기억해줘" 또는 gpt-6-luna가 statement로 판정한 것만. 정정 발화는 이전 memory를 retracted 처리 |
 | `devices` | device_id(unique with user_id), apns_token, apns_env(sandbox/production), build, last_seen_at | 개발 설치 = sandbox, TestFlight·App Store = production 토큰. 발송은 기기 환경으로, 환경 불일치 응답이면 반대 환경 1회 재시도. 0단계 `0011_devices.sql`과 일치. 앱은 App Group에 마지막 등록의 환경·build·token_sha8을 두고 셋 중 하나라도 바뀌면(업데이트 설치·토큰 갱신) 앱 활성화·토큰 수신 때 자동 재등록한다(0.2.1. 0.2.0은 토큰이 같으면 생략해 build가 0.1.1로 남았다). 발송 대상은 `last_seen_at`이 7일 안인 기기만이다(버려진 개발 설치·시뮬레이터 제외, 0b). `last_seen_at`은 등록과 추적 업로드(`/ingest/trace`, 같은 device_id)가 갱신한다. 앱은 마지막 등록 뒤 24시간이 지나면 인텐트·BG refresh·무음 푸시·앱 활성화 중 먼저 오는 때에 다시 등록한다(진단 전송이 꺼져도 last_seen_at 유지, M1-⑤). 로그아웃은 등록 표식을 지워 다음 로그인에서 다시 등록한다. |
-| `usage_counters` | month, vision_calls, extract_tokens, backfill_tokens, chat_tokens, reserved_krw | 비용 상한. 호출 전 예약(`reserve_usage(kind, est_krw)`, §13), 후 정산 |
+| `usage_counters` | month, vision_calls, extract_tokens, backfill_tokens, chat_tokens, reserved_krw, backfill_reserved_krw | 비용 상한. 호출 전 예약(`reserve_usage(kind, est_krw)`, §13), 후 정산. reserved_krw = 월 예산(정산된 실제 + 진행 중 예약), backfill_reserved_krw = 백필 1회 예산(M2-⑦) |
+| `llm_slots` | user_id, slot(1·2), holder, held_until | 동시 LLM 2개(§13), service role 전용 |
 | `device_traces` | device_id, event, at, 속성 jsonb(본문 없음) | 진단 trace(1단계, `poc_traces`의 제품판). 30일 보관. 설정의 "진단 전송" 토글 기본 켜짐(1인 사용). 별도 마이그레이션(`0002_diagnostics`)이라 지인 확대 시 기본값만 끈다. 실기기 게이트(잠금 상태·업로드 경로·액션 결과) 판정 근거 |
 | `reauth_pushes` | connection_id, reason(expiring/invalid_grant), window_key, sent_at | 재인증 푸시 1회 기록(M1-③a). window_key = expires_at epoch 초 또는 `-`, 재연결 시 그 연결 행 삭제(0008) |
 | `gate_feedback` | item_id, verdict(wrong_discard/wrong_pass), at | Jev 정확도 정답(사용자 표시, 본문 없음). RLS 자기 행 |
@@ -527,7 +528,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 채팅이 비용의 약 87%다(상한 추정 기준). 기존 Anthropic+Voyage 추정(약 $9)보다 싸지만 상한과 여유가 없으므로 다음 통제를 둔다. reasoning 토큰은 출력 단가로 청구되므로 채팅은 effort `low`, 분류·추출은 `none`으로 고정한다.
 
-- 호출 전 `usage_counters.reserved_krw`에 예상 비용을 예약하고, 월 상한(기본 1만원) 초과 예약은 거부한다. 응답 후 실제 토큰으로 정산한다. 1단계에서 vision 전용 `reserve_vision_call`을 `reserve_usage(kind, est_krw)`로 일반화하고, 예약·정산과 80/100% 강등을 M2의 chat 태스크 **직전** 태스크로 만든다(채팅이 비용의 87%).
+- 호출 전 `usage_counters.reserved_krw`에 예상 비용을 예약하고, 월 상한(기본 1만원) 초과 예약은 거부한다. 응답 후 실제 토큰으로 정산한다. 1단계에서 vision 전용 `reserve_vision_call`을 `reserve_usage(kind, est_krw)`로 일반화하고, 예약·정산과 80/100% 강등을 M2의 chat 태스크 **직전** 태스크로 만든다(채팅이 비용의 87%). 구현(M2-⑦): reserve_usage(p_user, kind, est_krw) → ok·degraded(≥80%)·refused, settle_usage, 상한 budget_caps() = 월 10,000원·백필 1,500원, 환율 USD_KRW(기본 1400). 소진·슬롯 없음은 잡 실패가 아니라 defer_job(not_before)로 미룬다(다음 달 1일 00:00 서울 / 30초). 동시 LLM 슬롯 llm_slots(사용자당 2). Jev 분류(건당 약 $0.00003)는 예약하지 않는다. vision 금액 예약은 파일 경로(2단계)와 함께 연결한다.
 - 80% 도달: 채팅 gpt-6-sol → gpt-6-luna 강등, vision → OCR 텍스트. 100% 도달: 추출·채팅 중단, 수집만 계속(jobs는 queued 유지). 앱에 잔여 예산 표시.
 - 초기 백필 3개월(약 1,800건 × 1.8k 토큰, gpt-6-luna ≈ $0.5)은 별도 1회 예산으로 잡는다(1단계 M1 Gmail 태스크에서 별도 카운터(`usage_counters.backfill_tokens`, 백필 항목의 추출 토큰은 월 `extract_tokens`에 넣지 않는다)).
 - 동시 LLM 호출은 사용자당 2개로 제한한다.

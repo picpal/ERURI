@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { BudgetDeps } from "../_shared/budget.ts";
+import { budgetDeps } from "../_shared/budget-deps.ts";
 import type { Classifier } from "../_shared/classify.ts";
 import { decrypt } from "../_shared/crypto.ts";
 import { extractTextDetailed } from "../_shared/extract-text.ts";
@@ -10,7 +12,8 @@ type Row = { content_enc: string | null; source: string; app_name: string | null
   occurred_at: string; captured_at: string; status: string };
 
 // process 잡의 실제 의존성(service role). 모든 RPC에 user_id를 명시한다(스펙 §12 통제 4)
-export function textDeps(sb: SupabaseClient, o: { classifier: Classifier; threshold: number; extract?: TextDeps["extract"]; leasePrefix?: string }): TextDeps {
+export function textDeps(sb: SupabaseClient, o: { classifier: Classifier; threshold: number; extract?: TextDeps["extract"]; leasePrefix?: string;
+  budget?: BudgetDeps }): TextDeps {
   return {
     async getItem(userId, itemId): Promise<TextItem | null> {
       const { data, error } = await sb.rpc("worker_get_text_item", { p_user: userId, p_item: itemId });
@@ -43,5 +46,6 @@ export function textDeps(sb: SupabaseClient, o: { classifier: Classifier; thresh
       const { error } = await sb.rpc("worker_quarantine_item", { p_user: userId, p_item: itemId, p_status: status });
       if (error) throw new Error("worker_quarantine_item " + error.code);
     },
+    budget: o.budget ?? budgetDeps(sb),
   };
 }
