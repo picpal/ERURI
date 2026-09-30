@@ -14,6 +14,8 @@ struct ChatView: View {
   @State private var judging: Set<String> = []         // 기록 요청 중인 키 — 연타가 도착 순서 경합을 만들지 않게 막는다
   @State private var adds: [String: AddState] = [:]    // 제안 id → 캘린더 추가 진행·결과
   @State private var dictation = SpeechDictation()     // 기기 안 받아쓰기(§9·§12)
+  @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.colorScheme) private var scheme
   enum AddState { case running, finished(String), failed(String) }
 
   var body: some View {
@@ -35,6 +37,8 @@ struct ChatView: View {
       .navigationTitle("채팅")
       .onAppear { dictation.onText = { input = $0 }; dictation.refresh() }
       .onDisappear { dictation.stopIfRecording() }
+      // 백그라운드·전화로 비활성이 되면 녹음을 끊고, 돌아오면 권한을 다시 읽는다(설정에서 허용하고 온 경우)
+      .onChange(of: scenePhase) { _, p in if p == .active { dictation.refresh() } else { dictation.stopIfRecording() } }
       .toolbar {
         ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("완료") { inputFocused = false } }
       }
@@ -52,16 +56,21 @@ struct ChatView: View {
       HStack(spacing: 10) {
         Menu {
           Button("이미지·파일 첨부 (2단계 예정)") {}.disabled(true)   // 첨부는 스펙 §15 2단계
-        } label: { roundIcon("plus", fill: Color(.secondarySystemFill), tint: .primary) }
+        } label: { roundIcon("plus", fill: Color(.secondarySystemFill), tint: Color.primary) }
+        .buttonStyle(.plain)
         Spacer()
         Button { Task { await dictation.toggle(currentText: input) } } label: {
-          dictation.recording ? roundIcon("waveform", fill: .red, tint: .white) : roundIcon("mic", fill: Color(.secondarySystemFill), tint: .primary)
+          dictation.recording ? roundIcon("waveform", fill: .red, tint: .white) : roundIcon("mic", fill: Color(.secondarySystemFill), tint: Color.primary)
         }
+        .buttonStyle(.plain)
         .disabled(!dictation.available).opacity(dictation.available ? 1 : 0.4)
         .accessibilityLabel(dictation.recording ? "받아쓰기 멈춤" : "음성으로 입력")
-        // 라이트 검정 원·흰 화살표, 다크 흰 원·검정 화살표
-        Button(action: send) { roundIcon("arrow.up", fill: .primary, tint: Color(.systemBackground)) }
-          .disabled(!canSend).opacity(canSend ? 1 : 0.3).accessibilityLabel("보내기")
+        // 라이트 검정 원·흰 화살표, 다크 흰 원·검정 화살표. plain 스타일로 강조색(tint)을 막고, 글래스 안에서 primary 채움이
+        // 비브런시로 옅은 회색이 되므로(시뮬레이터 스크린샷 확인) 모드별 검정·흰색을 직접 쓴다
+        Button(action: send) {
+          roundIcon("arrow.up", fill: scheme == .dark ? Color.white : Color.black, tint: scheme == .dark ? Color.black : Color.white)
+        }
+          .buttonStyle(.plain).disabled(!canSend).opacity(canSend ? 1 : 0.3).accessibilityLabel("보내기")
       }
     }
     .padding(12)

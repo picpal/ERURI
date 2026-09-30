@@ -8,6 +8,8 @@ struct ArchiveView: View {
   @State private var more = false
   @State private var loading = false
   @State private var failed = false                 // 실패하면 자동 불러오기를 멈추고 하단 "다시 시도"
+  @State private var retryReset = false             // 실패한 요청이 처음부터(필터 변경·새로고침)였는지 — "다시 시도"가 같은 종류로 보낸다
+  @State private var generation = 0                 // 처음부터 불러올 때마다 올린다. 앞 세대의 늦은 응답은 버린다
   @State private var message = ""
 
   var body: some View {
@@ -30,7 +32,7 @@ struct ArchiveView: View {
           .onAppear { if more, !failed, !loading, rows.suffix(5).contains(where: { $0.id == r.id }) { Task { await load(reset: false) } } }   // 끝에서 5행 안에 닿으면 다음 50건
         }
         if loading && !rows.isEmpty { ProgressView().frame(maxWidth: .infinity) }
-        else if failed { Button("다시 시도") { Task { await load(reset: rows.isEmpty) } }.frame(maxWidth: .infinity) }
+        else if failed { Button("다시 시도") { Task { await load(reset: retryReset) } }.frame(maxWidth: .infinity) }
       }
       .navigationTitle("보관함")
       .task { if rows.isEmpty { await load(reset: true) } }                // 상세에서 돌아올 때 목록·스크롤을 유지
@@ -41,11 +43,15 @@ struct ArchiveView: View {
 
   private func load(reset: Bool) async {
     if loading && !reset { return }
-    let requested = filter
-    loading = true; defer { loading = false }
+    if reset { generation += 1 }
+    let gen = generation, requested = filter
+    loading = true; defer { if gen == generation { loading = false } }  // 버린 응답이 새 요청의 loading 을 일찍 풀지 않게
     let r = await API.send(Archive.query(filter: requested, offset: reset ? 0 : rows.count))
-    guard requested == filter else { return }                              // 필터를 바꾼 뒤 늦게 온 응답은 버린다
-    guard let r, r.status == 200, let v = Archive.decode(r.data) else { message = "불러오지 못했습니다"; failed = true; return }
+    // 필터를 바꿨거나 그 뒤 처음부터 다시 불러온 경우, 늦게 온 응답은 버린다(옛 목록 뒤에 붙거나 행이 겹치지 않게)
+    guard gen == generation, requested == filter else { return }
+    guard let r, r.status == 200, let v = Archive.decode(r.data) else {
+      message = "불러오지 못했습니다"; failed = true; retryReset = reset || rows.isEmpty; return
+    }
     failed = false
     rows = reset ? v : rows + v
     more = Archive.hasMore(pageCount: v.count)

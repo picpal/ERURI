@@ -60,6 +60,22 @@ final class DictationTests: XCTestCase {
     XCTAssertEqual(d.phase, .unavailable(.denied))
   }
 
+  func testStartFailedReturnsToIdleWithNotice() {
+    var d = Dictation()
+    _ = d.tap(currentText: "")
+    d.startFailed()
+    XCTAssertEqual(d.phase, .idle)
+    XCTAssertEqual(d.notice, "녹음을 시작하지 못했습니다. 다시 눌러 주세요")
+    // 다시 누르면 안내를 지우고 시작한다
+    XCTAssertEqual(d.tap(currentText: ""), .start)
+    XCTAssertNil(d.notice)
+    // 권한 안내가 실패 안내보다 먼저다
+    d.startFailed()
+    d.setAvailability(permission: .denied, onDevice: true)
+    XCTAssertEqual(d.phase, .unavailable(.denied))
+    XCTAssertEqual(d.notice, "음성 입력을 쓰려면 설정에서 마이크·음성 인식을 허용하세요")
+  }
+
   func testSilence() {
     let t0 = Date(timeIntervalSince1970: 1000)
     XCTAssertFalse(Dictation.silent(lastHeard: t0, now: t0.addingTimeInterval(1.9)))

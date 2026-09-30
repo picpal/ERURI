@@ -14,6 +14,7 @@ import EruriCore
   private var lastHeard = Date()
   private var silenceWatch: Task<Void, Never>?
   private var generation = 0   // 앞 녹음의 늦은 콜백이 새 녹음을 끊지 않게
+  private var toggling = false // 권한 대화상자를 기다리는 동안 두 번 눌려 시작·정지가 연달아 실행되지 않게
   /// 받아쓴 전체 글을 입력창에 넣는다
   var onText: (String) -> Void = { _ in }
 
@@ -24,12 +25,14 @@ import EruriCore
   func refresh() { state.setAvailability(permission: Self.permission(), onDevice: recognizer?.supportsOnDeviceRecognition == true) }
 
   func toggle(currentText: String) async {
+    guard !toggling else { return }
+    toggling = true; defer { toggling = false }
     if !recording {
       if Self.permission() == .undetermined { await Self.requestPermissions() }
       refresh()
     }
     switch state.tap(currentText: currentText) {
-    case .start: if !start() { stop() }
+    case .start: if !start() { state.startFailed(); stop() }   // 녹음 중 표시에 갇히지 않게
     case .stop: stop()
     case .none: break
     }

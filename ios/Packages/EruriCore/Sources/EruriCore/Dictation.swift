@@ -13,6 +13,7 @@ public struct Dictation: Equatable, Sendable {
 
   public private(set) var phase: Phase = .idle
   private var base = ""   // 녹음을 시작할 때 입력창에 있던 글 — 받아쓴 글을 그 뒤에 붙인다
+  private var failed = false   // 마지막 시작이 실패했다(통화 중·입력 장치 없음 등). 다음 탭에서 지운다
 
   public init() {}
 
@@ -27,11 +28,12 @@ public struct Dictation: Equatable, Sendable {
     switch phase {
     case .unavailable(.denied): "음성 입력을 쓰려면 설정에서 마이크·음성 인식을 허용하세요"
     case .unavailable(.noOnDevice): "이 기기는 기기 안 한국어 음성 인식을 지원하지 않습니다"
-    default: nil
+    default: failed ? "녹음을 시작하지 못했습니다. 다시 눌러 주세요" : nil
     }
   }
 
   public mutating func tap(currentText: String) -> Effect {
+    failed = false
     switch phase {
     case .idle: base = currentText; phase = .recording; return .start
     case .recording: phase = .idle; return .stop
@@ -46,9 +48,15 @@ public struct Dictation: Equatable, Sendable {
     return base + " " + text
   }
 
-  /// 인식기가 스스로 끝났거나(최종·오류) 시작에 실패했을 때
+  /// 인식기가 스스로 끝났을 때(최종·오류)
   public mutating func ended() {
     if phase == .recording { phase = .idle }
+  }
+
+  /// 오디오 세션·엔진·인식기를 시작하지 못했을 때: 녹음 중 표시를 풀고 짧은 안내를 띄운다
+  public mutating func startFailed() {
+    ended()
+    failed = true
   }
 
   public static func silent(lastHeard: Date, now: Date) -> Bool {
