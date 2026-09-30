@@ -105,4 +105,16 @@ final class ChatReplyTests: XCTestCase {
     XCTAssertEqual(try XCTUnwrap(ChatReply.decode(Data(withCands.utf8))).candidateIDs.count, 2)
     XCTAssertEqual(try XCTUnwrap(ChatReply.decode(Data(body.utf8))).candidateIDs, [])
   }
+
+  // 0.7.1: 거절이거나 후보가 비면 "보관함에서 보기" 없음
+  func testArchiveIDsHiddenWhenRefusedOrEmpty() throws {
+    let cands = #""candidates":["11111111-1111-4111-8111-111111111111"],"hits":"#
+    let ok = body.replacingOccurrences(of: #""hits":"#, with: cands)
+    XCTAssertEqual(try XCTUnwrap(ChatReply.decode(Data(ok.utf8))).archiveIDs, ["11111111-1111-4111-8111-111111111111"])
+    let refused = ok.replacingOccurrences(of: #""refused":false"#, with: #""refused":true"#)
+    XCTAssertNil(try XCTUnwrap(ChatReply.decode(Data(refused.utf8))).archiveIDs)
+    XCTAssertNil(try XCTUnwrap(ChatReply.decode(Data(body.utf8))).archiveIDs)
+    let empty = body.replacingOccurrences(of: #""hits":"#, with: #""candidates":[],"hits":"#)
+    XCTAssertNil(try XCTUnwrap(ChatReply.decode(Data(empty.utf8))).archiveIDs)
+  }
 }

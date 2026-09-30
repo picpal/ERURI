@@ -7,7 +7,7 @@ struct ChatView: View {
   struct Turn: Identifiable { let id = UUID(); let question: String; var answer: ChatReply.Answer?; var error: String? }
 
   @State private var input = ""
-  @FocusState private var inputFocused: Bool           // 키보드가 탭 막대를 가리므로 스크롤·빈 곳 탭·"완료"로 내린다
+  @FocusState private var inputFocused: Bool           // 키보드가 탭 막대를 가리므로 스크롤·빈 곳 탭으로 내린다(키보드 툴바 "완료"는 가려져 0.7.1 에서 뺐다)
   @State private var turns: [Turn] = []
   @State private var busy = false
   @State private var judged: [String: Bool] = [:]      // "<answer_id>|<item_id>" → ok
@@ -39,9 +39,6 @@ struct ChatView: View {
       .onDisappear { dictation.stopIfRecording() }
       // 백그라운드·전화로 비활성이 되면 녹음을 끊고, 돌아오면 권한을 다시 읽는다(설정에서 허용하고 온 경우)
       .onChange(of: scenePhase) { _, p in if p == .active { dictation.refresh() } else { dictation.stopIfRecording() } }
-      .toolbar {
-        ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("완료") { inputFocused = false } }
-      }
     }
   }
 
@@ -102,9 +99,9 @@ struct ChatView: View {
         judgeButton(a.answer_id, c.item_id, false, "👎")
       }
     }
-    // 스펙 §9 채팅 → 보관함 보기: 인용만이 아니라 이 질문의 검색 후보 전체. 거절 답변에도 후보가 있으면 보인다
-    if !a.candidateIDs.isEmpty {
-      let scope = Archive.Scope(question: question, ids: a.candidateIDs)
+    // 스펙 §9 채팅 → 보관함 보기: 인용만이 아니라 이 질문의 검색 후보 전체. 거절 답변·후보 없음이면 숨긴다(0.7.1)
+    if let ids = a.archiveIDs {
+      let scope = Archive.Scope(question: question, ids: ids)
       Button("보관함에서 보기 (\(scope.ids.count)건)") { ArchiveRouter.shared.open(scope) }
         .font(.caption).buttonStyle(.borderless)
     }

@@ -16,6 +16,8 @@ public enum ChatReply {
     /// "보관함에서 보기" 후보(스펙 §9, R-A1): 검색 융합 목록의 item id, 순위순. 0.6.x 서버 응답에는 없다
     public let candidates: [String]?
     public var candidateIDs: [String] { candidates ?? [] }
+    /// "보관함에서 보기" 버튼에 넘길 id(0.7.1): 거절 답변이거나 후보가 없으면 nil — 버튼을 숨긴다
+    public var archiveIDs: [String]? { refused || candidateIDs.isEmpty ? nil : candidateIDs }
   }
 
   public static func decode(_ data: Data) -> Answer? { try? JSONDecoder().decode(Answer.self, from: data) }
