@@ -13,6 +13,7 @@ struct ChatView: View {
   @State private var judged: [String: Bool] = [:]      // "<answer_id>|<item_id>" → ok
   @State private var judging: Set<String> = []         // 기록 요청 중인 키 — 연타가 도착 순서 경합을 만들지 않게 막는다
   @State private var adds: [String: AddState] = [:]    // 제안 id → 캘린더 추가 진행·결과
+  @State private var dictation = SpeechDictation()     // 기기 안 받아쓰기(§9·§12)
   enum AddState { case running, finished(String), failed(String) }
 
   var body: some View {
@@ -30,20 +31,49 @@ struct ChatView: View {
       .scrollDismissesKeyboard(.interactively)
       .scrollBounceBehavior(.always)   // 대화가 비었거나 짧아 넘치지 않아도 끌려서 아래로 쓸면 키보드가 내려간다
       .simultaneousGesture(TapGesture().onEnded { inputFocused = false })   // 목록 탭은 행 버튼·링크를 막지 않고 포커스만 푼다
-      .safeAreaInset(edge: .bottom) {
-        HStack {
-          TextField("무엇이든 물어보세요", text: $input).textFieldStyle(.roundedBorder).submitLabel(.send).onSubmit(send)
-            .focused($inputFocused)
-          Button("보내기", action: send).disabled(busy || input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }.padding().background(.bar)
-        // 입력창 영역에서 아래로 끌어도 내린다. 동시 제스처라 입력창 탭·커서 이동·보내기는 그대로
-        .simultaneousGesture(DragGesture(minimumDistance: 10).onEnded { if $0.translation.height > 30 { inputFocused = false } })
-      }
+      .safeAreaInset(edge: .bottom) { inputPanel }
       .navigationTitle("채팅")
+      .onAppear { dictation.onText = { input = $0 }; dictation.refresh() }
+      .onDisappear { dictation.stopIfRecording() }
       .toolbar {
         ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("완료") { inputFocused = false } }
       }
     }
+  }
+
+  private var canSend: Bool { !busy && !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+  /// 입력창(0.6.0): 둥근 리퀴드 글래스 패널 — 위 여러 줄 입력, 아래 "+"(2단계 첨부)·마이크·보내기
+  private var inputPanel: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      TextField("질문하기", text: $input, axis: .vertical).lineLimit(1...5).focused($inputFocused)
+        .padding(.horizontal, 6).padding(.top, 4)
+      if let n = dictation.state.notice { Text(n).font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 6) }
+      HStack(spacing: 10) {
+        Menu {
+          Button("이미지·파일 첨부 (2단계 예정)") {}.disabled(true)   // 첨부는 스펙 §15 2단계
+        } label: { roundIcon("plus", fill: Color(.secondarySystemFill), tint: .primary) }
+        Spacer()
+        Button { Task { await dictation.toggle(currentText: input) } } label: {
+          dictation.recording ? roundIcon("waveform", fill: .red, tint: .white) : roundIcon("mic", fill: Color(.secondarySystemFill), tint: .primary)
+        }
+        .disabled(!dictation.available).opacity(dictation.available ? 1 : 0.4)
+        .accessibilityLabel(dictation.recording ? "받아쓰기 멈춤" : "음성으로 입력")
+        // 라이트 검정 원·흰 화살표, 다크 흰 원·검정 화살표
+        Button(action: send) { roundIcon("arrow.up", fill: .primary, tint: Color(.systemBackground)) }
+          .disabled(!canSend).opacity(canSend ? 1 : 0.3).accessibilityLabel("보내기")
+      }
+    }
+    .padding(12)
+    .glassEffect(.regular, in: .rect(cornerRadius: 28))
+    .padding(.horizontal, 12).padding(.bottom, 8)
+    // 입력창 영역에서 아래로 끌어도 내린다. 동시 제스처라 입력창 탭·커서 이동·버튼은 그대로
+    .simultaneousGesture(DragGesture(minimumDistance: 10).onEnded { if $0.translation.height > 30 { inputFocused = false } })
+  }
+
+  private func roundIcon(_ name: String, fill: some ShapeStyle, tint: some ShapeStyle) -> some View {
+    Image(systemName: name).font(.system(size: 16, weight: .semibold)).foregroundStyle(tint)
+      .frame(width: 36, height: 36).background(fill, in: Circle())
   }
 
   @ViewBuilder private func answerRows(_ a: ChatReply.Answer) -> some View {
@@ -112,6 +142,7 @@ struct ChatView: View {
   private func send() {
     let q = input.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !q.isEmpty, !busy else { return }
+    dictation.stopIfRecording()
     // 서버 한도(⑧b bad_question). 넘으면 입력을 지우지 않고 고칠 수 있게 둔다
     guard q.utf16.count <= 500 else { turns.append(Turn(question: q, error: ChatReply.errorMessage(status: 400))); return }
     input = ""

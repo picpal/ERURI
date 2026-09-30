@@ -418,6 +418,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   4. 인용 정확도("있는 문서를 잘못 인용")는 사용자가 앱 채팅에서 답변 20건의 인용마다 👍/👎 → `eval_judgments`(§8, RLS, 본문 없음). 러너는 집계만 읽는다.
   5. 합격선은 위 지표 그대로(Top-5 ≥ 90%, 무근거 거절 ≥ 90%). 인용 정확도가 PoC-7 수준에 못 미치면 문장-문서 재검증(§16)을 추가한다.
 - 수집된 메일·웹·알림 안의 지시문은 데이터로만 취급한다. 검색 결과는 `<document>` 블록으로 감싸 user 턴에 넣고 시스템 프롬프트는 고정해 앞에 두어 OpenAI 자동 프롬프트 캐시(캐시 입력 단가 1/10)에 걸리게 한다. 도구 호출 권한은 chat 함수에 없다(읽기 전용).
+- 채팅 음성 입력: 기기 안 받아쓰기(Speech, 온디바이스 전용, ko-KR), 서버 전송 없음 — 2026-10-01 사용자 요청. 받아쓴 글은 입력창에 채워질 뿐이고 보내기 전까지 전송되지 않는다(앱 0.6.0).
 - 모든 발화는 `utterances`에 기록하되, 사실로 검색되는 것은 `memories`(statement 판정 또는 "기억해줘")뿐이다. "아니 그거 안 샀어" 같은 정정은 이전 memory를 retracted로 바꾼다.
 - 구현(M2-⑧b, 0017): `POST /chat` `{question}`(≤500자) → `{answer_id, answer, refused, source_item_ids, citations(출처 메타 item_id·source·app_name·title·sender·occurred_at·expired = 원문 만료 여부), proposals(인용 항목의 제안 id·item_id·action·status·payload, proposed·succeeded), hits(문서 순서 = facts 우선 + 하이브리드, item 단위 중복 제거, 최대 12)}`. `POST /chat/item` `{item_id}` → 본인 항목 원문 `{item_id, source, app_name, title, sender, occurred_at, expired, text}`(원문 만료면 text null, 남의 항목·형식 오류 404, 복호화 감사 actor `chat`). 필터는 gpt-6-luna(effort none, {date_from, date_to, sources, kinds, merchant}, 서울 날짜). 기간은 메일·문자를 **받은/저장한** 기간을 말할 때만 채우고 일정·약속·기한의 날짜("10월 20일 미팅", "다음 주 약속")는 null 이다(Ruling D, 0019). 그래도 기간이 일정 날짜로 채워질 때를 대비해 facts 는 event 의 `payload.start`·task 의 `payload.due`(날짜만이면 서울 0시, 해석 불가면 받은 시각)로, 그 밖의 종류는 받은 시각으로 기간을 거르고(`fact_when`), 하이브리드는 기간 필터로 0건이면 기간만 빼고(출처 유지) 한 번 더 검색한다 — 9/10 에 받은 10/20 미팅 메일이 두 경로 모두에서 잡힌다. facts 는 종류·가맹점 조건이 있을 때만(`search_facts`, 상위 5, 가맹점은 부분 문자열), 답변은 예산 80% 미만 gpt-6-sol·이상 gpt-6-luna(effort low). 서버가 읽은 item_id 목록(facts + 하이브리드, 모델에 넣지 않고 12개 밖으로 버린 것 포함)은 `audit_log(action='read', target=목록 SHA-256)`. 예산 소진 `429 budget_exhausted`, LLM 슬롯 없음은 서버가 1초·2초 두 번 기다렸다 다시 시도한 뒤에도 없으면 `503 llm_busy`(retry-after 30). 답변 형식은 `{answer, source_item_ids, refused}`(PoC-7 측정 형식, Ruling 5) — 위 그림의 문장별 인용·"근거 미확인"은 1단계 계획 "스펙 확인 필요" #5로 보류. `memories` 단계는 1단계 제외(Ruling 7).
 
@@ -497,6 +498,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 - 기기 입력은 기기에서 먼저 필터·마스킹 후 전송한다. Gmail은 서버가 직접 받으므로 "기기에서 먼저 마스킹"이라고 설명하지 않는다.
 - 처리 순서(§7과 동일): 규칙 필터(기기·서버) → 암호화 저장 → 워커가 복호화 → 분류 게이트(Jev) → 폐기 판정 시 7일 격리 후 본문 삭제(1인 사용 기간, §7) → 통과분만 추출·청크·임베딩 → 감사 기록. **예외를 명시한다**: 규칙 필터를 통과한 항목은 분류 전에 암호화된 채 저장되고 분류를 위해 Jev로 1회 전송된다(통제 3). 즉 "의료 결과지·개인 대화는 저장·전송되지 않는다"가 아니라 "암호화 저장 후 분류 1회 전송, 7일 격리 뒤 본문 삭제"이다. 격리는 오폐기를 사용자가 복구하고 게이트 정확도를 재기 위한 1인 사용 기간의 예외이며, 지인 확대 때 즉시 삭제로 되돌릴지 재검토한다(§16). 예산 소진 시에는 분류되지 못한 항목이 암호화 상태로 `queued`에 남으며 90일 만료 규칙이 그대로 적용된다.
 - URL 본문·이미지 OCR·채팅 발화도 서버 규칙 필터(OTP·카드·계좌)를 같은 함수로 통과시킨 뒤 저장한다. URL 본문은 fetch 직후, OCR은 기기에서 이미 적용된 것을 서버에서 재적용한다.
+- 음성은 기기 밖으로 나가지 않는다: 채팅 음성 입력은 온디바이스 인식만 쓰고(`requiresOnDeviceRecognition`) 오디오를 저장·전송하지 않는다. 서버에는 사용자가 보낸 글만 간다(2026-10-01).
 - 폐기 판정된 항목은 본문을 지우고(규칙 폐기는 즉시, 게이트 폐기는 7일 격리 뒤) 행에는 상태·사유 코드만, 로그에도 사유 코드만 남긴다. Foundation Models 분류 결과는 저장하지 않는다.
 
 ### 통제 3. LLM·임베딩 공급자 조건
