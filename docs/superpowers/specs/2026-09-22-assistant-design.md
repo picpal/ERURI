@@ -431,6 +431,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   - **배너 탭**(기본 동작, 제안 id가 있는 알림): 앱을 열고 그 제안의 시트(제목·시각·장소, "캘린더에 추가"·"무시")를 띄운다. 콜드 스타트에서도 대기 딥링크를 보관했다가 UI 준비 뒤 표시한다.
     `REVIEW`·`ADD_REMINDER` 알림의 시트는 "무시"만 둔다(시각을 확정할 수 없어 추가는 2단계 수정 화면).
   - **"무시"**(알림 액션·시트·"제안" 탭 공통): 앱이 사용자 JWT로 `dismiss_proposal(p_proposal)` → `ok`(이미 dismissed여도 ok, 재전송 멱등)·`not_pending`(succeeded·stale 등)·`not_found`. 본인 `proposed` 제안만 `dismissed`가 된다.
+  - **제안 탭 전체 무시**(0.5.0): 목록이 있을 때 "전체 무시" → 확인창("대기 중인 제안 N건을 모두 무시할까요?"). 서버 새 경로 없이 앱이 목록의 id마다 `dismiss_proposal`을 반복(동시 2, 요청당 8초 마감), 끝나면 "N건 무시, 실패 M건"을 보이고 새로고침한다. 실패한 행은 남는다.
   - **대기 목록** `list_pending_proposals()`: 본인·`proposed`·푸시 `ADD_EVENT` 조건(create_event, 시각·오프셋 있는 start, uncertain 없음)·start > 지금−1시간·생성 30일 이내, start 오름차순 최대 50행. 행 `{proposal_id, action='ADD_EVENT', title(푸시와 같이 ≤40자), start, end, location, version, created_at}`. 날짜만·확인 필요(REVIEW)·할 일은 목록에 없다(수정 화면은 2단계). 백필 제안(§7, 푸시 안 함)도 조건이 맞으면 목록에 나온다. start·end 는 캘린더상 불가능한 값이면 행 단위로 거른다(start 면 행 제외, end 면 null — 0022).
   - 캘린더 추가는 새 경로를 만들지 않고 알림 액션·채팅 카드와 같은 멱등 핸들러(아래 순서 1~5, `report_execution`)를 쓴다.
 - 액션 핸들러 순서 (멱등):

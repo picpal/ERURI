@@ -110,3 +110,46 @@ final class ProposalReviewTests: XCTestCase {
     XCTAssertEqual(ProposalReview.ActionState.after(ProposalReview.dismissFeedback(nil)), .failed("처리하지 못했습니다. 다시 눌러 주세요"))
   }
 }
+
+/// 제안 탭 "전체 무시": 목 네트워크(dismiss 클로저)로 동시 수·마감·집계를 본다
+final class ProposalDismissAllTests: XCTestCase {
+  private actor Probe {
+    var inFlight = 0, peak = 0, calls: [String] = []
+    func enter(_ id: String) { calls.append(id); inFlight += 1; peak = max(peak, inFlight) }
+    func leave() { inFlight -= 1 }
+  }
+
+  func testCountsAndConcurrencyLimit() async {
+    let probe = Probe()
+    let answers: [String: String?] = ["a": "ok", "b": "ok", "c": "not_pending", "d": nil, "e": "bogus", "f": "not_found", "g": "ok"]
+    let r = await ProposalReview.dismissAll(Array(answers.keys).sorted()) { id in
+      await probe.enter(id)
+      try? await Task.sleep(for: .milliseconds(30))
+      await probe.leave()
+      return answers[id] ?? nil
+    }
+    XCTAssertEqual(r, .init(dismissed: 3, alreadyDone: 2, failed: 2))
+    XCTAssertEqual(r.text, "3건 무시, 실패 2건 (이미 처리 2건)")
+    let peak = await probe.peak, calls = await probe.calls
+    XCTAssertLessThanOrEqual(peak, 2)
+    XCTAssertEqual(peak, 2)                                                   // 동시 2건까지는 쓴다
+    XCTAssertEqual(calls.sorted(), ["a", "b", "c", "d", "e", "f", "g"])       // 모두 한 번씩
+  }
+
+  /// 마감을 넘긴 요청은 실패로 세고, 나머지는 기다리지 않고 계속한다
+  func testTimeoutCountsAsFailure() async {
+    let started = Date()
+    let r = await ProposalReview.dismissAll(["slow", "fast1", "fast2"], timeout: 0.2) { id in
+      if id == "slow" { try? await Task.sleep(for: .seconds(5)) }
+      return "ok"
+    }
+    XCTAssertEqual(r, .init(dismissed: 2, alreadyDone: 0, failed: 1))
+    XCTAssertEqual(r.text, "2건 무시, 실패 1건")
+    XCTAssertLessThan(Date().timeIntervalSince(started), 2)
+  }
+
+  func testEmpty() async {
+    let r = await ProposalReview.dismissAll([]) { _ in XCTFail(); return "ok" }
+    XCTAssertEqual(r, .init())
+  }
+}

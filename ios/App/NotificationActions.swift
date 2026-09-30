@@ -47,9 +47,9 @@ enum NotificationActions {
 
   /// "무시"(알림 액션·제안 시트·제안 탭): dismiss_proposal. 알림 액션은 백그라운드 실행 시간 안에 끝나도록 토큰 갱신 포함 5초 마감(M1-②c).
   /// 반환: ok · not_found · not_pending · nil(실패·마감 — 화면은 버튼을 다시 켠다. 알림 액션은 버린다)
-  static func dismiss(proposalId pid: String) async -> String? {
-    let result = await Deadline.run(seconds: 5) {
-      let r = await API.send("rest/v1/rpc/dismiss_proposal", method: "POST", json: ["p_proposal": pid], timeout: 5)
+  static func dismiss(proposalId pid: String, timeout: TimeInterval = 5) async -> String? {
+    let result = await Deadline.run(seconds: timeout) {
+      let r = await API.send("rest/v1/rpc/dismiss_proposal", method: "POST", json: ["p_proposal": pid], timeout: timeout)
       return ProposalReview.dismissResult(status: r?.status, data: r?.data)
     }
     DiagLog.append("DISMISS \(result ?? "fail") \(pid)")

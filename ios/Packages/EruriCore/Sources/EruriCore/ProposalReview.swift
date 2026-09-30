@@ -88,6 +88,42 @@ public enum ProposalReview {
     public static func after(_ fb: (text: String, retry: Bool)) -> ActionState { fb.retry ? .failed(fb.text) : .finished(fb.text) }
   }
 
+  /// "전체 무시" 집계. ok 만 무시로 세고, not_pending·not_found 는 이미 처리된 것(목록 새로고침에서 빠진다), nil·그 밖은 실패(행이 남는다)
+  public struct DismissAllResult: Equatable, Sendable {
+    public var dismissed = 0, alreadyDone = 0, failed = 0
+    public init(dismissed: Int = 0, alreadyDone: Int = 0, failed: Int = 0) {
+      self.dismissed = dismissed; self.alreadyDone = alreadyDone; self.failed = failed
+    }
+    public var text: String { "\(dismissed)건 무시, 실패 \(failed)건" + (alreadyDone > 0 ? " (이미 처리 \(alreadyDone)건)" : "") }
+    mutating func add(_ result: String?) {
+      switch result {
+      case "ok": dismissed += 1
+      case "not_pending", "not_found": alreadyDone += 1
+      default: failed += 1
+      }
+    }
+  }
+
+  /// 제안 탭 "전체 무시": 서버 새 경로 없이 dismiss_proposal 을 id 마다 호출한다. 동시 최대 concurrency 건, 각 요청은 timeout 초 마감(넘으면 실패)
+  public static func dismissAll(_ ids: [String], concurrency: Int = 2, timeout: TimeInterval = 8,
+                                dismiss: @escaping @Sendable (String) async -> String?) async -> DismissAllResult {
+    var result = DismissAllResult()
+    var next = ids.makeIterator()
+    await withTaskGroup(of: String?.self) { group in
+      func launch() -> Bool {
+        guard let id = next.next() else { return false }
+        group.addTask { await Deadline.run(seconds: timeout) { await dismiss(id) } }
+        return true
+      }
+      for _ in 0..<max(1, concurrency) { if !launch() { break } }
+      while let r = await group.next() {
+        result.add(r)
+        _ = launch()
+      }
+    }
+    return result
+  }
+
   // ChatReply 와 같은 파서(handleAdd 가 ISO8601DateFormatter 기본값으로 읽는다). 설정 후 읽기·쓰기만 한다
   nonisolated(unsafe) private static let iso = ISO8601DateFormatter()
   private static func parse(_ s: String) -> Date? {

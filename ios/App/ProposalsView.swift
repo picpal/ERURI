@@ -20,11 +20,15 @@ struct ProposalsView: View {
   @State private var loading = false
   @State private var message = ""
   @State private var calendarOK = CalendarAccess.full
+  @State private var confirmAll = false
+  @State private var dismissingAll = false
+  @State private var allResult = ""
 
   var body: some View {
     NavigationStack {
       List {
         if !calendarOK { CalendarAccessSection { calendarOK = CalendarAccess.full } }
+        if !allResult.isEmpty { Text(allResult).font(.caption).foregroundStyle(.secondary) }
         if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
         ForEach(rows) { p in
           ProposalActionsView(title: p.title, when: p.whenLabel, location: p.location, addFields: calendarOK ? p.addFields : nil,
@@ -32,6 +36,17 @@ struct ProposalsView: View {
         }
       }
       .navigationTitle("제안")
+      .toolbar {
+        if !rows.isEmpty {
+          ToolbarItem(placement: .topBarTrailing) {
+            Button(dismissingAll ? "무시하는 중…" : "전체 무시", role: .destructive) { confirmAll = true }.disabled(dismissingAll)
+          }
+        }
+      }
+      .confirmationDialog("대기 중인 제안 \(rows.count)건을 모두 무시할까요?", isPresented: $confirmAll, titleVisibility: .visible) {
+        Button("삭제", role: .destructive) { Task { await dismissAll() } }
+        Button("취소", role: .cancel) {}
+      }
       .task { await load() }
       .refreshable { await load() }
       .onChange(of: scenePhase) { _, phase in if phase == .active { calendarOK = CalendarAccess.full; Task { await load() } } }
@@ -45,6 +60,17 @@ struct ProposalsView: View {
       states[id] = s
       if case .finished = s { Task { await load() } }
     })
+  }
+
+  /// "전체 무시"(스펙 §10): 지금 목록의 id 마다 dismiss_proposal(동시 2, 각 8초). 실패한 행은 새로고침 뒤에도 남는다
+  private func dismissAll() async {
+    if dismissingAll { return }
+    dismissingAll = true; allResult = ""
+    let ids = rows.map(\.proposal_id)
+    let r = await ProposalReview.dismissAll(ids, concurrency: 2, timeout: 8) { await NotificationActions.dismiss(proposalId: $0, timeout: 8) }
+    allResult = r.text
+    dismissingAll = false
+    await load()
   }
 
   private func load() async {

@@ -7,6 +7,7 @@ struct ChatView: View {
   struct Turn: Identifiable { let id = UUID(); let question: String; var answer: ChatReply.Answer?; var error: String? }
 
   @State private var input = ""
+  @FocusState private var inputFocused: Bool           // 키보드가 탭 막대를 가리므로 스크롤·빈 곳 탭·"완료"로 내린다
   @State private var turns: [Turn] = []
   @State private var busy = false
   @State private var judged: [String: Bool] = [:]      // "<answer_id>|<item_id>" → ok
@@ -26,13 +27,19 @@ struct ChatView: View {
           }
         }
       }
+      .scrollDismissesKeyboard(.interactively)
+      .simultaneousGesture(TapGesture().onEnded { inputFocused = false })   // 목록 탭은 행 버튼·링크를 막지 않고 포커스만 푼다
       .safeAreaInset(edge: .bottom) {
         HStack {
           TextField("무엇이든 물어보세요", text: $input).textFieldStyle(.roundedBorder).submitLabel(.send).onSubmit(send)
+            .focused($inputFocused)
           Button("보내기", action: send).disabled(busy || input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }.padding().background(.bar)
       }
       .navigationTitle("채팅")
+      .toolbar {
+        ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("완료") { inputFocused = false } }
+      }
     }
   }
 
