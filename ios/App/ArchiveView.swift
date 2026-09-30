@@ -7,6 +7,7 @@ struct ArchiveView: View {
   @State private var filter = Archive.Filter.all
   @State private var more = false
   @State private var loading = false
+  @State private var failed = false                 // 실패하면 자동 불러오기를 멈추고 하단 "다시 시도"
   @State private var message = ""
 
   var body: some View {
@@ -26,8 +27,10 @@ struct ArchiveView: View {
               Text(r.metaLine).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
           }
+          .onAppear { if more, !failed, !loading, rows.suffix(5).contains(where: { $0.id == r.id }) { Task { await load(reset: false) } } }   // 끝에서 5행 안에 닿으면 다음 50건
         }
-        if more { Button(loading ? "불러오는 중…" : "더 보기") { Task { await load(reset: false) } }.disabled(loading) }
+        if loading && !rows.isEmpty { ProgressView().frame(maxWidth: .infinity) }
+        else if failed { Button("다시 시도") { Task { await load(reset: rows.isEmpty) } }.frame(maxWidth: .infinity) }
       }
       .navigationTitle("보관함")
       .task { if rows.isEmpty { await load(reset: true) } }                // 상세에서 돌아올 때 목록·스크롤을 유지
@@ -42,7 +45,8 @@ struct ArchiveView: View {
     loading = true; defer { loading = false }
     let r = await API.send(Archive.query(filter: requested, offset: reset ? 0 : rows.count))
     guard requested == filter else { return }                              // 필터를 바꾼 뒤 늦게 온 응답은 버린다
-    guard let r, r.status == 200, let v = Archive.decode(r.data) else { message = "불러오지 못했습니다"; return }
+    guard let r, r.status == 200, let v = Archive.decode(r.data) else { message = "불러오지 못했습니다"; failed = true; return }
+    failed = false
     rows = reset ? v : rows + v
     more = Archive.hasMore(pageCount: v.count)
     message = rows.isEmpty ? "항목이 없습니다" : ""
