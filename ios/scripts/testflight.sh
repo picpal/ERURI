@@ -1,23 +1,32 @@
 #!/bin/bash
 # TestFlight 업로드: Release archive → export(destination=upload). 사용: scripts/testflight.sh [빌드 번호]
-# 인증: 기본은 Xcode 에 로그인된 Apple 계정(-allowProvisioningUpdates). TF_AUTH=key 면 keys/AuthKey_<KEY_ID>.p8 +
-#       keys/issuer-id(Issuer ID 한 줄)의 App Store Connect API 키. keys/ 는 gitignore, 내용은 출력하지 않는다.
-#       09-27: API 키는 REST 조회(200)는 되지만 archive 의 자동 서명에서 "Authentication failed"(개발 프로파일 생성 거부)라 계정 방식으로 올렸다.
-# 멈출 오류: 인증 실패 → ASC API 키 필요 / "No suitable application records were found" → App Store Connect 앱 레코드 필요
+# 인증(기본): Admin 역할 App Store Connect API 키. keys/AuthKey_<KEY_ID>.p8 + keys/issuer-id(Issuer ID 한 줄)
+#       + keys/key-id(쓸 키 ID 한 줄; .p8 이 하나뿐이면 생략 가능, TF_KEY_ID 로 덮어쓰기). keys/ 는 gitignore, 내용은 출력하지 않는다.
+#       Xcode 계정 로그인이 필요 없다(09-29·30 계정 세션이 사라져 서명 실패 → Ruling K).
+#       09-27 키 실패("Authentication failed")는 '앱 관리' 역할 키(M9LZ3WVVN9)라 인증서·프로파일 생성 권한이 없었던 탓. Admin 키를 쓴다.
+# TF_AUTH=xcode: 예전 경로 — Xcode 에 로그인된 Apple 계정으로 -allowProvisioningUpdates.
+# 멈출 오류: 키 파일 없음 / 인증 실패 → 키 역할 확인 / "No suitable application records were found" → App Store Connect 앱 레코드 필요
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BUILD=${1:-$(date +%Y%m%d%H%M)}
 ARCHIVE=build/Eruri.xcarchive
 AUTH=()
-KEY=""
-[ "${TF_AUTH:-}" = key ] && KEY=$(ls keys/AuthKey_*.p8 2>/dev/null | head -1 || true)
-if [ -n "$KEY" ]; then
-  [ -s keys/issuer-id ] || { echo "keys/issuer-id 없음 (App Store Connect → 사용자 및 액세스 → 키의 Issuer ID)"; exit 1; }
-  KEY_ID=$(basename "$KEY" .p8); KEY_ID=${KEY_ID#AuthKey_}
-  AUTH=(-authenticationKeyPath "$PWD/$KEY" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$(tr -d '[:space:]' < keys/issuer-id)")
-  echo "auth=asc-api-key"
-else
+if [ "${TF_AUTH:-key}" = xcode ]; then
   echo "auth=xcode-account"
+else
+  KEY_ID=${TF_KEY_ID:-}
+  [ -z "$KEY_ID" ] && [ -s keys/key-id ] && KEY_ID=$(tr -d '[:space:]' < keys/key-id)
+  if [ -z "$KEY_ID" ]; then
+    KEYS=(keys/AuthKey_*.p8)
+    [ -e "${KEYS[0]}" ] || { echo "ASC API 키 없음: keys/AuthKey_<KEY_ID>.p8 (Admin 역할) 를 두거나 TF_AUTH=xcode"; exit 1; }
+    [ ${#KEYS[@]} -eq 1 ] || { echo "keys/ 에 .p8 이 여러 개: keys/key-id 에 쓸 키 ID 를 적거나 TF_KEY_ID 지정"; exit 1; }
+    KEY_ID=$(basename "${KEYS[0]}" .p8); KEY_ID=${KEY_ID#AuthKey_}
+  fi
+  KEY=keys/AuthKey_$KEY_ID.p8
+  [ -s "$KEY" ] || { echo "ASC API 키 없음: $KEY"; exit 1; }
+  [ -s keys/issuer-id ] || { echo "keys/issuer-id 없음 (App Store Connect → 사용자 및 액세스 → 통합 → 팀 키의 Issuer ID)"; exit 1; }
+  AUTH=(-authenticationKeyPath "$PWD/$KEY" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$(tr -d '[:space:]' < keys/issuer-id)")
+  echo "auth=asc-api-key id=$KEY_ID"
 fi
 
 vm_stat | grep -E 'free|compressor'   # 아카이브는 시뮬레이터 빌드보다 무겁다. 한 번에 하나

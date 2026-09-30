@@ -111,3 +111,4 @@ herdr agent prompt codex-reviewer "Read .context/codex-review-N.prompt.md and fo
 
 - `MARKETING_VERSION` 의 **메이저는 사용자가 말하기 전까지 올리지 않는다**(현재 0.x). 기능 추가는 마이너, 수정은 패치만 올린다.
 - 빌드 번호(`CURRENT_PROJECT_VERSION`)는 업로드마다 `date +%Y%m%d%H%M`.
+- TestFlight 서명·업로드는 Admin ASC API 키(`ios/keys`, gitignore — `ios/scripts/testflight.sh` 기본). Xcode 계정 로그인 불필요.
