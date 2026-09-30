@@ -63,7 +63,9 @@ export async function run(argv: string[], out: (line: string) => void,
   })).map((r) => ({ created_at: r.created_at, ids: r.payload.ids ?? [] }));
 
   if (cmd === "status") {
-    const { data: st } = await sb.from("sync_states").select("last_success_at, watch_expires_at").eq("connection_id", conn.id).eq("user_id", user).single();
+    // 게이트 입력(③c2 L = last_success_at, ③c1 reauth_pushes)이라 조회 오류를 null 로 삼키지 않는다
+    const { data: st, error: stErr } = await sb.from("sync_states").select("last_success_at, watch_expires_at").eq("connection_id", conn.id).eq("user_id", user).maybeSingle();
+    if (stErr) throw new Error("sync_states " + (stErr.code ?? "error"));
     const lane = await all<BacklogRow>((a, b) => sb.from("jobs").select("kind, status, not_before, last_error, leased_until").eq("user_id", user)
       .eq("priority", 40).in("status", ["queued", "running", "dead"]).range(a, b));
     const fetches = await backfillFetches();
@@ -74,9 +76,11 @@ export async function run(argv: string[], out: (line: string) => void,
     const items = await all<{ status: string }>((a, b) => sb.from("items").select("status").eq("user_id", user).eq("source", "GMAIL").range(a, b));
     const byStatus: Record<string, number> = {};
     for (const r of items) byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
-    const { data: usage } = await sb.from("usage_counters").select("month, extract_tokens, backfill_tokens, reserved_krw, backfill_reserved_krw")
+    const { data: usage, error: usageErr } = await sb.from("usage_counters").select("month, extract_tokens, backfill_tokens, reserved_krw, backfill_reserved_krw")
       .eq("user_id", user).order("month");
-    const { data: pushes } = await sb.from("reauth_pushes").select("reason, sent_at").eq("user_id", user).order("sent_at");
+    if (usageErr) throw new Error("usage_counters " + (usageErr.code ?? "error"));
+    const { data: pushes, error: pushErr } = await sb.from("reauth_pushes").select("reason, sent_at").eq("user_id", user).order("sent_at");
+    if (pushErr) throw new Error("reauth_pushes " + (pushErr.code ?? "error"));
     out(JSON.stringify({
       connection: { id: conn.id, status: conn.status, created_at: conn.created_at, expires_at: conn.expires_at, t0: t0Of(conn.expires_at) },
       sync: st, backfill: backlog(lane, Date.now()), backfill_bursts: bs.length, backfill_ids_latest: idsLatest,

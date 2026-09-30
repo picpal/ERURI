@@ -47,6 +47,8 @@ export function connectSyncIds(syncs: { id: string; created_at: string }[], back
 
 // t 에 백필 레인을 점유하던 잡 수 = 적재됐지만 아직 클레임 전 + 클레임돼 실행 중.
 // claimed_at 은 첫 클레임 시각이고(0005·0007 coalesce), 끝난 잡(done·dead)은 updated_at 을 종료 시각으로 본다
+// 한계: 현재 상태 기준이다. 예산 미룸(budget_exhausted) 잡이 다음 달에 done 되면 [첫 클레임, 다음 달] 전체가 busy 로 잡히므로
+// T0 가 월말이면 latency 는 월이 바뀌기 전에 돌린다
 export function busyAt(lane: LaneRow[], t: number): number {
   return lane.filter((r) => {
     if (ms(r.created_at) > t) return false;
