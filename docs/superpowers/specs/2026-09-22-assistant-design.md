@@ -312,7 +312,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
       items.status = `extracted`. 재시도는 새 행 없이 같은 fact·제안 id를 돌려주고 status만 `extracted`로 맞춘다
   → proposals INSERT (event/task). uncertain 비어 있을 때만 잠금화면 "추가" 버튼 노출,
       아니면 REVIEW 카테고리로 앱에서 확인 유도
-  → 백필(occurred_at이 수집 시각보다 3일 이상 과거)에서 나온 제안은 푸시하지 않고 보관함에만 표시
+  → 백필(occurred_at이 수집 시각보다 3일 이상 과거)에서 나온 제안은 푸시하지 않는다. 보관함과 앱 "제안" 탭(§10 제안 리뷰 대기 목록)에는 보인다
   → jobs INSERT (kind = notify, lease `notify:<proposal_id>`. 텍스트·이미지 경로 모두, 제안이 있을 때마다 — 중복은 아래 기기별 1회가 막는다.
       텍스트 process 잡이 재시도에서 이미 `extracted`인 항목을 만나면 푸시 기록이 없는 proposed 제안을 다시 넣는다(0016, save_fact 커밋 뒤 enqueue 전 종료 대비))
       → worker `notify`가 `_shared/apns.ts`로 사용자의 모든 기기(`devices`, 기기 환경·불일치 시 반대 환경 1회)에 발송(0b).
@@ -426,11 +426,12 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   (원문 본문 금지, §12). `aps.category`: `ADD_EVENT`(시각 있는 시작 + uncertain 없음) · `REVIEW`(날짜만이거나 uncertain 있음) · `ADD_REMINDER`(할 일).
   최상위 키 `proposal_id`, `title`, `start`(`ADD_EVENT`면 항상 `YYYY-MM-DDTHH:mm:ss+09:00`) 또는 `due`. 1단계(M1-②b)부터 `version`(제안 버전 정수)도 싣는다 — 순서 5(오프라인 실행 후 보고 시 불일치 판정)에 쓴다.
   0단계 앱은 `ADD_EVENT`만 등록하므로 `REVIEW`·`ADD_REMINDER`는 버튼 없는 알림으로 보인다. 제품 앱(1단계 M1)은 세 카테고리를 모두 등록하고
-  `ADD_REMINDER`·`REVIEW`의 액션은 앱 열기만 한다
+  `ADD_REMINDER`·`REVIEW`는 알림 액션 버튼이 없다(배너 탭은 아래 제안 리뷰의 시트). `ADD_EVENT`의 "무시"는 캘린더 권한이 없어도 남기고 "추가"만 숨긴다
 - 제안 리뷰(1단계, Ruling 8' 2026-09-30): 알림을 놓치거나 잠금화면에서 길게 누르지 않고 배너를 탭하면 등록 수단이 없던 공백을 메운다.
   - **배너 탭**(기본 동작, 제안 id가 있는 알림): 앱을 열고 그 제안의 시트(제목·시각·장소, "캘린더에 추가"·"무시")를 띄운다. 콜드 스타트에서도 대기 딥링크를 보관했다가 UI 준비 뒤 표시한다.
+    `REVIEW`·`ADD_REMINDER` 알림의 시트는 "무시"만 둔다(시각을 확정할 수 없어 추가는 2단계 수정 화면).
   - **"무시"**(알림 액션·시트·"제안" 탭 공통): 앱이 사용자 JWT로 `dismiss_proposal(p_proposal)` → `ok`(이미 dismissed여도 ok, 재전송 멱등)·`not_pending`(succeeded·stale 등)·`not_found`. 본인 `proposed` 제안만 `dismissed`가 된다.
-  - **대기 목록** `list_pending_proposals()`: 본인·`proposed`·푸시 `ADD_EVENT` 조건(create_event, 시각·오프셋 있는 start, uncertain 없음)·start > 지금−1시간·생성 30일 이내, start 오름차순 최대 50행. 행 `{proposal_id, action='ADD_EVENT', title(푸시와 같이 ≤40자), start, end, location, version, created_at}`. 날짜만·확인 필요(REVIEW)·할 일은 목록에 없다(수정 화면은 2단계).
+  - **대기 목록** `list_pending_proposals()`: 본인·`proposed`·푸시 `ADD_EVENT` 조건(create_event, 시각·오프셋 있는 start, uncertain 없음)·start > 지금−1시간·생성 30일 이내, start 오름차순 최대 50행. 행 `{proposal_id, action='ADD_EVENT', title(푸시와 같이 ≤40자), start, end, location, version, created_at}`. 날짜만·확인 필요(REVIEW)·할 일은 목록에 없다(수정 화면은 2단계). 백필 제안(§7, 푸시 안 함)도 조건이 맞으면 목록에 나온다. start·end 는 캘린더상 불가능한 값이면 행 단위로 거른다(start 면 행 제외, end 면 null — 0022).
   - 캘린더 추가는 새 경로를 만들지 않고 알림 액션·채팅 카드와 같은 멱등 핸들러(아래 순서 1~5, `report_execution`)를 쓴다.
 - 액션 핸들러 순서 (멱등):
   1. 서버에서 proposal 최신 버전 조회(토큰 갱신 포함 5초 마감, 넘으면 받은 버전으로 진행). `stale`·`succeeded`면 중단하고 안내. 서버 version이 더 새로워도 여기서 중단하지 않고, 푸시로 받은 version(실제로 넣은 내용)으로 기록·보고해 순서 5의 불일치 판정에 맡긴다. 핸들러 안 보고는 방금 처리한 1건만, 나머지 미보고분은 앱 활성화 때 보낸다.

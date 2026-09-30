@@ -111,3 +111,24 @@ Deno.test("report_execution after dismiss: the user's later add wins (dismissed 
     await cleanup(u.id, [a.item]);
   }
 });
+
+Deno.test("list_pending_proposals: an impossible calendar date in one row is skipped, not a whole-list failure (0022)", async () => {
+  const { u, c } = await userClient(1);
+  const good = await seed(u.id, "cal-ok", { title: "합성 정상 일정", start: at(24 * HOUR), end: at(25 * HOUR), uncertain: [] });
+  const bad = await seed(u.id, "cal-bad", { title: "합성 불가능한 날짜", start: at(24 * HOUR), uncertain: [] });
+  const badEnd = await seed(u.id, "cal-bad-end", { title: "합성 끝만 불가능", start: at(26 * HOUR), uncertain: [] });
+  try {
+    // 형식 정규식은 통과하지만 달력상 불가능한 값(13월, 시 25). 제품 경로는 이런 값을 저장하지 않으므로 service role 로 직접 넣는다
+    await sb.from("proposals").update({ payload: { title: "합성 불가능한 날짜", start: "2026-13-01T10:00:00+09:00", uncertain: [] } }).eq("id", bad.proposal);
+    await sb.from("proposals").update({ payload: { title: "합성 끝만 불가능", start: at(26 * HOUR), end: "2026-12-01T25:00:00+09:00", uncertain: [] } })
+      .eq("id", badEnd.proposal);
+    const { data, error } = await c.rpc("list_pending_proposals");
+    assertEquals(error, null);
+    const rows = data as Row[];
+    assert(ids(rows).includes(good.proposal));
+    assert(!ids(rows).includes(bad.proposal));
+    assertEquals(rows.find((r) => r.proposal_id === badEnd.proposal)?.end, null);
+  } finally {
+    await cleanup(u.id, [good.item, bad.item, badEnd.item]);
+  }
+});
