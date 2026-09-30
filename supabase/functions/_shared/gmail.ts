@@ -111,9 +111,10 @@ export function header(msg: { payload?: Part }, name: string): string | null {
 
 // 서버 규칙 필터(§7): /ingest와 같은 applyRules. 프로모션 라벨·(광고)·OTP는 폐기(판정은 제목+본문), 카드·계좌는 본문·제목 각각 마스킹
 export type GmailItem =
-  | { kind: "discard"; reason: "otp" | "promotion" }
+  | { kind: "discard"; reason: "otp" | "promotion" | "draft" }
   | { kind: "pass"; sender: string | null; title: string | null; text: string; occurredAt: string };
 export function gmailToItem(m: GmailMessage): GmailItem {
+  if (m.labelIds?.includes("DRAFT")) return { kind: "discard", reason: "draft" };   // 초안은 저장마다·발송 시 id 가 바뀐다(§7)
   const sender = header(m, "From"), subject = header(m, "Subject");
   const v = applyRules(plainText(m), { sender, title: subject, labels: m.labelIds });
   if (v.kind === "discard") return v;
@@ -156,7 +157,7 @@ export async function collectNewMessageIds(api: GmailApi, state: { cursor: strin
 async function resync(api: GmailApi, lastSuccessAt: string) {
   const { historyId } = await api.profile();   // 목록 조회 전에 새 커서를 잡아 그 사이 도착분을 다음 history가 받게 한다
   const after = Math.floor(new Date(lastSuccessAt).getTime() / 1000) - 86400;
-  const q = `after:${after} -category:promotions`;
+  const q = `after:${after} -category:promotions -in:drafts`;
   const ids = new Set<string>();
   let pageToken: string | undefined;
   do {

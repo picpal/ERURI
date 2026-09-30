@@ -1,5 +1,7 @@
 import { encrypt, toBytea } from "./crypto.ts";
-import { collectNewMessageIds, type GmailClient, gmailApi, gmailToItem, ReauthRequired, refreshAccessToken } from "./gmail.ts";
+import {
+  collectNewMessageIds, type GmailClient, gmailApi, GmailHttpError, type GmailMessage, gmailToItem, ReauthRequired, refreshAccessToken,
+} from "./gmail.ts";
 import type { Job } from "./job.ts";
 
 // worker 잡 핸들러(gmail-sync·gmail-fetch·gmail-watch). 같은 연결의 잡은 lease_key 'gmail:<connection_id>'로 한 번에 하나만 돈다.
@@ -70,14 +72,23 @@ export async function gmailFetch(sb: RpcClient, job: Job, deps = defaultGmailDep
   const token = await accessToken(sb, deps, user, conn);
   if (!token) return "skipped";
   const api = deps.api(token);
-  let stored = 0, discarded = 0;
+  let stored = 0, discarded = 0, gone = 0;
   let n = 0;
   for (const id of job.payload.ids as string[]) {
     if (n++ % 10 === 0) {
       const st = await call(sb, "gmail_state", { p_user: user, p_connection: conn }) as unknown[];
       if (st.length === 0) { console.log(JSON.stringify({ connection_id: conn, gmail_fetch: "connection_gone" })); return "connection_gone"; }
     }
-    const it = gmailToItem(await api.getMessage(id));             // /ingest와 같은 서버 규칙 필터
+    let msg: GmailMessage;
+    try { msg = await api.getMessage(id); }
+    catch (e) {
+      if (!(e instanceof GmailHttpError && e.status === 404)) throw e;   // 429·5xx 는 잡 실패 → 백오프 재시도(0007)
+      gone++;                                                           // 목록 뒤 삭제·초안 교체: 그 id 만 건너뛴다(§7)
+      console.log(JSON.stringify({ connection_id: conn, code: "gmail_fetch_gone" }));   // 코드만(id 없음)
+      await deps.pause(FETCH_GAP_MS);
+      continue;
+    }
+    const it = gmailToItem(msg);                                   // /ingest와 같은 서버 규칙 필터
     if (it.kind === "discard") {
       discarded++;
       console.log(JSON.stringify({ connection_id: conn, gmail_discard: it.reason }));   // 사유 코드만
@@ -93,7 +104,7 @@ export async function gmailFetch(sb: RpcClient, job: Job, deps = defaultGmailDep
     }
     await deps.pause(FETCH_GAP_MS);
   }
-  console.log(JSON.stringify({ connection_id: conn, gmail_fetch: { stored, discarded } }));
+  console.log(JSON.stringify({ connection_id: conn, gmail_fetch: { stored, discarded, gone } }));
   return "fetched";
 }
 

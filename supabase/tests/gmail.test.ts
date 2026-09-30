@@ -45,7 +45,7 @@ Deno.test("history 404 → profile first, then messages.list(after: last_success
   const { api, calls } = fakeApi({ notFound: true, listPages: [["m1", "m2"], ["m3"]], profileHistoryId: "999" });
   const r = await collectNewMessageIds(api, { cursor: "1", lastSuccessAt: "2026-09-20T00:00:00Z" });
   const after = Date.UTC(2026, 8, 20) / 1000 - 86400;
-  assertEquals(calls, ["history:", "profile", `list:after:${after} -category:promotions`, `list:after:${after} -category:promotions`]);
+  assertEquals(calls, ["history:", "profile", `list:after:${after} -category:promotions -in:drafts`, `list:after:${after} -category:promotions -in:drafts`]);
   assertEquals(r, { ids: ["m1", "m2", "m3"], cursor: "999", mode: "resync" });
 });
 
@@ -82,6 +82,11 @@ Deno.test("gmailToItem applies server rules: promotion label, OTP, card masking 
   assertEquals(gmailToItem(gmsg("m1", "카드 4532-0151-1283-0366 승인 32,000원", "결제 4532015112830366 완료")), {
     kind: "pass", sender: "합성쇼핑 <shop@example.com>", title: "결제 ************0366 완료",
     text: "카드 ****-****-****-0366 승인 32,000원", occurredAt: new Date(1790000000000).toISOString() });
+});
+
+// 스펙 §7 초안 제외: 초안은 저장마다·발송 시 id 가 바뀐다 → 쓰다 만 메일은 저장·LLM 전송하지 않는다
+Deno.test("gmailToItem discards drafts (DRAFT label) before any rule", () => {
+  assertEquals(gmailToItem(gmsg("m1", "10월 21일 오후 4시 합성 미팅", "합성 초안", ["DRAFT"])), { kind: "discard", reason: "draft" });
 });
 
 // ── 모의 API: worker 잡 핸들러 ────────────────────────────────────
@@ -181,6 +186,28 @@ Deno.test("gmail-fetch: backfill job stores items into the backfill lane (p_back
   assertEquals(calls.filter((c) => c.fn === "insert_item").map((c) => c.args.p_backfill), [true]);
 });
 
+// 스펙 §7 fetch 404: 목록 뒤 사라진 id(영구 삭제·초안 교체) 하나가 잡 전체를 dead 로 만들지 않는다. 429·5xx 는 여전히 잡 실패(백오프)
+Deno.test("gmail-fetch: messages.get 404 skips only that id (gmail_fetch_gone) and keeps going; 429 still fails the job", async () => {
+  const st = { gmail_get_refresh_token: "rt-1", insert_item: "item-x", gmail_state: [{ cursor: "1", last_success_at: "2026-09-20T00:00:00Z" }] };
+  const { rpc, calls } = fakeRpc(st);
+  const { deps } = fakeDeps({ api: { getMessage: async (id) => {
+    if (id === "gone") throw new GmailHttpError("messages.get", 404);
+    return gmsg(id, "합성 안내 메일", "합성 제목");
+  } } });
+  const logs: string[] = [];
+  const log = stub(console, "log", (...a: unknown[]) => { logs.push(String(a[0])); });
+  try {
+    assertEquals(await gmailFetch(rpc, job("gmail-fetch", { ids: ["a", "gone", "c"], backfill: true }), deps), "fetched");
+  } finally { log.restore(); }
+  assertEquals(calls.filter((c) => c.fn === "insert_item").map((c) => c.args.p_idempotency_key), ["gmail:a", "gmail:c"]);
+  assert(logs.some((l) => JSON.parse(l).code === "gmail_fetch_gone"));
+  assertEquals(JSON.parse(logs.at(-1)!).gmail_fetch, { stored: 2, discarded: 0, gone: 1 });
+
+  const { rpc: rpc2 } = fakeRpc(st);
+  const { deps: d429 } = fakeDeps({ api: { getMessage: async () => { throw new GmailHttpError("messages.get", 429); } } });
+  await assertRejects(() => gmailFetch(rpc2, job("gmail-fetch", { ids: ["a"] }), d429), GmailHttpError, "messages.get 429");
+});
+
 Deno.test("gmail-watch: renews watch on the topic and stores the new expiration", async () => {
   const { rpc, calls } = fakeRpc({ gmail_get_refresh_token: "rt-1" });
   const { deps, log } = fakeDeps();
@@ -242,7 +269,7 @@ Deno.test("gmail-connect: exchange → scope check → profile → save(vault) �
   assertEquals(r.status, 200);
   assertEquals(await r.json(), { connection_id: CONN, account: "poc@example.com", refresh_token_stored: true,
     watch_expires_at: new Date(1790600000000).toISOString(), backfill_pages: 2, backfill_messages: 3 });
-  assertEquals(calls, ["exchange:auth-code", "profile", "watch", "list:newer_than:90d -category:promotions:", "list:newer_than:90d -category:promotions:1"]);
+  assertEquals(calls, ["exchange:auth-code", "profile", "watch", "list:newer_than:90d -category:promotions -in:drafts:", "list:newer_than:90d -category:promotions -in:drafts:1"]);
   assertEquals(rpcCalls.map((c) => c.fn), ["gmail_save_connection", "gmail_update", "enqueue_job", "enqueue_job", "gmail_enqueue_for_account"]);
   // watch 전에 저장한다: 커서는 profile의 historyId(watch 이후 도착분도 history가 받는다)
   assertEquals(rpcCalls[0].args, { p_user: USER, p_account_ref: "poc@example.com", p_refresh_token: "rt", p_history_id: "400" });

@@ -15,7 +15,7 @@ export type ConnectDeps = {
   topic(): string;
 };
 
-const BACKFILL_QUERY = "newer_than:90d -category:promotions";
+const BACKFILL_QUERY = "newer_than:90d -category:promotions -in:drafts";
 const err = (status: number, code: string, extra: Record<string, unknown> = {}) => Response.json({ error: code, ...extra }, { status });
 
 // Google 상태 → 응답. 401/403은 사용자 재동의가 필요하다(reauth_required), 429/5xx는 일시 오류(active 유지)
