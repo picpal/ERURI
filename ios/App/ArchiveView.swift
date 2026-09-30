@@ -1,7 +1,16 @@
 import SwiftUI
 import EruriCore
 
-/// 보관함(스펙 §11): 본인 항목의 메타 목록 → 상세(원문·추출). 게이트를 통과한 항목에 "잘못 통과" 표시(Jev 정확도 정답, §16)
+/// 채팅 "보관함에서 보기" → 보관함 탭 범위 모드(스펙 §9, 0.7.0). 루트가 openCount 로 탭을 옮기고 보관함이 처음부터 다시 읽는다
+@MainActor @Observable final class ArchiveRouter {
+  static let shared = ArchiveRouter()
+  var scope: Archive.Scope?
+  var openCount = 0
+  func open(_ s: Archive.Scope) { scope = s; openCount += 1 }
+  func clear() { scope = nil; openCount += 1 }
+}
+
+/// 보관함(스펙 §11): 본인 항목의 메타 목록 → 상세(원문·추출). 채팅에서 넘어오면 그 질문의 검색 후보만 순위순(§9). 게이트를 통과한 항목에 "잘못 통과" 표시(Jev 정확도 정답, §16)
 struct ArchiveView: View {
   @State private var rows: [Archive.Row] = []
   @State private var filter = Archive.Filter.all
@@ -11,14 +20,23 @@ struct ArchiveView: View {
   @State private var retryReset = false             // 실패한 요청이 처음부터(필터 변경·새로고침)였는지 — "다시 시도"가 같은 종류로 보낸다
   @State private var generation = 0                 // 처음부터 불러올 때마다 올린다. 앞 세대의 늦은 응답은 버린다
   @State private var message = ""
+  @State private var page = 0                       // 범위 모드: 마지막으로 불러온 id 조각
+  private var router: ArchiveRouter { ArchiveRouter.shared }
 
   var body: some View {
+    let scope = router.scope
     NavigationStack {
       List {
+        if let scope {
+          Section {
+            Text(scope.label).font(.caption)
+            Button("전체 보기") { router.clear() }
+          }
+        }
         Picker("출처", selection: $filter) {
           ForEach(Archive.Filter.allCases, id: \.self) { Text($0.label).tag($0) }
         }.pickerStyle(.segmented)
-        NavigationLink("최근 폐기 (7일)") { RecentDiscardsView(filter: filter) }         // 고른 출처 탭의 폐기만
+        if scope == nil { NavigationLink("최근 폐기 (7일)") { RecentDiscardsView(filter: filter) } }   // 고른 출처 탭의 폐기만. 격리 항목은 후보가 아니다
         if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
         ForEach(rows) { r in
           NavigationLink {
@@ -34,21 +52,40 @@ struct ArchiveView: View {
         if loading && !rows.isEmpty { ProgressView().frame(maxWidth: .infinity) }
         else if failed { Button("다시 시도") { Task { await load(reset: retryReset) } }.frame(maxWidth: .infinity) }
       }
-      .navigationTitle("보관함")
-      .task { if rows.isEmpty { await load(reset: true) } }                // 상세에서 돌아올 때 목록·스크롤을 유지
-      .onChange(of: filter) { _, _ in Task { await load(reset: true) } }
-      .refreshable { await load(reset: true) }
+      .navigationTitle(scope == nil ? "보관함" : "검색 결과")
     }
+    // 상세가 열린 채 채팅에서 새 범위를 열면 목록으로 돌아온다. 아래 수식어는 .id 바깥에 둬야 새 정체성에서도 onChange 가 첫 변화를 보고 .task 가 다시 돌지 않는다
+    .id(router.openCount)
+    .task { if rows.isEmpty { await load(reset: true) } }                // 상세에서 돌아올 때 목록·스크롤을 유지
+    .onChange(of: filter) { _, _ in Task { await load(reset: true) } }
+    .onChange(of: router.openCount) { _, _ in Task { await load(reset: true, rescope: true) } }   // 새 범위·"전체 보기" → 앞 범위 행을 지우고 처음부터
+    .refreshable { await load(reset: true) }
   }
 
-  private func load(reset: Bool) async {
+  private func load(reset: Bool, rescope: Bool = false) async {
     if loading && !reset { return }
     if reset { generation += 1 }
-    let gen = generation, requested = filter
+    if rescope { rows = []; page = 0; more = false; failed = false; message = "" }   // 범위가 바뀌면 앞 범위의 행을 남기지 않는다
+    let gen = generation, requested = filter, scope = router.scope, opened = router.openCount
     loading = true; defer { if gen == generation { loading = false } }  // 버린 응답이 새 요청의 loading 을 일찍 풀지 않게
+    // 필터·범위를 바꿨거나 그 뒤 처음부터 다시 불러온 경우, 늦게 온 응답은 버린다(옛 목록 뒤에 붙거나 행이 겹치지 않게)
+    func current() -> Bool { gen == generation && requested == filter && opened == router.openCount }
+    if let scope {
+      let r = await scope.load(from: reset ? 0 : page + 1) { ids in
+        guard let r = await API.send(Archive.scopedQuery(ids: ids, filter: requested)), r.status == 200 else { return nil }
+        return Archive.decode(r.data)
+      }
+      guard current() else { return }
+      guard let r else { message = "불러오지 못했습니다"; failed = true; retryReset = reset || rows.isEmpty; return }
+      failed = false
+      rows = reset ? r.rows : rows + r.rows
+      page = r.lastPage
+      more = scope.hasMore(afterPage: r.lastPage)
+      message = rows.isEmpty ? "이 출처에는 검색 후보가 없습니다" : ""
+      return
+    }
     let r = await API.send(Archive.query(filter: requested, offset: reset ? 0 : rows.count))
-    // 필터를 바꿨거나 그 뒤 처음부터 다시 불러온 경우, 늦게 온 응답은 버린다(옛 목록 뒤에 붙거나 행이 겹치지 않게)
-    guard gen == generation, requested == filter else { return }
+    guard current() else { return }
     guard let r, r.status == 200, let v = Archive.decode(r.data) else {
       message = "불러오지 못했습니다"; failed = true; retryReset = reset || rows.isEmpty; return
     }

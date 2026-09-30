@@ -97,4 +97,12 @@ final class ChatReplyTests: XCTestCase {
     XCTAssertEqual(ChatReply.seoulLabel("2026-07-03T21:14:00+09:00"), "2026-07-03 21:14")
     XCTAssertEqual(ChatReply.seoulLabel("이상한 값"), "이상한 값")
   }
+
+  // R-A1 후보(스펙 §9). 0.6.x 서버 응답에는 없다 → 빈 배열
+  func testCandidatesDecodeAndDefault() throws {
+    let withCands = body.replacingOccurrences(of: #""hits":"#,
+      with: #""candidates":["11111111-1111-4111-8111-111111111111","33333333-3333-4333-8333-333333333333"],"hits":"#)
+    XCTAssertEqual(try XCTUnwrap(ChatReply.decode(Data(withCands.utf8))).candidateIDs.count, 2)
+    XCTAssertEqual(try XCTUnwrap(ChatReply.decode(Data(body.utf8))).candidateIDs, [])
+  }
 }

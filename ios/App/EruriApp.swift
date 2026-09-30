@@ -40,6 +40,7 @@ struct RootView: View {
   @State private var tab = Tab.chat
   @State private var ready = false
   private var router: ProposalRouter { ProposalRouter.shared }
+  private var archiveRouter: ArchiveRouter { ArchiveRouter.shared }
 
   var body: some View {
     let link = ready ? router.link : nil                                     // body 에서 읽어 관찰 추적에 올린다(openCount 에 기대지 않게)
@@ -51,6 +52,7 @@ struct RootView: View {
     }
     .sheet(item: Binding(get: { link }, set: { router.link = $0 })) { ProposalSheet(link: $0) }
     .onChange(of: router.openCount) { _, _ in tab = .proposals }
+    .onChange(of: archiveRouter.openCount) { _, _ in if archiveRouter.scope != nil { tab = .archive } }   // "전체 보기"는 탭을 옮기지 않는다
     .task {
       // 콜드 스타트: 델리게이트가 첫 화면보다 먼저 링크를 넣는다. 창이 붙은 다음 런루프에 시트를 켠다
       if router.link != nil { tab = .proposals }

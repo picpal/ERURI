@@ -1,6 +1,6 @@
 import Foundation
 
-/// 채팅 응답 해석(스펙 §9, M2-⑧b 계약): POST /chat → {answer_id, answer, refused, source_item_ids, citations, proposals, hits}.
+/// 채팅 응답 해석(스펙 §9, M2-⑧b 계약): POST /chat → {answer_id, answer, refused, source_item_ids, citations, proposals, hits, candidates}.
 /// 오류 401·400 bad_question·429 budget_exhausted·503 llm_busy(retry-after 30)
 public enum ChatReply {
   public struct Citation: Decodable, Identifiable, Sendable {
@@ -13,6 +13,9 @@ public enum ChatReply {
   }
   public struct Answer: Decodable, Sendable {
     public let answer_id: String; public let answer: String; public let refused: Bool; public let citations: [Citation]; public let proposals: [Proposal]
+    /// "보관함에서 보기" 후보(스펙 §9, R-A1): 검색 융합 목록의 item id, 순위순. 0.6.x 서버 응답에는 없다
+    public let candidates: [String]?
+    public var candidateIDs: [String] { candidates ?? [] }
   }
 
   public static func decode(_ data: Data) -> Answer? { try? JSONDecoder().decode(Answer.self, from: data) }

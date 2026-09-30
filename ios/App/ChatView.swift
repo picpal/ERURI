@@ -25,7 +25,7 @@ struct ChatView: View {
           Section {
             Text(t.question).font(.subheadline).foregroundStyle(.secondary)
             if let e = t.error { Text(e).foregroundStyle(.red) }
-            if let a = t.answer { answerRows(a) }
+            if let a = t.answer { answerRows(a, question: t.question) }
             else if t.error == nil { ProgressView() }
           }
         }
@@ -85,7 +85,7 @@ struct ChatView: View {
       .frame(width: 36, height: 36).background(fill, in: Circle())
   }
 
-  @ViewBuilder private func answerRows(_ a: ChatReply.Answer) -> some View {
+  @ViewBuilder private func answerRows(_ a: ChatReply.Answer, question: String) -> some View {
     Text(a.answer)
     ForEach(a.citations) { c in
       HStack {
@@ -101,6 +101,12 @@ struct ChatView: View {
         judgeButton(a.answer_id, c.item_id, true, "👍")
         judgeButton(a.answer_id, c.item_id, false, "👎")
       }
+    }
+    // 스펙 §9 채팅 → 보관함 보기: 인용만이 아니라 이 질문의 검색 후보 전체. 거절 답변에도 후보가 있으면 보인다
+    if !a.candidateIDs.isEmpty {
+      let scope = Archive.Scope(question: question, ids: a.candidateIDs)
+      Button("보관함에서 보기 (\(scope.ids.count)건)") { ArchiveRouter.shared.open(scope) }
+        .font(.caption).buttonStyle(.borderless)
     }
     // 푸시 "추가" 액션과 같이 캘린더 전체 접근이 없으면 카드를 숨긴다(§10 권한 철회)
     if EKEventStore.authorizationStatus(for: .event) == .fullAccess {

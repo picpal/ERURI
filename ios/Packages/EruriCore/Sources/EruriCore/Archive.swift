@@ -33,6 +33,53 @@ public enum Archive {
 
   public static let pageSize = 50
 
+  /// 채팅 "보관함에서 보기"(스펙 §9, 2026-10-01): 그 질문의 검색 후보(순위순 item id)만 보이는 범위. 앱 메모리에만 둔다
+  public struct Scope: Equatable, Sendable {
+    public static let maxIDs = 100
+    public let question: String
+    public let ids: [String]
+    public init(question: String, ids: [String]) {
+      var seen = Set<String>()
+      self.question = question
+      self.ids = Array(ids.filter { seen.insert($0).inserted }.prefix(Self.maxIDs))
+    }
+    /// 머리 줄: "채팅 검색 결과 N건 · ‘질문 앞 20자…’"
+    public var label: String {
+      let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
+      return "채팅 검색 결과 \(ids.count)건 · ‘\(q.count > 20 ? String(q.prefix(20)) + "…" : q)’"
+    }
+    /// page 번째 id 조각(pageSize 개씩). 범위 밖이면 빈 배열
+    public func slice(page: Int) -> [String] {
+      let start = page * Archive.pageSize
+      guard page >= 0, start < ids.count else { return [] }
+      return Array(ids[start..<min(start + Archive.pageSize, ids.count)])
+    }
+    public func hasMore(afterPage page: Int) -> Bool { (page + 1) * Archive.pageSize < ids.count }
+    /// 서버 행(순서 없음)을 검색 순위로. 범위에 없는 행은 버린다
+    public func ordered(_ rows: [Row]) -> [Row] {
+      let rank = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, $0) })
+      return rows.filter { rank[$0.id] != nil }.sorted { rank[$0.id]! < rank[$1.id]! }
+    }
+    /// page 부터 조각을 불러 행이 나올 때까지(출처 조건으로 빈 조각은 건너뜀). lastPage = 마지막으로 부른 조각. nil = 실패
+    public func load(from page: Int, fetch: @Sendable ([String]) async -> [Row]?) async -> (rows: [Row], lastPage: Int)? {
+      var p = max(page, 0)
+      while true {
+        let part = slice(page: p)
+        if part.isEmpty { return ([], max(p - 1, 0)) }
+        guard let got = await fetch(part) else { return nil }
+        let rows = ordered(got)
+        if !rows.isEmpty || !hasMore(afterPage: p) { return (rows, p) }
+        p += 1
+      }
+    }
+  }
+
+  /// 범위 모드 쿼리: 보관함과 같은 메타 열 + id 조각 + 출처 조건. 순서는 앱이 순위로 맞춘다. 본문 열은 요청하지 않는다
+  public static func scopedQuery(ids: [String], filter: Filter) -> String {
+    "rest/v1/items?select=id,source,app_name,sender,title,occurred_at,status,gate_label"
+      + "&id=in.(\(ids.joined(separator: ",")))" + filter.sourceCondition
+  }
+
   /// RLS 로 자기 행만. 본문 열은 요청하지 않는다. 같은 시각이 겹쳐도 페이지가 흔들리지 않게 id 로 한 번 더 정렬
   public static func query(filter: Filter, offset: Int) -> String {
     "rest/v1/items?select=id,source,app_name,sender,title,occurred_at,status,gate_label"

@@ -60,4 +60,55 @@ final class ArchiveTests: XCTestCase {
     XCTAssertTrue(Archive.succeeded(201)); XCTAssertTrue(Archive.succeeded(204))
     XCTAssertFalse(Archive.succeeded(409)); XCTAssertFalse(Archive.succeeded(nil))
   }
+
+  private func row(_ id: String) -> Archive.Row {
+    Archive.Row(id: id, source: "GMAIL", app_name: nil, sender: nil, title: "합성 \(id)", occurred_at: "2026-09-30T01:02:03+00:00",
+                status: "extracted", gate_label: "actionable")
+  }
+  private actor Calls { var sizes: [Int] = []; func add(_ n: Int) { sizes.append(n) } }
+
+  // 스펙 §9 채팅 → 보관함 보기: 순위순 id 범위 — 뒤쪽 중복은 버리고 순서 유지, 100개 상한, 머리 줄은 질문 앞 20자
+  func testScopeDedupesCapsAndLabels() {
+    let s = Archive.Scope(question: "  지난달 쿠팡에서 산 무선 이어폰 영수증 찾아줘  ", ids: ["id0"] + (0..<130).map { "id\($0)" })
+    XCTAssertEqual(s.ids.count, 100)
+    XCTAssertEqual(Array(s.ids.prefix(2)), ["id0", "id1"])
+    XCTAssertEqual(s.label, "채팅 검색 결과 100건 · ‘지난달 쿠팡에서 산 무선 이어폰 영수…’")
+    XCTAssertEqual(Archive.Scope(question: "에어팟", ids: ["a", "b", "a"]).label, "채팅 검색 결과 2건 · ‘에어팟’")
+  }
+
+  func testScopeSlicesOf50() {
+    let s = Archive.Scope(question: "q", ids: (0..<70).map { "id\($0)" })
+    XCTAssertEqual(s.slice(page: 0), (0..<50).map { "id\($0)" })
+    XCTAssertEqual(s.slice(page: 1), (50..<70).map { "id\($0)" })
+    XCTAssertEqual(s.slice(page: 2), []); XCTAssertEqual(s.slice(page: -1), [])
+    XCTAssertTrue(s.hasMore(afterPage: 0)); XCTAssertFalse(s.hasMore(afterPage: 1))
+  }
+
+  func testScopeOrderedByRankDropsOthers() throws {
+    let rows = try XCTUnwrap(Archive.decode(json))                                   // a1, b2 (서버 순서)
+    XCTAssertEqual(Archive.Scope(question: "q", ids: ["b2", "a1"]).ordered(rows).map(\.id), ["b2", "a1"])
+    XCTAssertEqual(Archive.Scope(question: "q", ids: ["a1"]).ordered(rows).map(\.id), ["a1"])   // 범위 밖 행은 버린다
+  }
+
+  func testScopedQuery() {
+    XCTAssertEqual(Archive.scopedQuery(ids: ["a1", "b2"], filter: .mail),
+      "rest/v1/items?select=id,source,app_name,sender,title,occurred_at,status,gate_label&id=in.(a1,b2)&source=eq.GMAIL")
+    XCTAssertEqual(Archive.scopedQuery(ids: ["a1"], filter: .all),
+      "rest/v1/items?select=id,source,app_name,sender,title,occurred_at,status,gate_label&id=in.(a1)")
+    XCTAssertFalse(Archive.scopedQuery(ids: ["a1"], filter: .notification).contains("content"))   // 본문 열은 요청하지 않는다
+  }
+
+  // Review Focus 1: 출처 탭 조건으로 조각이 비면 다음 조각으로 넘어간다. 끝이면 빈 결과로 멈추고, 실패는 nil
+  func testScopeLoadSkipsEmptySlices() async {
+    let s = Archive.Scope(question: "q", ids: (0..<100).map { "id\($0)" })
+    let hit = row("id77"), calls = Calls()                                  // @Sendable 클로저는 self 를 잡지 않는다(Row·actor 는 Sendable)
+    let r = await s.load(from: 0) { ids in await calls.add(ids.count); return ids.first == "id50" ? [hit] : [] }
+    XCTAssertEqual(r?.rows.map(\.id), ["id77"]); XCTAssertEqual(r?.lastPage, 1)
+    let sizes = await calls.sizes
+    XCTAssertEqual(sizes, [50, 50])
+    let end = await s.load(from: 0) { _ in [] }
+    XCTAssertEqual(end?.rows.count, 0); XCTAssertEqual(end?.lastPage, 1)
+    let fail = await s.load(from: 0) { _ in nil }
+    XCTAssertNil(fail)
+  }
 }
