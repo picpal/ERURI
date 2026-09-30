@@ -28,6 +28,7 @@ struct ChatView: View {
         }
       }
       .scrollDismissesKeyboard(.interactively)
+      .scrollBounceBehavior(.always)   // 대화가 비었거나 짧아 넘치지 않아도 끌려서 아래로 쓸면 키보드가 내려간다
       .simultaneousGesture(TapGesture().onEnded { inputFocused = false })   // 목록 탭은 행 버튼·링크를 막지 않고 포커스만 푼다
       .safeAreaInset(edge: .bottom) {
         HStack {
@@ -35,6 +36,8 @@ struct ChatView: View {
             .focused($inputFocused)
           Button("보내기", action: send).disabled(busy || input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }.padding().background(.bar)
+        // 입력창 영역에서 아래로 끌어도 내린다. 동시 제스처라 입력창 탭·커서 이동·보내기는 그대로
+        .simultaneousGesture(DragGesture(minimumDistance: 10).onEnded { if $0.translation.height > 30 { inputFocused = false } })
       }
       .navigationTitle("채팅")
       .toolbar {
