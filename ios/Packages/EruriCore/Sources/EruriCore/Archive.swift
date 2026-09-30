@@ -14,21 +14,29 @@ public enum Archive {
     public var gatePassed: Bool { Archive.gatePassed(status: status, gateLabel: gate_label) }
   }
 
-  public enum Filter: String, CaseIterable, Sendable { case all, mail, notification, share }
+  public enum Filter: String, CaseIterable, Sendable {
+    case all, mail, notification, share
+    /// 보관함·최근 폐기 공통 source 조건. 전체면 조건 없음
+    public var sourceCondition: String {
+      switch self {
+      case .all: ""
+      case .mail: "&source=eq.GMAIL"
+      case .notification: "&source=in.(NOTIFICATION,MESSAGES)"          // 문자는 알림으로 들어온 것과 같이 보인다(SourceLabel)
+      case .share: "&source=eq.SHARE"
+      }
+    }
+    /// 탭 이름(Picker 와 같은 문구)
+    public var label: String {
+      switch self { case .all: "전체"; case .mail: "메일"; case .notification: "알림·문자"; case .share: "공유" }
+    }
+  }
 
   public static let pageSize = 50
 
   /// RLS 로 자기 행만. 본문 열은 요청하지 않는다. 같은 시각이 겹쳐도 페이지가 흔들리지 않게 id 로 한 번 더 정렬
   public static func query(filter: Filter, offset: Int) -> String {
-    var q = "rest/v1/items?select=id,source,app_name,sender,title,occurred_at,status,gate_label"
-      + "&order=occurred_at.desc,id.desc&limit=\(pageSize)&offset=\(offset)"
-    switch filter {
-    case .all: break
-    case .mail: q += "&source=eq.GMAIL"
-    case .notification: q += "&source=in.(NOTIFICATION,MESSAGES)"          // 문자는 알림으로 들어온 것과 같이 보인다(SourceLabel)
-    case .share: q += "&source=eq.SHARE"
-    }
-    return q
+    "rest/v1/items?select=id,source,app_name,sender,title,occurred_at,status,gate_label"
+      + "&order=occurred_at.desc,id.desc&limit=\(pageSize)&offset=\(offset)" + filter.sourceCondition
   }
 
   public static func decode(_ data: Data) -> [Row]? { try? JSONDecoder().decode([Row].self, from: data) }

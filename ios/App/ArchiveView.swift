@@ -13,10 +13,9 @@ struct ArchiveView: View {
     NavigationStack {
       List {
         Picker("출처", selection: $filter) {
-          Text("전체").tag(Archive.Filter.all); Text("메일").tag(Archive.Filter.mail)
-          Text("알림·문자").tag(Archive.Filter.notification); Text("공유").tag(Archive.Filter.share)
+          ForEach(Archive.Filter.allCases, id: \.self) { Text($0.label).tag($0) }
         }.pickerStyle(.segmented)
-        NavigationLink("최근 폐기 (7일)") { RecentDiscardsView() }
+        NavigationLink("최근 폐기 (7일)") { RecentDiscardsView(filter: filter) }         // 고른 출처 탭의 폐기만
         if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
         ForEach(rows) { r in
           NavigationLink {

@@ -3,6 +3,7 @@ import EruriCore
 
 /// "최근 폐기"(스펙 §7): 서버 분류 게이트가 7일 격리 중인 항목의 메타(본문 없음). "복구"는 게이트를 무시하고 추출로 보낸다
 struct RecentDiscardsView: View {
+  let filter: Archive.Filter                              // 보관함에서 고른 출처 탭
   @State private var rows: [RecentDiscards.Row] = []
   @State private var message = ""
   @State private var restoring: String?
@@ -22,13 +23,13 @@ struct RecentDiscardsView: View {
         }
       }
     }
-    .navigationTitle("최근 폐기")
+    .navigationTitle(RecentDiscards.title(filter: filter))
     .task { await load() }
     .refreshable { await load() }
   }
 
   private func load() async {
-    guard let r = await API.send(RecentDiscards.query()), r.status == 200, let v = RecentDiscards.decode(r.data) else {
+    guard let r = await API.send(RecentDiscards.query(filter: filter)), r.status == 200, let v = RecentDiscards.decode(r.data) else {
       message = "불러오지 못했습니다"; return
     }
     rows = v

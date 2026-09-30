@@ -55,4 +55,20 @@ final class RecentDiscardsTests: XCTestCase {
     XCTAssertFalse(q.contains("not.is.null"))
     XCTAssertNotNil(URL(string: q))
   }
+  // 보관함에서 고른 출처 탭만(실기기 보고 0.4.0): 전체면 source 조건 없음, 격리 기한·본문 미조회 조건은 그대로
+  func testQueryFollowsArchiveFilter() {
+    let now = Date(timeIntervalSince1970: 1_790_000_000)
+    XCTAssertFalse(RecentDiscards.query(now: now, filter: .all).contains("source="))
+    XCTAssertEqual(RecentDiscards.query(now: now, filter: .all), RecentDiscards.query(now: now))
+    for (f, cond) in [(Archive.Filter.mail, "&source=eq.GMAIL"), (.notification, "&source=in.(NOTIFICATION,MESSAGES)"), (.share, "&source=eq.SHARE")] {
+      let q = RecentDiscards.query(now: now, filter: f)
+      XCTAssertTrue(q.hasSuffix(cond), f.rawValue)
+      XCTAssertTrue(q.contains("&quarantine_until=gt.2026-09-21T14:13:20Z&"))
+      XCTAssertFalse(q.contains("content_enc") || q.contains("ocr_text"))
+      XCTAssertNotNil(URL(string: q))
+      XCTAssertTrue(Archive.query(filter: f, offset: 0).hasSuffix(cond))      // 보관함 목록과 같은 조건
+    }
+    XCTAssertEqual(RecentDiscards.title(filter: .all), "최근 폐기")
+    XCTAssertEqual(RecentDiscards.title(filter: .notification), "최근 폐기 · 알림·문자")
+  }
 }
