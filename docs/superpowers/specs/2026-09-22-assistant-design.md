@@ -355,7 +355,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | `item_chunks` | item_id, chunk_index, text, embedding vector(512), tsv tsvector | HNSW + GIN. 원문 만료 시 삭제. worker embed 잡이 제목+본문 512자 청크로 채운다(M2-⑧a `0015`, 대상 = extracted·discarded:server:empty 이고 원문 있음) |
 | `facts` | item_id, kind, payload jsonb, evidence(원문 인용 ≤300자), status(active/cancelled/superseded), supersedes_id | 추출 결과, 무기한(원문 만료 뒤에도 남는다). evidence가 만료 후 출처 역할. items 행이 지워지면(출처·전체 삭제) 함께 지워진다(`item_id` on delete cascade, 0020) |
 | `purchases` | fact_id, merchant, product[], ordered_at, amount, currency, order_no, status, delivery_status, recurrence | **2단계**(facts 백필 마이그레이션과 함께). 구매·구독. `purchase_evidence(purchase_id, item_id)`로 다대다. 1단계는 `facts(kind=purchase).payload` |
-| `proposals` | fact_id, action(create_event/update_event/create_reminder/complete_reminder), payload, version, status(proposed/confirmed/succeeded/failed/stale), eventkit_id, idempotency_key | fact 변경 시 version 증가, 이전 제안은 stale |
+| `proposals` | fact_id, action(create_event/update_event/create_reminder/complete_reminder), payload, version, status(proposed/confirmed/succeeded/failed/stale/dismissed), eventkit_id, idempotency_key | fact 변경 시 version 증가, 이전 제안은 stale. dismissed = 사용자가 "무시"(알림 액션·제안 시트·"제안" 탭, `dismiss_proposal`, 0021). 무시 뒤 다른 경로로 실제 추가해 보고되면 succeeded로 올린다(`report_execution`) |
 | `executions` | user_id, proposal_id(unique), device_id, eventkit_id, version, executed_at, reported_at | 기기가 쓰기 성공 직후 기록(로컬 SQLite), 서버는 `report_execution`으로 받는다. 보고 실패 복구·version 불일치(§10 순서 5) 판정용 |
 | `proposal_pushes` | proposal_id, device_id(쌍 unique), status(sending/sent/failed/rejected), apns_status, reason, apns_id, env, claimed_at | 제안 푸시 기기별 1회(0014, 0b). failed와 잡 임대(180초)가 지난 sending 행(발송 중 워커 종료)만 다시 가져간다. 임대 안의 sending은 잡을 재시도시킨다(0016) |
 | `jobs` | kind, payload, priority, lease_key, leased_until, attempts, status(queued/running/done/dead), checkpoint, claimed_at, not_before | 영속 작업 큐. `priority`는 1단계(§7: notify > gmail-sync > process > backfill). claimed_at(첫 클레임, 웹훅→sync 지연 측정). not_before(이 시각 전에는 클레임 안 함: 실패 백오프 attempts × 60초(`fail_job`, attempts 소비), M2-⑦ 예산·슬롯 미루기(`defer_job`, attempts 되돌림) — 이유는 last_error 로 구분) |
@@ -427,6 +427,11 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   최상위 키 `proposal_id`, `title`, `start`(`ADD_EVENT`면 항상 `YYYY-MM-DDTHH:mm:ss+09:00`) 또는 `due`. 1단계(M1-②b)부터 `version`(제안 버전 정수)도 싣는다 — 순서 5(오프라인 실행 후 보고 시 불일치 판정)에 쓴다.
   0단계 앱은 `ADD_EVENT`만 등록하므로 `REVIEW`·`ADD_REMINDER`는 버튼 없는 알림으로 보인다. 제품 앱(1단계 M1)은 세 카테고리를 모두 등록하고
   `ADD_REMINDER`·`REVIEW`의 액션은 앱 열기만 한다
+- 제안 리뷰(1단계, Ruling 8' 2026-09-30): 알림을 놓치거나 잠금화면에서 길게 누르지 않고 배너를 탭하면 등록 수단이 없던 공백을 메운다.
+  - **배너 탭**(기본 동작, 제안 id가 있는 알림): 앱을 열고 그 제안의 시트(제목·시각·장소, "캘린더에 추가"·"무시")를 띄운다. 콜드 스타트에서도 대기 딥링크를 보관했다가 UI 준비 뒤 표시한다.
+  - **"무시"**(알림 액션·시트·"제안" 탭 공통): 앱이 사용자 JWT로 `dismiss_proposal(p_proposal)` → `ok`(이미 dismissed여도 ok, 재전송 멱등)·`not_pending`(succeeded·stale 등)·`not_found`. 본인 `proposed` 제안만 `dismissed`가 된다.
+  - **대기 목록** `list_pending_proposals()`: 본인·`proposed`·푸시 `ADD_EVENT` 조건(create_event, 시각·오프셋 있는 start, uncertain 없음)·start > 지금−1시간·생성 30일 이내, start 오름차순 최대 50행. 행 `{proposal_id, action='ADD_EVENT', title(푸시와 같이 ≤40자), start, end, location, version, created_at}`. 날짜만·확인 필요(REVIEW)·할 일은 목록에 없다(수정 화면은 2단계).
+  - 캘린더 추가는 새 경로를 만들지 않고 알림 액션·채팅 카드와 같은 멱등 핸들러(아래 순서 1~5, `report_execution`)를 쓴다.
 - 액션 핸들러 순서 (멱등):
   1. 서버에서 proposal 최신 버전 조회(토큰 갱신 포함 5초 마감, 넘으면 받은 버전으로 진행). `stale`·`succeeded`면 중단하고 안내. 서버 version이 더 새로워도 여기서 중단하지 않고, 푸시로 받은 version(실제로 넣은 내용)으로 기록·보고해 순서 5의 불일치 판정에 맡긴다. 핸들러 안 보고는 방금 처리한 1건만, 나머지 미보고분은 앱 활성화 때 보낸다.
   2. 로컬 `executions` 테이블(App Group SQLite)에 proposal_id가 있으면 재쓰기 없이 보고만 재시도.
@@ -452,6 +457,8 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | `supabase/` | 마이그레이션, Edge Functions(Deno/TS), 테스트 |
 
 1단계 제품 번들 ID 는 `com.picpal.eruri`, App Group `group.com.picpal.eruri` 로 새로 등록한다(0단계 PoC 는 이미 등록·TestFlight 배포된 `com.picpal.assistant.poc`·`group.com.picpal.assistant` 유지).
+
+1단계 앱 탭: **채팅 | 제안 | 보관함 | 설정**. "제안" 탭은 `list_pending_proposals` 목록에 행마다 "캘린더에 추가"·"무시", 당겨서·앱 활성화 때 새로고침, 캘린더 전체 접근이 없으면 추가 버튼 대신 권한 안내(§10 제안 리뷰, Ruling 8').
 
 **제품 분리 시점과 방식** (2026-09-30 결정): 1단계 Task 1(서버)·Task 2(앱)가 분리 자체다.
 
@@ -592,7 +599,7 @@ PoC-5 제안 푸시 실측용 문구(`push`)는 날짜가 늘 미래가 되게 �
 |---|---|---|
 | 0 | PoC-1~10 | **전 PoC 마감**(통과 · 실패(대안 채택, 스펙 반영) · 1단계 태스크 게이트로 흡수 중 하나, §14), 스펙 갱신 |
 | 1a = M1 이관 | 제품 Supabase 프로젝트·앱 타깃 분리(§11), Sign in with Apple, 수집 경로(알림 자동화 이관 §5 · Share 텍스트/URL), jobs 우선순위(§7), Jev 6종 분류 → 폐기 7일 격리·삭제 → 추출 → 제안 → notify → EventKit 액션(멱등, 표식 조회 복구 포함 §10), Gmail 제품화(우선순위 레인·watch 갱신·재인증 푸시·404 재동기화), 기기 등록 정리, `device_traces` | **제품 앱이 PoC 앱을 완전히 대체**: 자동화 재지정 후 합성 문구 10개(`phrases.json` d01~d10) → 서버 최종 상태 일치, 제안 푸시 → 캘린더 1건, Gmail 백필 중 웹훅→sync ≤ 1분, 연결 +8일 재인증 통과, Jev 실데이터 200건 라벨 기록. 통과 직후 **PoC 프로젝트 은퇴**(§11) |
-| 1b = M2 검색 | 임베딩 worker 연결(`text-embedding-3-large` 512), chat Edge, 앱 채팅·보관함 UI, 보관·삭제 잡(90일·30일 만료, 전체 삭제·출처 삭제 버튼 §12 통제 5), 비용 상한(§13, chat 직전 태스크), 검색 평가 도구·실행(§9 절차) | **검색 평가 통과**(§9 지표). 메일·공유 텍스트·알림 항목을 채팅으로 다시 찾고 출처가 검증됨 |
+| 1b = M2 검색 | 임베딩 worker 연결(`text-embedding-3-large` 512), chat Edge, 앱 채팅·보관함 UI, 제안 리뷰(배너 탭 시트·"제안" 탭·무시, §10, 2026-09-30 1단계로 당김), 보관·삭제 잡(90일·30일 만료, 전체 삭제·출처 삭제 버튼 §12 통제 5), 비용 상한(§13, chat 직전 태스크), 검색 평가 도구·실행(§9 절차) | **검색 평가 통과**(§9 지표). 메일·공유 텍스트·알림 항목을 채팅으로 다시 찾고 출처가 검증됨 |
 | 2 | 앱 안 자동화 설치 가이드 화면, 메시지 트리거 병행 시 2건 중복 제거(§7), 이미지·PDF 공유 파일 경로(`PUT upload/<id>`, PoC-8 이월)·vision + OCR, `purchases` 테이블(facts 백필)·구매 질문 | 알림톡 주문이 구매 이력에 쌓이고 "어디서 샀지" 답변 |
 | 3 | Siri·빠른 기억, 구독 추적(`subscription` 추출), **지인 확대** — 선행 조건: Gmail 앱 검증(CASA), OpenAI ZDR 신청, 개인정보 처리방침·Limited Use 문구, 설정 "내 데이터" 표·JSON 내보내기·잠금 화면 요약 옵션(§12 통제 5), 폐기 격리 재검토(§16) | 지인이 가이드만으로 셋업 완료 |
 
@@ -632,6 +639,8 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 8. **Q8 계획 구조**: 계획서 1개·마일스톤 2개, 1a := M1 이관, 1b := M2 검색. 첫 3개 태스크는 제품 Supabase 부트스트랩 → 제품 앱 타깃 → Gmail 제품화(§15).
 
 목록 밖 추가 결정: (HIGH) `EruriCore`·`poc/server`는 리뷰 후 제품으로 승격하고 PoC 앱 타깃·UI만 폐기(§11, §14). (HIGH) 게이트 폐기 항목 7일 격리 후 본문 삭제, 제품 앱 "최근 폐기"에서 복구(§7, §8, §12 통제 2), 지인 확대 시 재검토(아래 미결 리스크). (MED) PoC 프로젝트 은퇴 절차·시점을 §11·§15 1a 완료 기준에 명시하고 `results.md`에 기록. (MED) 제품 앱 `MARKETING_VERSION`은 0.3.0부터(§11). (LOW) 진단 trace는 제품 `device_traces`(본문 없음, 30일, 진단 전송 토글)로 유지(§8).
+
+**2026-09-30 확인 항목 8 판정 변경**: 제안 리뷰 화면을 1단계로(실기기에서 알림을 놓치면 등록 수단이 없음 발견 — 잠금화면 알림을 길게 눌러 "캘린더에 추가"할 때만 등록되고 배너 탭은 앱만 열었다). 사용자 승인(Ruling 8'): 배너 탭 → 제안 시트, 앱 "제안" 탭(대기 목록·추가·무시), 알림 "무시" = `dismiss_proposal`(§8 `dismissed`, §10, §11). REVIEW·할 일 제안의 수정 화면은 여전히 2단계.
 
 ### 플랜 B: 로컬 우선 구조 (미채택, 신뢰 문제 발생 시 전환)
 
