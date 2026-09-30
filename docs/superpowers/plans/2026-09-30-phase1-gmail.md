@@ -43,7 +43,7 @@ T0를 누르기 전에 아래 "T0 전 필수"가 전부 끝나야 한다. 하나
 
 사용자에게 묻는다: "T0 직전에 Google 계정 → 보안 → **서드파티 앱 및 서비스** 에서 이 프로젝트(ERURI/PoC와 같은 GCP 프로젝트·같은 Web 클라이언트)의 앱 액세스를 삭제해도 되는가. PoC Gmail 연결이 즉시 끊긴다(PoC-6은 이미 흡수됐고 PoC 토큰은 10-04 경 어차피 만료)."
 - 승인 → ③b2 Step 2에서 T0 직전에 사용자가 삭제한다. 그 뒤 첫 "Gmail 연결"은 반드시 동의 화면을 띄운다 → 새 동의로 T0.
-- 거절 → 그대로 진행하되 ③b2 T0를 **잠정**으로 적고, 달력에 **10-04(일) 15:10 KST 이후 `g status` 점검**을 넣는다. 이때 `reauth_required`면 동의 기준 만료 확정(PoC 동의 09-27 03:01Z + 7일) → 즉시 "다시 연결 (동의 다시 받기)", 그 `status.t0`가 새 T0이고 달력을 다시 계산한다. `active`면 잠정 T0를 확정한다.
+- 거절 → 그대로 진행하되 ③b2 T0를 **잠정**으로 적고, 달력에 **10-04(일) 15:10 KST 이후 `ggate status` 점검**을 넣는다. 이때 `reauth_required`면 동의 기준 만료 확정(PoC 동의 09-27 03:01Z + 7일) → 즉시 "다시 연결 (동의 다시 받기)", 그 `status.t0`가 새 T0이고 달력을 다시 계산한다. `active`면 잠정 T0를 확정한다.
 
 - [ ] **UC-2: 합성 메일 발송 방식 — 에이전트 Gmail 커넥터(본인→본인)**
 
@@ -78,7 +78,7 @@ T0를 누르기 전에 아래 "T0 전 필수"가 전부 끝나야 한다. 하나
 - **명령:** 저장소 루트에서. 셸 상태가 호출 사이에 남지 않으므로 **각 셸 호출 앞에 다음 머리 3줄**을 붙인다(zsh·bash 모두 동작 — 변수에 명령을 담지 않는다). `.env`를 `source`하지 않는다. 아래 Step의 명령 블록은 이 3줄을 생략하고 `# 머리 3줄` 로만 표시한다.
 
 ```bash
-g() { deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/gmail-gate.ts "$@"; }
+ggate() { deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/gmail-gate.ts "$@"; }
 s() { deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/sql.ts "$@"; }
 U="$(grep '^ERURI_USER_ID=' supabase/.env | cut -d= -f2)"
 ```
@@ -147,12 +147,12 @@ T0는 **10:00~18:00 KST**에 잡는다(+6일 푸시·+8일 끊김이 깨어 있�
 
 | 항목 | 규칙 | T0 = 10-01(목) 14:00 예 |
 |---|---|---|
-| (UC-1 거절 시만) PoC 동의 기준 만료 점검 | PoC 동의 09-27 03:01Z + 7일 = 10-04 12:01 KST → 다음 6시간 cron 15:00 + 클레임 여유 | **10-04(일) 15:10 이후** `g status` |
+| (UC-1 거절 시만) PoC 동의 기준 만료 점검 | PoC 동의 09-27 03:01Z + 7일 = 10-04 12:01 KST → 다음 6시간 cron 15:00 + 클레임 여유 | **10-04(일) 15:10 이후** `ggate status` |
 | watch cron 확인(③b3 Step 6) | T0 뒤 첫 12:17 KST(03:17 UTC) 이후 | **10-02(금) 12:17 이후** |
 | `expiring` 푸시(③c1) | `expires_at − 24h` = T0 + 6일, 매시 :07 cron + 워커 클레임 1분 → T0 + 6일 + 1시간 5분 안 | **10-07(수) 14:07 경**, 15:10 이후 확인 |
 | refresh token 만료 | T0 + 7일(Google 테스트 모드, 새 동의 기준) | 10-08(목) 14:00 경 |
 | `reauth_required` 늦어도 | 만료 뒤 첫 refresh 시도: 웹훅 sync(메일 도착) 또는 6시간 cron(09·15·21·03시 KST) + 클레임·실행 수 분 | 10-08(목) 15:10 경 |
-| ③c2 세션 | **시작 조건 = `g status`의 `connection.status = reauth_required` 확인**(시각이 아니다). 보통 T0 + 7일 + 수 시간 ~ T0 + 8일 | **10-08(목) 저녁 ~ 10-09(금, 한글날)** |
+| ③c2 세션 | **시작 조건 = `ggate status`의 `connection.status = reauth_required` 확인**(시각이 아니다). 보통 T0 + 7일 + 수 시간 ~ T0 + 8일 | **10-08(목) 저녁 ~ 10-09(금, 한글날)** |
 
 다른 T0: 10-02(금) 14:00 → watch 10-03(토), +6일 10-08(목) 14:07, 만료 10-09(금) 14:00, ③c2 10-09 저녁 ~ 10-10(토). 연결 시각이 다르면 시·분을 그대로 옮긴다. T0는 항상 마지막 `status.t0`(보충 재탭·T0 확정 재동의로 몇 분 움직일 수 있다). T0가 월 경계면 백필 금액이 두 월 행에 나뉜다(`seoul_month()`).
 
@@ -873,7 +873,7 @@ Run:
 # 머리 3줄
 deno check supabase/scripts/gmail-gate.ts supabase/scripts/_gmail-gate.ts supabase/tests/gmail-gate.test.ts supabase/tests/gmail-gate-db.test.ts
 pgrep -x xcodebuild; deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/gmail-gate.test.ts supabase/tests/gmail-gate-db.test.ts
-g status; echo "exit=$?"
+ggate status; echo "exit=$?"
 ```
 Expected: check 오류 0. `ok | 10 passed | 0 failed`. 실사용자 `status` → `{"error":"no_connection"}`, `exit=1`(연결 전 기대값, 읽기 전용). 전역 `test:%` 개수 검사는 하지 않는다(다른 pane 실행과 충돌 — 정리는 `finally`가 자기 행만).
 실패 시: DB 테스트의 `like("title", …)`·`payload->>via`·`payload->>connection_id`·`.or(…)` 필터가 PostgREST에서 0행이면 supabase-js 인코딩을 확인하고 고친다(이 테스트가 실측 전에 조회식을 잡으려고 있다). `updated_at` 명시 insert가 무시되면(트리거) fetch 잡의 종료 시각 기대를 확인하고 테스트 데이터만 고친다.
@@ -906,7 +906,7 @@ git commit -m "feat(scripts): gmail-gate keeps retried samples, busy lane incl. 
 ```bash
 # 머리 3줄
 test -n "$U" && echo user_set
-g status
+ggate status
 s "select apns_env, build, last_seen_at > now() - interval '1 day' as fresh from devices where user_id = \$1" "$U"
 s "select status, coalesce(last_error, '') = 'budget_exhausted' as budget, count(*) from jobs where user_id = \$1 and priority = 40 and status in ('queued','running','dead') group by 1, 2" "$U"
 s "select kind, status, count(*) from jobs where user_id = \$1 and status in ('queued','running','dead') group by 1, 2" "$U"
@@ -930,13 +930,13 @@ s "select month, reserved_krw, backfill_reserved_krw from usage_counters where u
 
 ```bash
 # 머리 3줄
-g status
+ggate status
 ```
 
 통과 기준: 사용자 "동의 화면(Gmail 체크박스) 떴음", `connection.status = active`, `connection.t0` ≠ null(= T0), `backfill_ids_latest` = N, `backfill.active > 0`(N > 0일 때), `sync.watch_expires_at` ≈ T0 + 7일.
 실패 시:
-- **동의 화면 없이 `refresh_token_stored=true`**(UC-1 거절이거나 철회가 반영 안 됨) → T0 불인정. 사용자에게 "다시 연결 (동의 다시 받기)" 한 번 → `g status` 다시, 그 `t0`가 T0.
-- `t0 = null` 또는 `refresh_token_stored=false` → "다시 연결 (동의 다시 받기)" → `g status` 다시.
+- **동의 화면 없이 `refresh_token_stored=true`**(UC-1 거절이거나 철회가 반영 안 됨) → T0 불인정. 사용자에게 "다시 연결 (동의 다시 받기)" 한 번 → `ggate status` 다시, 그 `t0`가 T0.
+- `t0 = null` 또는 `refresh_token_stored=false` → "다시 연결 (동의 다시 받기)" → `ggate status` 다시.
 - 앱 결과 줄 403 `gmail_scope_missing` → Gmail 체크박스를 켜고 다시. 409 → 다른 사용자에 연결된 계정, 멈추고 보고. 502 → 다시 시도(코드 만료). 500 → 대시보드 gmail-connect 로그에서 `stage`·`result` 코드만.
 - T0는 항상 마지막 `status.t0`.
 
@@ -945,7 +945,7 @@ T0(UTC ISO, 확정/잠정), N을 `gates.md` 초안에 적는다. 백필 예상 �
 - [ ] **Step 4: 합성 메일 발송 (간격은 N으로)**
 
 시간표(T0 기준): **N < 180 → 30초 간격** T0+0:45, 1:15, 1:45, 2:15, 2:45, 3:15, 3:45, 4:15. **N ≥ 180 → 65초 간격** T0+1:00, 2:05, 3:10, 4:15, 5:20, 6:25, 7:30, 8:35. 순서 L1, L2, O1, L3, C1, L4, L5, L6.
-- A: 에이전트가 커넥터로 보낸다(시간표 ±15초면 된다 — 간격은 판정 기준이 아니고 표본 수만 채우면 된다). 보낸 UTC 시각을 적는다. **L1 발송 2분 뒤** `g mails --prefix "[합성 지연 테스트" --since <T0 − 1분>`이 `mails ≥ 1`인지 본다 — 0이면 커넥터 계정 ≠ 연결 계정일 수 있다 → 남은 메일은 B로 전환하고 기록.
+- A: 에이전트가 커넥터로 보낸다(시간표 ±15초면 된다 — 간격은 판정 기준이 아니고 표본 수만 채우면 된다). 보낸 UTC 시각을 적는다. **L1 발송 2분 뒤** `ggate mails --prefix "[합성 지연 테스트" --since <T0 − 1분>`이 `mails ≥ 1`인지 본다 — 0이면 커넥터 계정 ≠ 연결 계정일 수 있다 → 남은 메일은 B로 전환하고 기록.
 - B: 사용자가 시간표대로 보낸다(작성 창에 붙여넣고 바로 보내기).
 
 간격 근거: 같은 연결에 queued sync가 있으면 새 웹훅은 합쳐진다(F3). 첫 메일을 T0+45초 이후로 둔 것은 연결 창(묶음 끝 + 30초)을 피하려는 것이다.
@@ -954,9 +954,9 @@ T0(UTC ISO, 확정/잠정), N을 `gates.md` 초안에 적는다. 백필 예상 �
 
 ```bash
 # 머리 3줄
-g status
-g latency --since <T0 − 2분>
-g mails --prefix "[합성 지연 테스트" --since <T0 − 1분>
+ggate status
+ggate latency --since <T0 − 2분>
+ggate mails --prefix "[합성 지연 테스트" --since <T0 − 1분>
 ```
 
 판정 규칙(그대로 적용):
@@ -981,9 +981,9 @@ s "select d.status, d.start_time from cron.job_run_details d join cron.job j usi
 **표본 보충(결정 a, `insufficient`일 때만):** 같은 세션에서 사용자가 **일반 "Gmail 연결"**(재동의 아님)을 누른다(U10-2b) → Ruling 14 재적재가 레인을 약 N × 0.8초 점유한다 → 누른 지 45초 뒤부터 30초 간격으로 S1~S6 중 남은 것을 보낸다(A: 에이전트, B: 사용자). 최대 3회 반복. 매 회 뒤:
 ```bash
 # 머리 3줄
-g status                                   # connection.t0 = 새 T0(몇 분 움직일 수 있음) → 기록 갱신
-g latency --since <T0 − 2분>
-g mails --prefix "[합성 지연 보충" --since <첫 재탭 − 1분>
+ggate status                                   # connection.t0 = 새 T0(몇 분 움직일 수 있음) → 기록 갱신
+ggate latency --since <T0 − 2분>
+ggate mails --prefix "[합성 지연 보충" --since <첫 재탭 − 1분>
 ```
 최초 백필 표본과 합산하되 기록은 구분한다(`최초 <a>개 · 보충 <b>개`). 3회 뒤에도 5개 미만이면 ③b 지연 항목은 **대기**, ③c2 Step 5b에서 이어 모은다. SQL로 실사용자 레인에 잡을 넣는 보충은 하지 않는다(결정 a 기각).
 
@@ -993,11 +993,11 @@ g mails --prefix "[합성 지연 보충" --since <첫 재탭 − 1분>
 # 머리 3줄
 s "select id, title like '%****%' as masked, title ~ '[0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{4}' as has_card_digits from items where user_id = \$1 and source = 'GMAIL' and title like '[합성카드테스트]%'" "$U"
 s "select count(*) from items where user_id = \$1 and source = 'GMAIL' and title like '[합성] 로그인%'" "$U"
-g gap --after <T0 − 1분> --before <지금 UTC ISO> --q 'subject:"[합성] 로그인"'
+ggate gap --after <T0 − 1분> --before <지금 UTC ISO> --q 'subject:"[합성] 로그인"'
 ```
 
 통과 기준: 카드 메일 1행 `masked=true, has_card_digits=false`. OTP 메일 항목 0행. `gap` = `listed 1 · stored 0 · discarded_by_rule.otp 1 · missing []`(합성 O1이 OTP 규칙으로 폐기됨을 id로 보인다 — 90일 안의 실제 OTP 메일로는 증거가 안 된다, N3). 이 `gap`은 한 통짜리라(30 units 미만) 백필 fetch 중에도 돌려도 된다.
-실패 시: 카드 0행 → `g mails --prefix "[합성카드테스트]" --since <T0 − 1분>`로 수신 여부, 없으면 발송 확인. 마스킹 안 됨 → 규칙 결함, 게이트 실패로 적고 별도 태스크. OTP `listed 0` → 발송 확인. `missing`에 있으면 규칙 결함.
+실패 시: 카드 0행 → `ggate mails --prefix "[합성카드테스트]" --since <T0 − 1분>`로 수신 여부, 없으면 발송 확인. 마스킹 안 됨 → 규칙 결함, 게이트 실패로 적고 별도 태스크. OTP `listed 0` → 발송 확인. `missing`에 있으면 규칙 결함.
 
 - [ ] **Step 7: (사용자 U10-3) 합성 제안 정리 → 기록·커밋**
 
@@ -1028,7 +1028,7 @@ T0 당일(백필이 끝난 뒤)과 T0 다음 날(watch cron) 두 번에 걸친�
 
 ```bash
 # 머리 3줄
-g status
+ggate status
 ```
 
 "백필 끝" = `backfill.active = 0`, `stalled = 0`, `backoff = 0`, `deferred_busy = 0`. 같이 볼 것: `backfill.dead = 0`, `gmail_jobs_dead = 0`.
@@ -1053,8 +1053,8 @@ s "select status, count(*) from items where user_id = \$1 and source = 'GMAIL' g
 
 ```bash
 # 머리 3줄
-g gap --from-jobs --since <T0 − 2분>
-g gap --after <T0 − 89일> --before <지금 − 5분>
+ggate gap --from-jobs --since <T0 − 2분>
+ggate gap --after <T0 − 89일> --before <지금 − 5분>
 ```
 
 통과 기준:
@@ -1067,11 +1067,11 @@ g gap --after <T0 − 89일> --before <지금 − 5분>
 
 ```bash
 # 머리 3줄
-g status          # sync.watch_expires_at = W0 기록
+ggate status          # sync.watch_expires_at = W0 기록
 s "select gmail_enqueue_all('gmail-watch', \$1)" "$U"
 # 2분 뒤
 s "select status, checkpoint, last_error from jobs where user_id = \$1 and kind = 'gmail-watch' order by created_at desc limit 1" "$U"
-g status          # W1
+ggate status          # W1
 ```
 
 통과 기준: `gmail_enqueue_all` = 1, 잡 `done`·`watched`, `W1 > W0`이고 `|W1 − (호출 시각 + 7일)| < 1시간`.
@@ -1087,7 +1087,7 @@ g status          # W1
 # 머리 3줄
 s "select d.status, d.start_time from cron.job_run_details d join cron.job j using (jobid) where j.jobname = 'gmail-watch-daily' order by d.start_time desc limit 1"
 s "select status, checkpoint, created_at from jobs where user_id = \$1 and kind = 'gmail-watch' order by created_at desc limit 1" "$U"
-g status
+ggate status
 ```
 
 통과 기준: cron `succeeded`(03:17 UTC), 그 뒤 gmail-watch 잡 `done`·`watched`, `watch_expires_at ≈ cron 시각 + 7일`(W1보다 늦음). 같이 기록: `sync.last_success_at`이 최근 6시간 안, `gmail_jobs_dead = 0`.
@@ -1123,7 +1123,7 @@ T0 + 6일 + 1시간 5분 이후 한 번(T0 = 10-01 14:00이면 **10-07(수) 15:1
 
 ```bash
 # 머리 3줄
-g status
+ggate status
 s "select status, checkpoint, payload->>'reason' as reason, created_at from jobs where user_id = \$1 and kind = 'gmail-reauth' order by created_at desc limit 3" "$U"
 ```
 
@@ -1151,7 +1151,7 @@ git commit -m "docs(phase1): M1-③c1 Gmail +6 day expiring push" -m "Co-Authore
 
 ### Task M1-③c2: T0 + 8일 — `invalid_grant` → `reauth_required` → 공백 메일 → 재연결 → 누락 0 (PoC-6 흡수 마감)
 
-**시작 조건은 시각이 아니라 `g status`의 `connection.status = reauth_required` 확인이다**(T0 = 10-01 14:00이면 보통 10-08(목) 저녁 ~ 10-09(금)). 사용자가 옆에 있어야 한다.
+**시작 조건은 시각이 아니라 `ggate status`의 `connection.status = reauth_required` 확인이다**(T0 = 10-01 14:00이면 보통 10-08(목) 저녁 ~ 10-09(금)). 사용자가 옆에 있어야 한다.
 
 **모델:** `opus`/`medium`
 
@@ -1166,13 +1166,13 @@ git commit -m "docs(phase1): M1-③c1 Gmail +6 day expiring push" -m "Co-Authore
 
 ```bash
 # 머리 3줄
-g status
+ggate status
 s "select kind, checkpoint, created_at from jobs where user_id = \$1 and kind in ('gmail-sync','gmail-watch','gmail-reauth') and created_at > \$2 order by created_at" "$U" "<T0 + 7일 − 1시간>"
 ```
 
 통과 기준: `connection.status = reauth_required`, `reauth_pushes`에 `invalid_grant` 1행(`expiring` 행도 남아 있음), T0 + 7일 뒤 첫 refresh 잡의 `checkpoint = skipped`, 그 직후 `gmail-reauth`(`invalid_grant`) `reauth_sent`. **L = `sync.last_success_at`**, 끊긴 시각 ≈ `invalid_grant` 잡 `created_at`을 기록한다(재연결이 L을 덮는다, F7).
 실패 시:
-- 아직 `active`이고 T0 + 7일 뒤 sync가 성공했다 → refresh token이 7일에 만료되지 않았다. `s "select gmail_enqueue_all('gmail-sync', \$1)" "$U"`로 한 번 더 refresh를 시도하고 2분 뒤 `g status`. 그래도 active면 세션을 T0 + 9일로 미루고, T0 + 9일에도 active면 "Google 테스트 모드 7일 만료가 이 연결에 적용되지 않음"을 기록하고 메인에 보고(스펙 §5·§16 가정 재검토).
+- 아직 `active`이고 T0 + 7일 뒤 sync가 성공했다 → refresh token이 7일에 만료되지 않았다. `s "select gmail_enqueue_all('gmail-sync', \$1)" "$U"`로 한 번 더 refresh를 시도하고 2분 뒤 `ggate status`. 그래도 active면 세션을 T0 + 9일로 미루고, T0 + 9일에도 active면 "Google 테스트 모드 7일 만료가 이 연결에 적용되지 않음"을 기록하고 메인에 보고(스펙 §5·§16 가정 재검토).
 - `reauth_required`인데 `invalid_grant` 푸시 행이 없음 → ③c1 Step 1의 원인 확인 절차.
 
 - [ ] **Step 2: (사용자 U11-2) 끊김 알림 확인 → 공백 메일 2통**
@@ -1187,34 +1187,34 @@ s "select kind, checkpoint, created_at from jobs where user_id = \$1 and kind in
 ```bash
 # 머리 3줄
 s "select count(*) from items where user_id = \$1 and source = 'GMAIL' and title like '[합성 공백 테스트%'" "$U"
-g latency --since <P1 발송 − 1분>
+ggate latency --since <P1 발송 − 1분>
 ```
 
 통과 기준: 항목 0, `webhook_syncs = 0`(reauth_required 동안 웹훅이 잡을 만들지 않음, F8). 0이 아니면 연결이 끊기지 않은 것 — Step 1로 돌아간다.
 
 - [ ] **Step 4: (사용자 U11-2) 재연결**
 
-사용자: 설정 → **"다시 연결 (동의 다시 받기)"** → 동의 화면에서 Gmail 읽기 권한 체크 → 결과 줄 확인(`refresh_token_stored=true`). 이 시각 = R(= 직후 `g status`의 `t0`).
+사용자: 설정 → **"다시 연결 (동의 다시 받기)"** → 동의 화면에서 Gmail 읽기 권한 체크 → 결과 줄 확인(`refresh_token_stored=true`). 이 시각 = R(= 직후 `ggate status`의 `t0`).
 
 - [ ] **Step 5: (에이전트) 재연결 상태 → 재적재 완료 → 누락 0**
 
 ```bash
 # 머리 3줄
-g status
+ggate status
 ```
 
 바로 통과 기준: `connection.status = active`, `connection.t0` = R, `reauth_pushes = []`(재연결 트리거가 지움, 0008), `backfill_bursts` = 이전 + 1, `backfill_ids_latest` = N'(≈ N + T0 뒤 도착분), `sync.last_success_at` ≈ R.
-재적재가 끝날 때까지(**`backfill.active = stalled = backoff = deferred_busy = 0`, `dead = 0`**, 5분 간격 `g status`) 기다린 뒤:
+재적재가 끝날 때까지(**`backfill.active = stalled = backoff = deferred_busy = 0`, `dead = 0`**, 5분 간격 `ggate status`) 기다린 뒤:
 
 ```bash
 # 머리 3줄
-g gap --from-jobs --since <R − 2분>
-g gap --after <L − 1일> --before <지금 − 5분> --q 'subject:"[합성 공백 테스트"'
-g gap --after <L − 1일> --before <지금 − 5분>
+ggate gap --from-jobs --since <R − 2분>
+ggate gap --after <L − 1일> --before <지금 − 5분> --q 'subject:"[합성 공백 테스트"'
+ggate gap --after <L − 1일> --before <지금 − 5분>
 s "select count(*) as rows, count(distinct idempotency_key) as ids from items where user_id = \$1 and source = 'GMAIL' and title like '[합성 공백 테스트%'" "$U"
 s "select count(*) as reprocessed from jobs j join items i on i.id = (j.payload->>'item_id')::uuid where j.user_id = \$1 and i.user_id = \$1 and j.kind = 'process' and j.created_at >= \$2 and i.captured_at < \$2" "$U" "<R ISO>"
-g gap --after <R − 89일> --before <지금 − 5분>
-g latency --since <R − 2분>
+ggate gap --after <R − 89일> --before <지금 − 5분>
+ggate latency --since <R − 2분>
 ```
 
 통과 기준(PoC-6 흡수분):
@@ -1231,7 +1231,7 @@ g latency --since <R − 2분>
 
 - [ ] **Step 5b: (③b 지연이 대기일 때만) 재적재 창에서 지연 표본 이어 모으기**
 
-Step 4 직후(재적재가 레인을 점유하는 동안) R + 45초부터 30초 간격으로 S1~S6 중 남은 것을 보낸다(A/B). 재적재가 짧아 모자라면 ③b2 Step 5의 일반 "Gmail 연결" 재탭(최대 3회, 재동의 아님 — R·`expires_at`이 몇 분 움직일 수 있어 R은 마지막 `status.t0`)으로 보충한다. `g latency --since <R − 2분>`·`g mails --prefix "[합성 지연 보충" --since <R − 1분>` 결과를 ③b2 표본과 합산해 ③b2 판정 규칙대로 판정하고, `gates.md` M1-③b 행을 **통과/실패**로 고친다. 그래도 5개 미만이면 M1-③b는 **대기**로 두고 메인에 보고(스펙 §15 ③ 문구 재검토 여부는 사용자 결정 — 기준 완화는 이 계획에서 하지 않는다).
+Step 4 직후(재적재가 레인을 점유하는 동안) R + 45초부터 30초 간격으로 S1~S6 중 남은 것을 보낸다(A/B). 재적재가 짧아 모자라면 ③b2 Step 5의 일반 "Gmail 연결" 재탭(최대 3회, 재동의 아님 — R·`expires_at`이 몇 분 움직일 수 있어 R은 마지막 `status.t0`)으로 보충한다. `ggate latency --since <R − 2분>`·`ggate mails --prefix "[합성 지연 보충" --since <R − 1분>` 결과를 ③b2 표본과 합산해 ③b2 판정 규칙대로 판정하고, `gates.md` M1-③b 행을 **통과/실패**로 고친다. 그래도 5개 미만이면 M1-③b는 **대기**로 두고 메인에 보고(스펙 §15 ③ 문구 재검토 여부는 사용자 결정 — 기준 완화는 이 계획에서 하지 않는다).
 
 - [ ] **Step 6: (사용자) 합성 제안 정리**
 
