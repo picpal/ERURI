@@ -1,6 +1,6 @@
 # ERURI — iOS 개인 비서 앱 설계 스펙
 
-작성일: 2026-09-22 · 갱신: 2026-09-30 (1단계 범위 결정 반영, §16) · 2026-09-26 (AI 벤더 OpenAI 단일화) · 2026-09-24 (0단계 Task 1~7 실측 반영) · 상태: 초안(리뷰 대기) · 대상: iPhone 15 Pro 이상, iOS 26+, 한국
+작성일: 2026-09-22 · 갱신: 2026-10-01 (보관 3년·요약 영구·용량 보호·채팅→보관함 보기, 사용자 결정 §16) · 2026-09-30 (1단계 범위 결정 반영, §16) · 2026-09-26 (AI 벤더 OpenAI 단일화) · 2026-09-24 (0단계 Task 1~7 실측 반영) · 상태: 초안(리뷰 대기) · 대상: iPhone 15 Pro 이상, iOS 26+, 한국
 
 ## 1. 목표
 
@@ -39,7 +39,7 @@ Outlook, Android, Mac 허브, 카카오톡 개인 대화 수집, App Store 공�
 | 실행 권한 | Apple 캘린더 추가·수정, 미리알림 추가·완료 | 사용자 확정 |
 | 기억 | 채팅·Siri·빠른 기억에서 사용자가 한 모든 말을 저장·검색 | 사용자 확정 |
 | 제외 | OTP·인증번호, 카드·계좌번호 마스킹, 프로모션, 카톡 개인 대화, 의료 결과지 본문 | 사용자 확정 + 제안 |
-| 보관 | 원문 90일(사용자별 키 암호화), 이미지 30일, 추출 사실·벡터 무기한 | 사용자 확정(1년) → 개인정보 검토로 90일 단축 |
+| 보관 | 원문(사용자별 키 암호화)·검색 청크 **3년**, 이미지 파일 30일, 항목별 **요약 영구**(사용자 키 암호화, 원문 삭제 뒤 검색 대상), 추출 사실 무기한. DB 용량이 한도에 가까워지면 오래된 원문·청크 → 오래된 요약 순으로 비운다(§8 용량 보호) | 사용자 확정(1년) → 개인정보 검토로 90일 단축 → **2026-10-01 사용자 결정으로 3년 + 요약 영구 + 용량 보호**(§16). 청크 평문 기간은 사용자 확인 대기(§16 UC-1) |
 | 진입점 | 채팅, Share, 푸시, Siri 질문, 액션버튼/컨트롤센터 빠른 기억 | 사용자 확정 |
 | 비용 | 월 1만원. 기기 Foundation Models → 서버 분류 게이트 Jev → OpenAI `gpt-6-luna` 추출 → `gpt-6-sol` 채팅 | 사용자 확정. 벤더는 2026-09-26 Anthropic+Voyage → OpenAI 단일로 교체(사용자 결정) |
 | AI 벤더 | OpenAI 단일. 키 `OPENAI_API_KEY` 하나. Responses API(`/v1/responses`) + Structured Outputs(`text.format` json_schema, `strict: true`), 모든 호출 `store: false`. 분류 게이트(0b)는 TypeSafe Jev(jev-1.13.0, 키 JEV_API_KEY) 추가 — 2026-09-29 사용자 결정(평가 리포트 확인 후). OpenAI 소형 모델은 같은 인터페이스의 교체 후보로만 | 키·약관·청구 한 곳. §3 검증 표 |
@@ -69,6 +69,7 @@ Outlook, Android, Mac 허브, 카카오톡 개인 대화 수집, App Store 공�
 | Deno에서 OpenAI SDK (2026-09-26, github.com/openai/openai-node) | 검증됨. Deno 1.28+ 지원, `import OpenAI from "npm:openai"`. 기본 타임아웃 10분·재시도 2회(`timeout`·`maxRetries` 옵션). 현재 npm 최신 7.23.0 | `npm:openai@7`, Edge 벽시계 150초에 맞춰 `timeout: 60_000`, `maxRetries: 1` |
 | Edge Function에서 APNs HTTP/2 (0단계 실측 2026-09-27) | **h2 동작 확인.** sandbox에 가짜 토큰으로 `400 BadDeviceToken` + `apns-id`(APNs는 HTTP/1.1을 연결 단계에서 거부), Edge 서울 100회 동시 1 → 100/100 p50 419ms. 동시 10은 가짜 토큰 탓 `GOAWAY` 오류가 섞여 실기기 토큰으로 재확인 대기 | Edge에서 직접 발송. JWT는 in-flight 공유 + 30분 경계 iat(동시 생성 시 `429 TooManyProviderTokenUpdates`), 연결 오류(`GOAWAY`) 1회 재시도. Cloudflare Worker 릴레이는 불필요(실기기 토큰 동시 10 × 2 → 100/100·h2 오류 0, 2026-09-30 PoC-4 통과) |
 | Supabase Storage TTL | 없음 | pg_cron 삭제 잡 |
+| Supabase DB 크기 한도 (2026-10-01, supabase.com/docs/guides/platform/database-size) | 검증됨. 크기는 `pg_database_size()` 합(클러스터의 모든 DB)으로 잰다. **무료 플랜은 500MB를 넘으면 읽기 전용**이 된다. 행을 지워도 Postgres가 공간을 바로 돌려주지 않아 보고 크기는 줄지 않는다(`VACUUM FULL`은 테이블 잠금) | §8 용량 보호: 측정은 같은 합, 판정은 재사용 가능 공간을 뺀 유효 크기, 비우기는 읽기 전용 전(85%)에 시작. Pro 플랜 디스크 포함량은 이 문서에 없음(가격표 확인 필요) |
 | Edge Function 한계 | 검증됨. CPU 2초, 벽시계 150초(무료), 256MB | `waitUntil`은 큐가 아님. `jobs` 테이블 기반 영속 작업 큐 + pg_cron 워커 호출로 처리 (§7) |
 | 무료 프로젝트 | 1주 미사용 시 일시정지 | pg_cron 일일 잡이 활동 유지. 지인 확대 시 Pro |
 
@@ -254,7 +255,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
       제품 앱 "최근 폐기" 목록(제목·발신자·라벨·confidence, 본문 없음)에서 사용자가 "복구"하면 게이트 판정을 무시하고 추출로 넘긴다 →
       7일 뒤 pg_cron이 본문·청크를 지운다(행은 유지, 사유 코드만). 오폐기(actionable 유실)를 사용자가 확인할 길을 두고 실데이터 200건
       정확도(§16)의 정답을 얻기 위해서다. 트레이드오프: 개인 대화 원문이 암호화 상태로 7일 더 서버에 있다(지인 확대 시 재검토, §16).
-      감사 로그 `discard`(item_id·사유 코드만). 추출 결과가 없으면 `discarded:server:empty`이고 원문은 남긴다(1b 검색 대상, 90일 만료 규칙
+      감사 로그 `discard`(item_id·사유 코드만). 추출 결과가 없으면 `discarded:server:empty`이고 원문은 남긴다(1b 검색 대상, 3년 만료 규칙(2026-10-01)
       그대로. 게이트를 저신뢰로 통과한 비행동 항목의 2차 방어선)
       구현(M1-④a): 워커가 분류한 항목마다 items.gate_label·gate_confidence를 남기고, 게이트 폐기는 quarantine_until = 폐기 + 7일.
       복구는 restore_discarded RPC(사용자 JWT) → status queued + process 잡 payload skip_gate + gate_feedback(wrong_discard).
@@ -292,6 +293,13 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
       모델 입력은 출처·앱 이름·제목·본문(4,000자에서 절단)이고 발신자 필드는 보내지 않는다. 단 메신저 알림은 제목이 발신자 표시 이름이라
       추출(OpenAI)에는 표시 이름이 제목으로 간다(분류 게이트 Jev에는 보내지 않는다, 위).
       event는 시작 일시가 없으면, task는 제목이 없으면, purchase는 가맹점·금액이 모두 없으면 none. evidence는 마스킹된 본문의 구절 ≤300자
+      요약(2026-10-01, §16): 같은 `text_fact` 호출이 `summary`(원문 없이도 알아볼 수 있게 누가·무엇·언제·어디·금액, 한국어 200자 이내)와
+      `keywords`(사람·기관·가게·상품·장소·금액·날짜 표기, 12개 이하)를 kind와 무관하게(none 포함) 함께 낸다. 워커가 요약을 사용자 데이터 키로
+      암호화해 `item_summaries`(§8)에 넣는다 — `save_fact`·empty 처리 **전**에 넣고 재시도는 덮어쓴다. 모델이 빈 요약을 내면 마스킹 본문 앞
+      200자로 대신한다(요약 없는 항목이 매일 재요약되지 않게). 입력이 4,000자에서 잘리므로 긴 메일의 요약은 앞부분 기준이다. 출력 상한 512 → 800토큰.
+      M1 기간 항목과 실패분은 `summarize` 잡(요약 전용 strict 스키마, 백필 레인, 월 예산 `extract`)이 채운다: 매일 cron `enqueue_summary_backlog`
+      (사용자당 하루 200건). 게이트 폐기(격리 중)·규칙 폐기·처리 전(queued) 항목은 요약하지 않는다(복구되면 process가 만든다).
+      이미지·PDF(vision) 요약은 2단계 파일 경로와 함께 한다
   → 이미지/PDF: gpt-6-luna vision(`input_image`·`input_file`). 월 상한 100건(usage_counters). 초과 시 기기에서 같이 올라온 OCR 텍스트 사용
       기기 OCR 텍스트가 있으면 이미지·PDF와 함께 넣는다(0단계 실측 vision+OCR 21/21, vision만 19/21 — 스캔 PDF 제목 오류).
       건당 입력 3.8~4.3k 토큰, 약 $0.00042, 지연 p50 1.95s·p95 2.53s(PoC-8). 상한은 호출 전 예약(`reserve_vision_call`, 한 문장 upsert)
@@ -307,6 +315,9 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
       `enqueue_embed_backlog`로 한 번에(백필 레인 — 새 항목의 process·embed 잡 앞에 서지 않게). 청크 전에 서버 규칙을 다시 적용하고
       (§12 통제 2, 폐기 판정이면 청크 없음), 한 요청은 256청크 이하로 나눠 보낸다(요청당 30만 토큰·2,048개 한도). 임베딩을 월 예산으로 둔
       이유(M2-⑧a 리뷰 수정 `0016`): 백필 예산이면 추출이 먼저 다 써서 백필 메일 전체가 다음 달까지 검색(벡터·키워드 둘 다 `item_chunks`)에서 빠진다
+      요약 임베딩은 **원문·청크가 지워질 때** 만든다(지연, 2026-10-01): 원문 만료·용량 비우기(§8)가 청크를 지운 항목마다 embed 잡
+      (`payload.summary = true`, 백필 레인, 월 예산 `embed`)이 요약을 복호화해 임베딩한다. 청크가 있는 동안 벡터를 두 벌 두지 않아 용량을 아끼고,
+      비우기가 OpenAI 가용성·예산에 묶이지 않는다. 요약 키워드 검색은 삭제 즉시, 요약 의미 검색은 이 잡이 돈 뒤부터(예산 소진이면 다음 달)
   → 저장(0b): 이미지(extract 잡)·텍스트(process 잡) 공용 `save_fact`(0013). fact 1건(같은 항목·같은 종류의 active fact는 1개) +
       event → `create_event`, task → `create_reminder` 제안(purchase는 제안 없음. 1단계까지는 `purchases` 테이블 없이 facts.payload, 테이블은 2단계),
       items.status = `extracted`. 재시도는 새 행 없이 같은 fact·제안 id를 돌려주고 status만 `extracted`로 맞춘다
@@ -351,10 +362,13 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 |---|---|---|
 | `connections` | provider, account_ref(unique with provider), status(active/reauth_required/disconnected), expires_at, created_at | 토큰은 `vault` `gmail_rt:<id>`(행 삭제 시 트리거로 삭제). `expires_at` = OAuth refresh token 만료(테스트 모드 7일, 게시 후 null) |
 | `sync_states` | connection_id(pk), cursor(historyId), last_success_at, watch_expires_at | `watch_expires_at` = Gmail watch 만료(7일, 매일 갱신). 0단계 `0006_gmail.sql`과 일치 |
-| `items` | source(GMAIL/MESSAGES/NOTIFICATION/SHARE/CHAT), app_name, sender, title, content_enc bytea, ocr_text_enc bytea, occurred_at, captured_at, device_filter, idempotency_key, status, storage_key, expires_at, gate_label, gate_confidence, quarantine_until | 원문. `content_enc`·`ocr_text_enc`는 Edge Function이 사용자 데이터 키로 AES-256-GCM 암호화해 저장(§12). 90일 후 삭제, 행은 유지. status: queued → extracted \| discarded:server:<사유>(0b). 게이트 폐기 항목은 본문을 7일 격리 후 삭제(§7). gate_label·gate_confidence = Jev 판정(분류한 항목만, 폐기·통과 모두), quarantine_until = 게이트 폐기 본문 보존 기한(규칙 폐기는 null, M1-④a `0010`) |
+| `items` | source(GMAIL/MESSAGES/NOTIFICATION/SHARE/CHAT), app_name, sender, title, content_enc bytea, ocr_text_enc bytea, occurred_at, captured_at, device_filter, idempotency_key, status, storage_key, expires_at, gate_label, gate_confidence, quarantine_until | 원문. `content_enc`·`ocr_text_enc`는 Edge Function이 사용자 데이터 키로 AES-256-GCM 암호화해 저장(§12). 수집 3년 뒤(`expires_at = captured_at + 3년`, 2026-10-01) 삭제, 행은 유지. status: queued → extracted \| discarded:server:<사유>(0b). 게이트 폐기 항목은 본문을 7일 격리 후 삭제(§7). gate_label·gate_confidence = Jev 판정(분류한 항목만, 폐기·통과 모두), quarantine_until = 게이트 폐기 본문 보존 기한(규칙 폐기는 null, M1-④a `0010`) |
 | `user_keys` | user_id, wrapped_key bytea, created_at | 사용자별 데이터 키를 마스터 키로 감싼 값(봉투 암호화). 마스터 키는 Edge Function 시크릿에만 있고 DB에 없다 |
 | `utterances` / `memories` | (아래) | 평문. 사용자 삭제 시 연쇄 |
-| `item_chunks` | item_id, chunk_index, text, embedding vector(512), tsv tsvector | HNSW + GIN. 원문 만료 시 삭제. worker embed 잡이 제목+본문 512자 청크로 채운다(M2-⑧a `0015`, 대상 = extracted·discarded:server:empty 이고 원문 있음) |
+| `item_chunks` | item_id, chunk_index, text, embedding vector(512) | HNSW. 원문 만료(3년)·용량 비우기 때 행 전체 삭제. `tsv` 생성 열과 GIN(tsv)·GIN(trgm) 색인은 `hybrid_search`(0017, `strpos` 부분 문자열)가 쓰지 않아 용량 보호 태스크에서 지운다. `text`는 평문 — 3년 평문 여부는 사용자 확인 대기(§16 UC-1, 권장: 90일 뒤 본문을 `text_enc`로 암호화하고 임베딩만 유지). worker embed 잡이 제목+본문 512자 청크로 채운다(M2-⑧a `0015`, 대상 = extracted·discarded:server:empty 이고 원문 있음) |
+| `item_summaries` | item_id(pk, items cascade), summary_enc bytea, keywords text, embedding vector(512) null, model, created_at | 항목별 요약(2026-10-01, §7). **본문과 같은 등급**: `summary_enc`는 사용자 데이터 키 AES-256-GCM(계정 삭제 = crypto-shred), 복호화는 worker·chat만, LLM 전송은 본문 규칙 그대로(OpenAI 추출 호출이 만들고 chat 답변 문서로만 간다, Jev에는 보내지 않는다), 출처·계정 삭제가 함께 지운다(cascade). `keywords`는 원문 삭제 뒤 키워드 검색용 평문(`facts.payload`와 같은 등급의 평문 파생물, §12 통제 1). 시간 만료 없음(영구) — 용량 비우기 3단계만 지운다. `embedding`은 원문·청크가 지워질 때 채운다(§7 지연 임베딩). 검색 대상은 평문 청크가 없는 항목뿐(§9). RLS 자기 행 읽기(앱은 직접 읽지 않고 `/chat/item`으로 받는다) |
+| `capacity_log` | at, db_bytes, reusable_bytes, effective_bytes, limit_bytes, level, action(measure/purge/purge_hard/summaries/stuck), originals, summaries, freed_est, oldest_left | 용량 보호 기록(2026-10-01, 아래). 시스템 표(사용자 열 없음, service role 전용). 180일 보관 |
+| `capacity_pushes` | user_id, level(warn/purged/full), window_key, sent_at | 용량 알림 1회 기록(`reauth_pushes`와 같은 방식). warn·full은 7일 창, purged는 비우기 1회마다 |
 | `facts` | item_id, kind, payload jsonb, evidence(원문 인용 ≤300자), status(active/cancelled/superseded), supersedes_id | 추출 결과, 무기한(원문 만료 뒤에도 남는다). evidence가 만료 후 출처 역할. items 행이 지워지면(출처·전체 삭제) 함께 지워진다(`item_id` on delete cascade, 0020) |
 | `purchases` | fact_id, merchant, product[], ordered_at, amount, currency, order_no, status, delivery_status, recurrence | **2단계**(facts 백필 마이그레이션과 함께). 구매·구독. `purchase_evidence(purchase_id, item_id)`로 다대다. 1단계는 `facts(kind=purchase).payload` |
 | `proposals` | fact_id, action(create_event/update_event/create_reminder/complete_reminder), payload, version, status(proposed/confirmed/succeeded/failed/stale/dismissed), eventkit_id, idempotency_key | fact 변경 시 version 증가, 이전 제안은 stale. dismissed = 사용자가 "무시"(알림 액션·제안 시트·"제안" 탭, `dismiss_proposal`, 0021). 무시 뒤 다른 경로로 실제 추가해 보고되면 succeeded로 올린다(`report_execution`) |
@@ -375,16 +389,30 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 | 구분 | 트리거 | 지우는 것 | 남기는 것 |
 |---|---|---|---|
-| 원문 만료 | pg_cron, `expires_at` 경과 (원문 90일, 이미지 30일) | items.content_enc/ocr_text_enc, item_chunks **행 전체**(text·tsv·embedding), Storage 객체 | items 행(메타), facts(payload·evidence ≤300자), purchases, proposals, memories |
+| 원문 만료 | pg_cron, `expires_at` 경과 (원문·OCR·청크 3년 = `captured_at + 3년`, 2026-10-01). 요약 대상인데 요약이 없으면 요약 잡을 넣고 최대 7일 미룬다 | items.content_enc/ocr_text_enc, item_chunks **행 전체**(text·embedding) | items 행(메타), **item_summaries**(요약 임베딩 잡을 넣는다), facts(payload·evidence ≤300자), purchases, proposals, memories |
+| 이미지 파일 만료 | pg_cron, `captured_at + 30일` (Storage 객체만, 2026-10-01부터 원문 만료와 분리) | Storage 객체 | OCR 텍스트(3년 규칙) |
+| 용량 비우기 | pg_cron 매시, 유효 크기 ≥ 한도 85% (아래 "용량 보호") | 1단계 오래된 원문·청크(요약 있는 항목, 수집 90일 이내 제외) → 2단계(유효 크기 95% 이상일 때만) 요약 없는 오래된 원문 → 3단계 원문이 지워진 항목의 오래된 요약 | items 행, facts, proposals, memories(자동으로 지우지 않는다) |
 | 폐기 격리 만료 | pg_cron, 게이트 폐기 후 7일 (§7, 1인 사용 기간) | items.content_enc/ocr_text_enc, item_chunks 행 | items 행(status·사유 코드) |
-| 항목·출처 삭제 | 사용자가 항목 또는 출처(예: Gmail 연결) 삭제 | 해당 items·chunks·facts·purchases·purchase_evidence·proposals·executions·jobs(payload 포함)·Storage 객체 | 다른 출처 데이터, memories |
-| 전체 삭제 | 사용자가 계정 삭제 | 위 전부 + utterances·memories·connections(Gmail 토큰 revoke 호출 포함)·devices·audit_log 본문 없는 행만 유지 + `user_keys` 행 삭제(crypto-shredding) + 기기에 삭제 푸시(로컬 큐·executions 정리) | 감사 로그의 사유 코드 |
+| 항목·출처 삭제 | 사용자가 항목 또는 출처(예: Gmail 연결) 삭제 | 해당 items·chunks·**summaries**(items cascade)·facts·purchases·purchase_evidence·proposals·executions·jobs(payload 포함 — summarize·요약 embed 잡도 `payload.item_id`로)·Storage 객체 | 다른 출처 데이터, memories |
+| 전체 삭제 | 사용자가 계정 삭제 | 위 전부(요약 포함 — `summary_enc`는 `user_keys` 삭제로 백업에서도 복호화 불가) + capacity_pushes + utterances·memories·connections(Gmail 토큰 revoke 호출 포함)·devices·audit_log 본문 없는 행만 유지 + `user_keys` 행 삭제(crypto-shredding) + 기기에 삭제 푸시(로컬 큐·executions 정리) | 감사 로그의 사유 코드 |
 
-구현(M2-⑥a): 원문 만료 = pg_cron purge-expired-daily(purge_expired + Storage는 purge-media 잡), 출처 삭제 = Edge account/source → delete_gmail_source(연결 행 잠금 → 잡 → facts → items → 연결 순, 한 트랜잭션. 범위는 사용자의 Gmail 항목 전부. 연결이 이미 없어도 항목 삭제는 수행), Gmail 항목 insert 는 살아 있는 gmail 연결이 있을 때만(삭제와 직렬화 — 삭제 뒤 진행 중 fetch 가 되살리지 못함), 진행 중 추출의 fact 는 `facts.item_id` cascade 로 item 과 함께 지워진다(삭제가 facts 를 지운 뒤 커밋된 fact 포함 — 최종 리뷰 I-1, 0020), 전체 삭제 = Edge account/delete(기기 목록 선조회 → revoke → Storage(오류면 중단) → Auth 사용자 삭제 → 감사 → 보관한 토큰으로 기기 삭제 푸시 eruri_wipe. 사용자 삭제 실패 시 기기·감사는 건드리지 않음). 이미지·PDF 항목은 insert 때 expires_at = 30일.
+구현(M2-⑥a): 원문 만료 = pg_cron purge-expired-daily(purge_expired + Storage는 purge-media 잡), 출처 삭제 = Edge account/source → delete_gmail_source(연결 행 잠금 → 잡 → facts → items → 연결 순, 한 트랜잭션. 범위는 사용자의 Gmail 항목 전부. 연결이 이미 없어도 항목 삭제는 수행), Gmail 항목 insert 는 살아 있는 gmail 연결이 있을 때만(삭제와 직렬화 — 삭제 뒤 진행 중 fetch 가 되살리지 못함), 진행 중 추출의 fact 는 `facts.item_id` cascade 로 item 과 함께 지워진다(삭제가 facts 를 지운 뒤 커밋된 fact 포함 — 최종 리뷰 I-1, 0020), 전체 삭제 = Edge account/delete(기기 목록 선조회 → revoke → Storage(오류면 중단) → Auth 사용자 삭제 → 감사 → 보관한 토큰으로 기기 삭제 푸시 eruri_wipe. 사용자 삭제 실패 시 기기·감사는 건드리지 않음). 이미지·PDF 항목은 insert 때 expires_at = 30일이었다 → 2026-10-01부터 OCR 텍스트는 3년, Storage 객체는 `captured_at + 30일`(`worker_expired_media`)로 분리한다.
 
-만료 후 검색은 facts·purchases·memories만 대상이며 출처는 facts.evidence 인용문과 "원문 만료됨" 표시로 대체한다. 만료된 항목의 의미 검색은 되지 않는다(벡터 삭제). 백업은 Supabase 일일 백업 보관 기간(무료 7일) 동안 삭제 전 상태를 담고 있으며, `user_keys`가 지워진 뒤에는 백업의 `content_enc`를 복호화할 수 없다. 평문 파생물(청크·facts)은 백업 보관 기간 후에 완전히 사라진다. 이 사실을 §12 통제 5의 화면에 그대로 적는다.
+만료·비우기 후 검색은 **요약**(키워드 = `keywords`, 의미 = 요약 임베딩, §9)과 facts·purchases·memories가 대상이며 출처는 요약·facts.evidence 인용문과 "원문 만료됨" 표시로 대체한다. 청크 벡터는 원문과 함께 지워진다. 요약까지 지워진 항목(용량 비우기 3단계)은 facts로만 찾는다. 백업은 Supabase 일일 백업 보관 기간(무료 7일) 동안 삭제 전 상태를 담고 있으며, `user_keys`가 지워진 뒤에는 백업의 `content_enc`를 복호화할 수 없다. 평문 파생물(청크·요약 키워드·facts)은 백업 보관 기간 후에 완전히 사라진다. 이 사실을 §12 통제 5의 화면에 그대로 적는다.
 
-용량 추정(1인 1년): 메일 일 20건 × 4KB 원문 + 청크 복제 + 512차원 벡터(2KB)×청크 3개 ≈ 연 90MB. 500MB 안이지만 `pg_database_size`를 주간 잡으로 기록해 400MB에서 경고한다.
+### 용량 보호 (2026-10-01 사용자 결정)
+
+용량 추정(1인, 실측으로 보정 — 용량 보호 태스크 게이트): 메일 1통 ≈ 30~40KB(원문 암호문 + 청크 평문 + 청크당 512차원 벡터 2KB + HNSW 약 2.3KB, 사용하지 않는 `tsv`·GIN 색인 제거 후. 제거 전은 약 50KB), 알림 1건 ≈ 5KB, 요약 1건 ≈ 1KB(원문 삭제 뒤 벡터 +4KB). 메일 일 20·알림 일 40이면 **연 약 300MB**이고 Gmail 연결 때 90일 백필이 한 번에 약 60MB다. `cron.job_run_details`(pg_cron 실행 기록, 매분 워커 cron만 하루 1,440행)는 지우지 않으면 **연 약 250MB**로 사용자 데이터만큼 커진다. 따라서 무료 플랜 500MB에서 원문 3년은 불가능하고, 유효 크기가 85%에 닿는 **약 1.2~1.5년** 뒤부터는 가장 오래된 원문이 롤링으로 지워진다 — 사용자 확인 대기(§16 UC-2: 무료 롤링 수용 또는 Pro 전환).
+
+| 항목 | 결정 |
+|---|---|
+| 측정 | `sum(pg_database_size(datname)) from pg_database`(Supabase가 한도에 쓰는 값, §3) = db_bytes. 지운 행 공간은 autovacuum 뒤 새 행이 다시 쓰지만 크기는 줄지 않으므로(§3), 판정은 **유효 크기 = db_bytes − 재사용 가능 공간**으로 한다. 재사용 가능 공간 = 큰 공개 테이블(items·item_chunks·item_summaries·jobs·audit_log·facts·device_traces) 힙의 `pgstattuple_approx` free + dead(색인 여유는 넣지 않아 보수적). `pgstattuple`을 쓸 수 없으면 대체 측정(용량 태스크 Step 1이 정한다) |
+| 한도 | `capacity_caps()` 한 곳(`budget_caps()`와 같은 방식): 한도 500MB(무료), 경고 70%, 비우기 시작 85% → 목표 75%, 위험 95%. 플랜을 바꾸면 함수만 고친다 |
+| 정리(항상) | 매일: `cron.job_run_details` 14일, `jobs` done·dead 30일, `capacity_log` 180일 지난 행 삭제. 사용자 데이터가 아니므로 비우기보다 먼저 |
+| 비우는 순서 | 오래된 순 = `occurred_at`(받은 시각) 오름차순. 1단계 원문·청크(요약 있는 항목 또는 요약 대상이 아닌 항목. **수집 90일 이내는 지우지 않는다**) → 2단계(유효 크기 ≥ 95%일 때만) 요약 없는 원문 → 3단계 원문이 이미 지워진 항목의 요약. facts·proposals·memories는 자동으로 지우지 않는다. 지울 양 = 유효 크기 − 목표(75%), 항목별 추정 바이트(암호문 길이 + 청크 평문 길이 + 청크당 고정 오버헤드, 게이트 실측값)로 누적해 멈춘다. 안전판: 한 번에 한도의 5% 이하, 6시간에 1회 |
+| 주기 | 매시 `capacity-hourly`(측정·기록, 85% 이상일 때만 비우기). Gmail 90일 백필(약 60MB)이 하루 안에 들어와도 85%→100% 사이 75MB 여유가 있다 |
+| 사용자 알림 | 푸시(본문·제목 없이 비율·개수·날짜만): 경고(70% 이상, 7일에 1회) "저장 공간 72% 사용 — 85%부터 오래된 원문을 지웁니다(요약은 남음)", 비우기 뒤 "저장 공간 확보: YYYY-MM-DD 이전 원문 N건을 지웠습니다. 요약·추출 정보는 남아 있습니다", 위험(db_bytes ≥ 95% 또는 목표 미달, 7일에 1회) "저장 공간이 거의 찼습니다 — 가득 차면 수집이 멈춥니다. 설정에서 확인하세요". 설정 "저장 공간" 절: 사용률·MB·원문 보관 시작일(가장 오래 남은 원문)·마지막 비우기 |
+| 운영 | db_bytes(보고 크기)가 95% 이상인데 유효 크기가 낮으면 재사용 공간이 크다는 뜻 → 운영자가 `scripts/capacity.ts vacuum-full`(테이블 잠금, 한 문장씩)로 보고 크기를 줄인다. 지인 확대(3단계)에서는 전역 비우기 대신 사용자별 할당으로 바꾼다 |
 
 ## 9. 채팅·검색
 
@@ -394,6 +422,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
      → facts SQL 우선 (구조화 질문. 1단계는 facts(kind=purchase).payload jsonb 조회, 2단계부터 purchases 테이블.
         기간은 event=start·task=due, 그 밖은 받은 시각으로 거른다)
      → 하이브리드: tsvector(simple + pg_trgm) ∪ pgvector cosine, RRF 융합, 상위 12개(기간 필터로 0건이면 기간 없이 1회 더)
+        (원문·청크가 지워진 항목은 요약 문서로 참여: 키워드 = item_summaries.keywords, 의미 = 요약 임베딩 — 2026-10-01)
      → memories(active만) 상위 5개 포함. utterances의 question/correction은 검색 풀에서 제외
      → gpt-6-sol 답변(effort low). Responses API `text.format` json_schema strict로
         {sentences:[{text, source_item_ids[]}]} 출력. 검색 결과는 <document id="item_id"> 블록으로 넣는다
@@ -403,6 +432,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
         인용 id는 존재만 검증되고 문장이 그 문서에 실제로 근거하는지는 보장하지 않는다 → 인용 정확도(§9 지표)로 측정
      → 실행 가능 항목은 proposal 카드로 반환. 검색 문서 내용은 절대 proposal payload를 직접 만들지 못하고
         추출 파이프라인(§7)을 다시 거친다
+     → 검색 후보 집합(candidates: facts ∪ 하이브리드 융합 목록의 항목 id, 순위순, 최대 100) 반환 → 앱 "보관함에서 보기"(2026-10-01)
 ```
 
 - 임베딩은 `text-embedding-3-large`(`dimensions: 512`)로 한다(§2, PoC-7).
@@ -418,6 +448,8 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
   4. 인용 정확도("있는 문서를 잘못 인용")는 사용자가 앱 채팅에서 답변 20건의 인용마다 👍/👎 → `eval_judgments`(§8, RLS, 본문 없음). 러너는 집계만 읽는다.
   5. 합격선은 위 지표 그대로(Top-5 ≥ 90%, 무근거 거절 ≥ 90%). 인용 정확도가 PoC-7 수준에 못 미치면 문장-문서 재검증(§16)을 추가한다.
 - 수집된 메일·웹·알림 안의 지시문은 데이터로만 취급한다. 검색 결과는 `<document>` 블록으로 감싸 user 턴에 넣고 시스템 프롬프트는 고정해 앞에 두어 OpenAI 자동 프롬프트 캐시(캐시 입력 단가 1/10)에 걸리게 한다. 도구 호출 권한은 chat 함수에 없다(읽기 전용).
+- **채팅 → 보관함 보기(2026-10-01 사용자 결정)**: 답변 아래 "보관함에서 보기 (N건)" 버튼이 그 질문의 **검색 후보 전체**를 보관함 탭에 넘겨 그 집합만 보여준다. 후보 = facts 결과 ∪ 하이브리드 **융합 목록 전체**(의미 상위 40 ∪ 키워드 상위 40 청크·요약 문서, `hybrid_search` `p_limit` 80)의 항목 id, 순위순·중복 제거·최대 100. 모델에 넣는 문서(상위 12, `hits`)와 답변은 바뀌지 않는다 — 같은 한 번의 검색에서 자르기만 다르다(기간 폴백 뒤의 최종 검색 기준). 후보에는 id만 담고 본문을 읽지 않으므로 새 감사 행은 없다(항목을 열면 `/chat/item`이 복호화 감사). 의미 상위 40은 관련 없어도 항상 채워지므로 후보 뒤쪽에는 잡음이 섞인다 → 보관함은 **검색 순위순**으로 보여 준다(보관함 기본 최신순과 다름). 거절 답변에도 후보가 있으면 버튼을 보인다(찾지 못한 이유를 사용자가 직접 훑게). 문서 0건이면 후보도 없고 버튼도 없다. 보관함 범위 모드: 머리 줄 "채팅 검색 결과 N건 · '<질문 앞 20자>'" + "전체 보기"(해제), 출처 탭 필터(서버 조건)·원문 보기(항목 상세)·무한 스크롤(50개씩 id 조각을 불러오고 끝 5행 전에 다음 조각)은 그대로, "최근 폐기"는 숨긴다(격리 항목은 후보가 아니다). 범위는 앱 메모리에만 두고 새 "보관함에서 보기"나 "전체 보기"까지 유지한다(앱 0.7.0)
+- **요약 검색(2026-10-01)**: `hybrid_search`의 문서 집합 = 청크 ∪ **평문 청크가 없는 항목의 요약**(`keywords` 부분 문자열 + 요약 임베딩). 청크가 있는 항목의 요약은 넣지 않는다(순위·평가 기준선 유지). chat이 상위 문서 중 요약 문서만 복호화해 `[요약] …`으로 넣고 감사 `decrypt`(item_id 목록 해시)를 남긴다. `/chat/item` 응답에 `summary`(복호화, 없으면 null)를 더해 앱 항목 상세에 "요약" 절로 보인다 — 원문이 있는 동안에도 보여 사용자가 무엇이 남을지 확인한다
 - 채팅 음성 입력: 기기 안 받아쓰기(Speech, 온디바이스 전용, ko-KR), 서버 전송 없음 — 2026-10-01 사용자 요청. 받아쓴 글은 입력창에 채워질 뿐이고 보내기 전까지 전송되지 않는다(앱 0.6.0).
 - 모든 발화는 `utterances`에 기록하되, 사실로 검색되는 것은 `memories`(statement 판정 또는 "기억해줘")뿐이다. "아니 그거 안 샀어" 같은 정정은 이전 memory를 retracted로 바꾼다.
 - 구현(M2-⑧b, 0017): `POST /chat` `{question}`(≤500자) → `{answer_id, answer, refused, source_item_ids, citations(출처 메타 item_id·source·app_name·title·sender·occurred_at·expired = 원문 만료 여부), proposals(인용 항목의 제안 id·item_id·action·status·payload, proposed·succeeded), hits(문서 순서 = facts 우선 + 하이브리드, item 단위 중복 제거, 최대 12)}`. `POST /chat/item` `{item_id}` → 본인 항목 원문 `{item_id, source, app_name, title, sender, occurred_at, expired, text}`(원문 만료면 text null, 남의 항목·형식 오류 404, 복호화 감사 actor `chat`). 필터는 gpt-6-luna(effort none, {date_from, date_to, sources, kinds, merchant}, 서울 날짜). 기간은 메일·문자를 **받은/저장한** 기간을 말할 때만 채우고 일정·약속·기한의 날짜("10월 20일 미팅", "다음 주 약속")는 null 이다(Ruling D, 0019). 그래도 기간이 일정 날짜로 채워질 때를 대비해 facts 는 event 의 `payload.start`·task 의 `payload.due`(날짜만이면 서울 0시, 해석 불가면 받은 시각)로, 그 밖의 종류는 받은 시각으로 기간을 거르고(`fact_when`), 하이브리드는 기간 필터로 0건이면 기간만 빼고(출처 유지) 한 번 더 검색한다 — 9/10 에 받은 10/20 미팅 메일이 두 경로 모두에서 잡힌다. facts 는 종류·가맹점 조건이 있을 때만(`search_facts`, 상위 5, 가맹점은 부분 문자열), 답변은 예산 80% 미만 gpt-6-sol·이상 gpt-6-luna(effort low). 서버가 읽은 item_id 목록(facts + 하이브리드, 모델에 넣지 않고 12개 밖으로 버린 것 포함)은 `audit_log(action='read', target=목록 SHA-256)`. 예산 소진 `429 budget_exhausted`, LLM 슬롯 없음은 서버가 1초·2초 두 번 기다렸다 다시 시도한 뒤에도 없으면 `503 llm_busy`(retry-after 30). 답변 형식은 `{answer, source_item_ids, refused}`(PoC-7 측정 형식, Ruling 5) — 위 그림의 문장별 인용·"근거 미확인"은 1단계 계획 "스펙 확인 필요" #5로 보류. `memories` 단계는 1단계 제외(Ruling 7).
@@ -463,7 +495,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 1단계 제품 번들 ID 는 `com.picpal.eruri`, App Group `group.com.picpal.eruri` 로 새로 등록한다(0단계 PoC 는 이미 등록·TestFlight 배포된 `com.picpal.assistant.poc`·`group.com.picpal.assistant` 유지).
 
-1단계 앱 탭: **채팅 | 제안 | 보관함 | 설정**. "제안" 탭은 `list_pending_proposals` 목록에 행마다 "캘린더에 추가"·"무시", 당겨서·앱 활성화 때 새로고침, 캘린더 전체 접근이 없으면 추가 버튼 대신 권한 안내(§10 제안 리뷰, Ruling 8').
+1단계 앱 탭: **채팅 | 제안 | 보관함 | 설정**. "제안" 탭은 `list_pending_proposals` 목록에 행마다 "캘린더에 추가"·"무시", 당겨서·앱 활성화 때 새로고침, 캘린더 전체 접근이 없으면 추가 버튼 대신 권한 안내(§10 제안 리뷰, Ruling 8'). 보관함은 채팅 "보관함에서 보기"로 그 질문의 검색 후보만 보이는 범위 모드가 되고(§9), 항목 상세에 "요약" 절, 설정에 "저장 공간" 절(§8 용량 보호)을 둔다(앱 0.7.0, 2026-10-01).
 
 **제품 분리 시점과 방식** (2026-09-30 결정): 1단계 Task 1(서버)·Task 2(앱)가 분리 자체다.
 
@@ -487,16 +519,16 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 - 방식: **봉투 암호화를 Edge Function에서 수행**한다. 사용자별 데이터 키(32바이트)는 마스터 키(Edge 시크릿 `MASTER_KEY`, DB에 없음)로 감싸 `user_keys.wrapped_key`에 둔다. 본문은 WebCrypto AES-256-GCM으로 `ingest`·`gmail-fetch`가 INSERT 전에 암호화한다. pgsodium은 Supabase가 폐기 예정으로 안내하므로 쓰지 않는다.
 - 복호화는 `worker`(추출·청크 생성)와 `chat`(출처 원문 표시) 두 함수만 메모리에서 수행하고, 복호화된 평문을 응답 로그·오류 로그에 남기지 않는다. DB 함수·대시보드에서는 복호화가 불가능하다(마스터 키가 DB에 없음).
-- **보호 범위**: 이 암호화가 지키는 것은 **메일 원문 전체와 이미지·OCR 원문**이다. `item_chunks.text`(90일), `facts.payload`·`evidence`, `purchases`, `memories`는 검색·답변에 필요해 평문이며, 청크를 이어 붙이면 원문 상당 부분이 복원된다. 따라서 "DB 덤프가 유출돼도 안전"하다고 말하지 않는다. 덤프 유출 시 노출되는 것은 최근 90일 청크와 추출 사실이고, 90일 이전 원문·첨부는 노출되지 않는다. 실제 1차 방어는 통제 4(접근 통제)와 통제 2(짧은 보관)다.
+- **보호 범위**: 이 암호화가 지키는 것은 **메일 원문 전체와 이미지·OCR 원문, 항목 요약 문장**(`item_summaries.summary_enc`, 2026-10-01)이다. `item_chunks.text`, `item_summaries.keywords`, `facts.payload`·`evidence`, `purchases`, `memories`는 검색·답변에 필요해 평문이며, 청크를 이어 붙이면 원문 상당 부분이 복원된다. 따라서 "DB 덤프가 유출돼도 안전"하다고 말하지 않는다. **2026-10-01 보관 3년 결정의 영향**: 청크 평문을 원문과 같이 3년 두면 덤프 유출 시 노출 범위가 "최근 90일 청크"에서 **"최근 3년 청크(마스킹된 본문 상당 부분)"**로 넓어진다 — 통제 2의 "짧은 보관"이 청크에는 더 이상 성립하지 않는다. 그래서 청크 평문 기간은 사용자 확인 대기다(§16 UC-1). **권장(안 B)**: 수집 90일까지만 청크 `text` 평문, 그 뒤에는 청크 본문을 사용자 키로 암호화(`text_enc`)하고 평문을 지우며 임베딩은 3년 유지 — 의미 검색·답변(chat이 상위 문서만 복호화)은 3년 그대로, 키워드 검색은 90일 이후 원문에서 빠지고 요약 키워드·facts가 대신한다. 덤프 노출은 지금과 같은 "최근 90일 청크 + 요약 키워드 + 추출 사실". 안 A(3년 평문)는 구현이 없고 키워드 검색 3년, 노출 3년. 안 C(청크 전부 암호화)는 최근 항목의 키워드 검색까지 잃어 PoC-7 하이브리드(38/40)의 키워드 몫을 버린다(1단계 검색 평가 재측정 필요) — 비권장. 임베딩 벡터도 평문이며 짧은 문장은 벡터에서 일부 복원될 수 있다(임베딩 역추정 연구) — 512차원 축소로 완화될 뿐 없어지지 않는다. 요약 `keywords`는 키워드 검색에 필요한 최소 평문(사람·기관·가게·상품·장소·금액·날짜)으로 `facts.payload`와 같은 등급이다(요약 문장을 평문으로 두는 것과의 차이는 문장 관계가 없다는 정도로 크지 않다 — §16 UC-3). UC-1이 안 B로 정해지고 구현되기 전에는 청크 평문이 3년이다. 원문·요약 암호문(3년·영구)은 덤프만으로는 복호화되지 않는다(마스터 키가 DB에 없다). 실제 1차 방어는 통제 4(접근 통제)와 통제 2(최소화)다.
 - Storage 객체(이미지·PDF)는 업로드 전 기기에서 같은 사용자 키로 암호화할 수 없으므로(키가 서버에만 있음) Supabase 서버 측 암호화 + 비공개 버킷 + 서명 URL(60초)로 보호하고 30일 뒤 삭제한다.
 - crypto-shredding은 **계정 전체 삭제에만** 적용한다(사용자당 키 하나). 부분 삭제는 행 삭제로 처리하며 백업 보관 기간(7일) 동안 평문 파생물이 백업에 남는다는 점을 통제 5에 명시한다.
 
 ### 통제 2. 최소화와 짧은 보관
 
 - 수집 제외: 프로모션 라벨, 첨부파일(이미지·PDF는 사용자가 공유한 것만), OTP, 카드·계좌번호(마스킹), 카톡 개인 대화, 의료 결과지.
-- 원문 90일, 이미지 30일 뒤 삭제. 추출 사실·구매 이력·벡터·`evidence` 인용(≤300자)만 남아 검색은 계속된다.
+- 원문·청크 3년(2026-10-01, 사용자 결정 — 이전 90일), 이미지 파일 30일 뒤 삭제. 원문 삭제 뒤에는 항목 요약(암호화, 영구)·추출 사실·구매 이력·`evidence` 인용(≤300자)이 남아 검색은 계속된다. DB가 한도에 가까우면 3년 전이라도 오래된 원문부터 비운다(§8 용량 보호) — 보관 기간 3년은 상한이지 보장이 아니다(무료 플랜에서 실질 약 1.2~1.5년, §16 UC-2). 청크 평문 기간은 §16 UC-1.
 - 기기 입력은 기기에서 먼저 필터·마스킹 후 전송한다. Gmail은 서버가 직접 받으므로 "기기에서 먼저 마스킹"이라고 설명하지 않는다.
-- 처리 순서(§7과 동일): 규칙 필터(기기·서버) → 암호화 저장 → 워커가 복호화 → 분류 게이트(Jev) → 폐기 판정 시 7일 격리 후 본문 삭제(1인 사용 기간, §7) → 통과분만 추출·청크·임베딩 → 감사 기록. **예외를 명시한다**: 규칙 필터를 통과한 항목은 분류 전에 암호화된 채 저장되고 분류를 위해 Jev로 1회 전송된다(통제 3). 즉 "의료 결과지·개인 대화는 저장·전송되지 않는다"가 아니라 "암호화 저장 후 분류 1회 전송, 7일 격리 뒤 본문 삭제"이다. 격리는 오폐기를 사용자가 복구하고 게이트 정확도를 재기 위한 1인 사용 기간의 예외이며, 지인 확대 때 즉시 삭제로 되돌릴지 재검토한다(§16). 예산 소진 시에는 분류되지 못한 항목이 암호화 상태로 `queued`에 남으며 90일 만료 규칙이 그대로 적용된다.
+- 처리 순서(§7과 동일): 규칙 필터(기기·서버) → 암호화 저장 → 워커가 복호화 → 분류 게이트(Jev) → 폐기 판정 시 7일 격리 후 본문 삭제(1인 사용 기간, §7) → 통과분만 추출·청크·임베딩 → 감사 기록. **예외를 명시한다**: 규칙 필터를 통과한 항목은 분류 전에 암호화된 채 저장되고 분류를 위해 Jev로 1회 전송된다(통제 3). 즉 "의료 결과지·개인 대화는 저장·전송되지 않는다"가 아니라 "암호화 저장 후 분류 1회 전송, 7일 격리 뒤 본문 삭제"이다. 격리는 오폐기를 사용자가 복구하고 게이트 정확도를 재기 위한 1인 사용 기간의 예외이며, 지인 확대 때 즉시 삭제로 되돌릴지 재검토한다(§16). 예산 소진 시에는 분류되지 못한 항목이 암호화 상태로 `queued`에 남으며 원문 만료 규칙(3년)이 그대로 적용된다(요약 없음).
 - URL 본문·이미지 OCR·채팅 발화도 서버 규칙 필터(OTP·카드·계좌)를 같은 함수로 통과시킨 뒤 저장한다. URL 본문은 fetch 직후, OCR은 기기에서 이미 적용된 것을 서버에서 재적용한다.
 - 음성은 기기 밖으로 나가지 않는다: 채팅 음성 입력은 온디바이스 인식만 쓰고(`requiresOnDeviceRecognition`) 오디오를 저장·전송하지 않는다. 서버에는 사용자가 보낸 글만 간다(2026-10-01).
 - 폐기 판정된 항목은 본문을 지우고(규칙 폐기는 즉시, 게이트 폐기는 7일 격리 뒤) 행에는 상태·사유 코드만, 로그에도 사유 코드만 남긴다. Foundation Models 분류 결과는 저장하지 않는다.
@@ -519,7 +551,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 
 - 모든 테이블 RLS(`(select auth.uid()) = user_id`)는 **앱 클라이언트 경로**를 격리한다. `service_role`은 RLS를 우회하므로 워커·웹훅은 별도 규칙을 따른다: (a) 모든 쿼리에 `user_id`를 명시하는 저장 프로시저(`worker_claim_item(p_user, p_item)` 등)만 호출하고 테이블 직접 접근 금지, (b) 복호화는 `user_keys`의 소유자와 `items.user_id`가 일치할 때만 수행(함수 내부 검사), (c) `service_role` 키는 Edge Function 시크릿에만 존재하고 개발 기기·CI에 두지 않는다.
 - **워커 호출 인증**: Edge 게이트웨이의 JWT 검증은 publishable(anon) 키로도 통과한다(0단계 실측). `worker`처럼 service role로 도는 함수는 게이트웨이 검증에 기대지 않고, 함수 안에서 `Authorization: Bearer`가 런타임이 주입한 secret 키(`SUPABASE_SERVICE_ROLE_KEY`·`SUPABASE_SECRET_KEYS`)와 같을 때만 처리하고 아니면 403을 돌려준다. cron은 vault의 secret 키로 호출한다.
-- 평문 파생물 읽기도 감사한다: `chat`·`worker`가 `item_chunks`·`facts`를 읽을 때 `audit_log(action='read', target=item_id 목록 해시)`를 남긴다. 복호화 호출은 `action='decrypt'`로 별도 기록한다.
+- 평문 파생물 읽기도 감사한다: `chat`·`worker`가 `item_chunks`·`facts`를 읽을 때 `audit_log(action='read', target=item_id 목록 해시)`를 남긴다. 복호화 호출은 `action='decrypt'`로 별도 기록한다. 요약 복호화(worker 요약 임베딩, chat 요약 문서·`/chat/item`)도 `decrypt`로 남긴다(2026-10-01). 에이전트·운영자는 실데이터의 `summary_enc`를 복호화하지 않고 `keywords`·`item_chunks.text`도 조회하지 않는다(AGENTS.md §7).
 - 운영자(본인 포함)가 대시보드 SQL 편집기로 본문을 조회하지 않는다. 디버깅은 `item_id`·상태·오류 코드로만 한다. 이 규칙을 `AGENTS.md` §7에 적어 에이전트에도 적용한다. 사용자 본인이 제품 앱(chat 함수 경로·보관함)으로 자기 데이터를 보는 것은 제품 기능이라 금지 대상이 아니다(§9 평가 절차).
 - `audit_log(user_id, actor, action, target, at)`에 삭제·연결 해제·내보내기·복호화 호출을 기록한다. 본문은 기록하지 않는다.
 - 로그 보관 30일. 오류 로그에 본문·토큰이 섞이지 않도록 Edge Function 공통 오류 핸들러가 메시지를 정형화한다.
@@ -529,6 +561,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 - 설정 화면 "내 데이터"(3단계): 출처별로 **서버 보관 기간·LLM 전송 여부·마지막 동기화 시각·항목 수**를 표로 보여준다.
 - 연결 해제(수집 중지, 데이터 유지) / 수집 중지 / 출처별 삭제 / 전체 삭제 / 내보내기(JSON)를 분리 제공한다. 삭제는 §8 연쇄 규칙과 키 파기까지 포함한다. **1단계**는 전체 삭제(계정 + crypto-shred + Gmail revoke)와 출처 삭제를 설정 화면 버튼 2개로 둔다(M2 "보관·삭제 잡" 태스크)(M2-⑥). 내보내기(JSON)는 3단계.
 - 잠금 화면 알림에 본문 대신 요약("일정 제안 1건")만 노출하는 옵션을 둔다(3단계).
+- 저장 공간(2026-10-01): 설정 "저장 공간" 절에 사용률·원문 보관 시작일·마지막 비우기를 보이고, 경고·비우기·위험 푸시를 보낸다(§8 용량 보호). 용량 비우기는 사용자가 누르지 않아도 도는 자동 삭제이므로 기준(오래된 순, 90일 이내 원문 보호, 요약·사실 유지)을 이 화면 문구에 그대로 적는다.
 - 지인 확대(3단계) 선행 조건: 개인정보 처리방침, Google API Services User Data Policy(Limited Use) 준수 문구, Gmail 앱 검증(CASA), OpenAI ZDR 신청(통제 3), 위 "내 데이터" 표·내보내기(§15 3단계).
 
 ## 13. 비용 (월, 1인 기준 추정)
@@ -544,8 +577,9 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | gpt-6-sol 채팅 | 일 10회 × 입력 6k(시스템 1k 캐시)/출력 0.5k + reasoning low 0.5k → 월 입력 1.5M($3.00)·캐시 0.3M($0.06), 출력 0.3M($3.00). **상한 추정**: PoC-7 합성 평가 실측은 질문당 입력 약 0.7k·출력 약 0.06k(약 $0.002, 월 약 $0.6)였으나 실제 메일 청크는 합성 문서보다 길어 추정을 유지 | 약 $6.06 (실측 기준 약 $0.6) |
 | Vision (gpt-6-luna) | 월 30건 × 입력 약 4k(PoC-8 실측 3.8~4.3k, 기기 OCR 포함) + 출력 약 0.1k → 건당 $0.00042. 월 상한 100건이면 $0.04 | 약 $0.013 |
 | 임베딩 `text-embedding-3-large` (512차원) | 월 3M 토큰 × $0.13 | 약 $0.39 |
-| Supabase | 무료 | $0 |
-| 합계 | | 약 $7.1 ≈ 0.97만원 (채팅 실측 기준이면 약 $1.6) |
+| 요약(2026-10-01) | 추출 호출에 지시 약 150토큰·출력 약 150토큰 추가, 일 60건 → 월 입력 0.27M($0.03)·출력 0.27M($0.14). `summarize` 잡(M1 기간 항목·실패분, 건당 입력 약 1.6k·출력 0.15k ≈ $0.00024)은 처음 한 번 수백 건. 요약 임베딩은 원문 삭제 때 건당 약 80토큰 | 약 $0.17 (첫 달 백로그 +$0.1~0.3) |
+| Supabase | 무료(DB 500MB — 넘으면 읽기 전용, §3·§8 용량 보호. Pro 전환은 §16 UC-2) | $0 |
+| 합계 | | 약 $7.3 ≈ 1.02만원 상한 추정 (채팅 실측 기준이면 약 $1.8) |
 
 채팅이 비용의 약 87%다(상한 추정 기준). 기존 Anthropic+Voyage 추정(약 $9)보다 싸지만 상한과 여유가 없으므로 다음 통제를 둔다. reasoning 토큰은 출력 단가로 청구되므로 채팅은 effort `low`, 분류·추출은 `none`으로 고정한다.
 
@@ -553,6 +587,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 - 80% 도달: 채팅 gpt-6-sol → gpt-6-luna 강등, vision → OCR 텍스트. 100% 도달: 추출·채팅 중단, 수집만 계속(jobs는 queued 유지). 앱에 잔여 예산 표시.
 - 초기 백필 3개월(약 1,800건 × 1.8k 토큰, gpt-6-luna 추출 ≈ $0.5, 임베딩 `text-embedding-3-large` ≈ 1,800건 × 1.4k 토큰 × $0.13/1M ≈ $0.33 ≈ 460원 — 합계 ≈ 1,150~1,400원) 중 **추출**은 월 상한과 별도인 백필 예산(`usage_counters` 월 행의 `backfill_reserved_krw`, 매달 1,500원)으로 잡는다. 백필 예산이 소진되면 월 예산이 남아 있어도 백필 추출 잡은 다음 달로 미룬다(2026-09-30 판정: 재연결 재적재도 같은 예산을 쓰므로 월 단위가 맞다). **임베딩**은 백필 항목도 월 예산(`embed`)으로 예약·정산한다 — 레인(우선순위 40)은 백필 그대로, 추출이 백필 예산을 다 써도 검색 인덱스가 다음 달까지 비지 않게(M2-⑧a 리뷰, 2026-09-30; 월 1만원 대비 수백 원)(1단계 M1 Gmail 태스크에서 별도 카운터(`usage_counters.backfill_tokens`, 백필 항목의 추출 토큰은 월 `extract_tokens`에 넣지 않는다)).
 - 동시 LLM 호출은 사용자당 2개로 제한한다.
+- 요약(2026-10-01): 추출과 같은 호출이므로 추출 예약(`extract`·백필은 `backfill`)의 출력 추정을 400 → 550토큰으로 올린다. `summarize` 잡은 월 예산 `extract`(백필 레인), 요약 임베딩은 `embed`. 예산이 소진되면 요약은 다음 달로 밀리고, 원문 만료는 요약을 최대 7일 기다린 뒤 요약 없이 지운다(보관 상한이 요약보다 우선, §8). 용량 비우기는 LLM을 부르지 않는다(요약은 수집 때 이미 있고, 요약 임베딩은 비우기 뒤 별도 잡).
 
 ## 14. 0단계: 기능별 사전 검증 (구현 전 필수)
 
@@ -617,6 +652,8 @@ PoC-5 제안 푸시 실측용 문구(`push`)는 날짜가 늘 미래가 되게 �
 
 이후 순서(참고): ④ 분류 Jev 6종 + 폐기 격리·삭제 + 실데이터 200건 라벨 기록 → ⑤ 기기 등록 정리·stale 기기 → [M1 게이트] → ⑥ 보관·삭제 잡 + 전체/출처 삭제 → ⑦ 비용 상한 → ⑧ 임베딩 worker + chat Edge → ⑨ 앱 채팅·보관함 → ⑩ 검색 평가 도구·실행 → [M2 게이트].
 
+**1단계 추가 범위(2026-10-01 사용자 결정, §16)**: 보관 3년·요약 영구·용량 보호·채팅→보관함 보기. 계획 `docs/superpowers/plans/2026-10-01-retention-summary.md`, 앱 0.7.0. M2 게이트(검색 평가)와 독립이다. 서버 반영(마이그레이션 적용·함수 배포)은 Gmail 게이트 ③c2가 끝난 뒤 한다(측정 기간 중 실사용자 items·jobs 변경 금지, Gmail 계획 Global Constraints). 1b 행의 "90일·30일 만료"는 이 결정으로 원문 3년·이미지 파일 30일이 된다.
+
 Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때 추가한다.
 
 ## 16. 리스크와 미결
@@ -652,6 +689,29 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 
 **2026-09-30 확인 항목 8 판정 변경**: 제안 리뷰 화면을 1단계로(실기기에서 알림을 놓치면 등록 수단이 없음 발견 — 잠금화면 알림을 길게 눌러 "캘린더에 추가"할 때만 등록되고 배너 탭은 앱만 열었다). 사용자 승인(Ruling 8'): 배너 탭 → 제안 시트, 앱 "제안" 탭(대기 목록·추가·무시), 알림 "무시" = `dismiss_proposal`(§8 `dismissed`, §10, §11). REVIEW·할 일 제안의 수정 화면은 여전히 2단계.
 
+### 2026-10-01 보관 정책 변경(사용자 결정)
+
+사용자 결정(2026-10-01, 1인 사용 1단계). 절차는 사용자 지정대로 스펙·계획 → Codex 리뷰 → Fable 리뷰 → 서브에이전트 실행. 계획 `docs/superpowers/plans/2026-10-01-retention-summary.md`.
+
+1. **채팅 → 보관함 보기**: 답변의 "보관함에서 보기"가 그 질문의 검색 후보 전체(인용만이 아니라 하이브리드 융합 목록 전체 + facts, 최대 100)를 보관함에 넘긴다. 보관함은 그 집합만 순위순으로, 출처 탭·원문 보기·무한 스크롤과 함께 보인다(§9, §11).
+2. **원문·청크 90일 → 3년**: `items.content_enc`·`ocr_text_enc`와 `item_chunks`. 기준은 지금과 같이 서버 수집 시각(`captured_at + 3년`) — 받은 시각 기준이면 90일 백필 메일이 3개월 일찍 지워진다. 이미 있는 행도 연장한다. 이미지 **파일**(Storage)은 결정 범위 밖이라 30일 그대로 두고 원문 만료와 분리한다(§8).
+3. **요약 영구 보존**: 원문을 지우기 전에 항목별 요약을 사용자 키로 암호화해 남기고, 원문 삭제 뒤에도 요약으로 검색한다(키워드·임베딩). 생성 시점 판단:
+
+   | 안 | 비용(월, 일 60건) | 의존성·위험 | 판정 |
+   |---|---|---|---|
+   | A. 수집 때 추출 호출에 필드 추가 | 약 $0.17(출력 150토큰 추가분) | 추출 스키마 변경(출력 상한 800), 원문을 다시 읽지 않음, 요약이 수집 직후부터 있음(상세 화면에서 확인 가능) | **채택** |
+   | B. 만료 직전 배치 | 건당 약 $0.00024 × 누적분(1년치 약 2.2만 건이 한 달에 몰리면 약 $5 ≈ 7,400원, 월 상한의 74%) | 3년 뒤 모델 퇴역·가격 변동, 예산 소진 시 요약 없이 지우거나 원문을 못 지움, **용량 비우기가 LLM 가용성에 묶임** | 기각 |
+   | C. 수집 때 별도 호출 | 약 $0.45(입력을 한 번 더) | LLM 슬롯 2배 사용, 이득 없음 | 기각 |
+
+   A의 빈틈(M1 기간 항목·실패·복구)은 `summarize` 잡이 월 예산 `extract`로 메운다. 요약 임베딩은 원문·청크가 지워질 때 만든다(지연 — 청크가 있는 동안 벡터 두 벌을 두지 않아 요약당 약 4KB 절약, 비우기가 OpenAI에 묶이지 않음). 요약의 개인정보 등급은 본문과 같다(§8 `item_summaries`, §12).
+4. **용량 보호**: 한도(무료 500MB)에 가까우면 오래된 원문·청크 → 오래된 요약 순으로 비운다. 측정·임계·순서·주기·알림은 §8 "용량 보호".
+
+**사용자 확인 대기** (계획 "스펙 확인 필요" 절과 같은 번호):
+
+- **UC-1 청크 평문 기간**: A 3년 평문(구현 없음, 키워드 검색 3년, 덤프 노출 3년) · **B 90일 평문 뒤 청크 본문 암호화·임베딩 유지(권장)** · C 전부 암호화(최근 키워드 검색 상실, 비권장). 상세 §12 통제 1. B 승인 시 계획의 R6 태스크를 실행한다.
+- **UC-2 무료 플랜에서 3년 불가**: 추정 연 약 300MB(메일 20·알림 40/일)라 유효 크기 85%에 약 1.2~1.5년 뒤 닿고 그때부터 가장 오래된 원문이 롤링으로 지워진다. 권장: 1인 단계는 무료 + 롤링 수용(요약·사실은 남음), 3년을 지키려면 Pro 전환(월 $25 수준 — 월 1만원 예산 밖, 가격표 확인 필요).
+- **UC-3 요약 키워드 평문**: 키워드 검색 요구를 지키려면 평문 키워드가 필요하다(권장, `facts.payload` 등급). 거절하면 원문 삭제 뒤 요약은 의미 검색만 된다.
+
 ### 플랜 B: 로컬 우선 구조 (미채택, 신뢰 문제 발생 시 전환)
 
 서버 저장에 대한 신뢰 문제가 지인 확대 단계에서 커지면 다음 구조로 전환할 수 있다. 1인 데이터 규모(연 청크 2만 개)에서는 기기 SQLite(FTS5 trigram + 벡터 브루트포스)로 검색 효율이 충분하다는 것을 확인했다.
@@ -673,7 +733,7 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 - **폐기 7일 격리(1인 사용 기간)**: 게이트 폐기 항목의 본문이 암호화 상태로 7일 서버에 남는다(개인 대화 포함). 오폐기 복구와 Jev 실데이터 정확도 측정을 위해서다. 지인 확대(3단계) 때 즉시 삭제로 되돌릴지 재검토한다.
 - **Gmail 7일 재인증**: 테스트 모드 refresh token 만료(`connections.expires_at`) 24시간 전 푸시로 완화. 본인 사용 기간엔 감수. 지인 확대(3단계) 시점에 앱 검증 비용을 결정한다. 6일·8일 동작은 1단계 M1-③ 게이트(PoC-6 흡수).
 - **모델 ID 수명**: `gpt-6-luna`·`gpt-6-sol`은 별칭과 스냅샷이 같은 ID 하나뿐이다. 날짜 고정 스냅샷이 나오면 제품 코드에서는 스냅샷으로 고정한다.
-- **Supabase 무료 티어 500MB**: 1인 1년 원문이면 충분하나 이미지 포함 시 Storage 1GB 상한 감시.
+- **Supabase 무료 티어 500MB** (2026-10-01 갱신): 원문 3년 결정 뒤에는 1인 데이터만으로 약 1.2~1.5년에 85%에 닿는다(§8 용량 보호 추정). 넘으면 프로젝트가 읽기 전용이 되어 수집·처리가 멈춘다(§3). 대응: `cron.job_run_details` 정리(없으면 연 약 250MB), 쓰지 않는 `tsv`·GIN 색인 제거, 매시 측정·85% 비우기, 보고 크기(`pg_database_size`)가 줄지 않는 문제는 유효 크기 판정 + 운영자 `VACUUM FULL`. 이미지 포함 시 Storage 1GB 상한 감시. 무료 롤링 대 Pro는 UC-2.
 - **Foundation Models 가용성**: Apple Intelligence 꺼진 기기는 규칙 필터만(카톡·인스타 폐기, 그 외 서버 분류). 지인 확대 시 안내 필요.
 - **시뮬레이터 FM 가용성이 호스트 Mac 설정에 종속**: 시뮬레이터는 호스트 Mac의 모델을 쓴다. 호스트가 Apple Intelligence 꺼짐(`appleIntelligenceNotEnabled`, macOS 26.5에서 직접 호출로 확인)이면 시뮬레이터 `respond`는 에셋 오류를 내는데 `availability()`는 **`available`로 오표시**한다. 따라서 시뮬레이터 FM 결과는 판정 근거가 아니고, 가용성은 1건 사전 점검(§6)으로 판단한다. PoC-3 실기기 수치(콜드 타임아웃 상수)로 PoC-3은 실패(대안 채택)로 마감했다(2026-09-30).
 - **FM 백그라운드 `rateLimited`**: 백그라운드 인텐트에서만 나는 에러다. 0.2.3부터 에러는 출처와 무관하게 `rules`로 적재되므로 유실은 없다. 대신 빈도가 높으면 기기 방어선 없이 카톡·인스타 원문이 서버 게이트로 간다. 제품 `device_traces`(§8)로 빈도를 지켜본다(PoC-3은 실패(대안 채택)로 마감, 게이트 아님).
