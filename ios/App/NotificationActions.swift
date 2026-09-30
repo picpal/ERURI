@@ -6,13 +6,13 @@ import EruriCore
 enum NotificationActions {
   static let addEvent = "ADD_EVENT", addReminder = "ADD_REMINDER", review = "REVIEW"
   /// 세 카테고리(스펙 §10). ADD_REMINDER·REVIEW 는 버튼 없음. 배너를 탭하면 앱이 열리고 제안 시트가 뜬다(Ruling 8').
-  /// 캘린더 전체 접근이 없으면 "추가" 버튼을 숨긴다(§10 권한 철회). 앱 활성화마다 다시 등록한다
+  /// 캘린더 전체 접근이 없으면 "추가" 버튼만 숨기고 "무시"(dismiss_proposal)는 남긴다(§10 권한 철회). 앱 활성화마다 다시 등록한다
   static func register() {
     let calendarOK = EKEventStore.authorizationStatus(for: .event) == .fullAccess
     let add = UNNotificationAction(identifier: "ADD", title: "캘린더에 추가", options: [.authenticationRequired])
     let ignore = UNNotificationAction(identifier: "IGNORE", title: "무시", options: [])
     UNUserNotificationCenter.current().setNotificationCategories([
-      UNNotificationCategory(identifier: addEvent, actions: calendarOK ? [add, ignore] : [], intentIdentifiers: []),
+      UNNotificationCategory(identifier: addEvent, actions: calendarOK ? [add, ignore] : [ignore], intentIdentifiers: []),
       UNNotificationCategory(identifier: addReminder, actions: [], intentIdentifiers: []),
       UNNotificationCategory(identifier: review, actions: [], intentIdentifiers: []),
     ])

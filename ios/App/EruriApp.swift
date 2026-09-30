@@ -42,13 +42,14 @@ struct RootView: View {
   private var router: ProposalRouter { ProposalRouter.shared }
 
   var body: some View {
+    let link = ready ? router.link : nil                                     // body 에서 읽어 관찰 추적에 올린다(openCount 에 기대지 않게)
     TabView(selection: $tab) {
       ChatView().tabItem { Label("채팅", systemImage: "bubble.left.and.bubble.right") }.tag(Tab.chat)
       ProposalsView().tabItem { Label("제안", systemImage: "calendar.badge.plus") }.tag(Tab.proposals)
       ArchiveView().tabItem { Label("보관함", systemImage: "tray.full") }.tag(Tab.archive)
       ContentView().tabItem { Label("설정", systemImage: "gearshape") }.tag(Tab.settings)
     }
-    .sheet(item: Binding(get: { ready ? router.link : nil }, set: { router.link = $0 })) { ProposalSheet(link: $0) }
+    .sheet(item: Binding(get: { link }, set: { router.link = $0 })) { ProposalSheet(link: $0) }
     .onChange(of: router.openCount) { _, _ in tab = .proposals }
     .task {
       // 콜드 스타트: 델리게이트가 첫 화면보다 먼저 링크를 넣는다. 창이 붙은 다음 런루프에 시트를 켠다

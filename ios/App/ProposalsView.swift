@@ -40,7 +40,11 @@ struct ProposalsView: View {
   }
 
   private func binding(_ id: String) -> Binding<ProposalReview.ActionState> {
-    Binding(get: { states[id] ?? .idle }, set: { states[id] = $0 })
+    // 추가·무시가 끝나면 목록을 다시 읽어 처리된 행을 뺀다(실패면 행과 버튼을 남긴다)
+    Binding(get: { states[id] ?? .idle }, set: { s in
+      states[id] = s
+      if case .finished = s { Task { await load() } }
+    })
   }
 
   private func load() async {
@@ -58,6 +62,7 @@ struct ProposalsView: View {
 struct ProposalSheet: View {
   let link: ProposalReview.Link
   @Environment(\.dismiss) private var close
+  @Environment(\.scenePhase) private var scenePhase
   @State private var sheet: ProposalReview.Sheet?
   @State private var state = ProposalReview.ActionState.idle
   @State private var calendarOK = CalendarAccess.full
@@ -92,6 +97,7 @@ struct ProposalSheet: View {
         sheet = ProposalReview.sheet(for: link, list: await NotificationActions.pendingProposals(timeout: 5))
       }
       .onChange(of: state) { _, s in if case .finished = s { ProposalRouter.shared.revision += 1 } }
+      .onChange(of: scenePhase) { _, phase in if phase == .active { calendarOK = CalendarAccess.full } }   // 설정에서 허용하고 돌아온 경우
     }
   }
 }
