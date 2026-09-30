@@ -28,7 +28,8 @@ Deno.test("documents are wrapped as <document id date> blocks and cannot close t
   assertEquals(s.match(/<\/document>/g)!.length, 1);                  // 본문 안의 닫는 태그는 무력화
 });
 
-function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; searches?: ChatHit[][]; raw?: { answer: string; source_item_ids: string[]; refused: boolean };
+function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; searches?: ChatHit[][]; candidates?: string[][];
+  raw?: { answer: string; source_item_ids: string[]; refused: boolean };
   level?: "ok" | "degraded" | "refused"; filters?: Partial<Filters>; slots?: (number | null)[] } = {}) {
   const seen = { answer: [] as { docs: string[]; level: string }[], audit: [] as string[][], search: [] as unknown[], sleeps: [] as number[],
     settled: [] as number[] };
@@ -39,7 +40,12 @@ function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; searches?: ChatHit[][]; 
     authUser: async (t) => (t === "good" ? "user-1" : null),
     filters: async () => ({ filters: { date_from: null, date_to: null, sources: [], kinds: [], merchant: null, ...o.filters } }),
     facts: async () => o.facts ?? [],
-    search: async (_u, q) => { seen.search.push(q); return o.searches ? o.searches.shift() ?? [] : o.hits ?? hits; },
+    search: async (_u, q) => {
+      seen.search.push(q);
+      const docs = o.searches ? o.searches.shift() ?? [] : o.hits ?? hits;
+      // 후보를 따로 주지 않으면 문서와 같은 항목(검색 한 번의 융합 목록이 문서보다 길 수 있다는 것은 아래 테스트가 본다)
+      return { docs, candidates: o.candidates ? o.candidates.shift() ?? [] : docs.map((d) => d.item_id) };
+    },
     answer: async (x, level) => { seen.answer.push({ docs: x.documents.map((d) => d.item_id), level });
       return { ...(o.raw ?? { answer: "쿠팡", source_item_ids: ["i1"], refused: false }), model: level === "degraded" ? "gpt-6-luna" : "gpt-6-sol" }; },
     meta: async (_u, ids) => ids.map((id) => ({ item_id: id, source: "GMAIL", app_name: null, title: "합성", sender: null, occurred_at: "2026-07-03T12:14:00Z", expired: false })),
@@ -160,4 +166,37 @@ Deno.test("normalizeFilters: Seoul day bounds; anything but YYYY-MM-DD becomes n
   assertEquals([f.date_from, f.date_to, f.sources], ["2026-09-01T00:00:00+09:00", "2026-09-30T23:59:59+09:00", ["GMAIL"]]);
   const bad = normalizeFilters({ date_from: "지난달", date_to: "2026-9-3", sources: [], kinds: [], merchant: null });
   assertEquals([bad.date_from, bad.date_to], [null, null]);
+});
+
+// 스펙 §9 채팅 → 보관함 보기: 후보 = facts ∪ 하이브리드 융합 목록 전체(모델 문서 12개보다 길다), 순위순·중복 제거·100개
+Deno.test("candidates: facts first, then the whole fused list (beyond the 12 documents), deduped, capped at 100", async () => {
+  const many = Array.from({ length: 120 }, (_, i) => `c${i}`);
+  const { d } = deps({ facts: [{ item_id: "f1", occurred_at: "2026-08-12T04:02:00Z", text: "[purchase] 합성상점 12,900원" }],
+    candidates: [["i1", "f1", "i2", ...many]] });
+  const r = await answerQuestion("user-1", "에어팟 어디서 샀지", d);
+  assertEquals(r.candidates.slice(0, 4), ["f1", "i1", "i2", "c0"]);
+  assertEquals(r.candidates.length, 100);
+  assertEquals(r.hits, ["f1", "i1", "i2"]);                                   // 모델 문서는 그대로
+});
+
+Deno.test("candidates: model refusal still returns them; nothing found → empty", async () => {
+  const { d } = deps({ raw: { answer: "", source_item_ids: [], refused: true } });
+  const r = await answerQuestion("user-1", "여권 만료일", d);
+  assertEquals([r.refused, r.candidates], [true, ["i1", "i2"]]);
+  const none = await answerQuestion("user-1", "여권 만료일", deps({ hits: [] }).d);
+  assertEquals([none.refused, none.candidates], [true, []]);
+});
+
+Deno.test("candidates follow the date-fallback search (the search that produced the documents)", async () => {
+  const f = { date_from: "2026-10-20T00:00:00+09:00", date_to: "2026-10-20T23:59:59+09:00", sources: ["GMAIL"] };
+  const { d } = deps({ filters: f, searches: [[], hits], candidates: [[], ["i1", "i2", "i9"]] });
+  const r = await answerQuestion("user-1", "10월 20일 미팅", d);
+  assertEquals(r.candidates, ["i1", "i2", "i9"]);
+});
+
+Deno.test("POST /chat returns candidates next to hits", async () => {
+  const { d } = deps({ candidates: [["i1", "i2", "i7"]] });
+  const res = await handleChat(req("chat", { question: "에어팟 어디서 샀지" }), d);
+  const j = await res.json();
+  assertEquals([res.status, j.hits, j.candidates], [200, ["i1", "i2"], ["i1", "i2", "i7"]]);
 });

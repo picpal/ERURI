@@ -157,3 +157,22 @@ Deno.test({ name: "deployed chat answers from the user's own chunk and cites it;
     await sb.from("llm_slots").delete().eq("user_id", USER);
   }
 } });
+
+// R-A1: 후보 = 같은 검색의 융합 목록 전체. 키워드로 걸린 15건이 모두 후보이고 문서는 12개 이하·후보의 부분집합
+Deno.test("chatDeps.search: documents ≤ 12, candidates = every item of the fused list in rank order", async () => {
+  const ids: string[] = [];
+  try {
+    for (let i = 0; i < 15; i++) {
+      const id = await seed("SHARE", `cand${i}`, `합성후보 ${i}`, `합성후보단어 항목 ${i}`);
+      ids.push(id);
+      assertEquals((await sb.from("item_chunks").insert({ item_id: id, user_id: USER, chunk_index: 0, text: `합성후보 ${i}\n합성후보단어 항목 ${i}` })).error, null);
+    }
+    const s = await chatDeps(sb).search(USER, { question: "합성후보단어", from: null, to: null, sources: [] });
+    assert(s.docs.length <= 12);
+    assert(ids.every((id) => s.candidates.includes(id)));
+    assertEquals(new Set(s.candidates).size, s.candidates.length);
+    assert(s.docs.every((d) => s.candidates.includes(d.item_id)));
+  } finally {
+    await sb.from("items").delete().eq("user_id", USER).in("id", ids);                // chunks cascade
+  }
+});
