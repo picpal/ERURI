@@ -5,7 +5,7 @@ import EruriCore
 
 enum NotificationActions {
   static let addEvent = "ADD_EVENT", addReminder = "ADD_REMINDER", review = "REVIEW"
-  /// 세 카테고리(스펙 §10). ADD_REMINDER·REVIEW 는 버튼 없이 탭하면 앱이 열린다(1단계 제품 앱).
+  /// 세 카테고리(스펙 §10). ADD_REMINDER·REVIEW 는 버튼 없음. 배너를 탭하면 앱이 열리고 제안 시트가 뜬다(Ruling 8').
   /// 캘린더 전체 접근이 없으면 "추가" 버튼을 숨긴다(§10 권한 철회). 앱 활성화마다 다시 등록한다
   static func register() {
     let calendarOK = EKEventStore.authorizationStatus(for: .event) == .fullAccess
@@ -43,6 +43,24 @@ enum NotificationActions {
     // 4. 이 제안 1건만 보고(5초). 실패·마감·나머지 미보고분은 앱 활성화 flush 가 보낸다
     if !outcome.hasPrefix("fail") { await ExecutionReporter.shared.report(proposalId: pid, within: 5) }
     return outcome
+  }
+
+  /// "무시"(알림 액션·제안 시트·제안 탭): dismiss_proposal. 알림 액션은 백그라운드 실행 시간 안에 끝나도록 토큰 갱신 포함 5초 마감(M1-②c).
+  /// 반환: ok · not_found · not_pending · nil(실패·마감 — 화면은 버튼을 다시 켠다. 알림 액션은 버린다)
+  static func dismiss(proposalId pid: String) async -> String? {
+    let result = await Deadline.run(seconds: 5) {
+      let r = await API.send("rest/v1/rpc/dismiss_proposal", method: "POST", json: ["p_proposal": pid], timeout: 5)
+      return ProposalReview.dismissResult(status: r?.status, data: r?.data)
+    }
+    DiagLog.append("DISMISS \(result ?? "fail") \(pid)")
+    return result
+  }
+
+  /// 대기 제안 목록(list_pending_proposals). nil = 조회 실패
+  static func pendingProposals(timeout: TimeInterval = 8) async -> [ProposalReview.Pending]? {
+    guard let r = await API.send("rest/v1/rpc/list_pending_proposals", method: "POST", json: [String: String](), timeout: timeout),
+          r.status == 200 else { return nil }
+    return ProposalReview.decodeList(r.data)
   }
 
   private struct ServerProposal: Sendable { let status: String?; let version: Int? }
@@ -103,13 +121,32 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     let done = UncheckedSendableBox(completionHandler)
     let action = response.actionIdentifier
     DiagLog.append("notif response action=\(action)")
-    guard action == "ADD" else { DispatchQueue.main.async { done.value() }; return }
-    // userInfo 는 Sendable 이 아니므로 Task 밖에서 문자열 값만 뽑아 넘긴다(handleAdd 가 쓰는 키 그대로)
-    let info = response.notification.request.content.userInfo
-    var fields = ["proposal_id", "title", "start"].reduce(into: [String: String]()) { d, k in
+    // userInfo 는 Sendable 이 아니므로 Task 밖에서 문자열 값만 뽑아 넘긴다(handleAdd·시트가 쓰는 키 그대로)
+    let content = response.notification.request.content
+    let info = content.userInfo
+    var fields = ["proposal_id", "title", "start", "due"].reduce(into: [String: String]()) { d, k in
       if let v = info[k] as? String { d[k] = v }
     }
     if let v = info["version"] as? Int { fields["version"] = String(v) }
+    switch action {
+    case "ADD": break
+    case "IGNORE":
+      // 백그라운드 실행: dismiss_proposal 5초 마감 후 완료. 실패는 버린다(제안 탭에서 다시 무시할 수 있다)
+      guard let pid = fields["proposal_id"], UUID(uuidString: pid) != nil else { DispatchQueue.main.async { done.value() }; return }
+      Task {
+        _ = await NotificationActions.dismiss(proposalId: pid)
+        DispatchQueue.main.async { done.value() }
+      }
+      return
+    default:
+      // 배너 탭: 제안이면 시트를 띄울 딥링크를 앱 상태에 둔다(콜드 스타트면 UI 준비 후 표시). 그 밖은 앱만 연다
+      let link = ProposalReview.link(actionIdentifier: action, category: content.categoryIdentifier, fields: fields)
+      DispatchQueue.main.async {
+        if let link { MainActor.assumeIsolated { ProposalRouter.shared.open(link) } }
+        done.value()
+      }
+      return
+    }
     // 키가 빠진 payload 는 handleAdd 의 invalid_payload 경로로 간다. 원래 키 목록은 여기서 남긴다
     if fields["proposal_id"] == nil || fields["title"] == nil || fields["start"] == nil { DiagLog.append("ADD payload keys=\(info.keys.map { "\($0)" }.sorted())") }
     Task {

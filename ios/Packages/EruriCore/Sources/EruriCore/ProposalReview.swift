@@ -1,0 +1,96 @@
+import Foundation
+
+/// 제안 리뷰(Ruling 8', 스펙 §10·§11): 배너 탭 → 제안 시트, 앱 "제안" 탭(list_pending_proposals·dismiss_proposal).
+/// 캘린더 추가는 새 경로 없이 NotificationActions.handleAdd(알림 액션·채팅 카드와 같은 §10 순서)에 넘긴다. 화면은 App/ProposalsView
+public enum ProposalReview {
+  /// list_pending_proposals 행. 서버가 푸시 ADD_EVENT 조건(시각 있는 start·uncertain 없음)으로 거르고, 제목은 푸시처럼 40자
+  public struct Pending: Identifiable, Decodable, Sendable, Equatable {
+    public let proposal_id: String; public let action: String; public let title: String; public let start: String
+    public let end: String?; public let location: String?; public let version: Int; public let created_at: String
+    public var id: String { proposal_id }
+    public var whenLabel: String { ChatReply.seoulLabel(start) }
+    /// handleAdd 입력(알림 페이로드와 같은 키). Postgres 소수 초를 떼고 handleAdd 의 파서가 읽는 형식으로 바꾼다. 못 읽으면 nil(버튼 없음)
+    public var addFields: [String: String]? {
+      guard let at = ProposalReview.parse(start) else { return nil }
+      return ["proposal_id": proposal_id, "title": title, "start": ProposalReview.iso.string(from: at), "version": String(version)]
+    }
+  }
+
+  public static func decodeList(_ data: Data) -> [Pending]? { try? JSONDecoder().decode([Pending].self, from: data) }
+
+  /// UNNotificationDefaultActionIdentifier 값(EruriCore 는 UserNotifications 를 들이지 않는다)
+  public static let defaultAction = "com.apple.UNNotificationDefaultActionIdentifier"
+  public static let categories: Set<String> = ["ADD_EVENT", "ADD_REMINDER", "REVIEW"]
+
+  /// 배너 탭으로 열 제안(푸시 최상위 키, §10). 콜드 스타트에서는 UI 가 준비될 때까지 앱 상태에 보관한다
+  public struct Link: Identifiable, Equatable, Sendable {
+    public let proposalId: String; public let category: String; public let title: String
+    public let start: String?; public let due: String?; public let version: Int?
+    public var id: String { proposalId }
+    public init(proposalId: String, category: String, title: String, start: String?, due: String?, version: Int?) {
+      self.proposalId = proposalId; self.category = category; self.title = title; self.start = start; self.due = due; self.version = version
+    }
+    /// 시각이 있으면 서울 벽시계, 날짜만이면 그대로, 할 일은 "…까지"
+    public var whenLabel: String {
+      if let start { return ChatReply.seoulLabel(start) }
+      if let due { return "\(ChatReply.seoulLabel(due))까지" }
+      return ""
+    }
+  }
+
+  /// 배너 탭(기본 액션)이고 제안 카테고리이며 proposal_id 가 UUID 일 때만. "변경된 제안" 같은 로컬 안내는 앱만 연다
+  public static func link(actionIdentifier: String, category: String, fields f: [String: String]) -> Link? {
+    guard actionIdentifier == defaultAction, categories.contains(category),
+          let pid = f["proposal_id"], UUID(uuidString: pid) != nil else { return nil }
+    return Link(proposalId: pid, category: category, title: f["title"] ?? "일정", start: f["start"], due: f["due"],
+                version: f["version"].flatMap { Int($0) })
+  }
+
+  public enum Sheet: Equatable, Sendable {
+    case pending(Pending)                 // 대기 목록에 있음: 서버 값(장소 포함)으로 추가·무시
+    case offline([String: String])        // 목록을 못 읽음: 받은 푸시 값으로 추가(§10 순서 5, 순서 1 은 handleAdd 가 다시 시도)
+    case needsReview                      // 확인 필요(REVIEW)·할 일: 캘린더에 바로 넣지 않는다(수정 화면은 2단계). 무시만
+    case processed                        // 목록에 없음: 이미 추가·무시됐거나 지난 제안
+  }
+
+  /// list = nil 이면 목록 조회 실패(오프라인·마감)
+  public static func sheet(for link: Link, list: [Pending]?) -> Sheet {
+    if let p = list?.first(where: { $0.proposal_id == link.proposalId }) { return .pending(p) }
+    guard link.category == "ADD_EVENT" else { return .needsReview }
+    guard list == nil, let start = link.start, parse(start) != nil else { return .processed }
+    var f = ["proposal_id": link.proposalId, "title": link.title, "start": start]
+    if let v = link.version { f["version"] = String(v) }
+    return .offline(f)
+  }
+
+  /// dismiss_proposal RPC 응답: 200 의 JSON 문자열만. 그 밖은 nil(실패)
+  public static func dismissResult(status: Int?, data: Data?) -> String? {
+    guard status == 200, let data else { return nil }
+    return (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) as? String
+  }
+
+  /// retry 는 실패일 때만 — 버튼을 다시 켠다
+  public static func dismissFeedback(_ result: String?) -> (text: String, retry: Bool) {
+    switch result {
+    case "ok": ("무시했습니다", false)
+    case "not_pending": ("이미 처리된 제안입니다", false)
+    case "not_found": ("제안을 찾을 수 없습니다", false)
+    default: ("처리하지 못했습니다. 다시 눌러 주세요", true)
+    }
+  }
+
+  /// 행·시트의 추가/무시 버튼 상태. 결과는 화면에 쓰고, 실패면 버튼을 다시 켠다
+  public enum ActionState: Equatable, Sendable {
+    case idle, running, finished(String), failed(String)
+    public var buttonsEnabled: Bool {
+      switch self { case .idle, .failed: true; case .running, .finished: false }
+    }
+    public static func after(_ fb: (text: String, retry: Bool)) -> ActionState { fb.retry ? .failed(fb.text) : .finished(fb.text) }
+  }
+
+  // ChatReply 와 같은 파서(handleAdd 가 ISO8601DateFormatter 기본값으로 읽는다). 설정 후 읽기·쓰기만 한다
+  nonisolated(unsafe) private static let iso = ISO8601DateFormatter()
+  private static func parse(_ s: String) -> Date? {
+    iso.date(from: s.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression))
+  }
+}
