@@ -366,7 +366,7 @@ jobs 워커  (pg_cron 매분 → Edge: worker. 임대(lease) 180초, 최대 5회
 | `llm_slots` | user_id, slot(1·2), holder, held_until | 동시 LLM 2개(§13), service role 전용 |
 | `device_traces` | device_id, event, at, 속성 jsonb(본문 없음) | 진단 trace(1단계, `poc_traces`의 제품판). 30일 보관. 설정의 "진단 전송" 토글 기본 켜짐(1인 사용). 별도 마이그레이션(`0002_diagnostics`)이라 지인 확대 시 기본값만 끈다. 실기기 게이트(잠금 상태·업로드 경로·액션 결과) 판정 근거 |
 | `reauth_pushes` | connection_id, reason(expiring/invalid_grant), window_key, sent_at | 재인증 푸시 1회 기록(M1-③a). window_key = expires_at epoch 초 또는 `-`, 재연결 시 그 연결 행 삭제(0008) |
-| `gate_feedback` | item_id, verdict(wrong_discard/wrong_pass), at | Jev 정확도 정답(사용자 표시, 본문 없음). RLS 자기 행 |
+| `gate_feedback` | item_id, verdict(wrong_discard/wrong_pass), at | Jev 정확도 정답(사용자 표시, 본문 없음). RLS 자기 행. 표시는 평가 전용, 판정·검색에 영향 없음(2026-09-30 사용자 결정) — 보관함 버튼 "잘못 통과로 표시 (정확도 평가용)". 복구(wrong_discard)만 별도로 항목을 다시 처리한다 |
 | `eval_judgments` | question_id, item_id, ok | 1b 검색 평가의 인용 판정(§9). 사용자가 앱 채팅에서 누른 👍/👎만, 본문 없음. question_id = 채팅 응답 answer_id(M2-⑨a), unique(user_id, question_id, item_id)·RLS 자기 행 읽기·쓰기·수정, 자기 항목에만(0018) |
 
 ### 삭제·만료 정책 (두 가지를 분리)

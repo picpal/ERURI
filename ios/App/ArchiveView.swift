@@ -50,7 +50,8 @@ struct ArchiveView: View {
   }
 }
 
-/// "분류가 틀렸어요(버렸어야 함)" → gate_feedback wrong_pass(본인 항목만, RLS). 다시 누르면 취소. 복구한 항목에는 보이지 않는다
+/// "잘못 통과로 표시 (정확도 평가용)" → gate_feedback wrong_pass(본인 항목만, RLS). 다시 누르면 취소. 복구한 항목에는 보이지 않는다.
+/// 교정 기능이 아니다: 항목을 지우거나 이후 분류·검색을 바꾸지 않고 Jev 정확도 채점 기록만 남긴다(스펙 §8 gate_feedback, 2026-09-30)
 struct WrongPassSection: View {
   let itemID: String
   @State private var state = Archive.Feedback.unknown
@@ -61,11 +62,14 @@ struct WrongPassSection: View {
   var body: some View {
     if state != .restored {
       Section {
-        Button(state == .wrongPass ? "표시 취소" : "분류가 틀렸어요 (버렸어야 함)") { toggle() }
+        Button(state == .wrongPass ? "표시 취소" : "잘못 통과로 표시 (정확도 평가용)") { toggle() }
           .disabled(busy || state == .unknown)
       } header: { Text("분류") } footer: {
-        Text(failed ? "저장하지 못했습니다. 다시 눌러 주세요"
-             : state == .wrongPass ? "버렸어야 할 항목으로 표시했습니다" : "개인 대화·광고처럼 저장할 필요가 없던 항목이면 눌러 주세요")
+        VStack(alignment: .leading, spacing: 4) {
+          Text(failed ? "저장하지 못했습니다. 다시 눌러 주세요"
+               : state == .wrongPass ? "잘못 통과한 항목으로 표시했습니다" : "개인 대화·광고처럼 저장할 필요가 없던 항목이면 눌러 주세요")
+          Text("평가 기록만 남깁니다. 항목은 지워지지 않고 이후 분류에도 반영되지 않습니다.")
+        }
       }
       .task { await refresh() }
     }

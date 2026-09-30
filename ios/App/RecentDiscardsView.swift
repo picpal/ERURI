@@ -10,6 +10,9 @@ struct RecentDiscardsView: View {
   var body: some View {
     List {
       if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
+      // 오통과 표시(보관함)와 같은 톤: 복구는 실제로 다시 처리하고, 잘못 폐기 기록은 정확도 평가용으로만 남는다
+      Text("복구하면 이 항목을 다시 처리합니다. 잘못 폐기 기록도 정확도 평가용으로 남지만 이후 분류에는 반영되지 않습니다.")
+        .font(.caption).foregroundStyle(.secondary)
       ForEach(rows) { r in
         VStack(alignment: .leading, spacing: 4) {
           Text(r.titleLine)
