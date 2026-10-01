@@ -4,6 +4,9 @@
 -- 정규화 제목 비교는 워커(_shared/notify.ts titleKey)가 한다(SQL 문자 클래스는 DB 로캘에 따라 한글 처리가 달라질 수 있다).
 -- "먼저" = (proposal.created_at, item_id) 순 — 두 항목의 notify 가 동시에 돌아도 서로를 지우지 않는다(나중 것만 빠진다).
 -- 시작의 앞 10자 = 서울 날짜(추출 값은 +09:00 ISO 또는 YYYY-MM-DD 로 정규화, §7). 기존 행·함수는 바꾸지 않는다.
+-- 피어는 그 항목에 실제 발송(proposal_pushes status='sent')이 있을 때만 — 이미 알림이 간 일정만 다시 알리지 않는다. 백필·건너뜀으로 푸시가 안 간 제안이
+-- 나중 제안의 푸시를 지우면 그 일정은 알림이 한 번도 안 간다. 묶음은 대표 id 로 기록되므로 제안이 아니라 항목 단위로 본다.
+-- 피어의 notify 가 아직 안 돌았으면 둘 다 푸시된다(fail-open 방향).
 create function worker_pending_event_peers(p_user uuid, p_proposal uuid)
 returns table (id uuid, start text, title text) language sql stable as $$
   with lead as (
@@ -21,6 +24,10 @@ returns table (id uuid, start text, title text) language sql stable as $$
   where f.item_id <> lead.item_id
     and (p.created_at, f.item_id) < (lead.created_at, lead.item_id)
     and left(p.payload->>'start', 10) in (select d from days)
+    and exists (select 1 from proposal_pushes pp
+      join proposals p2 on p2.id = pp.proposal_id and p2.user_id = p_user
+      join facts f2 on f2.id = p2.fact_id and f2.user_id = p_user
+      where f2.item_id = f.item_id and pp.user_id = p_user and pp.status = 'sent')
   order by p.created_at, p.id
   limit 200;
 $$;

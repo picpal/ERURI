@@ -12,12 +12,30 @@ const seoulDay = (ms: number) => new Date(Date.now() + ms + 9 * 3600_000).toISOS
 const MIGRATION = await Deno.readTextFile(new URL("../migrations/0027_proposal_push_dedupe.sql", import.meta.url));
 
 async function seed(user: string, tag: string, payload: Record<string, unknown>): Promise<{ item: string; proposal: string }> {
+  const item = await newItem(user, tag);
+  const proposals = await saveEvents(user, item, [payload]);
+  return { item, proposal: proposals[0] };
+}
+
+async function newItem(user: string, tag: string): Promise<string> {
   const { data: item, error } = await sb.rpc("insert_item", { p_user: user, p_source: "NOTIFICATION", p_idempotency_key: `${RUN}:dedupe:${tag}`,
     p_sender: null, p_title: null, p_content_enc: toBytea(await encrypt(user, "[합성] 합성 공지")), p_occurred_at: new Date().toISOString(), p_enqueue: false });
   if (error) throw new Error("insert_item " + error.code);
-  const { data, error: e2 } = await sb.rpc("save_fact", { p_user: user, p_item: item, p_kind: "event", p_payload: payload, p_evidence: "합성", p_action: "create_event" });
-  if (e2) throw new Error("save_fact " + e2.code);
-  return { item: item as string, proposal: (data as { out_proposal_id: string }[])[0].out_proposal_id };
+  return item as string;
+}
+
+// 한 항목의 일정들(0025 save_facts — 둘 이상이면 묶음, 순번 0 이 대표)
+async function saveEvents(user: string, item: string, payloads: Record<string, unknown>[]): Promise<string[]> {
+  const { data, error } = await sb.rpc("save_facts", { p_user: user, p_item: item, p_kind: "event", p_action: "create_event",
+    p_entries: payloads.map((payload) => ({ payload, evidence: "합성" })) });
+  if (error) throw new Error("save_facts " + error.code);
+  return (data as { out_proposal_id: string }[]).map((r) => r.out_proposal_id);
+}
+
+// 발송 기록(worker 가 남기는 것과 같은 행). 기기 id 는 실행 태그
+async function pushed(user: string, proposal: string, status: "sent" | "failed" | "rejected" = "sent") {
+  const { error } = await sb.from("proposal_pushes").insert({ user_id: user, proposal_id: proposal, device_id: `${RUN}:dev`, status });
+  if (error) throw new Error("proposal_pushes " + error.code);
 }
 
 async function cleanup(user: string, items: string[]) {
@@ -76,6 +94,8 @@ Deno.test("0027 worker_pending_event_peers: earlier pending create_event proposa
       await sb.from("proposals").update({ created_at: new Date(Date.now() - (10 - i) * 60_000).toISOString() }).eq("id", x.proposal);
     }
     await sb.from("proposals").update({ status: "dismissed" }).eq("id", s.gone.proposal);
+    // 먼저 온 것들은 이미 푸시됐다(피어 조건 — 발송 기록 없는 피어는 아래 테스트)
+    for (const x of [s.first, s.timed, s.other, s.gone, s.theirs]) await pushed(x === s.theirs ? u2 : u, x.proposal);
 
     const { peers: [forAgain, forFirst, forTheirs, wrongUser], anon, authenticated } = await peersWith0027([
       [u, s.again.proposal], [u, s.first.proposal], [u2, s.theirs.proposal], [u2, s.again.proposal]]);
@@ -96,5 +116,42 @@ Deno.test("0027 worker_pending_event_peers: earlier pending create_event proposa
   } finally {
     await cleanup(u, mine.map((x) => x.item));
     await cleanup(u2, [s.theirs.item]);
+  }
+});
+
+Deno.test("0027 worker_pending_event_peers: only peers whose item was actually pushed (sent, item-level) — a backfill/unsent earlier proposal does not swallow the later push", async () => {
+  const u = (await testUser(1)).id;
+  const d3 = seoulDay(3 * DAY);
+  const ev = (title: string) => ({ title, start: d3, uncertain: [] });
+  const s = {
+    backfill: await seed(u, "nb-backfill", ev("합성 가을 운동회")),                 // 백필로 건너뜀 — 발송 기록 없음
+    failed: await seed(u, "nb-failed", ev("합성 가을 운동회")),                     // 발송 실패만
+    again: await seed(u, "nb-again", ev("[합성] 가을운동회")),                      // 나중에 온 같은 일정
+  };
+  // 묶음 항목: 대표(순번 0)에만 발송 기록이 남는다. 같은 일정은 형제 쪽 — 자기 id 로는 기록 없음
+  const bundleItem = await newItem(u, "nb-bundle");
+  const [lead, sibling] = await saveEvents(u, bundleItem, [ev("합성 학부모 상담"), ev("합성 가을 운동회")]);
+  const items = [s.backfill.item, s.failed.item, bundleItem, s.again.item];
+  try {
+    const order = [s.backfill.proposal, s.failed.proposal, lead, sibling, s.again.proposal];
+    for (const [i, id] of order.entries()) {
+      await sb.from("proposals").update({ created_at: new Date(Date.now() - (10 - i) * 60_000).toISOString() }).eq("id", id);
+    }
+    await pushed(u, s.failed.proposal, "failed");
+
+    // 1) 아무것도 발송되지 않았다: 피어 없음 → 나중 제안은 푸시된다
+    const row: ProposalRow = { id: s.again.proposal, action: "create_event", status: "proposed", version: 1,
+      occurred_at: null, captured_at: null, payload: ev("[합성] 가을운동회") };
+    const { peers: [none] } = await peersWith0027([[u, s.again.proposal]]);
+    assertEquals(none, []);
+    assertEquals(planBundlePush([row], new Date(), none).skip, null);
+
+    // 2) 묶음 대표에 발송 기록 → 같은 항목의 형제도 피어(항목 단위). 백필·실패 피어는 여전히 아니다
+    await pushed(u, lead);
+    const { peers: [withBundle] } = await peersWith0027([[u, s.again.proposal]]);
+    assertEquals(new Set(withBundle.map((p) => p.id)), new Set([lead, sibling]));
+    assertEquals(planBundlePush([row], new Date(), withBundle).skip, "duplicate");
+  } finally {
+    await cleanup(u, items);
   }
 });
