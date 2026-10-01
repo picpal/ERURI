@@ -58,23 +58,25 @@ details p { margin-top: 0.5rem; }
 <div class="wrap">
 
 <h1>ERURI 단축어 따라하기</h1>
-<p class="lead">문자·카카오톡·Slack 알림이 오면 ERURI 가 알아서 챙기게 만들어요. 자동화는 <b>딱 하나</b>만 만들면 돼요. 번호를 순서대로 따라 하면 되고, 5분쯤 걸려요.</p>
+<p class="lead">문자·카카오톡·Slack 알림이 오면 ERURI 가 알아서 챙기게 만들어요. 자동화를 <b>두 개</b> 만들어요: <b>문자용 하나</b>, <b>그 밖의 앱용 하나</b>. 번호를 순서대로 따라 하면 되고, 10분쯤 걸려요.</p>
 <p class="tip">시작하기 전에: ERURI 앱을 <b>한 번 열었다가</b> 닫아 주세요.</p>
+<p class="tip">왜 두 개냐면: 알림으로 받으면 긴 문자가 <b>255자쯤에서 잘려요</b>. 문자는 문자 자동화로 따로 받아야 <b>끝까지</b> 와요.</p>
 
-<h2>1. 알림 자동화 만들기 <small>1 ~ 4</small></h2>
+<h2>1. 문자 자동화 만들기 <small>1 ~ 4</small></h2>
 
 <div class="card">
-  <div class="wait">사진 준비 중<br>단축어 앱 → 자동화 → 알림</div>
+  <div class="wait">사진 준비 중<br>단축어 앱 → 자동화 → 메시지</div>
   <ol class="do">
-    <li><span class="k">1</span><span><b>단축어</b> 앱을 열고 맨 아래 <b class="btn">자동화</b> → 오른쪽 위 <b class="btn">＋</b> → 목록에서 <b class="btn">알림</b>을 눌러요. (목록 아래쪽에 있어요)</span></li>
-    <li><span class="k">2</span><span><b class="btn">앱 선택</b>에서 <b>메시지</b>·<b>카카오톡</b>·<b>Slack</b>(택배·쇼핑 앱도 좋아요)을 <b>여러 개 한꺼번에 체크</b>해요. "모든 앱" 은 없어요.</span></li>
-    <li><span class="k">3</span><span><b class="btn">실행 묻지 않기</b>를 고르고, <b class="btn">실행 시 알림</b>은 <b>꺼요</b>. 조건을 넣으라고 하면 빈칸에 <b>띄어쓰기 한 번</b>만 쳐요.</span></li>
+    <li><span class="k">1</span><span><b>단축어</b> 앱을 열고 맨 아래 <b class="btn">자동화</b> → 오른쪽 위 <b class="btn">＋</b> → 목록에서 <b class="btn">메시지</b>를 눌러요.</span></li>
+    <li><span class="k">2</span><span><b class="btn">메시지에 다음을 포함</b>을 켜고 빈칸에 <b>띄어쓰기 한 번</b>만 쳐요. 조건을 비워 둘 수 없어서 이렇게 해요. 보낸 사람은 고르지 않아요.</span></li>
+    <li><span class="k">3</span><span><b class="btn">즉시 실행</b>(또는 <b class="btn">실행 묻지 않기</b>)을 골라요.</span></li>
     <li><span class="k">4</span><span>단축어 고르는 목록이 나오면 <b class="btn">새로운 빈 자동화</b>를 누르고, 아래 <b class="btn">검색</b> 칸에 <b>비서에 저장</b>을 쳐서 나온 <b class="btn">비서에 저장</b>을 눌러요.</span></li>
   </ol>
 </div>
 <p class="warn">목록에 있는 단축어를 고르면 안 돼요. 그러면 보낸 사람만 오고 <b>내용이 안 와요</b>. 꼭 <b>새로운 빈 자동화</b>를 눌러요.</p>
 
 <h2>2. 칸 채우기 <small>5 ~ 9</small></h2>
+
 
 <div class="card">
   <div class="shot">
@@ -104,29 +106,37 @@ details p { margin-top: 0.5rem; }
   </div>
   <ol class="do">
     <li><span class="k">7</span><span>본문 칸에 생긴 파란 <b class="btn">단축어 입력</b> 글자를 한 번 더 눌러요. 나온 목록에서 <b>내용</b>을 골라요. 파란 글자가 <b>내용</b>으로 바뀌면 돼요.</span></li>
-    <li><span class="k">8</span><span><b>제목</b>·<b>앱 이름</b>·<b>발신자</b> 칸도 똑같이 해요: 칸 누르기 → <b class="btn">단축어 입력</b> → 파란 글자 다시 누르기 → 각각 <b>제목</b>, <b>앱</b>, <b>보낸 사람</b> 고르기.</span></li>
+    <li><span class="k">8</span><span><b>발신자</b> 칸도 똑같이 해요: 칸 누르기 → <b class="btn">단축어 입력</b> → 파란 글자 다시 누르기 → <b>보낸 사람</b> 고르기. 그리고 <b>출처</b> 칸의 <b>NOTIFICATION</b> 을 지우고 <b>MESSAGES</b> 를 쳐요(칸이 안 보이면 동작 아래 화살표를 펼쳐요).</span></li>
     <li><span class="k">9</span><span><b>실행 시 보기</b> 스위치를 <b>꺼요</b>(초록색 → 회색). 오른쪽 위 <b class="btn">완료</b>(또는 ✓)를 눌러 저장해요.</span></li>
   </ol>
-  <p class="good" style="grid-column:2">사진은 비슷한 화면이에요. 파란 글자가 <b>내용</b>, <b>제목</b>, <b>앱</b>, <b>보낸 사람</b> 으로 보이면 잘 된 거예요.</p>
+  <p class="good" style="grid-column:2">사진은 비슷한 화면이에요. 문자 자동화는 파란 글자가 <b>내용</b>, <b>보낸 사람</b> 으로 보이고 출처가 <b>MESSAGES</b> 면 잘 된 거예요.</p>
 </div>
 <p class="warn">회색 ✕ 표시: 맨 위 흐린 <b>입력 없음</b> 글자가 보여도 <b>누르지 마세요</b>. 눌러도 고를 게 없는 다른 화면으로 가요. 갔다면 ‹ 로 돌아오면 돼요.</p>
+<p class="tip">문자 자동화는 문자가 올 때마다 화면 위에 <b>"자동화 실행"</b> 알림이 떠요. 지금 iOS 에는 이걸 끄는 설정이 없어요. ERURI 가 문자를 챙기고 있다는 표시로 봐 주세요.</p>
 
-<h2>3. 잘 되는지 보기 <small>10</small></h2>
+<h2>3. 알림 자동화 만들기 <small>10 ~ 13</small></h2>
+
+<div class="card">
+  <div class="wait">사진 준비 중<br>단축어 앱 → 자동화 → 알림</div>
+  <ol class="do">
+    <li><span class="k">10</span><span><b class="btn">자동화</b> → 오른쪽 위 <b class="btn">＋</b> → 목록에서 <b class="btn">알림</b>을 눌러요. (목록 아래쪽에 있어요)</span></li>
+    <li><span class="k">11</span><span><b class="btn">앱 선택</b>에서 <b>카카오톡</b>·<b>Slack</b>(택배·쇼핑·은행 앱도 좋아요)을 <b>여러 개 한꺼번에 체크</b>해요. <b>메시지 앱은 체크하지 않아요</b> — 문자는 1번 자동화가 받아요. "모든 앱" 은 없어요.</span></li>
+    <li><span class="k">12</span><span><b class="btn">실행 묻지 않기</b>를 골라요(<b class="btn">실행 시 알림</b> 스위치가 보이면 꺼요). 조건을 넣으라고 하면 빈칸에 <b>띄어쓰기 한 번</b>만 쳐요. 그다음 <b class="btn">새로운 빈 자동화</b> → <b class="btn">비서에 저장</b>을 눌러요.</span></li>
+    <li><span class="k">13</span><span>5 ~ 9 처럼 칸을 채워요. 이번엔 <b>본문</b>=<b>내용</b>, <b>제목</b>=<b>제목</b>, <b>앱 이름</b>=<b>앱</b>, <b>발신자</b>=<b>보낸 사람</b>. <b>출처</b>는 <b>NOTIFICATION</b> 그대로 둬요. <b>실행 시 보기</b> 끄고 <b class="btn">완료</b>.</span></li>
+  </ol>
+</div>
+<p class="warn">메시지 앱을 여기에도 체크하면 문자 하나가 <b>두 줄</b>로 들어와요. 메시지 앱은 꼭 빼요.</p>
+
+<h2>4. 잘 되는지 보기 <small>14</small></h2>
 
 <div class="card">
   <div class="wait">사진 준비 중<br>ERURI 큐 목록</div>
   <ol class="do">
-    <li><span class="k">10</span><span>가게·택배 문자나 카카오톡 알림을 하나 받고, 15초 뒤에 ERURI 앱을 열어요. <b>큐</b> 목록에 새 줄이 생겼으면 성공이에요.</span></li>
+    <li><span class="k">14</span><span>가게·택배 문자 하나와 카카오톡 알림 하나를 받고, 15초 뒤에 ERURI 앱을 열어요. <b>큐</b> 목록에 새 줄이 각각 생겼으면 성공이에요.</span></li>
   </ol>
 </div>
 <p class="tip">연락처에 있는 사람이 보낸 문자는 <b>일부러 저장하지 않아요</b>. 큐에 안 보여도 정상이에요.</p>
-<p class="warn">알림이 뜨지 않는 문자(알림을 끈 대화, 모르는 번호 걸러내기, 집중 모드)는 ERURI 에 오지 않아요. 하나에 두 줄씩 생기면 예전 자동화가 남아 있는 거예요. <b>자동화</b> 탭에서 옛 것을 왼쪽으로 밀어 지우고 <b>하나만</b> 남겨요.</p>
-<p class="tip">화면 위에 "자동화 실행" 알림이 쌓이는 게 싫다면: <b>설정 → 알림 → 단축어 → 알림 허용</b>을 꺼요. 화면 위에 잠깐 뜨는 표시는 끌 수 없어요.</p>
-
-<details>
-  <summary>선택: 알림이 안 뜨는 문자까지 받고 싶다면</summary>
-  <p><b>문자 자동화</b>를 하나 더 만들어요: <b>자동화 → ＋ → 메시지 → 다음을 포함</b>에 띄어쓰기 한 번 → <b>실행 묻지 않기</b> → <b>새로운 빈 자동화</b> → <b>비서에 저장</b>(본문=<b>내용</b>, 발신자=<b>보낸 사람</b>, 실행 시 보기 끄기). 보낸 사람 <b>번호</b>까지 와요. 대신 알림이 뜬 문자는 두 줄로 생길 수 있으니, 이걸 켜면 1번의 앱 선택에서 <b>메시지</b>를 빼요.</p>
-</details>
+<p class="warn">띄어쓰기가 없는 아주 짧은 문자("네", "ㅇㅋ" 같은)는 문자 자동화 조건에 안 걸려서 오지 않아요. 알림이 뜨지 않는 앱 알림(집중 모드, 묶음 알림)도 빠질 수 있어요. 하나에 두 줄씩 생기면 예전 자동화(메시지 앱을 넣은 알림 자동화)가 남아 있는 거예요. <b>자동화</b> 탭에서 알림 자동화의 앱 선택에서 <b>메시지</b>를 빼거나, 옛 자동화를 왼쪽으로 밀어 지워요.</p>
 
 <details>
   <summary>공유 단축어 파일(AirDrop)을 받았다면</summary>
@@ -138,7 +148,7 @@ details p { margin-top: 0.5rem; }
   <p>화면이 많이 달라요. 이 안내는 iOS 27 기준이에요. 가능하면 iOS 27 로 업데이트해 주세요.</p>
 </details>
 
-<p class="foot">ERURI · 단축어 따라하기 · iOS 27 · 2026-09-28 · 알림 자동화 1개 · 사진 2장은 실제 iPhone 캡처, 나머지는 준비 중</p>
+<p class="foot">ERURI · 단축어 따라하기 · iOS 27 · 2026-10-01 · 자동화 2개(문자 · 그 밖의 앱) · 사진 2장은 실제 iPhone 캡처, 나머지는 준비 중</p>
 </div>
 </body>
 </html>
