@@ -3,7 +3,7 @@ import type { Filters } from "./filters.ts";
 export type { Filters } from "./filters.ts";
 
 // 채팅(스펙 §9): 필터 추출 → facts SQL(구조화 조건이 있을 때) → 하이브리드 상위 12(기간 필터로 0건이면 기간 없이 1회 더) → gpt-6-sol 답변(예산 80% 이상이면 gpt-6-luna, §13)
-// → 서버 인용 검증(이번 문서 집합에 없는 id 제거, 근거 0개면 거절) → 출처 메타·제안 카드. 수집 문서 안의 지시는 데이터(<document> 블록).
+// → 서버 인용 검증(이번 문서 집합에 없는 id 제거, 근거 0개면 거절) → 출처 메타·제안 카드·보관함 후보(인용 ∪ 구별 facts ∪ 관련도 컷, 거절이면 없음). 수집 문서 안의 지시는 데이터(<document> 블록).
 // 로그에 질문·문서·답변 본문을 남기지 않는다. 문서로 읽은 item_id 목록은 감사(read)
 export type ChatHit = { item_id: string; text: string; occurred_at: string };
 export type RawAnswer = { answer: string; source_item_ids: string[]; refused: boolean };
@@ -11,6 +11,8 @@ export type Usage = { input_tokens: number; output_tokens: number; cached_tokens
 export type Meta = { item_id: string; source: string; app_name: string | null; title: string | null; sender: string | null; occurred_at: string; expired: boolean };
 export type ProposalCard = { id: string; item_id: string; action: string; status: string; payload: Record<string, unknown> };
 export type SearchResult = { docs: ChatHit[]; candidates: string[] };
+// hybrid_search 행의 원점수(0017). RRF score 는 순위만 반영해 관련도 컷에 못 쓴다
+export type ScoredRow = { item_id: string; sem_sim: number | null; kw_score: number | null };
 export type ChatDeps = {
   authUser(token: string): Promise<string | null>;
   filters(question: string, today: string): Promise<{ filters: Filters; usage?: Usage }>;
@@ -65,8 +67,29 @@ export function validateAnswer(raw: RawAnswer, hits: ChatHit[]): Omit<ChatResult
 export const CHAT_EST_KRW = costKrw("gpt-6-sol", { input: 8000, output: 1000 }) + costKrw("gpt-6-luna", { input: 800, output: 100 });
 // LLM 슬롯이 없으면(M2-⑦ 사용자당 2) 짧게 두 번 기다렸다 다시 — 합계 3초. 그래도 없으면 503 llm_busy(앱은 5초 뒤 한 번 더)
 export const BUSY_RETRY_MS = [1000, 2000];
-// "보관함에서 보기" 후보 상한(스펙 §9): facts ∪ 하이브리드 융합 목록(의미 40 ∪ 키워드 40), 순위순
-export const CANDIDATE_MAX = 100;
+// "보관함에서 보기" 후보(스펙 §9, 2026-10-01 검색·캘린더 결정): 인용 → 구별 조건 facts → 관련도 컷 통과 항목, 최대 20. 거절이면 없음
+export const CANDIDATE_MAX = 20;
+// 상대 컷: 이번 검색의 키워드 1위 × 0.5 또는 의미 유사도 1위 × 0.85 이상. 25항목 코퍼스·합성 질문 6개로 잡은 값 — ⑩b 후보 재현율(eval-search cand_recall)을 보고 스펙부터 고쳐 재결정(§9)
+export const KW_CUT = 0.5;
+export const SEM_CUT = 0.85;
+
+// 융합 행 중 관련도 컷을 통과한 항목(순위순, 항목당 한 번). 각 경로의 1위는 늘 통과한다
+export function relevantItems(rows: ScoredRow[]): string[] {
+  const top = (k: "sem_sim" | "kw_score") => Math.max(0, ...rows.map((r) => r[k] ?? 0));
+  const kwTop = top("kw_score"), semTop = top("sem_sim");
+  const pass = (r: ScoredRow) => (kwTop > 0 && (r.kw_score ?? 0) >= KW_CUT * kwTop) || (semTop > 0 && (r.sem_sim ?? 0) >= SEM_CUT * semTop);
+  return [...new Set(rows.filter(pass).map((r) => r.item_id))];
+}
+
+// facts 가 후보가 되는 것은 가맹점·기간처럼 대상을 가려내는 조건으로 나왔을 때뿐. 종류만으로 나온 "최근 5건"은 모델 문서로만 쓴다
+export function factsDistinct(f: Filters): boolean {
+  return f.merchant !== null || f.date_from !== null || f.date_to !== null;
+}
+
+// 불변식: 인용 ⊆ 후보 ⊆ facts ∪ 융합 80, 거절 ⇒ 후보 없음
+export function pickCandidates(o: { refused: boolean; cited: string[]; facts: string[]; searched: string[] }): string[] {
+  return o.refused ? [] : [...new Set([...o.cited, ...o.facts, ...o.searched])].slice(0, CANDIDATE_MAX);
+}
 
 function dedupe(docs: ChatHit[]): ChatHit[] {
   const seen = new Set<string>();
@@ -92,10 +115,11 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps): Pro
       return { value: { answer: REFUSAL, source_item_ids: [], refused: true, forced_refusal: false, dropped_ids: 0, hits: [], candidates: [],
         citations: [], proposals: [], model: null } as ChatResult, actualKrw: spent(null, undefined, fu) };
     }
-    const candidates = [...new Set([...factDocs.map((d) => d.item_id), ...s.candidates])].slice(0, CANDIDATE_MAX);
     await deps.audit(userId, read.map((d) => d.item_id));                // 모델에 넣지 않고 버린 것까지 서버가 읽은 전부(§12 통제 4)
     const raw = await deps.answer({ question, today, documents: docs }, level);
     const v = validateAnswer(raw, docs);
+    const candidates = pickCandidates({ refused: v.refused, cited: v.source_item_ids,
+      facts: factsDistinct(filters) ? factDocs.map((d) => d.item_id) : [], searched: s.candidates });
     const [meta, proposals] = v.refused ? [[], []] as [Meta[], ProposalCard[]]
       : await Promise.all([deps.meta(userId, v.source_item_ids), deps.proposals(userId, v.source_item_ids)]);
     const byId = new Map(meta.map((m) => [m.item_id, m]));

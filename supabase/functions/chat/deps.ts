@@ -3,11 +3,11 @@ import { budgetDeps } from "../_shared/budget-deps.ts";
 import { decrypt } from "../_shared/crypto.ts";
 import { embed, toPgVector } from "../_shared/embeddings.ts";
 import { openai } from "../_shared/openai.ts";
-import { ANSWER_SCHEMA, type ChatDeps, type ChatHit, formatDocuments, type Meta, type ProposalCard, type RawAnswer, type SearchResult,
-  SYSTEM_PROMPT } from "./handler.ts";
+import { ANSWER_SCHEMA, type ChatDeps, type ChatHit, formatDocuments, type Meta, type ProposalCard, type RawAnswer, relevantItems, type ScoredRow,
+  type SearchResult, SYSTEM_PROMPT } from "./handler.ts";
 import { extractFilters, type Filters } from "./filters.ts";
 
-// 모델 문서는 지금처럼 상위 12 청크. "보관함에서 보기" 후보는 같은 한 번의 검색에서 융합 목록 전체(의미 40 ∪ 키워드 40, 스펙 §9)
+// 모델 문서는 상위 12 청크. "보관함에서 보기" 후보는 같은 한 번의 검색의 융합 목록(의미 40 ∪ 키워드 40) 중 관련도 컷을 통과한 행(스펙 §9)
 export const DOC_CHUNKS = 12;
 export const CANDIDATE_CHUNKS = 80;
 
@@ -51,8 +51,8 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
     async search(u, q): Promise<SearchResult> {
       const v = await queryVector(q.question);
       const rows = (await rpc("hybrid_search", { p_user: u, p_query: q.question, p_embedding: toPgVector(v), p_limit: CANDIDATE_CHUNKS,
-        p_from: q.from, p_to: q.to, p_sources: q.sources.length ? q.sources : null })) as { item_id: string; chunk_id: string }[];
-      const candidates = [...new Set(rows.map((r) => r.item_id))];
+        p_from: q.from, p_to: q.to, p_sources: q.sources.length ? q.sources : null })) as (ScoredRow & { chunk_id: string })[];
+      const candidates = relevantItems(rows);
       const order = rows.slice(0, DOC_CHUNKS).map((r) => r.chunk_id);    // 융합 순위는 p_limit 와 무관(0017) → 문서는 전과 같은 상위 12
       if (order.length === 0) return { docs: [], candidates };
       const { data, error } = await sb.from("item_chunks").select("id, item_id, text, items(occurred_at)").eq("user_id", u).in("id", order);

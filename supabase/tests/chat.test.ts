@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import type { BudgetDeps } from "../functions/_shared/budget.ts";
-import { answerQuestion, type ChatDeps, type ChatHit, type Filters, formatDocuments, handleChat, REFUSAL, validateAnswer } from "../functions/chat/handler.ts";
+import { answerQuestion, type ChatDeps, type ChatHit, type Filters, formatDocuments, handleChat, REFUSAL, relevantItems, validateAnswer } from "../functions/chat/handler.ts";
 import { extractFilters, FILTER_SCHEMA, FILTER_SYSTEM, normalizeFilters } from "../functions/chat/filters.ts";
 
 const hits: ChatHit[] = [
@@ -168,21 +168,45 @@ Deno.test("normalizeFilters: Seoul day bounds; anything but YYYY-MM-DD becomes n
   assertEquals([bad.date_from, bad.date_to], [null, null]);
 });
 
-// 스펙 §9 채팅 → 보관함 보기: 후보 = facts ∪ 하이브리드 융합 목록 전체(모델 문서 12개보다 길다), 순위순·중복 제거·100개
-Deno.test("candidates: facts first, then the whole fused list (beyond the 12 documents), deduped, capped at 100", async () => {
-  const many = Array.from({ length: 120 }, (_, i) => `c${i}`);
-  const { d } = deps({ facts: [{ item_id: "f1", occurred_at: "2026-08-12T04:02:00Z", text: "[purchase] 합성상점 12,900원" }],
-    candidates: [["i1", "f1", "i2", ...many]] });
-  const r = await answerQuestion("user-1", "에어팟 어디서 샀지", d);
-  assertEquals(r.candidates.slice(0, 4), ["f1", "i1", "i2", "c0"]);
-  assertEquals(r.candidates.length, 100);
-  assertEquals(r.hits, ["f1", "i1", "i2"]);                                   // 모델 문서는 그대로
+// 스펙 §9(2026-10-01 검색·캘린더 결정): 상대 컷 — 키워드 1위 × 0.5 또는 의미 1위 × 0.85 이상, 순위순·항목당 한 번. 각 경로의 1위는 늘 통과
+Deno.test("relevantItems: keeps rows within 0.5× the keyword top or 0.85× the semantic top, in rank order, one per item", () => {
+  const rows = [
+    { item_id: "a", sem_sim: 0.55, kw_score: null }, { item_id: "b", sem_sim: 0.48, kw_score: null },
+    { item_id: "c", sem_sim: 0.40, kw_score: 2.0 }, { item_id: "d", sem_sim: null, kw_score: 0.9 },
+    { item_id: "a", sem_sim: 0.50, kw_score: null }, { item_id: "e", sem_sim: 0.30, kw_score: 1.0 },
+  ];
+  assertEquals(relevantItems(rows), ["a", "b", "c", "e"]);                   // b 0.48 ≥ 0.4675, d 0.9 < 1.0, e 1.0 ≥ 1.0
+  assertEquals(relevantItems([]), []);
+  assertEquals(relevantItems([{ item_id: "x", sem_sim: null, kw_score: null }]), []);
+  assertEquals(relevantItems([{ item_id: "k", sem_sim: null, kw_score: 0.3 }, { item_id: "s", sem_sim: 0.2, kw_score: null }]), ["k", "s"]);
 });
 
-Deno.test("candidates: model refusal still returns them; nothing found → empty", async () => {
-  const { d } = deps({ raw: { answer: "", source_item_ids: [], refused: true } });
-  const r = await answerQuestion("user-1", "여권 만료일", d);
-  assertEquals([r.refused, r.candidates], [true, ["i1", "i2"]]);
+// 후보 순서 = 인용 → 구별 조건(가맹점·기간) facts → 컷 통과 검색 항목, 중복 제거, 20개. 모델 문서(hits)는 그대로
+Deno.test("candidates: cited first, then merchant/date facts, then the cut search items; deduped, capped at 20", async () => {
+  const many = Array.from({ length: 30 }, (_, i) => `c${i}`);
+  const { d } = deps({ facts: [{ item_id: "f1", occurred_at: "2026-08-12T04:02:00Z", text: "[purchase] 합성상점 12,900원" }],
+    filters: { kinds: ["purchase"], merchant: "합성상점" }, candidates: [["i2", "f1", "i1", ...many]] });
+  const r = await answerQuestion("user-1", "합성상점에서 산 거", d);
+  assertEquals(r.candidates.slice(0, 4), ["i1", "f1", "i2", "c0"]);
+  assertEquals(r.candidates.length, 20);
+  assertEquals(r.hits, ["f1", "i1", "i2"]);
+});
+
+// kinds 만으로 나온 facts("최근 5건")는 모델 문서로는 넣되 후보에서는 뺀다(재현: 합성 의원 예약이 일정 질문마다 후보 1~5위)
+Deno.test("candidates: facts found by kind alone stay model documents but are not candidates", async () => {
+  const { d, seen } = deps({ facts: [{ item_id: "f9", occurred_at: "2026-09-28T00:00:00Z", text: "[event] 합성의원 예약" }],
+    filters: { kinds: ["event"] }, candidates: [["i1"]] });
+  const r = await answerQuestion("user-1", "다음 주 회의 언제야", d);
+  assertEquals(seen.answer[0].docs, ["f9", "i1", "i2"]);
+  assertEquals(r.candidates, ["i1"]);
+});
+
+// 거절(모델·강제)이면 후보 없음 → 앱 버튼 없음(0.7.x 앱도 빈 배열이면 숨긴다). 문서 0건도 없음
+Deno.test("candidates: refused (model or forced) → none; nothing found → none", async () => {
+  const model = await answerQuestion("user-1", "여권 만료일", deps({ raw: { answer: "", source_item_ids: [], refused: true } }).d);
+  assertEquals([model.refused, model.candidates], [true, []]);
+  const forced = await answerQuestion("user-1", "여권 만료일", deps({ raw: { answer: "뭔가", source_item_ids: ["ghost"], refused: false } }).d);
+  assertEquals([forced.refused, forced.candidates], [true, []]);
   const none = await answerQuestion("user-1", "여권 만료일", deps({ hits: [] }).d);
   assertEquals([none.refused, none.candidates], [true, []]);
 });

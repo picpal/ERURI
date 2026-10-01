@@ -1,4 +1,4 @@
-// 스펙 §9 평가 절차 3: 질문마다 배포된 chat 을 실사용자 JWT 로 부른다. stdout 에는 id·Top-5 id·정답 순위·거절·인용 적중·지연만, 답변 본문은 eval/answers.local.json 에만.
+// 스펙 §9 평가 절차 3: 질문마다 배포된 chat 을 실사용자 JWT 로 부른다. stdout 에는 id·Top-5 id·정답 순위·거절·인용 적중·지연만, 답변 본문은 eval/answers.local.json 에만. 후보는 재현율 집계(cand_recall)만.
 // 실사용자 JWT 는 Auth admin 매직링크 해시로 만든 세션(Ruling 13, 메모리에만, 출력 금지, 끝나면 이 세션만 로그아웃). 에이전트는 answers.local.json 을 열지 않는다(AGENTS.md §7)
 // --check: 질문 파일 검증과 태그 개수만(네트워크 없음). --user: 테스트 사용자로 도구 확인(기본 ERURI_USER_ID)
 // 사용: deno run --allow-net --allow-env --allow-read --allow-write --env-file=supabase/.env supabase/scripts/eval-search.ts [--questions supabase/eval/questions.json] [--check] [--user <uuid>]
@@ -41,6 +41,7 @@ async function ask(question: string): Promise<Response> {
 const answers: Record<string, unknown> = {};
 const scores = [];
 let httpErrors = 0;
+const recall: number[] = [];                                      // 답한 정답 질문의 |정답 ∩ 후보| / |정답|
 try {
   for (const q of questions) {
     const t0 = performance.now();
@@ -50,6 +51,7 @@ try {
     if (!r.ok) httpErrors++;
     answers[q.id] = { answer: j.answer, answer_id: j.answer_id, source_item_ids: j.source_item_ids };
     const hits: string[] = j.hits ?? [];
+    if (q.kind === "answer" && !j.refused) { const cand: string[] = j.candidates ?? []; recall.push(q.expected_item_ids.filter((id) => cand.includes(id)).length / q.expected_item_ids.length); }
     const s = { ...scoreQuestion(q, { hits, refused: j.refused, source_item_ids: j.source_item_ids ?? [], ms }), kind: q.kind, tags: q.tags };
     scores.push(s);
     const rank = hits.findIndex((h) => q.expected_item_ids.includes(h)) + 1;
@@ -62,4 +64,5 @@ try {
 }
 await Deno.writeTextFile(new URL("../eval/answers.local.json", import.meta.url), JSON.stringify(answers, null, 1) + "\n");
 const sum = summarize(scores);
-console.log(JSON.stringify({ ...sum, http_errors: httpErrors, pass: sum.pass && httpErrors === 0 }));
+console.log(JSON.stringify({ ...sum, http_errors: httpErrors,
+  cand_recall: recall.length ? Math.round(recall.reduce((a, b) => a + b, 0) / recall.length * 1000) / 1000 : null, cand_recall_n: recall.length, pass: sum.pass && httpErrors === 0 }));

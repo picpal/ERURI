@@ -158,21 +158,26 @@ Deno.test({ name: "deployed chat answers from the user's own chunk and cites it;
   }
 } });
 
-// R-A1: 후보 = 같은 검색의 융합 목록 전체. 키워드로 걸린 15건이 모두 후보이고 문서는 12개 이하·후보의 부분집합
-Deno.test("chatDeps.search: documents ≤ 12, candidates = every item of the fused list in rank order", async () => {
-  const ids: string[] = [];
+// 2026-10-01 검색·캘린더 S1: 후보 = 관련도 컷을 통과한 융합 행. 두 어절을 다 가진 3건만 남고 한 어절만 가진 12건은 빠진다
+Deno.test("chatDeps.search: documents ≤ 12 from the fused list; candidates keep only rows within the relative cut", async () => {
+  const strong: string[] = [], weak: string[] = [];
   try {
-    for (let i = 0; i < 15; i++) {
-      const id = await seed("SHARE", `cand${i}`, `합성후보 ${i}`, `합성후보단어 항목 ${i}`);
-      ids.push(id);
-      assertEquals((await sb.from("item_chunks").insert({ item_id: id, user_id: USER, chunk_index: 0, text: `합성후보 ${i}\n합성후보단어 항목 ${i}` })).error, null);
+    for (let i = 0; i < 3; i++) {
+      const id = await seed("SHARE", `cut-s${i}`, `합성 컷 ${i}`, `알파합성어 베타합성어 ${i}`);
+      strong.push(id);
+      assertEquals((await sb.from("item_chunks").insert({ item_id: id, user_id: USER, chunk_index: 0, text: `알파합성어 베타합성어 ${i}` })).error, null);
     }
-    const s = await chatDeps(sb).search(USER, { question: "합성후보단어", from: null, to: null, sources: [] });
+    for (let i = 0; i < 12; i++) {
+      const id = await seed("SHARE", `cut-w${i}`, `합성 컷 약 ${i}`, `베타합성어 ${i}`);
+      weak.push(id);
+      assertEquals((await sb.from("item_chunks").insert({ item_id: id, user_id: USER, chunk_index: 0, text: `베타합성어 ${i}` })).error, null);
+    }
+    const s = await chatDeps(sb).search(USER, { question: "알파합성어 베타합성어", from: null, to: null, sources: [] });
     assert(s.docs.length <= 12);
-    assert(ids.every((id) => s.candidates.includes(id)));
-    assertEquals(new Set(s.candidates).size, s.candidates.length);
-    assert(s.docs.every((d) => s.candidates.includes(d.item_id)));
+    // strong ⊆ 후보 ∧ weak ∩ 후보 = ∅ — 집합 일치로 단언하지 않는다: 이전 실행이 남긴 임베딩 있는 청크가 있으면 의미 1위로 늘 통과한다(Fable N6)
+    assert(strong.every((id) => s.candidates.includes(id)));
+    assert(weak.every((id) => !s.candidates.includes(id)));
   } finally {
-    await sb.from("items").delete().eq("user_id", USER).in("id", ids);                // chunks cascade
+    await sb.from("items").delete().eq("user_id", USER).in("id", [...strong, ...weak]);   // chunks cascade
   }
 });
