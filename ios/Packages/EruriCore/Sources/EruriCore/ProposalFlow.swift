@@ -42,10 +42,12 @@ public enum ProposalFlow {
   public static let eventDuration: TimeInterval = 3600
 
   /// 겹침(스펙 §10 순서 3): 저장 구간 [start, start+1시간)과 겹치는 기존 일정, 시작 순.
-  /// 종일·취소·같은 제안 표식(복구 경로)은 제외, 맞닿기만 하면(끝 = 시작) 겹침 아님
+  /// 종일·취소·같은 제안 표식(복구 경로)은 제외, 맞닿기만 하면(끝 = 시작) 겹침 아님. 길이 0 일정은 한 시점이라 [start, end) 안이면 겹침
   public static func conflicts(pid: String, start: Date, events: [CalendarEvent]) -> [CalendarEvent] {
     let end = start.addingTimeInterval(eventDuration), m = marker(pid)
-    return events.filter { !$0.allDay && !$0.canceled && $0.url != m && $0.start < end && $0.end > start }.sorted { $0.start < $1.start }
+    return events.filter {
+      !$0.allDay && !$0.canceled && $0.url != m && $0.start < end && ($0.end > start || ($0.start == $0.end && $0.start >= start))
+    }.sorted { $0.start < $1.start }
   }
 
   /// AddEventGate 결과 "conflict:<건수>" — 저장하지 않았고 서버 보고도 없다(제안은 proposed 로 남는다)
@@ -55,10 +57,12 @@ public enum ProposalFlow {
     return Int(outcome.dropFirst("conflict:".count))
   }
 
-  /// 제안 시트·제안 탭 줄: "겹치는 일정: 14:00–15:00 합성 회의"(서울), 여러 건이면 " 외 N건"
+  /// 제안 시트·제안 탭 줄: "겹치는 일정: 14:00–15:00 합성 회의"(서울), 여러 건이면 " 외 N건".
+  /// 시작·끝 날짜가 다르면(여러 날 걸친 일정) "10/3 09:00–10/5 18:00"처럼 날짜를 붙인다
   public static func conflictLine(_ c: [CalendarEvent]) -> String? {
     guard let f = c.first else { return nil }
-    return "겹치는 일정: \(hm.string(from: f.start))–\(hm.string(from: f.end)) \(f.title)" + (c.count > 1 ? " 외 \(c.count - 1)건" : "")
+    let f2 = md.string(from: f.start) == md.string(from: f.end) ? hm : mdhm
+    return "겹치는 일정: \(f2.string(from: f.start))–\(f2.string(from: f.end)) \(f.title)" + (c.count > 1 ? " 외 \(c.count - 1)건" : "")
   }
   /// 확인창 제목(앱 안에서만 — 제목을 보여도 된다)
   public static func confirmTitle(_ c: [CalendarEvent]) -> String {
@@ -72,9 +76,10 @@ public enum ProposalFlow {
   public static func conflictNoticeBody(_ n: Int) -> String { "같은 시간에 일정 \(n)건 · 탭해서 확인" }
   public static func conflictNoticeID(_ pid: String) -> String { "conflict-\(pid)" }
 
-  private static let hm: DateFormatter = {
+  private static let hm = seoulFormatter("HH:mm"), md = seoulFormatter("M/d"), mdhm = seoulFormatter("M/d HH:mm")
+  private static func seoulFormatter(_ format: String) -> DateFormatter {
     let f = DateFormatter()
-    f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(identifier: "Asia/Seoul"); f.dateFormat = "HH:mm"
+    f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(identifier: "Asia/Seoul"); f.dateFormat = format
     return f
-  }()
+  }
 }

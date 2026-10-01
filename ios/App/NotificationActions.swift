@@ -8,7 +8,7 @@ enum NotificationActions {
   /// 세 카테고리(스펙 §10). ADD_REMINDER·REVIEW 는 버튼 없음. 배너를 탭하면 앱이 열리고 제안 시트가 뜬다(Ruling 8').
   /// 캘린더 전체 접근이 없으면 "추가" 버튼만 숨기고 "무시"(dismiss_proposal)는 남긴다(§10 권한 철회). 앱 활성화마다 다시 등록한다
   static func register() {
-    let calendarOK = EKEventStore.authorizationStatus(for: .event) == .fullAccess
+    let calendarOK = CalendarLookup.fullAccess
     let add = UNNotificationAction(identifier: "ADD", title: "캘린더에 추가", options: [.authenticationRequired])
     let ignore = UNNotificationAction(identifier: "IGNORE", title: "무시", options: [])
     UNUserNotificationCenter.current().setNotificationCategories([
@@ -131,6 +131,9 @@ actor AddEventGate {
     do {
       let ex = try Executions.shared()
       if try ex.existing(proposalId: r.pid) != nil { return "dup" }
+      // 전체 접근이 없으면(추가만 허용·철회) 표식·겹침을 읽지 못한 채 저장하게 된다 — 저장하지 않는다(§10 권한 철회, C2 리뷰 Minor 1).
+      // 화면은 전체 접근일 때만 추가 버튼을 보이므로 이 경로는 권한을 바꾼 직후의 낡은 화면·알림뿐이다
+      guard CalendarLookup.fullAccess else { return "fail:no_full_access" }
       let store = EKEventStore()
       let (from, to) = ProposalFlow.searchWindow(start: r.start)
       let events = CalendarLookup.events(store, from: from, to: to)

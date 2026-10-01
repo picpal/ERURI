@@ -122,5 +122,23 @@ final class ChatReplyTests: XCTestCase {
   func testAddFeedbackConflict() {
     XCTAssertEqual(ChatReply.addFeedback("conflict:1").text, "같은 시간에 일정이 있습니다")
     XCTAssertTrue(ChatReply.addFeedback("conflict:1").retry)
+    // 전체 접근 없이 눌린 낡은 카드·알림(C2 리뷰 Minor 1): gate 가 저장하지 않는다
+    XCTAssertEqual(ChatReply.addFeedback("fail:no_full_access").text, "캘린더 전체 접근을 허용해야 추가할 수 있습니다")
+  }
+
+  /// S3 schedule: 서울 날짜 경계 구간. 키 없음(0.7.x 서버)·null·거꾸로 된 구간·32일 초과는 nil
+  func testScheduleDecode() throws {
+    let s = #""schedule":{"from":"2026-10-03T00:00:00+09:00","to":"2026-10-03T23:59:59+09:00"},"hits":"#
+    let a = try XCTUnwrap(ChatReply.decode(Data(body.replacingOccurrences(of: #""hits":"#, with: s).utf8)))
+    let i = try XCTUnwrap(a.schedule?.interval)
+    XCTAssertEqual(i.start, ISO8601DateFormatter().date(from: "2026-10-02T15:00:00Z"))
+    XCTAssertEqual(i.duration, 86_399)
+    XCTAssertNil(try XCTUnwrap(ChatReply.decode(Data(body.utf8))).schedule)
+    let null = body.replacingOccurrences(of: #""hits":"#, with: #""schedule":null,"hits":"#)
+    XCTAssertNil(try XCTUnwrap(ChatReply.decode(Data(null.utf8))).schedule)
+    let reversed = body.replacingOccurrences(of: #""hits":"#, with: #""schedule":{"from":"2026-10-04T00:00:00+09:00","to":"2026-10-03T23:59:59+09:00"},"hits":"#)
+    XCTAssertNil(try XCTUnwrap(ChatReply.decode(Data(reversed.utf8))).schedule?.interval)
+    let long = body.replacingOccurrences(of: #""hits":"#, with: #""schedule":{"from":"2026-10-01T00:00:00+09:00","to":"2026-11-29T23:59:59+09:00"},"hits":"#)
+    XCTAssertNil(try XCTUnwrap(ChatReply.decode(Data(long.utf8))).schedule?.interval)          // 60일 → 읽지 않는다(Codex #8)
   }
 }

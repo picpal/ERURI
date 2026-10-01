@@ -19,7 +19,7 @@ struct ProposalsView: View {
   @State private var states: [String: ProposalReview.ActionState] = [:]
   @State private var loading = false
   @State private var message = ""
-  @State private var calendarOK = CalendarAccess.full
+  @State private var calendarOK = CalendarLookup.fullAccess
   @State private var confirmAll = false
   @State private var dismissingAll = false
   @State private var allResult = ""
@@ -27,7 +27,7 @@ struct ProposalsView: View {
   var body: some View {
     NavigationStack {
       List {
-        if !calendarOK { CalendarAccessSection { calendarOK = CalendarAccess.full } }
+        if !calendarOK { CalendarAccessSection { calendarOK = CalendarLookup.fullAccess } }
         if !allResult.isEmpty { Text(allResult).font(.caption).foregroundStyle(.secondary) }
         if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
         ForEach(rows) { p in
@@ -49,7 +49,7 @@ struct ProposalsView: View {
       }
       .task { await load() }
       .refreshable { await load() }
-      .onChange(of: scenePhase) { _, phase in if phase == .active { calendarOK = CalendarAccess.full; Task { await load() } } }
+      .onChange(of: scenePhase) { _, phase in if phase == .active { calendarOK = CalendarLookup.fullAccess; Task { await load() } } }
       .onChange(of: ProposalRouter.shared.revision) { _, _ in Task { await load() } }
     }
   }
@@ -91,7 +91,7 @@ struct ProposalSheet: View {
   @Environment(\.scenePhase) private var scenePhase
   @State private var sheet: ProposalReview.Sheet?
   @State private var state = ProposalReview.ActionState.idle
-  @State private var calendarOK = CalendarAccess.full
+  @State private var calendarOK = CalendarLookup.fullAccess
 
   var body: some View {
     NavigationStack {
@@ -99,11 +99,11 @@ struct ProposalSheet: View {
         switch sheet {
         case nil: ProgressView()
         case .pending(let p)?:
-          if !calendarOK { CalendarAccessSection { calendarOK = CalendarAccess.full } }
+          if !calendarOK { CalendarAccessSection { calendarOK = CalendarLookup.fullAccess } }
           ProposalActionsView(title: p.title, when: p.whenLabel, location: p.location, addFields: calendarOK ? p.addFields : nil,
                               proposalId: p.proposal_id, state: $state)
         case .offline(let f)?:
-          if !calendarOK { CalendarAccessSection { calendarOK = CalendarAccess.full } }
+          if !calendarOK { CalendarAccessSection { calendarOK = CalendarLookup.fullAccess } }
           ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: calendarOK ? f : nil,
                               proposalId: link.proposalId, state: $state)
           Text("서버에 연결하지 못해 알림 내용으로 보여 줍니다").font(.caption).foregroundStyle(.secondary)
@@ -123,7 +123,7 @@ struct ProposalSheet: View {
         sheet = ProposalReview.sheet(for: link, list: await NotificationActions.pendingProposals(timeout: 5))
       }
       .onChange(of: state) { _, s in if case .finished = s { ProposalRouter.shared.revision += 1 } }
-      .onChange(of: scenePhase) { _, phase in if phase == .active { calendarOK = CalendarAccess.full } }   // 설정에서 허용하고 돌아온 경우
+      .onChange(of: scenePhase) { _, phase in if phase == .active { calendarOK = CalendarLookup.fullAccess } }   // 설정에서 허용하고 돌아온 경우
     }
   }
 }
@@ -143,10 +143,11 @@ struct ProposalActionsView: View {
       Text(title).font(.headline)
       Text(when).font(.subheadline).foregroundStyle(.secondary)
       if let location { Label(location, systemImage: "mappin.and.ellipse").font(.caption).foregroundStyle(.secondary) }
-      if addFields != nil, let line = ProposalFlow.conflictLine(conflicts) { Text(line).font(.caption).foregroundStyle(.orange) }
+      // 추가·무시가 끝나면(.finished) 미리 판정 줄은 지난 정보라 숨긴다(C2 리뷰 Minor 4)
+      if addFields != nil, !finished, let line = ProposalFlow.conflictLine(conflicts) { Text(line).font(.caption).foregroundStyle(.orange) }
       HStack {
         if addFields != nil {
-          Button(state == .running ? "처리하는 중…" : (conflicts.isEmpty ? "캘린더에 추가" : "겹쳐도 추가")) {
+          Button(state == .running ? "처리하는 중…" : (conflicts.isEmpty || finished ? "캘린더에 추가" : "겹쳐도 추가")) {
             if conflicts.isEmpty { add(confirmed: false) } else { askConfirm = true }
           }.buttonStyle(.borderedProminent)
         }
@@ -171,6 +172,8 @@ struct ProposalActionsView: View {
     }
   }
 
+  private var finished: Bool { if case .finished = state { return true }; return false }
+
   private func refreshConflicts() {
     conflicts = addFields?["start"].flatMap { ISO8601DateFormatter().date(from: $0) }
       .map { CalendarLookup.conflicts(pid: proposalId, start: $0) } ?? []
@@ -188,11 +191,31 @@ struct ProposalActionsView: View {
   }
 }
 
-/// 캘린더 전체 접근이 없으면 추가 버튼 대신 안내(§10 권한 철회, M2-⑨a 리뷰). 아직 묻지 않았으면 여기서 묻고, 거부했으면 설정 앱으로
-enum CalendarAccess {
-  static var full: Bool { EKEventStore.authorizationStatus(for: .event) == .fullAccess }
+/// 채팅 일정 질문의 캘린더 접근 안내 한 줄(§9): 목록 행 안에 들어가므로 Section 이 아니고 버튼은 borderless.
+/// 아직 묻지 않았으면 여기서 묻고, 거부·추가만 허용이면 설정 앱으로
+struct CalendarAccessPrompt: View {
+  let message: String
+  let onChange: () -> Void
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(message).font(.caption).foregroundStyle(.secondary)
+      if EKEventStore.authorizationStatus(for: .event) == .notDetermined {
+        Button("캘린더 접근 허용") {
+          Task {
+            _ = try? await EKEventStore().requestFullAccessToEvents()
+            NotificationActions.register()
+            onChange()
+          }
+        }.buttonStyle(.borderless).font(.caption)
+      } else if let url = URL(string: UIApplication.openSettingsURLString) {
+        Link("설정에서 허용하기", destination: url).font(.caption)
+      }
+    }
+  }
 }
 
+/// 캘린더 전체 접근이 없으면 추가 버튼 대신 안내(§10 권한 철회, M2-⑨a 리뷰). 아직 묻지 않았으면 여기서 묻고, 거부했으면 설정 앱으로.
+/// 전체 접근 판정은 CalendarLookup.fullAccess 하나로 모은다(C2 리뷰 Minor 5)
 struct CalendarAccessSection: View {
   let onChange: () -> Void
   var body: some View {

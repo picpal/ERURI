@@ -41,6 +41,9 @@ final class ProposalFlowTests: XCTestCase {
     XCTAssertEqual(ProposalFlow.conflicts(pid: "p-1", start: t, events: events).map(\.id), ["around", "other", "inside"])
     XCTAssertEqual(ProposalFlow.conflicts(pid: "p-1", start: t, events: []), [])
     XCTAssertEqual(ProposalFlow.eventDuration, 3600)
+    // 길이 0 일정(C2 리뷰 Minor 2): 저장 구간 [start, end) 안의 한 시점이면 겹침 — 시작과 같은 시각 포함, 끝 시각은 제외
+    let points = [ev("p0", 0, 0), ev("p30", 1800, 1800), ev("pEnd", 3600, 3600), ev("pBefore", -60, -60)]
+    XCTAssertEqual(ProposalFlow.conflicts(pid: "p-1", start: t, events: points).map(\.id), ["p0", "p30"])
   }
 
   /// gate 결과 "conflict:<n>" 해석과 화면·잠금화면 문구. 잠금화면 본문에는 다른 일정의 제목이 없다
@@ -57,6 +60,9 @@ final class ProposalFlowTests: XCTestCase {
     XCTAssertEqual(ProposalFlow.conflictLine([a]), "겹치는 일정: 14:00–15:00 합성 회의")
     XCTAssertEqual(ProposalFlow.conflictLine([a, b]), "겹치는 일정: 14:00–15:00 합성 회의 외 1건")
     XCTAssertNil(ProposalFlow.conflictLine([]))
+    // 여러 날 걸친 일정은 날짜를 붙인다(C2 리뷰 Minor 3): 서울 10/3 09:00 ~ 10/5 18:00
+    let multi = ProposalFlow.CalendarEvent(id: "m", title: "합성 학회", start: t.addingTimeInterval(-86_400 - 18_000), end: t.addingTimeInterval(86_400 + 14_400))
+    XCTAssertEqual(ProposalFlow.conflictLine([multi]), "겹치는 일정: 10/3 09:00–10/5 18:00 합성 학회")
     XCTAssertEqual(ProposalFlow.confirmTitle([a]), "같은 시간에 '합성 회의' 일정이 있습니다. 그래도 추가할까요?")
     XCTAssertEqual(ProposalFlow.confirmTitle([]), "같은 시간에 다른 일정이 있습니다. 그래도 추가할까요?")
   }

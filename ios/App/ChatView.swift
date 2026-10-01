@@ -1,10 +1,14 @@
 import SwiftUI
-import EventKit
 import EruriCore
 
 /// 채팅(스펙 §9): 질문 → 답변 + 출처(탭하면 원문) + 인용마다 👍/👎(eval_judgments, §9 평가 절차 4) + 인용 항목의 제안 카드(Ruling 8)
+/// + 일정 질문이면 "기기 캘린더" 절(§9 일정 질문과 기기 캘린더 — 기기 안에서만 읽는다)
 struct ChatView: View {
-  struct Turn: Identifiable { let id = UUID(); let question: String; var answer: ChatReply.Answer?; var error: String? }
+  struct Turn: Identifiable {
+    let id = UUID(); let question: String; var answer: ChatReply.Answer?; var error: String?
+    var calendar: [ProposalFlow.CalendarEvent]?                 // "기기 캘린더" 절(§9): 일정 기간의 기기 일정. nil = 일정 질문 아님·읽지 않음
+    var cardStatus: [String: DeviceCalendar.CardStatus] = [:]   // 제안 id → 그 시각 캘린더 상태
+  }
 
   @State private var input = ""
   @FocusState private var inputFocused: Bool           // 키보드가 탭 막대를 가리므로 스크롤·빈 곳 탭으로 내린다(키보드 툴바 "완료"는 가려져 0.7.1 에서 뺐다)
@@ -27,7 +31,7 @@ struct ChatView: View {
           Section {
             Text(t.question).font(.subheadline).foregroundStyle(.secondary)
             if let e = t.error { Text(e).foregroundStyle(.red) }
-            if let a = t.answer { answerRows(a, question: t.question) }
+            if let a = t.answer { answerRows(t, a) }
             else if t.error == nil { ProgressView() }
           }
         }
@@ -45,8 +49,9 @@ struct ChatView: View {
       .navigationTitle("채팅")
       .onAppear { dictation.onText = { input = $0 }; dictation.refresh() }
       .onDisappear { dictation.stopIfRecording() }
-      // 백그라운드·전화로 비활성이 되면 녹음을 끊고, 돌아오면 권한을 다시 읽는다(설정에서 허용하고 온 경우)
-      .onChange(of: scenePhase) { _, p in if p == .active { dictation.refresh() } else { dictation.stopIfRecording() } }
+      // 백그라운드·전화로 비활성이 되면 녹음을 끊고, 돌아오면 권한을 다시 읽는다(설정에서 허용하고 온 경우).
+      // 캘린더 절·카드 상태도 다시 읽는다(설정에서 캘린더 권한·캘린더 앱에서 일정을 바꾸고 온 경우, Codex #6)
+      .onChange(of: scenePhase) { _, p in if p == .active { dictation.refresh(); refreshCalendars() } else { dictation.stopIfRecording() } }
     }
   }
 
@@ -90,7 +95,8 @@ struct ChatView: View {
       .frame(width: 36, height: 36).background(fill, in: Circle())
   }
 
-  @ViewBuilder private func answerRows(_ a: ChatReply.Answer, question: String) -> some View {
+  @ViewBuilder private func answerRows(_ t: Turn, _ a: ChatReply.Answer) -> some View {
+    // 거절이어도 답 문구는 그대로(Codex #4). 기기 캘린더 절이 아래에서 "이 기간 일정 N건"을 따로 알린다
     Text(a.answer)
     ForEach(a.citations) { c in
       HStack {
@@ -107,27 +113,71 @@ struct ChatView: View {
         judgeButton(a.answer_id, c.item_id, false, "👎")
       }
     }
-    // 스펙 §9 채팅 → 보관함 보기: 인용만이 아니라 이 질문의 검색 후보 전체. 거절 답변·후보 없음이면 숨긴다(0.7.1)
+    // 스펙 §9 채팅 → 보관함 보기: 인용 ∪ 구별 facts ∪ 관련도 컷(서버 S1). 거절 답변·후보 없음이면 숨긴다(0.7.1)
     if let ids = a.archiveIDs {
-      let scope = Archive.Scope(question: question, ids: ids)
+      let scope = Archive.Scope(question: t.question, ids: ids)
       Button("보관함에서 보기 (\(scope.ids.count)건)") { ArchiveRouter.shared.open(scope) }
         .font(.caption).buttonStyle(.borderless)
     }
+    if a.schedule != nil { calendarRows(t, a) }
     // 푸시 "추가" 액션과 같이 캘린더 전체 접근이 없으면 카드를 숨긴다(§10 권한 철회)
-    if EKEventStore.authorizationStatus(for: .event) == .fullAccess {
+    if CalendarLookup.fullAccess {
       ForEach(a.proposals) { p in
-        if let start = ChatReply.calendarStart(p) { proposalCard(p, title: p.payload["title"]?.string ?? "일정", start: start) }
+        if let start = ChatReply.calendarStart(p) {
+          proposalCard(p, title: p.payload["title"]?.string ?? "일정", start: start, status: t.cardStatus[p.id] ?? .clear)
+        }
       }
     }
   }
 
-  @ViewBuilder private func proposalCard(_ p: ChatReply.Proposal, title: String, start: String) -> some View {
+  /// "기기 캘린더" 절(§9 일정 질문과 기기 캘린더). 전체 접근이 없으면(추가만 허용 포함) 절 대신 안내 한 줄 — 허용하면 이 턴을 다시 읽는다
+  @ViewBuilder private func calendarRows(_ t: Turn, _ a: ChatReply.Answer) -> some View {
+    if !CalendarLookup.fullAccess {
+      CalendarAccessPrompt(message: DeviceCalendar.accessText) {
+        // 거부했으면 다시 그려 "설정에서 허용하기"로 바뀌게 한다(권한 상태는 관찰되지 않는다)
+        if let i = turns.firstIndex(where: { $0.id == t.id }) { if CalendarLookup.fullAccess { readCalendar(i, a) } else { turns[i].calendar = nil } }
+      }
+    } else if let events = t.calendar {
+      let l = DeviceCalendar.lines(events)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(DeviceCalendar.header(DeviceCalendar.visible(events).count)).font(.caption).bold()
+        if l.lines.isEmpty { Text(DeviceCalendar.emptyText).font(.caption2).foregroundStyle(.secondary) }
+        ForEach(Array(l.lines.enumerated()), id: \.offset) { Text($0.element).font(.caption2) }
+        if l.more > 0 { Text("외 \(l.more)건").font(.caption2).foregroundStyle(.secondary) }
+      }
+    }
+  }
+
+  /// 기기 캘린더(§9·§12 통제 2): 이 답의 일정 기간 일정과 제안 카드 상태를 기기 안에서만 읽어 턴에 둔다. 서버로 보내지 않는다
+  private func readCalendar(_ idx: Int, _ a: ChatReply.Answer) {
+    guard CalendarLookup.fullAccess else { return }
+    if let range = a.schedule?.interval { turns[idx].calendar = CalendarLookup.scheduleEvents(range) }
+    let cards = a.proposals.compactMap { p -> (pid: String, title: String, start: Date)? in
+      guard let s = ChatReply.calendarStart(p), let at = ISO8601DateFormatter().date(from: s) else { return nil }
+      return (p.id, p.payload["title"]?.string ?? "일정", at)
+    }
+    turns[idx].cardStatus = CalendarLookup.cardStatuses(cards)
+  }
+
+  /// 앱 활성화(설정에서 권한을 바꾸고 돌아옴·캘린더 앱에서 일정을 바꿈)·카드 추가 성공 뒤(Codex #6): 마지막 5개 턴만 다시 읽는다.
+  /// 전체 접근이 없으면 지운다(권한 철회). EventKit 변경 알림은 구독하지 않는다
+  private func refreshCalendars() {
+    for i in turns.indices.suffix(5) {
+      guard let a = turns[i].answer else { continue }
+      if CalendarLookup.fullAccess { readCalendar(i, a) } else { turns[i].calendar = nil; turns[i].cardStatus = [:] }
+    }
+  }
+
+  @ViewBuilder private func proposalCard(_ p: ChatReply.Proposal, title: String, start: String, status: DeviceCalendar.CardStatus) -> some View {
     let state = adds[p.id]
     VStack(alignment: .leading, spacing: 4) {
       Button(state.isRunning ? "추가하는 중… · \(title)" : "캘린더에 추가 · \(title) \(ChatReply.seoulLabel(start))") {
         runAdd(ConfirmAdd(id: p.id, fields: ["proposal_id": p.id, "title": title, "start": start], conflicts: []), confirmed: false)
       }
       .disabled(state.isRunning || state.isFinished)
+      if let s = DeviceCalendar.statusText(status) {
+        Text(s).font(.caption).foregroundStyle(status == .conflict ? Color.orange : Color.secondary)
+      }
       switch state {
       case .finished(let t)?: Text(t).font(.caption).foregroundStyle(.secondary)
       case .failed(let t)?: Text(t).font(.caption).foregroundStyle(.red)
@@ -150,6 +200,7 @@ struct ChatView: View {
       }
       let fb = ChatReply.addFeedback(outcome)
       adds[c.id] = fb.retry ? .failed(fb.text) : .finished(fb.text)
+      if !fb.retry { refreshCalendars() }                       // 추가 뒤 카드 "이미 캘린더에 있음"·절이 바로 바뀐다(Codex #6)
     }
   }
 
@@ -195,7 +246,7 @@ struct ChatView: View {
           continue
         }
         if r.status == 200 {
-          if let a = ChatReply.decode(r.data) { turns[idx].answer = a } else { turns[idx].error = "응답을 읽지 못했습니다" }
+          if let a = ChatReply.decode(r.data) { turns[idx].answer = a; readCalendar(idx, a) } else { turns[idx].error = "응답을 읽지 못했습니다" }
         } else {
           turns[idx].error = ChatReply.errorMessage(status: r.status)
         }

@@ -1,6 +1,6 @@
 import Foundation
 
-/// 채팅 응답 해석(스펙 §9, M2-⑧b 계약): POST /chat → {answer_id, answer, refused, source_item_ids, citations, proposals, hits, candidates}.
+/// 채팅 응답 해석(스펙 §9, M2-⑧b 계약): POST /chat → {answer_id, answer, refused, source_item_ids, citations, proposals, hits, candidates, schedule}.
 /// 오류 401·400 bad_question·429 budget_exhausted·503 llm_busy(retry-after 30)
 public enum ChatReply {
   public struct Citation: Decodable, Identifiable, Sendable {
@@ -18,6 +18,17 @@ public enum ChatReply {
     public var candidateIDs: [String] { candidates ?? [] }
     /// "보관함에서 보기" 버튼에 넘길 id(0.7.1): 거절 답변이거나 후보가 없으면 nil — 버튼을 숨긴다
     public var archiveIDs: [String]? { refused || candidateIDs.isEmpty ? nil : candidateIDs }
+    /// 일정 질문의 일정 기간(스펙 §9 "일정 질문과 기기 캘린더", 서버 S3). 앱이 이 기간의 기기 캘린더를 읽는다. 0.7.x 서버·일정 질문이 아니면 nil
+    public let schedule: Schedule?
+  }
+  public struct Schedule: Decodable, Sendable, Equatable {
+    public let from: String; public let to: String
+    /// [from, to] 구간. 읽지 못하거나 거꾸로거나 32일을 넘으면 nil(앱은 캘린더를 읽지 않는다 — 서버 31일 제한을 앱도 지킨다)
+    public var interval: DateInterval? {
+      guard let a = ChatReply.iso.date(from: from), let b = ChatReply.iso.date(from: to), a <= b,
+            b.timeIntervalSince(a) <= 32 * 86_400 else { return nil }
+      return DateInterval(start: a, end: b)
+    }
   }
 
   public static func decode(_ data: Data) -> Answer? { try? JSONDecoder().decode(Answer.self, from: data) }
@@ -41,6 +52,7 @@ public enum ChatReply {
     case "dup", "skip_succeeded": ("이미 캘린더에 추가된 제안입니다", false)
     case "skip_stale": ("제안이 바뀌어 추가하지 않았습니다", false)
     case "fail:no_writable_calendar": ("쓸 수 있는 기본 캘린더가 없어 추가하지 못했습니다", true)
+    case "fail:no_full_access": ("캘린더 전체 접근을 허용해야 추가할 수 있습니다", true)
     case let o where ProposalFlow.conflictCount(o) != nil: ("같은 시간에 일정이 있습니다", true)
     default: ("추가하지 못했습니다. 다시 눌러 주세요", true)
     }

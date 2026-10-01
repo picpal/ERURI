@@ -27,4 +27,23 @@ enum CalendarLookup {
     let (from, to) = ProposalFlow.searchWindow(start: start)
     return ProposalFlow.conflicts(pid: pid, start: start, events: events(store, from: from, to: to))
   }
+
+  /// "기기 캘린더" 절(§9): 서버가 준 일정 기간(≤ 31일)의 일정. 생일·구독(공휴일) 캘린더는 뺀다. 진단 로그에는 개수만. 공유 store
+  @MainActor static func scheduleEvents(_ interval: DateInterval) -> [ProposalFlow.CalendarEvent] {
+    guard fullAccess else { return [] }
+    let cals = store.calendars(for: .event).filter { $0.type != .birthday && $0.type != .subscription }
+    guard !cals.isEmpty else { return [] }
+    let found = store.events(matching: store.predicateForEvents(withStart: interval.start, end: interval.end, calendars: cals)).compactMap(value)
+    DiagLog.append("CAL schedule n=\(found.count)")
+    return found
+  }
+
+  /// 채팅 제안 카드 상태(§9): 카드마다 제안 시각 ±1일을 읽어 판정. 공유 store
+  @MainActor static func cardStatuses(_ cards: [(pid: String, title: String, start: Date)]) -> [String: DeviceCalendar.CardStatus] {
+    guard fullAccess, !cards.isEmpty else { return [:] }
+    return cards.reduce(into: [:]) { out, c in
+      let (from, to) = ProposalFlow.searchWindow(start: c.start)
+      out[c.pid] = DeviceCalendar.cardStatus(pid: c.pid, title: c.title, start: c.start, events: events(store, from: from, to: to))
+    }
+  }
 }
