@@ -30,6 +30,21 @@ enum CalendarLookup {
     return ProposalFlow.conflicts(pid: pid, start: start, events: events(store, from: from, to: to))
   }
 
+  /// 미리 판정(제안 시트·제안 탭 행, 0.9.2): 겹침(시각) → 같은 일정을 다른 제안으로 넣음(종일) → 비슷한 일정 → 없음.
+  /// 전체 접근이 없으면 clear — 최종 판정은 AddEventGate 가 다시 한다. 조회 창은 AddEventGate 와 같다(ProposalTiming.searchWindow)
+  @MainActor static func preview(pid: String, title: String, timing: ProposalTiming) -> ProposalFlow.Preview {
+    guard fullAccess else { return .clear }
+    let (from, to) = timing.searchWindow
+    return ProposalFlow.preview(pid: pid, title: title, timing: timing, events: events(store, from: from, to: to))
+  }
+
+  /// 저장 직전에 새로 나온 비슷한 일정(확인창 문구, 채팅 카드). 전체 접근이 없으면 빈 배열
+  @MainActor static func similar(pid: String, title: String, timing: ProposalTiming) -> [ProposalFlow.CalendarEvent] {
+    guard fullAccess else { return [] }
+    let (from, to) = timing.searchWindow
+    return ProposalFlow.similar(pid: pid, title: title, timing: timing, events: events(store, from: from, to: to))
+  }
+
   /// "기기 캘린더" 절(§9): 서버가 준 일정 기간(≤ 31일)의 일정. 생일·구독(공휴일) 캘린더는 뺀다. 진단 로그에는 개수만. 공유 store
   @MainActor static func scheduleEvents(_ interval: DateInterval) -> [ProposalFlow.CalendarEvent] {
     guard fullAccess else { return [] }

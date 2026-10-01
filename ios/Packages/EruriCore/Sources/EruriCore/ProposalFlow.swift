@@ -60,10 +60,72 @@ public enum ProposalFlow {
     return conflicts(pid: pid, start: start, events: events)
   }
 
-  /// 추가 버튼 문구(제안 시트·제안 탭 행): 종일 "종일 일정으로 추가"(겹침 없음), 미리 판정한 겹침을 보였으면 "겹쳐도 추가", 아니면 "캘린더에 추가"
-  public static func addButtonTitle(allDay: Bool, conflictsShown: Bool) -> String {
-    allDay ? "종일 일정으로 추가" : conflictsShown ? "겹쳐도 추가" : "캘린더에 추가"
+  /// 추가 버튼 문구(제안 시트·제안 탭 행): 미리 판정한 겹침을 보였으면 "겹쳐도 추가", 비슷한 일정을 보였으면 "그래도 추가"(0.9.2),
+  /// 아니면 종일 "종일 일정으로 추가"·시각 "캘린더에 추가"
+  public static func addButtonTitle(allDay: Bool, conflictsShown: Bool, similarShown: Bool = false) -> String {
+    conflictsShown ? "겹쳐도 추가" : similarShown ? "그래도 추가" : allDay ? "종일 일정으로 추가" : "캘린더에 추가"
   }
+
+  // MARK: 비슷한 일정(스펙 §10, 0.9.2 사용자 결정 — 종일은 겹침 판정 대상이 아니므로 "같은 일정이 이미 있는가"로 중복을 잡는다)
+
+  /// 제안 날짜(종일이면 그 기간과 겹치는 날, 시각이면 그 시각의 서울 하루)의 캘린더 일정(종일·시각 모두) 중 제목이 비슷한 것, 시작 순.
+  /// 제외: 취소, 생일·구독 캘린더(listed = false — 카드 줄과 같은 규칙), 이 제안 표식(복구 경로). 다른 제안 표식은 ERURI 일정으로 더 느슨하게 본다(TitleMatch).
+  /// 종일 일정은 기기 시간대 0시로 오므로 서울 날짜로 옮겨 가른다(ScheduleCard.seoulSpan). 겹침과의 우선순위는 preview·AddEventGate 가 정한다
+  public static func similar(pid: String, title: String, timing: ProposalTiming, events: [CalendarEvent],
+                             deviceZone: TimeZone = .current) -> [CalendarEvent] {
+    let days = timing.seoulDays, m = marker(pid)
+    return events.filter { e in
+      guard !e.canceled, e.listed, e.url != m else { return false }
+      let (s, t) = ScheduleCard.seoulSpan(e, deviceZone: deviceZone)
+      guard s < days.end, t > days.start || (s == t && s >= days.start) else { return false }
+      return TitleMatch.similar(title, e.title, eruri: isEruri(e))
+    }.sorted { ($0.start, $0.id) < ($1.start, $1.id) }
+  }
+
+  /// 미리 판정(제안 시트·제안 탭 행): 겹침(시각) → 같은 일정을 다른 제안으로 이미 넣음(종일, registered) → 비슷한 일정 → 없음.
+  /// registered = 다른 ERURI 제안 표식 + 같은 서울 날짜(첫날) + 같은 정규화 제목 — "캘린더에 등록됨"으로 보이고 추가 버튼을 두지 않는다(채팅 카드 상태와 같다)
+  public enum Preview: Equatable, Sendable { case clear, conflict([CalendarEvent]), registered(CalendarEvent), similar([CalendarEvent]) }
+  public static func preview(pid: String, title: String, timing: ProposalTiming, events: [CalendarEvent], deviceZone: TimeZone = .current) -> Preview {
+    let c = conflicts(pid: pid, timing: timing, events: events)
+    if !c.isEmpty { return .conflict(c) }
+    let s = similar(pid: pid, title: title, timing: timing, events: events, deviceZone: deviceZone)
+    if let twin = registeredTwin(title: title, timing: timing, among: s, deviceZone: deviceZone) { return .registered(twin) }
+    return s.isEmpty ? .clear : .similar(s)
+  }
+  /// 종일 제안만: 비슷한 일정 중 다른 제안 표식 + 첫날과 같은 서울 시작 날짜 + 같은 정규화 제목
+  static func registeredTwin(title: String, timing: ProposalTiming, among s: [CalendarEvent], deviceZone: TimeZone) -> CalendarEvent? {
+    guard timing.isAllDay else { return nil }
+    let day = timing.seoulDays.start, name = TitleMatch.normalize(title)
+    return s.first { e in
+      isEruri(e) && ScheduleCard.seoulDay(ScheduleCard.seoulSpan(e, deviceZone: deviceZone).0).start == day && TitleMatch.normalize(e.title) == name
+    }
+  }
+  static func isEruri(_ e: CalendarEvent) -> Bool { e.url?.absoluteString.hasPrefix(marker("").absoluteString) == true }
+
+  /// AddEventGate 결과 "similar:<건수>" — 비슷한 일정이 있어 저장하지 않았고 서버 보고도 없다(conflict 와 같은 취급)
+  public static func similarOutcome(_ n: Int) -> String { "similar:\(n)" }
+  public static func similarCount(_ outcome: String) -> Int? {
+    guard outcome.hasPrefix("similar:") else { return nil }
+    return Int(outcome.dropFirst("similar:".count))
+  }
+  /// 저장하지 않고 멈춘 결과(겹침·비슷한 일정)의 건수
+  public static func heldCount(_ outcome: String) -> Int? { conflictCount(outcome) ?? similarCount(outcome) }
+
+  /// 상태 줄 "✅ 캘린더에 비슷한 일정이 있음 · 10/8(목) 제목"(여러 건이면 " 외 N건"). 날짜는 그 일정의 서울 시작 날짜. 제목은 기기 화면에만
+  public static func similarLine(_ s: [CalendarEvent], deviceZone: TimeZone = .current) -> String? {
+    guard let f = s.first else { return nil }
+    let name = f.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    return "✅ 캘린더에 비슷한 일정이 있음 · \(ScheduleCard.dayLabel(ScheduleCard.seoulSpan(f, deviceZone: deviceZone).0)) \(name.isEmpty ? "(제목 없음)" : name)"
+      + (s.count > 1 ? " 외 \(s.count - 1)건" : "")
+  }
+  /// 확인창(미리 판정에 없던 비슷한 일정이 저장 직전에 나온 경우만, 앱 안 — 제목을 보여도 된다)
+  public static func similarConfirmTitle(_ s: [CalendarEvent]) -> String {
+    guard let f = s.first else { return "캘린더에 비슷한 일정이 있습니다. 그래도 추가할까요?" }
+    return "캘린더에 비슷한 일정이 있습니다 — '\(f.title)'. 그래도 추가할까요?"
+  }
+  /// 잠금화면 "추가"가 비슷한 일정으로 멈췄을 때의 로컬 알림(겹침과 같은 식별자·카테고리 — 탭하면 제안 시트). 제목은 잠금화면에 쓰지 않는다
+  public static let similarNoticeTitle = "비슷한 일정이 있습니다"
+  public static func similarNoticeBody(_ n: Int) -> String { "캘린더에 비슷한 일정 \(n)건 · 탭해서 확인" }
 
   /// AddEventGate 결과 "conflict:<건수>" — 저장하지 않았고 서버 보고도 없다(제안은 proposed 로 남는다)
   public static func conflictOutcome(_ n: Int) -> String { "conflict:\(n)" }
@@ -77,7 +139,8 @@ public enum ProposalFlow {
   public static func tapConfirmed(conflictsShown: Bool) -> Bool { conflictsShown }
   /// handleAdd 결과 뒤 확인창이 필요한가: confirmed:false 로 불렀는데 저장 직전 판정에서 겹침(conflict)이 새로 나온 경우만
   /// (미리 판정 뒤 캘린더가 바뀜, 게이트 C2-5). "추가"면 confirmed 로 다시 부른다
-  public static func needsConfirm(confirmed: Bool, outcome: String) -> Bool { !confirmed && conflictCount(outcome) != nil }
+  /// 비슷한 일정(similar, 0.9.2)도 같다 — 미리 판정에 없던 것이 저장 직전에 나온 경우만 확인창
+  public static func needsConfirm(confirmed: Bool, outcome: String) -> Bool { !confirmed && heldCount(outcome) != nil }
 
   /// 제안 시트·제안 탭 줄: "겹치는 일정: 14:00–15:00 합성 회의"(서울), 여러 건이면 " 외 N건".
   /// 시작·끝 날짜가 다르면(여러 날 걸친 일정) "10/3 09:00–10/5 18:00"처럼 날짜를 붙인다

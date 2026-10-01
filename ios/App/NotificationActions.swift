@@ -15,7 +15,7 @@ enum NotificationActions {
       UNNotificationCategory(identifier: addEvent, actions: calendarOK ? [add, ignore] : [ignore], intentIdentifiers: []),
       UNNotificationCategory(identifier: addReminder, actions: [], intentIdentifiers: []),
       UNNotificationCategory(identifier: review, actions: [], intentIdentifiers: []),
-      // 겹침으로 멈춘 잠금화면 추가의 로컬 알림(§10, 0.8.0). 버튼 없음 — 탭하면 제안 시트
+      // 겹침·비슷한 일정(0.9.2)으로 멈춘 잠금화면 추가의 로컬 알림(§10, 0.8.0). 버튼 없음 — 탭하면 제안 시트
       UNNotificationCategory(identifier: ProposalReview.conflictCategory, actions: [], intentIdentifiers: []),
       // 한 항목의 일정 여러 건 묶음(§10, 0.9.0). 버튼 없음 — 탭하면 시트에 카드 N장(잠금화면 일괄 추가는 PoC-5 마감·겹침 규칙과 맞지 않아 두지 않는다)
       UNNotificationCategory(identifier: ProposalReview.bundleCategory, actions: [], intentIdentifiers: []),
@@ -23,12 +23,12 @@ enum NotificationActions {
   }
 
   /// 스펙 §10 순서 1~5. fields: proposal_id·title·start(+09:00 시각 또는 날짜만 = 종일)·end(종일 여러 날의 마지막 날)·version.
-  /// confirmed: 겹침을 사용자가 확인했음(앱 안 확인창 뒤에만 true).
-  /// lockScreen: 잠금화면 알림 액션(델리게이트) — 겹침이면 저장 대신 로컬 알림 1건을 여기서 등록한다
+  /// confirmed: 겹침·비슷한 일정을 사용자가 확인했음(화면에 보인 상태에서 누름·앱 안 확인창 뒤에만 true).
+  /// lockScreen: 잠금화면 알림 액션(델리게이트) — 겹침·비슷한 일정이면 저장 대신 로컬 알림 1건을 여기서 등록한다
   /// 백그라운드 실행 시간 안에 EventKit 쓰기와 완료 핸들러가 끝나도록 구간마다 마감을 둔다(M1-②c 리뷰):
   /// 순서 1 조회 5초 + 순서 4 보고 5초, 둘 다 토큰 갱신 포함. 겹침이면 보고를 건너뛰고 로컬 알림 등록 2초뿐(Codex #5)
-  /// 반환: AddEventGate 결과(ok·recovered·dup·conflict:<n>·fail:<코드>) · "skip_<why>" · "invalid_payload".
-  /// 채팅 카드·시트는 conflict 면 확인창을 띄운다
+  /// 반환: AddEventGate 결과(ok·recovered·dup·conflict:<n>·similar:<n>·fail:<코드>) · "skip_<why>" · "invalid_payload".
+  /// 채팅 카드·시트는 conflict·similar 면 확인창을 띄운다
   @discardableResult
   static func handleAdd(fields f: [String: String], confirmed: Bool = false, lockScreen: Bool = false) async -> String {
     let started = Date()
@@ -46,29 +46,30 @@ enum NotificationActions {
     let version = Int(f["version"] ?? "") ?? server?.version ?? 1
     // 2~3. 확인 → 표식 조회 → 겹침 → 저장 → 기록(한 actor 구간, await 없음)
     let outcome = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, timing: timing, version: version, confirmed: confirmed))
-    let conflict = ProposalFlow.conflictCount(outcome)
-    // 잠금화면이 겹침으로 멈추면 앱 확인을 유도하는 로컬 알림(§10). 결과를 action.handled 에 같이 남기려고 trace 앞에서
+    let held = ProposalFlow.heldCount(outcome)                          // 겹침·비슷한 일정(0.9.2) — 저장하지 않았다
+    // 잠금화면이 겹침·비슷한 일정으로 멈추면 앱 확인을 유도하는 로컬 알림(§10). 결과를 action.handled 에 같이 남기려고 trace 앞에서
     var notice: String? = nil
-    if lockScreen, let n = conflict { notice = await conflictNotice(fields: f, count: n) }
+    if lockScreen, let n = held { notice = await conflictNotice(fields: f, count: n, similar: ProposalFlow.similarCount(outcome) != nil) }
     trace(outcome, pid: pid, started: started, notice: notice)
     // 추가됐으면 알림 센터에 남은 겹침 알림을 지운다(탭해도 "처리됨" 시트만 뜨는 죽은 알림, Fable N5)
     if ["ok", "recovered", "dup"].contains(outcome) {
       UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [ProposalFlow.conflictNoticeID(pid)])
     }
-    // 4. 이 제안 1건만 보고(5초). 실패·겹침(저장 안 함)은 보고하지 않는다. 나머지 미보고분은 앱 활성화 flush 가 보낸다
-    if !outcome.hasPrefix("fail"), conflict == nil { await ExecutionReporter.shared.report(proposalId: pid, within: 5) }
+    // 4. 이 제안 1건만 보고(5초). 실패·겹침·비슷한 일정(저장 안 함)은 보고하지 않는다. 나머지 미보고분은 앱 활성화 flush 가 보낸다
+    if !outcome.hasPrefix("fail"), held == nil { await ExecutionReporter.shared.report(proposalId: pid, within: 5) }
     return outcome
   }
 
-  /// 잠금화면 "추가"가 겹침으로 멈췄을 때(스펙 §10): 저장 대신 로컬 알림 1건. 원래 제안 필드를 userInfo 에 그대로 실어
-  /// 탭하면 배너 탭 경로(ProposalReview.link → 제안 시트)로 간다. 겹친 일정의 제목은 쓰지 않는다. 식별자 고정 — 두 번 탭해도 1건.
+  /// 잠금화면 "추가"가 겹침(또는 비슷한 일정, 0.9.2)으로 멈췄을 때(스펙 §10): 저장 대신 로컬 알림 1건. 원래 제안 필드를 userInfo 에 그대로 실어
+  /// 탭하면 배너 탭 경로(ProposalReview.link → 제안 시트)로 간다. 겹친·비슷한 일정의 제목은 쓰지 않는다. 식별자 고정 — 두 번 탭해도 1건.
   /// 네트워크 없음, 2초 마감(Codex #5: 등록이 늦어도 완료 핸들러가 밀리지 않게). 반환 ok · fail · timeout(조용히 삼키지 않고 기록)
-  static func conflictNotice(fields f: [String: String], count: Int) async -> String {
+  static func conflictNotice(fields f: [String: String], count: Int, similar: Bool = false) async -> String {
     guard let pid = f["proposal_id"] else { return "fail" }
     let title = f["title"], start = f["start"], version = f["version"].flatMap { Int($0) }
     let r = await Deadline.run(seconds: 2) { () async -> String? in
       let c = UNMutableNotificationContent()
-      c.title = ProposalFlow.conflictNoticeTitle; c.body = ProposalFlow.conflictNoticeBody(count)
+      c.title = similar ? ProposalFlow.similarNoticeTitle : ProposalFlow.conflictNoticeTitle
+      c.body = similar ? ProposalFlow.similarNoticeBody(count) : ProposalFlow.conflictNoticeBody(count)
       c.categoryIdentifier = ProposalReview.conflictCategory
       var info: [String: Any] = ["proposal_id": pid]
       if let title { info["title"] = title }
@@ -82,7 +83,7 @@ enum NotificationActions {
       } catch { return "fail" }
     }
     let result = r ?? "timeout"
-    DiagLog.append("ADD conflict notice \(result) n=\(count) \(pid)")
+    DiagLog.append("ADD \(similar ? "similar" : "conflict") notice \(result) n=\(count) \(pid)")
     return result
   }
 
@@ -135,8 +136,8 @@ enum NotificationActions {
 
 struct AddEventRequest: Sendable { let pid: String; let title: String; let timing: ProposalTiming; let version: Int; var confirmed = false }
 
-/// 확인 → 표식 조회 → 겹침 판정 → 저장 → 기록을 await 없이 한 actor 안에서 처리한다(스펙 §10 순서 2~3, PoC-5 실측: 동시 두 번 탭 +1).
-/// 반환: "ok" · "recovered"(저장 후 기록 전 종료 복구) · "dup" · "conflict:<n>"(겹침, 저장 안 함) · "fail:<코드>"
+/// 확인 → 표식 조회 → 겹침·비슷한 일정 판정 → 저장 → 기록을 await 없이 한 actor 안에서 처리한다(스펙 §10 순서 2~3, PoC-5 실측: 동시 두 번 탭 +1).
+/// 반환: "ok" · "recovered"(저장 후 기록 전 종료 복구) · "dup" · "conflict:<n>"(겹침, 저장 안 함) · "similar:<n>"(비슷한 일정, 저장 안 함) · "fail:<코드>"
 actor AddEventGate {
   static let shared = AddEventGate()
   func add(_ r: AddEventRequest) -> String {
@@ -147,16 +148,19 @@ actor AddEventGate {
       // 화면은 전체 접근일 때만 추가 버튼을 보이므로 이 경로는 권한을 바꾼 직후의 낡은 화면·알림뿐이다
       guard CalendarLookup.fullAccess else { return "fail:no_full_access" }
       let store = EKEventStore()
-      let (from, to) = ProposalFlow.searchWindow(start: r.timing.anchor)                 // 종일은 첫날 서울 0시 ±1일
+      let (from, to) = r.timing.searchWindow                // 시각 ±1일, 종일은 첫날 서울 0시 −1일 ~ 마지막 날 다음 날 0시 +1일(기간 전체, 0.9.2)
       let events = CalendarLookup.events(store, from: from, to: to)
       if let found = ProposalFlow.matchMarker(pid: r.pid, events: events.map { (id: $0.id, url: $0.url) }) {
         try ex.record(proposalId: r.pid, eventkitId: found, version: r.version)
         return "recovered"
       }
-      // 겹침(§10 순서 3): 표식 조회에 쓴 같은 배열로 판정 — EventKit 조회·await 가 늘지 않는다. 확인받지 않았으면 저장하지 않는다. 종일은 판정 대상 아님
+      // 겹침(§10 순서 3): 표식 조회에 쓴 같은 배열로 판정 — EventKit 조회·await 가 늘지 않는다. 확인받지 않았으면 저장하지 않는다. 종일은 판정 대상 아님.
+      // 겹침이 없으면 같은 날 비슷한 일정(0.9.2, 종일·시각 모두) — 같은 배열, 같은 규칙(미리 판정 ProposalFlow.preview 와 같은 순서)
       if !r.confirmed {
         let c = ProposalFlow.conflicts(pid: r.pid, timing: r.timing, events: events)
         if !c.isEmpty { return ProposalFlow.conflictOutcome(c.count) }
+        let s = ProposalFlow.similar(pid: r.pid, title: r.title, timing: r.timing, events: events)
+        if !s.isEmpty { return ProposalFlow.similarOutcome(s.count) }
       }
       guard let cal = store.defaultCalendarForNewEvents, cal.allowsContentModifications else { return "fail:no_writable_calendar" }  // §10 읽기 전용 제외
       let ev = EKEvent(eventStore: store)
@@ -217,7 +221,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     }
     // 키가 빠진 payload 는 handleAdd 의 invalid_payload 경로로 간다. 원래 키 목록은 여기서 남긴다
     if fields["proposal_id"] == nil || fields["title"] == nil || fields["start"] == nil { DiagLog.append("ADD payload keys=\(info.keys.map { "\($0)" }.sorted())") }
-    // 겹침이면 handleAdd 가 저장 대신 로컬 알림 1건을 등록하고 돌아온다(네트워크 없음, 2초 마감). 그 뒤 기존처럼 완료
+    // 겹침·비슷한 일정이면 handleAdd 가 저장 대신 로컬 알림 1건을 등록하고 돌아온다(네트워크 없음, 2초 마감). 그 뒤 기존처럼 완료
     Task {
       await NotificationActions.handleAdd(fields: fields, lockScreen: true)
       DispatchQueue.main.async { done.value() }

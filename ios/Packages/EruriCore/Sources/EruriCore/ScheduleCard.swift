@@ -100,15 +100,20 @@ public enum ScheduleCard {
     /// addedMovedDay = 종일 제안의 표식 종일 일정이 다른 날(그날 서울 0시)
     case added, addedMoved(Date), addedMovedDay(Date), sameEvent, addedMissing
     case conflict([ProposalFlow.CalendarEvent], maybeSame: Bool)
+    /// 같은 날 제목이 비슷한 일정(0.9.2) — 종일은 그 날짜, 시각은 겹침이 없을 때만. 버튼 "그래도 추가"(확인창 없이 confirmed)
+    case similar([ProposalFlow.CalendarEvent])
     case clear
   }
 
   /// 등록 판정(§9 상태 1~6). events = 카드 날짜 ±1일 일정(표식이 옮겨졌어도 찾는다). 캘린더 실제 상태가 1순위이고
   /// 실행 기록·서버 succeeded 는 "넣은 적 있음"의 보조 근거(succeeded 만으로 "등록됨"이라 하지 않는다). 최종 판정은 AddEventGate.
   /// 종일 제안(allDay, start = 그날 서울 0시, 0.9.1): "같은 시작(분)" 대신 같은 서울 날짜의 종일 일정 — 표식이면 등록됨, 표식 없이 같은 제목이면 같은 일정.
-  /// 종일 일정은 기기 시간대 0시로 오므로 seoulSpan(deviceZone)으로 날짜를 가른다. 종일은 겹침 판정 대상이 아니다(§10)
-  public static func status(pid: String, title: String, start: Date, allDay: Bool = false, serverStatus: String, executed: Bool,
-                            events: [ProposalFlow.CalendarEvent], deviceZone: TimeZone = .current) -> Status {
+  /// 종일 일정은 기기 시간대 0시로 오므로 seoulSpan(deviceZone)으로 날짜를 가른다. 종일은 겹침 판정 대상이 아니다(§10).
+  /// 비슷한 일정(0.9.2): 종일은 다른 제안 표식 + 같은 날짜 + 같은 정규화 제목이면 등록됨(같은 일정을 다른 제안으로 넣음), 그 밖의 비슷한 제목은
+  /// "이전에 추가함" 뒤에 similar. 시각은 겹침이 우선이고 겹침이 없을 때만 같은 날 비슷한 제목(ProposalFlow.preview 와 같은 순서)
+  /// timing = 제안 일시(여러 날 종일의 기간 — 비슷한 일정을 그 기간과 겹치는 날에서 찾는다). nil 이면 start·allDay 로 하루
+  public static func status(pid: String, title: String, start: Date, allDay: Bool = false, timing: ProposalTiming? = nil, serverStatus: String,
+                            executed: Bool, events: [ProposalFlow.CalendarEvent], deviceZone: TimeZone = .current) -> Status {
     let live = events.filter { !$0.canceled }, m = ProposalFlow.marker(pid), name = trimmed(title)
     let seoulStart = { (e: ProposalFlow.CalendarEvent) in seoulSpan(e, deviceZone: deviceZone).0 }
     let sameDay = { (e: ProposalFlow.CalendarEvent) in e.allDay && seoulDay(seoulStart(e)) == seoulDay(start) }
@@ -117,13 +122,16 @@ public enum ScheduleCard {
       if sameDay(mine) { return .added }
       return mine.allDay ? .addedMovedDay(seoulDay(seoulStart(mine)).start) : .addedMoved(mine.start)
     }
+    let one = ProposalTiming.Day.seoulDay(of: start)
+    let timing = timing ?? (allDay ? .allDay(first: one, last: one) : .timed(start))
+    let similar = ProposalFlow.similar(pid: pid, title: title, timing: timing, events: events, deviceZone: deviceZone)
+    if ProposalFlow.registeredTwin(title: title, timing: timing, among: similar, deviceZone: deviceZone) != nil { return .added }
     if live.contains(where: { allDay ? sameDay($0) && trimmed($0.title) == name : minute($0.start) == minute(start) && trimmed($0.title) == name }) {
       return .sameEvent
     }
     if executed || serverStatus == "succeeded" { return .addedMissing }
-    if allDay { return .clear }
-    let c = ProposalFlow.conflicts(pid: pid, start: start, events: events)
-    if c.isEmpty { return .clear }
+    let c = allDay ? [] : ProposalFlow.conflicts(pid: pid, start: start, events: events)
+    if c.isEmpty { return similar.isEmpty ? .clear : .similar(similar) }
     // 같은 예약의 재안내 → 다른 제안이 이미 넣은 일정(Fable #10). 자동 차단은 하지 않는다 — 오판이면 추가할 길이 없어진다
     let same = c.contains { $0.url?.absoluteString.hasPrefix(markerPrefix) == true && minute($0.start) == minute(start) }
     return .conflict(c, maybeSame: same)
@@ -139,6 +147,7 @@ public enum ScheduleCard {
     case .conflict(let cs, let same):
       guard let f = cs.first else { return "⚠️ 아직 캘린더에 없음" }
       return "⚠️ 아직 캘린더에 없음 · 겹치는 일정 \(span(f)) \(name(f))" + (cs.count > 1 ? " 외 \(cs.count - 1)건" : "") + (same ? " (같은 일정일 수 있음)" : "")
+    case .similar(let ss): return ProposalFlow.similarLine(ss) ?? "아직 캘린더에 없음"
     case .clear: return "아직 캘린더에 없음"
     }
   }
@@ -163,8 +172,9 @@ public enum ScheduleCard {
   /// 카드 한 장. events = 카드 날짜 ±1일의 모든 캘린더 일정(앱 CalendarLookup.cardEvents), nil = 전체 접근 없음. executed = 이 기기 실행 기록
   public static func model(_ c: Pick, events: [ProposalFlow.CalendarEvent]?, executed: Bool, deviceZone: TimeZone = .current) -> Model {
     let st: Status? = c.kind == .addable ? events.map {
-      status(pid: c.proposal.id, title: c.title, start: c.start, allDay: !c.timed, serverStatus: c.proposal.status, executed: executed, events: $0,
-             deviceZone: deviceZone)
+      status(pid: c.proposal.id, title: c.title, start: c.start, allDay: !c.timed,
+             timing: ProposalTiming.parse(start: c.proposal.payload["start"]?.string ?? "", end: c.proposal.payload["end"]?.string),
+             serverStatus: c.proposal.status, executed: executed, events: $0, deviceZone: deviceZone)
     } : nil
     var conflicts: [ProposalFlow.CalendarEvent] = []
     if case .conflict(let cs, _)? = st { conflicts = cs }
@@ -173,19 +183,23 @@ public enum ScheduleCard {
                  endText: c.proposal.payload["end"]?.string, kind: c.kind, start: c.start, timed: c.timed, status: st, lines: l?.lines, moreLines: l?.more ?? 0)
   }
 
-  public enum Action: Equatable, Sendable { case add, addAnyway }
-  /// 버튼: 미래 제안이 "아직 없음"이면 캘린더에 추가(종일이면 "종일 일정으로 추가"), 겹침이면 겹쳐도 추가(확인창 없음, §10). 그 밖은 없음
+  public enum Action: Equatable, Sendable { case add, addAnyway, addSimilar }
+  /// 버튼: 미래 제안이 "아직 없음"이면 캘린더에 추가(종일이면 "종일 일정으로 추가"), 겹침이면 겹쳐도 추가, 비슷한 일정이면 그래도 추가
+  /// (둘 다 확인창 없음 — 사용자가 보고 누른다, §10). 그 밖은 없음
   public static func action(_ m: Model) -> Action? {
     guard m.kind == .addable else { return nil }
     switch m.status {
     case .clear?: return .add
     case .conflict?: return .addAnyway
+    case .similar?: return .addSimilar
     default: return nil
     }
   }
   public static func buttonTitle(_ a: Action, allDay: Bool = false) -> String {
-    a == .add ? ProposalFlow.addButtonTitle(allDay: allDay, conflictsShown: false) : "겹쳐도 추가"
+    ProposalFlow.addButtonTitle(allDay: allDay, conflictsShown: a == .addAnyway, similarShown: a == .addSimilar)
   }
+  /// 화면에 보인 겹침·비슷한 일정을 사용자가 보고 누른 버튼이면 confirmed(ProposalFlow.tapConfirmed)
+  public static func confirms(_ a: Action) -> Bool { a != .add }
   /// handleAdd 입력(알림 페이로드와 같은 키): 시각은 payload start 원문 그대로(같은 파서), 종일은 날짜(여러 날이면 end = 마지막 날)
   public static func addFields(_ m: Model) -> [String: String] {
     var f = ["proposal_id": m.pid, "title": m.title, "start": m.startText]

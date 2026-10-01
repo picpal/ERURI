@@ -170,13 +170,16 @@ struct ProposalSheet: View {
 
 /// 제안 한 건: 제목·시각·장소, "캘린더에 추가"(addFields 가 있을 때만)·"무시". 결과를 아래에 쓰고, 실패면 버튼을 다시 켠다.
 /// 겹침(스펙 §10): 뜰 때·앱 활성화 때 미리 판정해 "겹치는 일정" 줄과 "겹쳐도 추가"를 보이고, 누르면 확인창 없이 confirmed 로 부른다(0.8.1).
-/// 최종 판정은 AddEventGate — "캘린더에 추가"(미리 겹침 없음)인데 그사이 캘린더가 바뀌어 conflict 가 오면 다시 읽고 확인창(C2-5)
+/// 비슷한 일정(0.9.2): 겹침이 없으면 같은 날 비슷한 제목 → "✅ 캘린더에 비슷한 일정이 있음 · 날짜 제목" + "그래도 추가"(확인창 없이 confirmed).
+/// 종일 제안이 다른 제안 표식·같은 날짜·같은 정규화 제목 일정과 맞으면 "✅ 캘린더에 등록됨" — 추가 버튼 없이 무시만.
+/// 최종 판정은 AddEventGate — 미리 판정에 없던 겹침·비슷한 일정이 저장 직전에 나오면 다시 읽고 확인창(C2-5)
 struct ProposalActionsView: View {
   let title: String; let when: String; let location: String?; let addFields: [String: String]?; let proposalId: String
   @Binding var state: ProposalReview.ActionState
   @Environment(\.scenePhase) private var scenePhase
-  @State private var conflicts: [ProposalFlow.CalendarEvent] = []
+  @State private var preview = ProposalFlow.Preview.clear
   @State private var askConfirm = false
+  @State private var heldSimilar = false                              // 확인창을 띄운 결과가 비슷한 일정(similar:<n>)인가 — 문구를 고른다
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
@@ -184,11 +187,16 @@ struct ProposalActionsView: View {
       Text(when).font(.subheadline).foregroundStyle(.secondary)
       if let location { Label(location, systemImage: "mappin.and.ellipse").font(.caption).foregroundStyle(.secondary) }
       // 추가·무시가 끝나면(.finished) 미리 판정 줄은 지난 정보라 숨긴다(C2 리뷰 Minor 4)
-      if addFields != nil, !finished, let line = ProposalFlow.conflictLine(conflicts) { Text(line).font(.caption).foregroundStyle(.orange) }
+      if addFields != nil, !finished {
+        if let line = ProposalFlow.conflictLine(conflicts) { Text(line).font(.caption).foregroundStyle(.orange) }
+        else if let line = ProposalFlow.similarLine(similars) { Text(line).font(.caption).foregroundStyle(.secondary) }
+        else if registered { Text(ScheduleCard.statusText(.added)).font(.caption).foregroundStyle(.secondary) }
+      }
       HStack {
-        if addFields != nil {
-          Button(state == .running ? "처리하는 중…" : ProposalFlow.addButtonTitle(allDay: allDay, conflictsShown: !conflicts.isEmpty && !finished)) {
-            add(confirmed: ProposalFlow.tapConfirmed(conflictsShown: !conflicts.isEmpty))
+        if addFields != nil, !(registered && !finished) {
+          Button(state == .running ? "처리하는 중…" : ProposalFlow.addButtonTitle(allDay: allDay, conflictsShown: !conflicts.isEmpty && !finished,
+                                                                            similarShown: !similars.isEmpty && !finished)) {
+            add(confirmed: ProposalFlow.tapConfirmed(conflictsShown: !conflicts.isEmpty || !similars.isEmpty))
           }.buttonStyle(.borderedProminent)
         }
         Button("무시") {
@@ -204,9 +212,9 @@ struct ProposalActionsView: View {
       }
     }
     .padding(.vertical, 4)
-    .task(id: addFields?["start"]) { refreshConflicts() }
-    .onChange(of: scenePhase) { _, phase in if phase == .active { refreshConflicts() } }   // 캘린더 앱에서 바꾸고 돌아온 경우
-    .confirmationDialog(ProposalFlow.confirmTitle(conflicts), isPresented: $askConfirm, titleVisibility: .visible) {
+    .task(id: addFields?["start"]) { refreshPreview() }
+    .onChange(of: scenePhase) { _, phase in if phase == .active { refreshPreview() } }   // 캘린더 앱에서 바꾸고 돌아온 경우
+    .confirmationDialog(confirmText, isPresented: $askConfirm, titleVisibility: .visible) {
       Button("추가") { add(confirmed: true) }
       Button("취소", role: .cancel) {}
     }
@@ -216,19 +224,33 @@ struct ProposalActionsView: View {
   private var timing: ProposalTiming? { addFields?["start"].flatMap { ProposalTiming.parse(start: $0, end: addFields?["end"]) } }
   /// 날짜만 = 종일(0.9.1): "종일 일정으로 추가", 겹침 미리 판정 없음(§10 종일 제외)
   private var allDay: Bool { timing?.isAllDay ?? false }
+  private var conflicts: [ProposalFlow.CalendarEvent] { if case .conflict(let c) = preview { return c }; return [] }
+  private var similars: [ProposalFlow.CalendarEvent] { if case .similar(let s) = preview { return s }; return [] }
+  private var registered: Bool { if case .registered = preview { return true }; return false }
 
-  private func refreshConflicts() {
-    guard case .timed(let start)? = timing else { conflicts = []; return }
-    conflicts = CalendarLookup.conflicts(pid: proposalId, start: start)
+  /// 확인창 문구: 저장 직전 결과(겹침·비슷한 일정)에 맞춰 다시 읽은 일정의 제목
+  private var confirmText: String {
+    guard heldSimilar else { return ProposalFlow.confirmTitle(conflicts) }
+    if case .registered(let e) = preview { return ProposalFlow.similarConfirmTitle([e]) }
+    return ProposalFlow.similarConfirmTitle(similars)
   }
 
-  /// §10 경로 그대로(handleAdd). 미리 겹침 없이 불렀는데 겹침(conflict)이면 저장하지 않고 돌아오므로 다시 읽고 확인창
+  /// 겹침(시각) → 같은 일정 등록됨(종일) → 비슷한 일정(0.9.2). 제목은 handleAdd 에 넘기는 값(addFields)으로 — AddEventGate 와 같은 입력
+  private func refreshPreview() {
+    guard let timing else { preview = .clear; return }
+    preview = CalendarLookup.preview(pid: proposalId, title: addFields?["title"] ?? title, timing: timing)
+  }
+
+  /// §10 경로 그대로(handleAdd). 미리 판정에 없던 겹침·비슷한 일정이면 저장하지 않고 돌아오므로 다시 읽고 확인창
   private func add(confirmed: Bool) {
     guard let fields = addFields else { return }
     state = .running
     Task {
       let outcome = await NotificationActions.handleAdd(fields: fields, confirmed: confirmed)
-      if ProposalFlow.needsConfirm(confirmed: confirmed, outcome: outcome) { refreshConflicts(); state = .idle; askConfirm = true }
+      if ProposalFlow.needsConfirm(confirmed: confirmed, outcome: outcome) {
+        heldSimilar = ProposalFlow.similarCount(outcome) != nil
+        refreshPreview(); state = .idle; askConfirm = true
+      }
       else { state = .after(ChatReply.addFeedback(outcome)) }
     }
   }

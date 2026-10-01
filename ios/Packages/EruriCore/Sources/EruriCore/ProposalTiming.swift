@@ -55,6 +55,25 @@ public enum ProposalTiming: Equatable, Sendable {
     }
   }
 
+  /// AddEventGate·미리 판정의 조회 창: 시각은 ±1일(§10 표식 조회), 종일은 첫날 서울 0시 −1일 ~ 마지막 날 다음 날 0시 +1일 —
+  /// 여러 날 종일 제안의 기간 전체(비슷한 일정, 0.9.2)와 표식 ±1일을 함께 덮는다
+  public var searchWindow: (Date, Date) {
+    switch self {
+    case .timed(let at): return ProposalFlow.searchWindow(start: at)
+    case .allDay: let s = seoulDays; return (s.start.addingTimeInterval(-86_400), s.end.addingTimeInterval(86_400))
+    }
+  }
+
+  /// 비슷한 일정을 볼 서울 날짜 구간: 시각은 그 시각의 서울 하루, 종일은 [첫날 0시, 마지막 날 다음 날 0시)(서울)
+  public var seoulDays: DateInterval {
+    switch self {
+    case .timed(let at): return ScheduleCard.seoulDay(at)
+    case .allDay(let first, let last):
+      let a = first.start(in: Self.seoul.timeZone)
+      return DateInterval(start: a, end: Self.seoul.date(byAdding: .day, value: 1, to: last.start(in: Self.seoul.timeZone))!)
+    }
+  }
+
   /// EventKit 저장 구간. 시각: [start, start+1시간)(§10). 종일: 기기 시간대의 첫날 0시 ~ 마지막 날 0시 — isAllDay 이벤트는 날짜만 쓰므로
   /// 서울 날짜를 기기 달력의 같은 날짜로 옮긴다(기기가 다른 시간대여도 날짜가 밀리지 않게). 하루면 시작 = 끝
   public func eventSpan(deviceZone: TimeZone = .current) -> (start: Date, end: Date) {

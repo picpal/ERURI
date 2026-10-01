@@ -168,6 +168,11 @@ final class ScheduleCardTests: XCTestCase {
     let canceledMine = ev("c", "2026-10-04T06:30:00Z", "2026-10-04T07:30:00Z", title: "합성의원 진료 예약", canceled: true, url: m)
     XCTAssertEqual(s([canceledMine]), .clear)                                                      // 취소된 일정은 없는 것
     XCTAssertEqual(s([ev("touch", "2026-10-04T05:30:00Z", "2026-10-04T06:30:00Z")]), .clear)         // 맞닿음
+    // 겹침이 없을 때만 같은 날 비슷한 제목(0.9.2) — 겹침이 있으면 겹침이 우선
+    let am = ev("am", "2026-10-04T00:00:00Z", "2026-10-04T01:00:00Z", title: "합성의원 진료")
+    XCTAssertEqual(s([am]), .similar([am]))
+    XCTAssertEqual(s([am, other]), .conflict([other], maybeSame: false))
+    XCTAssertEqual(s([ev("nextDay", "2026-10-05T00:00:00Z", "2026-10-05T01:00:00Z", title: "합성의원 진료")]), .clear)
     XCTAssertEqual(s([]), .clear)
   }
 
@@ -191,7 +196,14 @@ final class ScheduleCardTests: XCTestCase {
     let movedTimed = ev("mine", "2026-10-05T01:00:00Z", "2026-10-05T02:00:00Z", title: "합성 공지 행사", url: m)           // 시각 일정으로 바꿈
     XCTAssertEqual(s([movedTimed]), .addedMoved(d("2026-10-05T01:00:00Z")))
     XCTAssertEqual(s([ev("same", "2026-10-04T15:00:00Z", "2026-10-05T14:59:59Z", title: " 합성 공지 행사", allDay: true)]), .sameEvent)
-    XCTAssertEqual(s([ev("timedSame", "2026-10-05T01:00:00Z", "2026-10-05T02:00:00Z", title: "합성 공지 행사")]), .clear)   // 시각 일정은 같은 일정으로 보지 않는다
+    // 시각 일정은 같은 일정으로 보지 않는다 — 같은 날 비슷한 제목이면 "비슷한 일정"(0.9.2)
+    let timedSame = ev("timedSame", "2026-10-05T01:00:00Z", "2026-10-05T02:00:00Z", title: "합성 공지 행사")
+    XCTAssertEqual(s([timedSame]), .similar([timedSame]))
+    // 다른 제안 표식 + 같은 날짜 + 같은 정규화 제목 = 같은 일정을 다른 제안으로 이미 넣음 → 등록됨(0.9.2)
+    XCTAssertEqual(s([ev("twin", "2026-10-04T15:00:00Z", "2026-10-05T14:59:59Z", title: "[합성] 공지행사", allDay: true, url: ProposalFlow.marker("p-2"))]), .added)
+    let loose = ev("loose", "2026-10-04T15:00:00Z", "2026-10-05T14:59:59Z", title: "합성 공지 행사 준비물", allDay: true)
+    XCTAssertEqual(s([loose]), .similar([loose]))
+    XCTAssertEqual(s([loose], executed: true), .addedMissing)                                            // 넣은 적 있으면 비슷한 일정보다 앞
     XCTAssertEqual(s([ev("busy", "2026-10-05T01:00:00Z", "2026-10-05T02:00:00Z", title: "합성 회의")]), .clear)
     XCTAssertEqual(s([], executed: true), .addedMissing)
     XCTAssertEqual(s([ev("c", "2026-10-04T15:00:00Z", "2026-10-05T14:59:59Z", title: "합성 공지 행사", allDay: true, canceled: true, url: m)]), .clear)
@@ -221,6 +233,20 @@ final class ScheduleCardTests: XCTestCase {
     let mid = ev("mid", "2026-10-04T14:00:00Z", "2026-10-04T15:00:00Z", title: "합성 심야")                // 줄과 같은 표기(자정 끝 = 그날 안)
     XCTAssertEqual(ScheduleCard.statusText(.conflict([mid], maybeSame: false)), "⚠️ 아직 캘린더에 없음 · 겹치는 일정 23:00–00:00 합성 심야")
     XCTAssertEqual(ScheduleCard.statusText(.clear), "아직 캘린더에 없음")
+    let sim = ev("s", "2026-10-03T15:00:00Z", "2026-10-04T14:59:59Z", title: "합성 공지 행사", allDay: true)
+    XCTAssertEqual(ScheduleCard.statusText(.similar([sim])), "✅ 캘린더에 비슷한 일정이 있음 · 10/4(일) 합성 공지 행사")
+  }
+
+  /// 비슷한 일정(0.9.2): 버튼 "그래도 추가"(확인창 없이 confirmed), 경고색 아님
+  func testSimilarModel() throws {
+    let card = try XCTUnwrap(ScheduleCard.card(prop("p-1", start: .string("2026-10-05"), title: "합성 공지 행사"), now: now))
+    let sim = ev("s", "2026-10-04T15:00:00Z", "2026-10-05T14:59:59Z", title: "합성 공지행사!", allDay: true)
+    let m = ScheduleCard.model(card, events: [sim], executed: false)
+    XCTAssertEqual(m.status, .similar([sim]))
+    XCTAssertEqual(ScheduleCard.action(m), .addSimilar)
+    XCTAssertEqual(ScheduleCard.buttonTitle(.addSimilar, allDay: true), "그래도 추가")
+    XCTAssertFalse(ScheduleCard.isWarning(m))
+    XCTAssertTrue(ScheduleCard.confirms(.addSimilar)); XCTAssertTrue(ScheduleCard.confirms(.addAnyway)); XCTAssertFalse(ScheduleCard.confirms(.add))
   }
 
   /// 카드 모델·버튼: 버튼은 시각 있는 미래 제안이 "아직 없음"(추가)·겹침(겹쳐도 추가)일 때만.

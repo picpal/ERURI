@@ -43,6 +43,7 @@ public enum ChatReply {
     case "fail:no_writable_calendar": ("쓸 수 있는 기본 캘린더가 없어 추가하지 못했습니다", true)
     case "fail:no_full_access": ("캘린더 전체 접근을 허용해야 추가할 수 있습니다", true)
     case let o where ProposalFlow.conflictCount(o) != nil: ("같은 시간에 일정이 있습니다", true)
+    case let o where ProposalFlow.similarCount(o) != nil: ("캘린더에 비슷한 일정이 있습니다", true)
     default: ("추가하지 못했습니다. 다시 눌러 주세요", true)
     }
   }
