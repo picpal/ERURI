@@ -222,6 +222,21 @@ final class ProposalReviewTests: XCTestCase {
     let o = ProposalReview.cards(for: l, list: nil, statuses: [pid: "proposed", p2: "proposed", p3: "proposed"])
     guard case .offline = o[1].sheet else { return XCTFail("offline when the list failed") }
   }
+
+  /// 리뷰 I1: 0.9.0 서버가 보낸 묶음 속 날짜만 원소는 REVIEW 다. 0026 목록에 같은 id 가 있으면 단건 시트처럼 목록이 먼저(종일 추가 가능)
+  func testCardsListBeatsReviewCategory() throws {
+    let l = try XCTUnwrap(ProposalReview.link(actionIdentifier: ProposalReview.defaultAction, category: "EVENT_BUNDLE", fields: [:],
+      events: [raw(pid, "2026-10-02T15:30:00+09:00"), raw(p3, "2026-10-23", "REVIEW")]))
+    let day = ",{\"proposal_id\":\"\(p3)\",\"action\":\"ADD_EVENT\",\"title\":\"합성 축제\",\"start\":\"2026-10-23\",\"end\":null,"
+      + "\"all_day\":true,\"location\":null,\"version\":1,\"created_at\":\"2026-09-30T08:00:00+00:00\"}"
+    let list = try XCTUnwrap(ProposalReview.decodeList(listJSON(day)))
+    let c = ProposalReview.cards(for: l, list: list, statuses: [pid: "proposed", p3: "proposed"])
+    guard case .pending(let row) = c[1].sheet else { return XCTFail("pending") }
+    XCTAssertEqual(row.id, p3)
+    // 목록에 없는 진짜 REVIEW(uncertain)는 그대로 확인 필요
+    let r = ProposalReview.cards(for: l, list: try XCTUnwrap(ProposalReview.decodeList(listJSON())), statuses: [pid: "proposed", p3: "proposed"])
+    XCTAssertEqual(r[1].sheet, .needsReview)
+  }
 }
 
 /// 제안 탭 "전체 무시": 목 네트워크(dismiss 클로저)로 동시 수·마감·집계를 본다

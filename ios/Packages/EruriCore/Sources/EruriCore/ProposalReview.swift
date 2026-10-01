@@ -131,8 +131,9 @@ public enum ProposalReview {
     link.events.map { e in
       guard let statuses else { return BundleCard(event: e, sheet: sheet(for: e.link, list: list)) }
       guard statuses[e.proposalId] == "proposed" else { return BundleCard(event: e, sheet: .processed) }   // 처리됨·행 없음(REVIEW 포함)
-      if e.category != "ADD_EVENT" { return BundleCard(event: e, sheet: .needsReview) }
+      // 목록이 category 보다 먼저(단건 sheet 와 같다): 0.9.0 서버 묶음의 날짜만 원소는 REVIEW 지만 0026 목록에 있으면 종일 추가 가능. 진짜 REVIEW(uncertain)는 목록에 없다
       if let p = list?.first(where: { $0.proposal_id == e.proposalId }) { return BundleCard(event: e, sheet: .pending(p)) }
+      if e.category != "ADD_EVENT" { return BundleCard(event: e, sheet: .needsReview) }
       guard let f = pushFields(e.link) else { return BundleCard(event: e, sheet: .processed) }
       return BundleCard(event: e, sheet: list == nil ? .offline(f) : .unlisted(f))
     }
