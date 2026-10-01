@@ -14,6 +14,7 @@ export type IngestDeps = {
   encrypt(userId: string, plaintext: string): Promise<Uint8Array>;
   insertItem(item: NewItem): Promise<string | null>;                      // 중복이면 null
   findItem(user: string, idempotencyKey: string): Promise<string | null>; // 중복일 때 기존 item id
+  kick(): void;                                                           // 새 process 잡이 생겼을 때 워커 즉시 호출(응답을 막지 않는다)
 };
 
 const SOURCES = new Set(["MESSAGES", "NOTIFICATION", "SHARE", "CHAT"]);   // GMAIL은 서버가 직접 수집
@@ -30,7 +31,7 @@ function discarded(reason: string) {
   return new Response(null, { status: 204 });
 }
 
-// 스펙 §7 /ingest: JWT → 서버 규칙 필터 → 암호화 → items INSERT + jobs(process) → 202
+// 스펙 §7 /ingest: JWT → 서버 규칙 필터 → 암호화 → items INSERT + jobs(process) → 워커 즉시 호출 → 202
 // 같은 idempotency_key(source:id) 재수신(기기 직접 요청 타임아웃 뒤 background 세션 재전송 등)은 200 + 기존 item_id.
 // 기기는 2xx 면 큐에서 지우므로 재전송이 실패로 남지 않는다
 export async function handleIngest(req: Request, deps: IngestDeps): Promise<Response> {
@@ -60,7 +61,10 @@ export async function handleIngest(req: Request, deps: IngestDeps): Promise<Resp
     occurredAt,
     deviceFilter: DEVICE_FILTERS.has(b.deviceFilter ?? "") ? b.deviceFilter! : null,
   });
-  if (itemId !== null) return Response.json({ item_id: itemId, duplicate: false }, { status: 202 });
+  if (itemId !== null) {
+    deps.kick();                                                          // 매분 cron 을 기다리지 않는다(놓치면 cron 이 회수)
+    return Response.json({ item_id: itemId, duplicate: false }, { status: 202 });
+  }
   const existing = await deps.findItem(user, `${b.source}:${b.id}`);
   return Response.json({ item_id: existing, duplicate: true }, { status: 200 });
 }

@@ -3,14 +3,15 @@ import { handleIngest, type IngestDeps, type NewItem, parseCapturedAt } from "..
 
 // 가짜 의존성: encrypt는 평문 바이트를 그대로 돌려줘 무엇이 암호화됐는지 검사한다
 function deps(o: { user?: string | null; duplicate?: boolean } = {}) {
-  const inserted: NewItem[] = [], looked: [string, string][] = [];
+  const inserted: NewItem[] = [], looked: [string, string][] = [], kicks: number[] = [];
   const d: IngestDeps = {
     authUser: async (t) => (t === "good" ? (o.user === undefined ? "user-1" : o.user) : null),
     encrypt: async (_u, p) => new TextEncoder().encode(p),
     insertItem: async (item) => { inserted.push(item); return o.duplicate ? null : "item-1"; },
     findItem: async (user, key) => { looked.push([user, key]); return "item-existing"; },
+    kick: () => { kicks.push(inserted.length); },
   };
-  return { d, inserted, looked };
+  return { d, inserted, looked, kicks };
 }
 const req = (body: unknown, token: string | null = "good") => new Request("http://x/ingest", {
   method: "POST", body: JSON.stringify(body),
@@ -69,6 +70,18 @@ Deno.test("first insert does not look up; retry of the same id keeps the same id
   const again = deps({ duplicate: true });
   await handleIngest(req(base), again.d);
   assertEquals(again.inserted[0].idempotencyKey, first.inserted[0].idempotencyKey);
+});
+
+Deno.test("worker kicked once after a new item (job created); not on duplicate, discard, 401 or 400 (0.8.1)", async () => {
+  const fresh = deps();
+  assertEquals((await handleIngest(req(base), fresh.d)).status, 202);
+  assertEquals(fresh.kicks, [1]);                                        // insert 뒤에 호출
+  const dup = deps({ duplicate: true });
+  assertEquals((await handleIngest(req(base), dup.d)).status, 200);
+  assertEquals((await handleIngest(req({ ...base, text: "(광고) 가을 세일 최대 50%" }), dup.d)).status, 204);
+  assertEquals((await handleIngest(req(base, null), dup.d)).status, 401);
+  assertEquals((await handleIngest(req({ ...base, source: "X" }), dup.d)).status, 400);
+  assertEquals(dup.kicks, []);
 });
 
 Deno.test("deviceFilter (Swift CaptureItem key) is stored as device_filter; absent or unknown → null", async () => {

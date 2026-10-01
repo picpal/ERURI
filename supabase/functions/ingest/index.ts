@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { encrypt, SERVER_AUTH, toBytea } from "../_shared/crypto.ts";
+import { kickInBackground } from "../_shared/kick-worker.ts";
 import { handleIngest } from "./handler.ts";
 import { handleDevice, isDevicePath } from "./device.ts";
 import { handleTrace, isTracePath, touchDevices, upsertTraces } from "./trace.ts";
@@ -50,5 +51,6 @@ Deno.serve((req) => {
       if (error) throw new Error("items lookup " + error.code);
       return data?.id ?? null;
     },
+    kick: () => { kickInBackground(); },
   });
 });

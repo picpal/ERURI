@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { SERVER_AUTH } from "../_shared/crypto.ts";
+import { kickInBackground } from "../_shared/kick-worker.ts";
 import { handleWebhook, verifyPubSubToken } from "./handler.ts";
 
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, SERVER_AUTH);
@@ -12,4 +13,5 @@ Deno.serve((req) => handleWebhook(req, {
     if (error) throw new Error("gmail_enqueue_for_account " + error.code);   // 500 → Pub/Sub 재전송
     return data !== null;
   },
+  kick: () => { kickInBackground(); },
 }));

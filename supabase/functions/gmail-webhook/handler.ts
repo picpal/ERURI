@@ -22,6 +22,7 @@ export async function verifyPubSubToken(authHeader: string | null,
 export type WebhookDeps = {
   verify(authHeader: string | null): Promise<boolean>;
   enqueue(emailAddress: string): Promise<boolean>;   // 새 gmail-sync 잡이 생겼으면 true
+  kick(): void;                                      // 새 잡이 생겼을 때 워커 즉시 호출(응답을 막지 않는다)
 };
 
 // 검증 실패 401. 그 외에는 200으로 ack한다(모르는 계정·형식 오류도 재전송 폭주를 막으려고 ack, 로그에는 코드만)
@@ -39,6 +40,7 @@ export async function handleWebhook(req: Request, deps: WebhookDeps): Promise<Re
     return new Response(null, { status: 200 });
   }
   const created = await deps.enqueue(email);
+  if (created) deps.kick();                          // 매분 cron 을 기다리지 않는다(놓치면 cron 이 회수)
   console.log(JSON.stringify({ gmail_webhook: created ? "queued" : "no_new_job" }));   // 주소는 남기지 않는다
   return new Response(null, { status: 200 });
 }

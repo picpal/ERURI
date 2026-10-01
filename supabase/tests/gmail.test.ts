@@ -375,8 +375,9 @@ const pushReq = (auth: string | null, data: unknown) => new Request("http://x/gm
   body: JSON.stringify({ message: { data: btoa(JSON.stringify(data)), messageId: "1" }, subscription: "projects/p/subscriptions/s" }) });
 
 Deno.test("gmail-webhook: 401 on failed verification; otherwise enqueue by emailAddress and ack 200", async () => {
-  const enq: string[] = [];
-  const deps = (ok: boolean, created: boolean) => ({ verify: async () => ok, enqueue: async (e: string) => { enq.push(e); return created; } });
+  const enq: string[] = [], kicked: string[] = [];
+  const deps = (ok: boolean, created: boolean) => ({ verify: async () => ok, enqueue: async (e: string) => { enq.push(e); return created; },
+                                                     kick: () => { kicked.push(enq[enq.length - 1]); } });
   assertEquals((await handleWebhook(pushReq(null, { emailAddress: "poc@example.com", historyId: "9" }), deps(false, true))).status, 401);
   assertEquals(enq.length, 0);
   assertEquals((await handleWebhook(pushReq("Bearer x", { emailAddress: "poc@example.com", historyId: "9" }), deps(true, true))).status, 200);
@@ -385,6 +386,7 @@ Deno.test("gmail-webhook: 401 on failed verification; otherwise enqueue by email
   const bad = new Request("http://x", { method: "POST", headers: { authorization: "Bearer x" }, body: "{not json" });
   assertEquals((await handleWebhook(bad, deps(true, true))).status, 200);   // 형식 오류도 ack(재전송 폭주 방지), 저장 없음
   assertEquals(enq.length, 2);
+  assertEquals(kicked, ["poc@example.com"]);   // 새 잡이 생긴 경우만 워커 즉시 호출(0.8.1)
 });
 
 // ── DB (호스팅, db push 후. 워커 cron 정지 상태에서) ─────────────────
