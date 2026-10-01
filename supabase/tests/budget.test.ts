@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert";
-import { type BudgetDeps, costKrw, Deferred, guarded, nextMonthSeoul } from "../functions/_shared/budget.ts";
+import { type BudgetDeps, costKrw, Deferred, guarded, LLM_BUSY_DEFER_MS, nextMonthSeoul } from "../functions/_shared/budget.ts";
 
 function fake(level: "ok" | "degraded" | "refused", slot: number | null = 1) {
   const calls: string[] = [];
@@ -32,10 +32,12 @@ Deno.test("guarded: refused → Deferred to next month (no call, no slot)", asyn
   const e = await assertRejects(() => guarded(d, "u", "extract", 0.5, "j1", async () => ({ value: 1, actualKrw: 0 })), Deferred);
   assertEquals([e.until, e.message, calls], ["2027-01-01T00:00:00+09:00", "budget_exhausted", ["reserve:extract:0.5"]]);
 });
-Deno.test("guarded: no LLM slot → reservation undone, Deferred 30s", async () => {
+Deno.test("guarded: no LLM slot → reservation undone, Deferred 5s (worker retries soon; chat ignores until)", async () => {
   const { d, calls } = fake("degraded", null);
   const e = await assertRejects(() => guarded(d, "u", "chat", 2, "c1", async () => ({ value: 1, actualKrw: 0 })), Deferred);
   assertEquals([e.message, calls], ["llm_busy", ["reserve:chat:2", "acquire", "settle:2->0"]]);
+  // 0.8.1 수정 1회차: 30초 → 5초. 살아 있는 워커 루프(runBatches soon)가 앞 잡을 끝낸 뒤 다시 가져간다
+  assertEquals([LLM_BUSY_DEFER_MS, e.until], [5_000, "2026-12-20T03:00:05.000Z"]);
 });
 Deno.test("guarded: call throws → settle 0 and release, error propagates", async () => {
   const { d, calls } = fake("ok");

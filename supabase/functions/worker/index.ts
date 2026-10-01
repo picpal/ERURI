@@ -5,7 +5,7 @@ import { classifierOrNone } from "../_shared/classifier-env.ts";
 import { classifyThreshold } from "../_shared/classify.ts";
 import { gmailFetch, gmailSync, gmailWatch } from "../_shared/gmail-jobs.ts";
 import type { Job } from "../_shared/job.ts";
-import { runBatches } from "./batch.ts";
+import { nextDeferredWait, runBatches, SOON_WINDOW_MS } from "./batch.ts";
 import { embedItem } from "./embed.ts";
 import { embedDeps } from "./embed-deps.ts";
 import { extractMedia } from "./extract.ts";
@@ -78,7 +78,8 @@ Deno.serve(async (req) => {
     });
     results.push([j.id, outcome, Math.round(performance.now() - tj), metrics]);
   };
-  const claimed = await runBatches(claim, run);
+  // 비었어도 곧 풀릴 잡(다른 워커가 LLM 슬롯 없음으로 5초 미룬 것)이 있으면 기다렸다 다시 클레임한다
+  const claimed = await runBatches(claim, run, { soon: () => nextDeferredWait(sb, prefix, SOON_WINDOW_MS) });
   if (claimError && claimed === 0) return new Response(claimError, { status: 500 });
   const ms = Math.round(performance.now() - t0);
   // 일부 성공 뒤의 클레임 오류도 흔적을 남긴다(코드만)

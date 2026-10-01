@@ -1,5 +1,8 @@
 // 비용 통제(스펙 §13): 호출 전 금액 예약 → 호출 → 실제 토큰으로 정산. 80% 이상이면 level = degraded(채팅 강등),
-// 예약 거부(100%)면 Deferred(다음 달) — 잡은 실패가 아니라 미룬다. 동시 LLM 호출 사용자당 2개(슬롯 없으면 Deferred 30초). 금액은 원
+// 예약 거부(100%)면 Deferred(다음 달) — 잡은 실패가 아니라 미룬다. 동시 LLM 호출 사용자당 2개(슬롯 없으면 Deferred 5초). 금액은 원
+// 슬롯 없음 미루기(0.8.1 수정 1회차, 30초 → 5초): 즉시 호출로 워커가 여럿 떠도 슬롯을 못 잡은 잡이 cron 까지 밀리지 않고,
+// 살아 있는 워커 루프(worker/batch.ts soon)가 앞 잡을 끝낸 뒤 다시 가져간다. 채팅은 until 을 쓰지 않는다(자체 3초 재시도 → 503 retry-after 30)
+export const LLM_BUSY_DEFER_MS = 5_000;
 export type BudgetKind = "extract" | "chat" | "embed" | "backfill";
 export type BudgetLevel = "ok" | "degraded";
 export class Deferred extends Error {
@@ -43,7 +46,7 @@ export async function guarded<T>(deps: BudgetDeps, userId: string, kind: BudgetK
   const slot = await deps.acquire(userId, holder);
   if (slot === null) {
     await deps.settle(userId, kind, estKrw, 0);
-    throw new Deferred(new Date(deps.now().getTime() + 30_000).toISOString(), "llm_busy");
+    throw new Deferred(new Date(deps.now().getTime() + LLM_BUSY_DEFER_MS).toISOString(), "llm_busy");
   }
   let actual = 0;
   try {
