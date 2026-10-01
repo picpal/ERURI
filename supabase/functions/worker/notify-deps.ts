@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { sendAPNs } from "../_shared/apns.ts";
-import type { ProposalRow } from "../_shared/notify.ts";
+import type { PeerProposal, ProposalRow } from "../_shared/notify.ts";
 import type { Claim, Device, NotifyDeps } from "./notify.ts";
 
 // notify 잡의 실제 의존성(service role). 모든 RPC에 user_id를 명시한다(스펙 §12 통제 4)
@@ -15,6 +15,11 @@ export function notifyDeps(sb: SupabaseClient, o: Partial<Pick<NotifyDeps, "send
       const { data, error } = await sb.rpc("worker_get_proposal_bundle", { p_user: userId, p_proposal: proposalId });
       if (error) throw new Error("worker_get_proposal_bundle " + error.code);
       return data as ProposalRow[];
+    },
+    async getPeers(userId, proposalId) {
+      const { data, error } = await sb.rpc("worker_pending_event_peers", { p_user: userId, p_proposal: proposalId });
+      if (error) throw new Error("worker_pending_event_peers " + error.code);
+      return data as PeerProposal[];
     },
     async listDevices(userId) {
       const { data, error } = await sb.rpc("worker_list_devices", { p_user: userId });

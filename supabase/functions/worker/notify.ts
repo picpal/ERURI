@@ -1,6 +1,6 @@
 import { type APNsResult, type ApnsEnv, type ApnsPushType, sendWithEnvFallback } from "../_shared/apns.ts";
 import type { Job } from "../_shared/job.ts";
-import { isPermanentFailure, planBundlePush, type ProposalRow } from "../_shared/notify.ts";
+import { isPermanentFailure, type PeerProposal, planBundlePush, type ProposalRow } from "../_shared/notify.ts";
 
 // notify 잡(스펙 §7 0b): 항목의 제안(묶음)을 사용자의 모든 기기에 기기별 1회 보낸다. 로그에는 코드·개수만(토큰·문구 금지)
 export type Device = { device_id: string; apns_token: string; apns_env: ApnsEnv };
@@ -10,6 +10,8 @@ export type PushRecord = { status: "sent" | "failed" | "rejected"; apnsStatus: n
 export type NotifyDeps = {
   getProposal(userId: string, proposalId: string): Promise<ProposalRow | null>;
   getBundle(userId: string, proposalId: string): Promise<ProposalRow[]>;
+  /** 같은 사용자의 다른 항목에 먼저 생긴 대기 일정 제안 중 이 항목 일정과 같은 서울 시작 날짜인 것(0027) */
+  getPeers(userId: string, proposalId: string): Promise<PeerProposal[]>;
   listDevices(userId: string): Promise<Device[]>;
   claimPush(userId: string, proposalId: string, deviceId: string): Promise<Claim>;
   finishPush(userId: string, proposalId: string, deviceId: string, r: PushRecord): Promise<void>;
@@ -24,8 +26,11 @@ export async function notifyProposal(deps: NotifyDeps, job: Job): Promise<string
   const rows = await deps.getBundle(user, pid);                    // 대표 제안의 항목에 딸린 제안들(순번 순, 0025)
   if (rows.length === 0) return log(job, "skipped", { reason: "not_found" });
   // 대표 status 로 거르지 않는다 — 대표가 이미 처리돼도 미처리 형제가 남으면 보낸다(worker_unpushed_proposals 가 대표 id 를 돌려준다)
-  const plan = planBundlePush(rows, deps.now());
-  if (plan.skip !== null) return log(job, "skipped", { reason: plan.skip });
+  // 서버 중복(§7 notify, 0.9.2): 못 읽으면 중복 없음으로 보고 보낸다(fail-open — 중복 푸시가 푸시 유실보다 싸다. 앱의 "비슷한 일정" 확인이 받친다)
+  let peers: PeerProposal[] = [], peersError: string | null = null;
+  try { peers = await deps.getPeers(user, pid); } catch (e) { peersError = e instanceof Error ? e.message.slice(0, 80) : "error"; }
+  const plan = planBundlePush(rows, deps.now(), peers);
+  if (plan.skip !== null) return log(job, "skipped", { reason: plan.skip, ...(peersError ? { peers_error: peersError } : {}) });
   const devices = await deps.listDevices(user);
   const n = { sent: 0, rejected: 0, failed: 0, already: 0, in_flight: 0 };
   for (const d of devices) {
@@ -38,7 +43,7 @@ export async function notifyProposal(deps: NotifyDeps, job: Job): Promise<string
   }
   const cp = devices.length === 0 ? "no_device" : "notified";
   const events = Array.isArray(plan.payload.events) ? plan.payload.events.length : 1;
-  log(job, cp, { category: plan.category, events, devices: devices.length, ...n });
+  log(job, cp, { category: plan.category, events, devices: devices.length, ...n, ...(peersError ? { peers_error: peersError } : {}) });
   // failed 행과 임대가 지난 sending 행을 다음 시도에서 다시 보낸다. in_flight 를 성공으로 끝내면 그 기기는 영영 못 받는다
   if (n.failed + n.in_flight > 0) throw new Error(`notify transient failed=${n.failed} in_flight=${n.in_flight}`);
   return cp;

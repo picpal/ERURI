@@ -8,7 +8,9 @@ import { seoulToday, WEEKDAYS_KO } from "./time.ts";
 export type ProposalRow = { id: string; action: string; payload: Record<string, unknown>; status: string; version: number;
   occurred_at: string | null; captured_at: string | null };
 export const BACKFILL_MS = 3 * 24 * 3600_000;
-type Skip = "not_proposed" | "backfill" | "past" | "unsupported";
+type Skip = "not_proposed" | "backfill" | "past" | "unsupported" | "duplicate";
+// 같은 사용자의 다른 항목에 먼저 생긴 대기(proposed) 일정 제안(worker_pending_event_peers, 0027). start·title 은 payload 원문
+export type PeerProposal = { start: string | null; title: string | null };
 export const BUNDLE_CATEGORY = "EVENT_BUNDLE";
 export type PushPlan = { skip: Skip }
   | { skip: null; category: "ADD_EVENT" | "REVIEW" | "ADD_REMINDER" | typeof BUNDLE_CATEGORY; payload: Record<string, unknown> };
@@ -68,15 +70,35 @@ export function planProposalPush(p: ProposalRow, now: Date): PushPlan {
 
 const startMs = (iso: string) => Date.parse(hasTime(iso) ? iso : `${iso}T00:00:00+09:00`);
 
+// 제목 비교 키(스펙 §7 notify 중복, 0.9.2): 소문자, 글자·숫자만(공백·기호·괄호 제거 — 문자 L·M, 숫자 Nd = Swift CharacterSet.letters·decimalDigits). 앱 EruriCore TitleMatch.normalize 와 같은 규칙
+export function titleKey(s: string): string {
+  return s.normalize("NFC").toLowerCase().replace(/[^\p{L}\p{M}\p{Nd}]/gu, "");
+}
+// 서울 시작 날짜 + 정규화 제목. 추출 값은 +09:00 으로 정규화돼 있어(§7) 앞 10자가 서울 날짜다. 제목이 비면 키 없음(중복으로 보지 않는다)
+function dupKey(start: string | null, title: string | null): string | null {
+  const t = titleKey(title ?? "");
+  return start && t ? `${start.slice(0, 10)}|${t}` : null;
+}
+
 // 묶음 알림(스펙 §7 notify·§10, 2026-10-01): 한 항목의 제안들 중 푸시할 수 있는 일정만. 0건 → 순번 0 의 건너뜀 사유,
-// 1건 → 기존 단건 페이로드 그대로(잠금화면 "캘린더에 추가" 유지), 2건 이상 → EVENT_BUNDLE 1건(액션 없음, 탭 → 시트 N장)
-export function planBundlePush(rows: ProposalRow[], now: Date): PushPlan {
+// 1건 → 기존 단건 페이로드 그대로(잠금화면 "캘린더에 추가" 유지), 2건 이상 → EVENT_BUNDLE 1건(액션 없음, 탭 → 시트 N장).
+// 중복(0.9.2): 다른 항목의 먼저 생긴 대기 제안(peers)과 서울 시작 날짜·정규화 제목이 같으면 그 일정은 뺀다(제안은 남는다 — 목록·채팅에는 보인다).
+// 남은 것만으로 단건·묶음을 정하고, 중복 때문에 0건이면 "duplicate"
+export function planBundlePush(rows: ProposalRow[], now: Date, peers: PeerProposal[] = []): PushPlan {
+  const taken = new Set(peers.map((x) => dupKey(x.start, x.title)).filter((k): k is string => k !== null));
   const ready: { p: Extract<PushPlan, { skip: null }> }[] = [];
+  let dropped = 0;
   for (const r of rows) {
     const p = planProposalPush(r, now);
-    if (p.skip === null) ready.push({ p });
+    if (p.skip !== null) continue;
+    const k = r.action === "create_event" ? dupKey(str(r.payload.start), str(r.payload.title)) : null;
+    if (k !== null && taken.has(k)) { dropped++; continue; }
+    ready.push({ p });
   }
-  if (ready.length === 0) return rows.length > 0 ? planProposalPush(rows[0], now) : { skip: "not_proposed" };
+  if (ready.length === 0) {
+    if (dropped > 0) return { skip: "duplicate" };
+    return rows.length > 0 ? planProposalPush(rows[0], now) : { skip: "not_proposed" };
+  }
   if (ready.length === 1 || ready.some((x) => x.p.category === "ADD_REMINDER")) return ready[0].p;
   ready.sort((a, b) => startMs(String(a.p.payload.start)) - startMs(String(b.p.payload.start)));
   const n = ready.length, first = ready[0].p.payload;

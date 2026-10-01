@@ -2,7 +2,7 @@ import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/asse
 import type { APNsResult, ApnsEnv } from "../functions/_shared/apns.ts";
 import { apnsP8 } from "../functions/_shared/apns.ts";
 import type { Job } from "../functions/_shared/job.ts";
-import { BUNDLE_CATEGORY, isPermanentFailure, planBundlePush, planProposalPush, type ProposalRow, whenLabel } from "../functions/_shared/notify.ts";
+import { BUNDLE_CATEGORY, isPermanentFailure, type PeerProposal, planBundlePush, planProposalPush, type ProposalRow, titleKey, whenLabel } from "../functions/_shared/notify.ts";
 import { type Device, notifyProposal, type NotifyDeps, type PushRecord } from "../functions/worker/notify.ts";
 
 const NOW = new Date("2026-09-29T06:00:00Z");                  // 서울 15:00
@@ -95,11 +95,12 @@ Deno.test("apnsP8: inline APNS_P8 wins, else APNS_P8_PATH file, else coded error
 // ── notify 잡: 가짜 기기·발송 ──
 const TOK = (c: string) => c.repeat(64);
 function deps(o: { proposal?: ProposalRow | null; bundle?: ProposalRow[]; devices?: Device[]; claimed?: Set<string>; inFlight?: Set<string>;
-  reply?: (token: string, env: ApnsEnv) => APNsResult | Error } = {}) {
+  reply?: (token: string, env: ApnsEnv) => APNsResult | Error; peers?: PeerProposal[] | Error } = {}) {
   const calls = { sent: [] as [string, ApnsEnv, unknown][], finished: [] as [string, PushRecord][], listed: 0 };
   const d: NotifyDeps = {
     getProposal: async () => (o.proposal === undefined ? row() : o.proposal),
     getBundle: async () => (o.bundle ?? (o.proposal === null ? [] : [o.proposal === undefined ? row() : o.proposal])),
+    getPeers: async () => { if (o.peers instanceof Error) throw o.peers; return o.peers ?? []; },
     listDevices: async () => { calls.listed++; return o.devices ?? [{ device_id: "d1", apns_token: TOK("a"), apns_env: "production" }]; },
     claimPush: async (_u, _p, dev) => (o.claimed?.has(dev) ? "closed" : o.inFlight?.has(dev) ? "in_flight" : "claimed"),
     finishPush: async (_u, _p, dev, r) => { calls.finished.push([dev, r]); },
@@ -259,4 +260,49 @@ Deno.test("notify worker: dismissed lead with pending siblings → still notifie
   assertEquals(claimed, ["p1"]);
   const sent = calls.sent[0][2] as { aps: { category: string }; events: { proposal_id: string }[] };
   assertEquals([sent.aps.category, sent.events.map((e) => e.proposal_id)], ["EVENT_BUNDLE", ["p2", "p3"]]);
+});
+
+// ── 서버 중복(스펙 §7 notify, 0.9.2): 같은 사용자의 다른 항목에 먼저 생긴 대기 제안이 같은 시작 날짜(서울) + 같은 정규화 제목이면 푸시하지 않는다 ──
+Deno.test("titleKey: lowercases and drops spaces, symbols and brackets (letters and digits stay)", () => {
+  assertEquals(titleKey("[합성] 가을 운동회 (2학년)"), "합성가을운동회2학년");
+  assertEquals(titleKey(" 합성  가을운동회! "), titleKey("합성 가을 운동회"));
+  assertEquals(titleKey("Synth MEETUP·Day"), "synthmeetupday");
+  assertEquals(titleKey("「합성」 공연"), "합성공연");
+});
+
+Deno.test("bundle: a pushable whose date and normalized title match an earlier pending peer drops out; none left → duplicate, no push", () => {
+  const peers = [{ start: "2026-10-08", title: "합성 가을 운동회" }];
+  // 같은 날짜(종일) + 띄어쓰기·기호만 다른 제목 → 중복
+  assertEquals(planBundlePush([ev("p1", "2026-10-08", { title: "[합성] 가을운동회" })], NOW, peers).skip, "duplicate");
+  // 시각 일정도 서울 시작 날짜로 본다(앞 10자)
+  assertEquals(planBundlePush([ev("p1", "2026-10-08T09:00:00+09:00", { title: "합성 가을 운동회" })], NOW, peers).skip, "duplicate");
+  // 다른 날짜·다른 제목은 그대로
+  assertEquals(planBundlePush([ev("p1", "2026-10-09", { title: "합성 가을 운동회" })], NOW, peers).skip, null);
+  assertEquals(planBundlePush([ev("p1", "2026-10-08", { title: "합성 학부모 상담" })], NOW, peers).skip, null);
+  // 포함 관계는 서버에서 중복이 아니다(정규화 제목이 같을 때만 — 느슨한 판정은 앱의 "비슷한 일정")
+  assertEquals(planBundlePush([ev("p1", "2026-10-08", { title: "합성 가을 운동회 준비물" })], NOW, peers).skip, null);
+  // 중복 아닌 이유가 따로 있으면 그 사유가 우선(지난 일정)
+  assertEquals(planBundlePush([ev("p1", "2026-09-20", { title: "합성 가을 운동회" })], NOW, [{ start: "2026-09-20", title: "합성 가을 운동회" }]).skip, "past");
+});
+
+Deno.test("bundle: duplicates drop out of a bundle — the rest form it (two → EVENT_BUNDLE, one → single ADD_EVENT)", () => {
+  const peers = [{ start: "2026-10-04T14:00:00+09:00", title: "합성 p1" }];
+  const one = planBundlePush([ev("p1", "2026-10-04T14:00:00+09:00"), ev("p2", "2026-10-11T14:00:00+09:00")], NOW, peers);
+  assertEquals(one, planProposalPush(ev("p2", "2026-10-11T14:00:00+09:00"), NOW));
+  const two = planBundlePush([ev("p1", "2026-10-04T14:00:00+09:00"), ev("p2", "2026-10-11T14:00:00+09:00"), ev("p3", "2026-10-12")], NOW, peers);
+  assert(two.skip === null && two.category === BUNDLE_CATEGORY);
+  if (two.skip !== null) return;
+  assertEquals([(two.payload.events as { proposal_id: string }[]).map((e) => e.proposal_id), two.payload.proposal_id, aps(two)!.alert.title],
+    [["p2", "p3"], "p2", "일정 제안 2건"]);
+  // 피어 없음(기본값) = 기존 동작
+  assertEquals(planBundlePush([ev("p1", "2026-10-04T14:00:00+09:00")], NOW), planProposalPush(ev("p1", "2026-10-04T14:00:00+09:00"), NOW));
+});
+
+Deno.test("notify worker: every pushable is a duplicate → skipped without listing devices; peer read failure → pushes anyway (fail-open)", async () => {
+  const dup = deps({ bundle: [ev("p1", "2026-10-08", { title: "합성 운동회" })], peers: [{ start: "2026-10-08", title: "합성  운동회!" }] });
+  assertEquals(await notifyProposal(dup.d, job()), "skipped");
+  assertEquals([dup.calls.listed, dup.calls.sent.length], [0, 0]);
+  const broken = deps({ bundle: [ev("p1", "2026-10-08", { title: "합성 운동회" })], peers: new Error("worker_pending_event_peers PGRST202") });
+  assertEquals(await notifyProposal(broken.d, job()), "notified");
+  assertEquals(broken.calls.sent.length, 1);
 });
