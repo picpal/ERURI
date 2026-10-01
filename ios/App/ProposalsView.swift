@@ -129,8 +129,8 @@ struct ProposalSheet: View {
 }
 
 /// 제안 한 건: 제목·시각·장소, "캘린더에 추가"(addFields 가 있을 때만)·"무시". 결과를 아래에 쓰고, 실패면 버튼을 다시 켠다.
-/// 겹침(스펙 §10, 0.8.0): 뜰 때·앱 활성화 때 미리 판정해 "겹치는 일정" 줄과 "겹쳐도 추가"를 보이고, 확인창 뒤 confirmed 로 부른다.
-/// 최종 판정은 AddEventGate — 미리 판정 뒤 캘린더가 바뀌어 conflict 가 오면 다시 읽고 같은 확인창
+/// 겹침(스펙 §10): 뜰 때·앱 활성화 때 미리 판정해 "겹치는 일정" 줄과 "겹쳐도 추가"를 보이고, 누르면 확인창 없이 confirmed 로 부른다(0.8.1).
+/// 최종 판정은 AddEventGate — "캘린더에 추가"(미리 겹침 없음)인데 그사이 캘린더가 바뀌어 conflict 가 오면 다시 읽고 확인창(C2-5)
 struct ProposalActionsView: View {
   let title: String; let when: String; let location: String?; let addFields: [String: String]?; let proposalId: String
   @Binding var state: ProposalReview.ActionState
@@ -148,7 +148,7 @@ struct ProposalActionsView: View {
       HStack {
         if addFields != nil {
           Button(state == .running ? "처리하는 중…" : (conflicts.isEmpty || finished ? "캘린더에 추가" : "겹쳐도 추가")) {
-            if conflicts.isEmpty { add(confirmed: false) } else { askConfirm = true }
+            add(confirmed: ProposalFlow.tapConfirmed(conflictsShown: !conflicts.isEmpty))
           }.buttonStyle(.borderedProminent)
         }
         Button("무시") {
@@ -179,13 +179,13 @@ struct ProposalActionsView: View {
       .map { CalendarLookup.conflicts(pid: proposalId, start: $0) } ?? []
   }
 
-  /// §10 경로 그대로(handleAdd). 겹침(conflict)이면 저장하지 않고 돌아오므로 다시 읽고 확인창
+  /// §10 경로 그대로(handleAdd). 미리 겹침 없이 불렀는데 겹침(conflict)이면 저장하지 않고 돌아오므로 다시 읽고 확인창
   private func add(confirmed: Bool) {
     guard let fields = addFields else { return }
     state = .running
     Task {
       let outcome = await NotificationActions.handleAdd(fields: fields, confirmed: confirmed)
-      if ProposalFlow.conflictCount(outcome) != nil { refreshConflicts(); state = .idle; askConfirm = true }
+      if ProposalFlow.needsConfirm(confirmed: confirmed, outcome: outcome) { refreshConflicts(); state = .idle; askConfirm = true }
       else { state = .after(ChatReply.addFeedback(outcome)) }
     }
   }

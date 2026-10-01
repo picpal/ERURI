@@ -66,4 +66,17 @@ final class ProposalFlowTests: XCTestCase {
     XCTAssertEqual(ProposalFlow.confirmTitle([a]), "같은 시간에 '합성 회의' 일정이 있습니다. 그래도 추가할까요?")
     XCTAssertEqual(ProposalFlow.confirmTitle([]), "같은 시간에 다른 일정이 있습니다. 그래도 추가할까요?")
   }
+
+  /// 확인창이 필요한가(0.8.1, 2026-10-01 실기기 C2 피드백): 겹침을 보고 "겹쳐도 추가"를 눌렀으면 확인 없이 confirmed 로 저장,
+  /// 미리 판정이 겹침 없음("캘린더에 추가")인데 저장 직전 판정에서 겹침이면 그때만 확인창(게이트 C2-5)
+  func testConfirmOnlyWhenConflictIsNew() {
+    // 겹쳐도 추가 → confirmed:true 로 부르고, 결과가 무엇이든 확인창 없음
+    XCTAssertTrue(ProposalFlow.tapConfirmed(conflictsShown: true))
+    XCTAssertFalse(ProposalFlow.needsConfirm(confirmed: true, outcome: "ok"))
+    XCTAssertFalse(ProposalFlow.needsConfirm(confirmed: true, outcome: "conflict:1"))
+    // 미리 겹침 없음 → confirmed:false. 저장 시 겹침이면 확인창, 아니면 결과 표시
+    XCTAssertFalse(ProposalFlow.tapConfirmed(conflictsShown: false))
+    XCTAssertTrue(ProposalFlow.needsConfirm(confirmed: false, outcome: "conflict:2"))
+    for o in ["ok", "dup", "recovered", "fail:save", "skip_stale"] { XCTAssertFalse(ProposalFlow.needsConfirm(confirmed: false, outcome: o), o) }
+  }
 }

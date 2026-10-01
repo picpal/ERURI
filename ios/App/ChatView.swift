@@ -17,7 +17,7 @@ struct ChatView: View {
   @State private var judged: [String: Bool] = [:]      // "<answer_id>|<item_id>" → ok
   @State private var judging: Set<String> = []         // 기록 요청 중인 키 — 연타가 도착 순서 경합을 만들지 않게 막는다
   @State private var adds: [String: AddState] = [:]    // 제안 id → 캘린더 추가 진행·결과
-  @State private var confirm: ConfirmAdd?              // 겹침 확인창(§10): 제안 id·handleAdd 필드·다시 읽은 겹치는 일정
+  @State private var confirm: ConfirmAdd?              // 겹침 확인창(§10): 저장 직전에 겹침이 새로 나온 경우만(C2-5). 제안 id·handleAdd 필드·다시 읽은 겹치는 일정
   struct ConfirmAdd: Identifiable { let id: String; let fields: [String: String]; let conflicts: [ProposalFlow.CalendarEvent] }
   @State private var dictation = SpeechDictation()     // 기기 안 받아쓰기(§9·§12)
   @Environment(\.scenePhase) private var scenePhase
@@ -169,10 +169,11 @@ struct ChatView: View {
   }
 
   @ViewBuilder private func proposalCard(_ p: ChatReply.Proposal, title: String, start: String, status: DeviceCalendar.CardStatus) -> some View {
-    let state = adds[p.id]
+    let state = adds[p.id], shown = status == .conflict     // "같은 시간에 일정 있음"을 보인 카드는 "겹쳐도 추가" — 확인창 없이 저장(0.8.1)
     VStack(alignment: .leading, spacing: 4) {
-      Button(state.isRunning ? "추가하는 중… · \(title)" : "캘린더에 추가 · \(title) \(ChatReply.seoulLabel(start))") {
-        runAdd(ConfirmAdd(id: p.id, fields: ["proposal_id": p.id, "title": title, "start": start], conflicts: []), confirmed: false)
+      Button(state.isRunning ? "추가하는 중… · \(title)" : "\(shown ? "겹쳐도 추가" : "캘린더에 추가") · \(title) \(ChatReply.seoulLabel(start))") {
+        runAdd(ConfirmAdd(id: p.id, fields: ["proposal_id": p.id, "title": title, "start": start], conflicts: []),
+               confirmed: ProposalFlow.tapConfirmed(conflictsShown: shown))
       }
       .disabled(state.isRunning || state.isFinished)
       if let s = DeviceCalendar.statusText(status) {
@@ -186,13 +187,13 @@ struct ChatView: View {
     }
   }
 
-  /// 알림 액션과 같은 §10 경로(서버 상태 확인 → 표식 조회 → 겹침 → 저장 → 보고). 겹침이면 저장하지 않고 돌아오므로
-  /// 겹치는 일정을 다시 읽어 확인창을 띄우고, "추가"면 confirmed 로 다시 부른다. 결과를 카드에 쓰고, 실패면 버튼을 다시 켠다
+  /// 알림 액션과 같은 §10 경로(서버 상태 확인 → 표식 조회 → 겹침 → 저장 → 보고). 미리 겹침 없이 불렀는데 겹침이면 저장하지 않고
+  /// 돌아오므로 겹치는 일정을 다시 읽어 확인창을 띄우고, "추가"면 confirmed 로 다시 부른다. 결과를 카드에 쓰고, 실패면 버튼을 다시 켠다
   private func runAdd(_ c: ConfirmAdd, confirmed: Bool) {
     adds[c.id] = .running
     Task {
       let outcome = await NotificationActions.handleAdd(fields: c.fields, confirmed: confirmed)
-      if ProposalFlow.conflictCount(outcome) != nil {
+      if ProposalFlow.needsConfirm(confirmed: confirmed, outcome: outcome) {
         adds[c.id] = nil
         let start = c.fields["start"].flatMap { ISO8601DateFormatter().date(from: $0) }
         confirm = ConfirmAdd(id: c.id, fields: c.fields, conflicts: start.map { CalendarLookup.conflicts(pid: c.id, start: $0) } ?? [])

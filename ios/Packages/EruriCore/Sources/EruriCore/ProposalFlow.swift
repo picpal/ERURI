@@ -57,6 +57,13 @@ public enum ProposalFlow {
     return Int(outcome.dropFirst("conflict:".count))
   }
 
+  /// 추가 버튼(0.8.1, 2026-10-01 실기기 C2 피드백): 미리 판정한 겹침을 보여 준 상태("겹쳐도 추가")면 사용자가 이미 본 것이라
+  /// 확인창 없이 confirmed 로 저장한다. 겹침을 보이지 않았으면("캘린더에 추가") confirmed:false — 최종 판정은 AddEventGate
+  public static func tapConfirmed(conflictsShown: Bool) -> Bool { conflictsShown }
+  /// handleAdd 결과 뒤 확인창이 필요한가: confirmed:false 로 불렀는데 저장 직전 판정에서 겹침(conflict)이 새로 나온 경우만
+  /// (미리 판정 뒤 캘린더가 바뀜, 게이트 C2-5). "추가"면 confirmed 로 다시 부른다
+  public static func needsConfirm(confirmed: Bool, outcome: String) -> Bool { !confirmed && conflictCount(outcome) != nil }
+
   /// 제안 시트·제안 탭 줄: "겹치는 일정: 14:00–15:00 합성 회의"(서울), 여러 건이면 " 외 N건".
   /// 시작·끝 날짜가 다르면(여러 날 걸친 일정) "10/3 09:00–10/5 18:00"처럼 날짜를 붙인다
   public static func conflictLine(_ c: [CalendarEvent]) -> String? {
