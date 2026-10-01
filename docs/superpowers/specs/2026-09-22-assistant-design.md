@@ -682,6 +682,10 @@ PoC-5 제안 푸시 실측용 문구(`push`)는 날짜가 늘 미래가 되게 �
 
 Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때 추가한다.
 
+**확장 후보(2026-10-01 조사, 구현 결정 없음)**:
+- 네이버 캘린더 → 아이폰 캘린더(CalDAV) 연결 가이드: `docs/superpowers/guides/naver-calendar-caldav.md` — 코드 변경 없이 §9 기기 캘린더 절·§10 겹침 확인에 반영된다.
+- 네이버 예약 신청: 대신 신청 불가(공개 API 없음·자동화는 약관 위반), 예약 화면 열기만 가능 — `docs/superpowers/guides/naver-booking-feasibility.md`.
+
 ## 16. 리스크와 미결
 
 ### 외부 리뷰 반영 (Codex gpt-6-astra, 2026-09-23)
