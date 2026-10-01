@@ -51,3 +51,27 @@ Deno.test("hybrid_search fuses the semantic path when an embedding is given, and
   assertEquals(other.data, []);
   await sb.from("items").delete().eq("id", itemId);
 });
+
+// 2026-10-01 검색·캘린더 S2: 숫자가 든 어절은 숫자로 끝나는 변형을 만들지 않는다(10월 → 10, 10은 → 10 금지).
+// 예외: 3자 이상 원형에서 조사를 뗀 경우(1234는 → 1234, Codex #3). 10월에 → 10월, 한글 어절의 조사 떼기는 그대로. 맨숫자 1~2자리 토큰(10/3 의 10)은 버린다(Fable N6)
+Deno.test("hybrid_search: numeric tokens do not shrink to bare numbers except a dropped particle; bare 1-2 digit tokens ignored; Hangul particles still drop", async () => {
+  const a = await seed("합성 문구: 모임알파 10월 3일 저녁 7시", null);
+  const b = await seed("합성 문구: 결제베타 10,500원 승인 10:30", null);
+  const c = await seed("합성 문구: 치과예약감마 안내", null);
+  const d = await seed("합성 문구: 주문델타 번호 1234 배송 시작", null);
+  try {
+    const found = async (q: string) =>
+      new Set(((await sb.rpc("hybrid_search", { p_user: USER, p_query: q, p_embedding: null, p_limit: 20 })).data as Hit[]).map((r) => r.item_id));
+    const oct = await found("10월 3일 일정");
+    assert(oct.has(a), "10월·3일 원형은 맞는다");
+    assert(!oct.has(b), "10월 → 10 변형이 10,500원·10:30 에 맞으면 안 된다");
+    const particle = await found("10월에");
+    assert(particle.has(a) && !particle.has(b), "10월에 → 10월 은 허용, 10 은 금지");
+    assert((await found("치과예약감마는")).has(c), "한글 어절 끝 글자 떼기 유지");
+    assert((await found("1234는")).has(d), "1234는 → 1234 허용(3자 이상 원형 + 조사)");
+    assert(!(await found("10은")).has(b), "10은 → 10 금지(원형 2자)");
+    assert(!(await found("10/3 모임")).has(b), "맨숫자 토큰 10 은 버린다");
+  } finally {
+    await sb.from("items").delete().eq("user_id", USER).in("id", [a, b, c, d]);       // 청크는 cascade
+  }
+});
