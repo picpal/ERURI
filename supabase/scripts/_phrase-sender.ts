@@ -1,13 +1,14 @@
-import { DEVICE10, PUSH_TEMPLATE, renderPhrase } from "../eval/phrases.ts";
+import { DEVICE10, MULTI_TEMPLATE, PUSH_TEMPLATE, renderPhrase } from "../eval/phrases.ts";
 import { seoulToday } from "../functions/_shared/time.ts";
 
-// 합성 문구 발송 공통(Slack·Twilio). 기본은 d01~d10, `push` 는 PoC-5 용 미래 날짜 문구.
+// 합성 문구 발송 공통(Slack·Twilio). 기본은 d01~d10, `push` 는 PoC-5 용 미래 날짜 문구, `multi` 는 다건 일정 실기기 게이트 문구.
 // 출력은 id·보낸 시각·sha8·길이·결과 코드만 — 본문·URL·번호를 출력하지 않는다. sha8 은 기기 trace text_sha8 과 대조하는 용도다
 export type SenderArgs = { only: string[] | null; gapSec: number; dryRun: boolean };
 export type Send = (text: string) => Promise<{ ok: boolean; code: string }>;
 
 export function sendable(today: string): { id: string; text: string }[] {
-  return [...DEVICE10.map((p) => ({ id: p.id, text: p.text })), { id: "push", text: renderPhrase(PUSH_TEMPLATE, today) }];
+  return [...DEVICE10.map((p) => ({ id: p.id, text: p.text })), { id: "push", text: renderPhrase(PUSH_TEMPLATE, today) },
+    { id: "multi", text: renderPhrase(MULTI_TEMPLATE, today) }];
 }
 
 export function parseSenderArgs(args: string[], defaultGapSec: number): SenderArgs {
@@ -36,7 +37,7 @@ export async function runSender(send: Send, a: SenderArgs, o: { sleep?: (ms: num
   const print = o.print ?? ((s: string) => console.log(s));
   const all = sendable(seoulToday(now()));
   for (const id of a.only ?? []) if (!all.some((p) => p.id === id)) throw new Error(`unknown phrase id ${id}`);
-  const list = a.only === null ? all.filter((p) => p.id !== "push") : all.filter((p) => a.only!.includes(p.id));
+  const list = a.only === null ? all.filter((p) => p.id !== "push" && p.id !== "multi") : all.filter((p) => a.only!.includes(p.id));
   let failures = 0;
   for (const [i, p] of list.entries()) {
     if (i > 0 && a.gapSec > 0) await sleep(a.gapSec * 1000);

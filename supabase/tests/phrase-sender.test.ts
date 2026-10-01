@@ -31,3 +31,13 @@ Deno.test("runSender: default = d01~d10 in order; --only keeps fixture order; pu
   await assertRejects(() => runSender(async () => ({ ok: true, code: "200" }), { only: ["x99"], gapSec: 0, dryRun: true }, { print: () => {} }),
     Error, "unknown phrase id x99");
 });
+
+Deno.test("runSender: multi (device gate) is left out of the default list; --only multi renders future dates", async () => {
+  const now = () => new Date("2026-09-29T02:00:00Z");
+  const sent: string[] = [], lines: string[] = [];
+  await runSender(async (t) => { sent.push(t); return { ok: true, code: "200" }; }, { only: null, gapSec: 0, dryRun: false }, { now, print: (s) => lines.push(s) });
+  assertEquals(lines.some((l) => l.startsWith("multi\t")), false);
+  sent.length = 0;
+  await runSender(async (t) => { sent.push(t); return { ok: true, code: "200" }; }, { only: ["multi"], gapSec: 0, dryRun: false }, { now, print: () => {} });
+  assertEquals(sent, ["[합성문화센터] 도자기 클래스 1회차 10월 2일(금) 오후 2시, 2회차 10월 9일(금) 오후 2시입니다. 신청 마감은 10월 1일(목)까지입니다."]);
+});

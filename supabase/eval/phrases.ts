@@ -26,6 +26,9 @@ export const DEVICE10: Phrase[] = RAW.filter((p) => p.device10).map((p) => ({ id
 // PoC-5(Task 5) 제안 푸시용 합성 문구: 발송일 +3일 15:30. {D+n} → "M월 D일", {W+n} → "(요)"
 export const PUSH_TEMPLATE = "[합성의원] {D+3}{W+3} 오후 3시 30분 진료 예약이 확정되었습니다.";
 
+// 다건 일정 실기기 게이트(2026-10-01): 회차 둘 + 신청 마감(부수) → 일정 2개·묶음 알림 1건. 날짜는 발송일 기준 미래
+export const MULTI_TEMPLATE = "[합성문화센터] 도자기 클래스 1회차 {D+3}{W+3} 오후 2시, 2회차 {D+10}{W+10} 오후 2시입니다. 신청 마감은 {D+2}{W+2}까지입니다.";
+
 export function renderPhrase(template: string, today: string): string {
   const base = Date.parse(`${today}T00:00:00Z`);
   return template.replace(/\{([DW])\+(\d+)\}/g, (_, t: string, n: string) => {

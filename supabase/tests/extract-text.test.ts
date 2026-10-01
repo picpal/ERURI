@@ -5,6 +5,7 @@ import { receivedDay, seoulToday } from "../functions/_shared/time.ts";
 import { proposalAction, textFacts } from "../functions/_shared/facts.ts";
 import { planProposalPush } from "../functions/_shared/notify.ts";
 import { PUSH_TEMPLATE, renderPhrase } from "../eval/phrases.ts";
+import { judge } from "../eval/run-multi-event-eval.ts";
 
 // 문구는 전부 합성(AGENTS.md §7)
 const META = { source: "NOTIFICATION", appName: "Slack", title: "합성채널" };
@@ -35,7 +36,7 @@ Deno.test("text request: output cap 2,048; instruction carries the multi-event r
   assertEquals(r.max_output_tokens, 2048);
   const ins = textOf(r, 1);
   for (const s of ["최대 5개", "이른 5개", "별개 일정", "start~end 하나", "부수 일시", "마감", "발표", "첫 회 하나", "80자 이내",
-    "받은 해(2026년)", "내년으로 넘기지 않는다", "연도 단서", "작년", "내년", "상대 날짜", "해를 넘어가는"]) assert(ins.includes(s), s);
+    "받은 해(2026년)", "내년으로 넘기지 않는다", "연도 단서", "작년", "내년", "상대 날짜", "해를 넘어가는", "광고·홍보성 행사 목록"]) assert(ins.includes(s), s);
   assert(!ins.includes("하나를 골라"));
   assert(!ins.includes("가장 가까운 해"));
   // U6: year_in_text 설명은 "연도를 원문으로 정할 수 있음"(단서 포함)
@@ -199,4 +200,16 @@ Deno.test("parse: completed → normalized; incomplete/refusal/bad JSON → erro
   assertThrows(() => parseTextExtractResponse({ status: "completed", output: [{ type: "message", content: [{ type: "refusal" }] }], output_text: "" },
     "2026-09-29"), Error, "openai refusal");
   assertThrows(() => parseTextExtractResponse({ status: "completed", output: [], output_text: "비밀 본문" }, "2026-09-29"), Error, "openai bad_json");
+});
+
+Deno.test("multi-event eval judge: split / missing / time / end / kind codes; date-only expectations match exactly", () => {
+  const c = { id: "x", kind: "event", text: "", starts: ["2026-10-04T14:00", "2026-10-11"], ends: [] as string[] };
+  assertEquals(judge(c, { kind: "event", starts: ["2026-10-04T14:00:00+09:00", "2026-10-11"], ends: [null, null] }), "ok");
+  assertEquals(judge(c, { kind: "event", starts: ["2026-10-03", "2026-10-04T14:00:00+09:00", "2026-10-11"], ends: [] }), "split");
+  assertEquals(judge(c, { kind: "event", starts: ["2026-10-04T14:00:00+09:00"], ends: [] }), "missing");
+  assertEquals(judge(c, { kind: "event", starts: ["2026-10-04T15:00:00+09:00", "2026-10-11"], ends: [] }), "missing");
+  // Codex 4: 날짜만 기대에 시각이 붙으면 통과가 아니다(서버가 ADD_EVENT 로 보낸다)
+  assertEquals(judge(c, { kind: "event", starts: ["2026-10-04T14:00:00+09:00", "2026-10-11T09:00:00+09:00"], ends: [] }), "time");
+  assertEquals(judge({ ...c, starts: ["2026-10-15"], ends: ["2026-10-18"] }, { kind: "event", starts: ["2026-10-15"], ends: [null] }), "end");
+  assertEquals(judge(c, { kind: "task", starts: [], ends: [] }), "kind");
 });
