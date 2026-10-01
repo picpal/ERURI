@@ -12,16 +12,17 @@
 
 **출발점:** main `e99f208`(스펙) 위. 서버는 `0001`~`0022` 적용, `chat`은 R-A1(`5c3567b`, 후보 = 융합 80 전부·최대 100) 배포 상태. 앱은 0.7.1(`1e7f417`, 거절·후보 없음이면 "보관함에서 보기" 숨김). Gmail 게이트 계획이 T0(10-01) ~ ③c2(T0+8일) 측정 중이고, 보관 계획 트랙 B(`2026-10-01-retention-summary.md` R-B1~R-B9)는 ③c2 뒤에 시작한다. M2 검색 평가 ⑩b(U14)는 아직 돌지 않았다(`gates.md`에 행 없음).
 
-**리뷰:** 사용자 지정 절차 — 이 계획 → Codex(gpt-6-astra) 리뷰 → Fable 리뷰 → 서브에이전트 실행(SDD). 실행 방식은 정해져 있으므로 묻지 않는다. 원장은 `.superpowers/sdd/2026-10-01-search-calendar/progress.md`(상위 원장 `.superpowers/sdd/2026-09-30-phase1/progress.md`의 Rulings 승계 — 특히 Ruling M#: 마이그레이션은 다음 빈 번호, Ruling P: 서버·iOS pane 병렬).
+**리뷰:** 사용자 지정 절차 — 이 계획 → Codex(gpt-6-astra) 리뷰 → Fable 리뷰 → 서브에이전트 실행(SDD). 두 리뷰는 이 판에 반영했다(끝 "리뷰 반영" 절, 스펙 §16 "외부 리뷰 반영(검색·캘린더 계획)" — 같은 커밋에서 스펙 §9·§10·§16도 고쳤다). 실행 방식은 정해져 있으므로 묻지 않는다. 원장은 `.superpowers/sdd/2026-10-01-search-calendar/progress.md`(상위 원장 `.superpowers/sdd/2026-09-30-phase1/progress.md`의 Rulings 승계 — 특히 Ruling M#: 마이그레이션은 다음 빈 번호, Ruling P: 서버·iOS pane 병렬).
 
-**태스크 번호:** 서버 `S1`(후보 컷·거절 비우기) · `S2`(숫자 어절 변형 제거 마이그레이션) · `S3`(일정 기간 필터 → facts, 응답 `schedule`), iOS `C2`(겹침 확인) · `C1`(채팅 기기 캘린더 표시, 0.8.0 업로드·실기기 게이트). **C2를 C1보다 먼저 한다** — C1의 제안 카드 상태가 C2의 겹침 판정 함수를 쓰고, C2(스펙 "먼저 바꿀 3가지" ③)는 서버를 기다리지 않는다.
+**태스크 번호:** 서버 `S1`(후보 컷·거절 비우기) · `S2`(숫자 어절 변형 제거 마이그레이션 0023) · `S3`(일정 기간 필터 → facts, `search_facts` 기간 분리 마이그레이션 0024, 응답 `schedule`), iOS `C2`(겹침 확인) · `C1`(채팅 기기 캘린더 표시, 0.8.0 업로드·실기기 게이트). **C2를 C1보다 먼저 한다** — C1의 제안 카드 상태가 C2의 겹침 판정 함수를 쓰고, C2(스펙 "먼저 바꿀 3가지" ③)는 서버를 기다리지 않는다.
 
 ## Global Constraints
 
 - **시점과 ⑩b:** S1은 `hits`·답변을 바꾸지 않아 평가와 무관하다 — 바로 배포한다. S2·S3은 모델 문서 순위(`hits`)를 바꾸므로 **M2 검색 평가(⑩b) 실행 전에** 둘 다 배포한다(스펙 §15 1단계 추가 범위). 사용자가 ⑩b를 **돌리는 중**이면 S1~S3 배포를 모두 그 뒤로 미룬다(함수 재배포가 평가 호출을 끊는다). ⑩b가 S2·S3보다 먼저 끝났다면 S3 배포 뒤 ⑩b를 다시 돈다(메인이 사용자에게 알린다). 배포 전 메인에게 "⑩b 실행 중 아님"을 확인받는다.
-- **Gmail 측정 기간(T0 ~ ③c2):** S2는 `hybrid_search` **정의만** 바꾸고 S1·S3은 함수 코드만 바꾼다 — 실사용자 `items`·`jobs`를 만들거나 바꾸지 않으므로 Gmail 계획 Global Constraints에 걸리지 않는다. `purge_*`는 부르지 않는다.
+- **Gmail 측정 기간(T0 ~ ③c2):** S2는 `hybrid_search`, S3은 `search_facts`의 **정의만** 바꾸고 S1·S3의 chat은 함수 코드만 바꾼다 — 실사용자 `items`·`jobs`를 만들거나 바꾸지 않으므로 Gmail 계획 Global Constraints에 걸리지 않는다. `purge_*`는 부르지 않는다.
+- **실기기 게이트와 Gmail 측정(Fable N1):** C2·C1 실기기 게이트는 `send-phrases --only push`를 4~5회 돌려 실사용자 `items`·`jobs`·`proposals`를 만든다. 그래서 (1) **③b2 창(T0 ~ 백필 끝) 밖**에서 하고 ③c 측정 시각과 **30분 이상** 떨어뜨린다. (2) 게이트 세션 시작 전 메인이 Gmail 원장(`.superpowers/sdd/2026-09-30-phase1-gmail/progress.md`)과 `gates.md`로 창·측정 시각을 확인한다. (3) 게이트가 남긴 합성 제안은 제목에 `합성`이 든 것만 **한 건씩** "무시"한다 — 제안 탭 **"전체 무시" 금지**(Gmail 계획 금지 조항: 90일 백필의 실제 미래 일정 제안을 지우게 된다).
 - **개인정보(AGENTS.md §7, 스펙 §12):** 재현 스크립트(`search-probe.ts`)는 실사용자 코퍼스에 **합성 질문**만 던지고 개수·점수·불리언만 출력한다 — 본문·제목·item id·facts payload를 출력하지 않는다(`hybrid_search`는 id·점수만, `search_facts`는 `select("item_id")`로 id만 받아 세기만). 테스트·스모크는 전용 테스트 사용자(`tests/_testenv.ts`)와 합성 문구만. `console.log`에 질문·후보 id 목록·일정 내용을 넣지 않는다(개수·불리언만). **기기 캘린더 내용(제목·시각·메모)은 기기 밖으로 보내지 않는다** — chat 요청 본문은 `{question}` 그대로, `Trace`·`device_traces`에 일정 없음, `DiagLog`에는 개수만, 잠금화면 겹침 알림에 다른 일정의 제목 없음(스펙 §12 통제 2). 캘린더를 LLM에 넣는 안(UC-4)은 구현하지 않는다.
-- **PoC-5 교훈(잠금화면 액션, 스펙 §10):** `NotificationDelegate`의 완료 핸들러는 **모든 경로에서 메인 스레드에서 정확히 1회** 부른다(completion-handler 판, poc5 SIGABRT). ADD 분기 구조를 바꾸지 않고 `Task` 안에서 겹침 알림 등록을 `await`한 뒤 기존 한 곳에서 `done`을 부른다. **5초 마감**: 순서 1 조회 5초(토큰 갱신 포함) + 순서 4 보고 5초 구조는 그대로 — 겹침이면 보고를 건너뛰고 추가되는 일은 네트워크 없는 로컬 알림 등록 1회뿐이다. 확인 → 표식 조회 → 겹침 판정 → 저장 → 기록은 `AddEventGate` actor 메서드 하나 안에서 `await` 없이 한다(동시 두 번 탭 +1).
+- **PoC-5 교훈(잠금화면 액션, 스펙 §10):** `NotificationDelegate`의 완료 핸들러는 **모든 경로에서 메인 스레드에서 정확히 1회** 부른다(completion-handler 판, poc5 SIGABRT). ADD 분기 구조를 바꾸지 않고 `Task` 안에서 `handleAdd(…, lockScreen: true)`(겹침이면 그 안에서 알림 등록)를 `await`한 뒤 기존 한 곳에서 `done`을 부른다. **마감**: 순서 1 조회 5초(토큰 갱신 포함) + 순서 4 보고 5초 구조는 그대로 — 겹침이면 보고를 건너뛰고 추가되는 일은 네트워크 없는 로컬 알림 등록 1회뿐이며 그것도 **2초 마감**(`Deadline.run`)으로 감싸 `ok|fail|timeout`을 `DiagLog`·`action.handled`의 `notice`에 남긴다(Codex #5). 확인 → 표식 조회 → 겹침 판정 → 저장 → 기록은 `AddEventGate` actor 메서드 하나 안에서 `await` 없이 한다(동시 두 번 탭 +1).
 - **명령:** 저장소 루트에서. 셸 상태가 호출 사이에 남지 않으므로 각 셸 호출 앞에 아래 머리 2줄을 붙인다(이하 `# 머리 2줄`). `.env`를 `source`하지 않는다.
 
 ```bash
@@ -31,7 +32,7 @@ U="$(grep '^ERURI_USER_ID=' supabase/.env | cut -d= -f2)"
 
 - **테스트 명령:** 서버 `deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/<파일>`. 돌리기 전 `pgrep -x xcodebuild`가 비어 있고 `vm_stat | grep -E 'free|compressor'`를 본다(AGENTS.md §6). iOS `cd ios && ./scripts/sim.sh gen && ./scripts/sim.sh test EruriCoreTests/<클래스>`(pane 전용 UDID `ios/.sim-udid`, 돌리기 전 `pgrep -x deno`가 비어 있어야 한다). **시뮬레이터 빌드와 deno 테스트를 동시에 돌리지 않는다.**
 - **병렬(Ruling P):** 서버 pane(S1 → S2 → S3, `supabase/**`·`docs/superpowers/phase1/gates.md`의 S행)과 iOS pane(C2 → C1, `ios/**`·gates.md의 C행)은 나란히 해도 된다 — 파일 영역이 겹치지 않는다. 단 위 테스트 명령의 `pgrep` 확인으로 deno와 시뮬레이터를 겹치지 않게 한다. `gates.md`는 두 pane이 각자 다른 행만 추가하고, 겹치면 나중 pane이 rebase한다. C1의 실기기 게이트는 S3 배포 뒤다.
-- **`db push`(S2만):** `supabase db push`는 미적용 로컬 마이그레이션을 전부 올린다. push 직전 `git status --short supabase/migrations`와 `ls supabase/migrations | tail -3`으로 **S2 파일 하나만** 새 파일인지 확인한다. 적용된 마이그레이션은 고치지 않는다. 번호는 **다음 빈 번호**(작성 시점 `0023`, Ruling M#) — 보관 계획 트랙 B 예정 번호는 하나씩 밀린다(그 계획 머리에 적었다).
+- **`db push`(S2·S3):** `supabase db push`는 미적용 로컬 마이그레이션을 전부 올린다. push 직전 `git status --short supabase/migrations`와 `ls supabase/migrations | tail -3`으로 **그 태스크의 파일 하나만**(S2 `0023`, S3 `0024`) 새 파일인지 확인한다. 적용된 마이그레이션은 고치지 않는다. 번호는 **다음 빈 번호**(작성 시점 `0023`·`0024`, Ruling M#) — 보관 계획 트랙 B 예정 번호는 **두 칸** 밀린다(그 계획 머리·번호 표에 적었다: R-B1 `0025` · R-B4 `0026` · R-B7 `0027` · R-B5 `0028` · R-B6 `0029`).
 - **모델(AGENTS.md §3):** S1·S2·S3·C2·C1 구현 `opus`/`high`, 리뷰 `opus`/`high`, 실기기 게이트 세션(사용자가 옆에서 조작, 대기 김) `sonnet`/`medium`, 게이트 판정·기록이 섞이면 `opus`/`medium`.
 - **버전(AGENTS.md §8):** 서버 태스크는 앱 버전 없음. C2가 `MARKETING_VERSION: 0.8.0`(기능 = 마이너), C1은 그대로. 업로드는 C1 끝에서 한 번(`testflight.sh`, 빌드 번호 `date +%Y%m%d%H%M`). 이후 수정은 0.8.1 식 패치. 요약·저장 공간 화면(보관 계획 R-B9)은 0.9.0. 메이저 금지.
 - **iOS 기준 커밋:** C2는 `1e7f417`(0.7.1) 이후 main 최신 위에서 시작하고, 계획의 Swift 코드는 기존 파일에 **더하거나 해당 함수만 바꾸는** 방식이다(파일을 통째로 바꾸지 않는다).
@@ -76,9 +77,10 @@ U="$(grep '^ERURI_USER_ID=' supabase/.env | cut -d= -f2)"
 
 1. **미리 판정 뒤 캘린더가 바뀐다**: 시트가 "겹침 없음"으로 뜬 뒤 사용자가 캘린더 앱에서 같은 시각 일정을 넣고 돌아와 "캘린더에 추가"를 누른다. 사람은 조용히 겹쳐 저장되는 것이 아니라 확인창을 기대한다 → 최종 판정은 `AddEventGate`가 다시 하고, 화면은 `conflict:` 결과를 받으면 다시 읽고 같은 확인창을 띄운다(C2 순수 테스트 `testConflictOutcomeAndCopy`의 `conflictCount` 해석 + C2 실기기 게이트 단계 5 "시트 연 채 캘린더 앱에서 일정 추가 → 돌아와 추가 → 확인창").
 2. **겹침이 아닌 것을 겹침으로 센다**: 앞뒤로 맞닿은 일정(14:00–15:00 뒤 15:00 시작), 종일 일정(생일·휴가), 취소된 일정, 이 제안이 넣은 일정(표식)은 겹침이 아니어야 잠금화면 한 번 탭 추가가 살아 있다 → `ProposalFlow.conflicts` 제외 규칙(C2 `testConflicts`: 맞닿음 2·종일·취소·같은 표식 제외, 다른 제안 표식은 겹침).
-3. **조사가 붙은 날짜 어절이 키워드 일치를 잃는다**: `10월에`·`3일에`는 사람이 흔히 쓰는 형태다. 숫자 어절 변형을 통째로 막으면 `10월에`가 본문의 `10월`에 맞지 않는다 → 숫자로 끝나는 변형만 막고 `10월에`→`10월`은 남긴다(S2 테스트 `numeric tokens … Hangul particles still drop`의 `10월에` 단언).
+3. **조사가 붙은 날짜·숫자 어절이 키워드 일치를 잃는다**: `10월에`·`3일에`·`1234는`(주문번호)은 사람이 흔히 쓰는 형태다. 숫자 어절 변형을 통째로 막으면 `10월에`가 본문의 `10월`에, `1234는`이 `1234`에 맞지 않는다 → 숫자로 끝나는 변형은 막되 3자 이상 원형에서 조사를 뗀 경우는 허용하고(`10월에`→`10월`, `1234는`→`1234` 허용 · `10월`→`10`, `10은`→`10` 금지), 맨숫자 1~2자리 토큰(`10/3`의 `10`)은 어절에서 뺀다(S2 테스트 `numeric tokens …`의 단언들, Codex #3·Fable N6).
 4. **필터 LLM이 이상한 일정 범위를 낸다**: `2026-02-30`, 거꾸로 된 범위, 한쪽만, "올해 일정" 같은 1년 범위. 사람은 오류(500)나 앱이 1년치 캘린더를 읽어 멈추는 것을 기대하지 않는다 → 달력에 없는 날짜·거꾸로 된 범위는 null, `schedule`은 양 끝·31일 이하·`kinds ∋ event`일 때만(S3 `normalizeFilters: event dates …`·`scheduleOf: …` 테스트). 앱은 31일 이하 구간만 받는다.
-5. **거절·문서 0건 답에서 캘린더가 사라진다**: "10월 7일 일정 있어?"인데 메일에 없으면 서버는 거절한다. 사람은 캘린더에 있는 일정은 보이기를 기대한다 → `schedule`은 거절·문서 0건이어도 싣고(S3 `answerQuestion: schedule rides along even when refused …`), 앱은 거절 문구 대신 "저장된 메일·문자에는 없고, 캘린더에 N건 있습니다"를 보인다(C1 `testRefusalText`, C1 실기기 게이트 단계 3). 거절이면 후보는 비운다(S1 `candidates: refused …`).
+5. **거절·문서 0건 답에서 캘린더가 사라진다**: "10월 7일 일정 있어?"인데 메일에 없으면 서버는 거절한다. 사람은 캘린더에 있는 일정은 보이기를 기대한다 → `schedule`은 거절·문서 0건이어도 싣고(S3 `answerQuestion: schedule rides along even when refused …`), 앱은 **거절 문구를 그대로 두고** 그 아래 "기기 캘린더 · 이 기간 일정 N건" 절을 보인다(C1 `testHeader`, C1 실기기 게이트 단계 3). 거절 문구를 "메일엔 없고 캘린더에 N건"으로 바꾸지 않는다 — 거절은 부재 증명이 아니고 N은 대상 일치가 아닌 기간 일치다(Codex #4). 거절이면 후보는 비운다(S1 `candidates: refused …`).
+6. **받은 기간과 일정 날짜가 한 질문에 같이 있다**: "지난달 받은 메일 중 10월 20일 미팅". 사람은 두 조건이 다 걸리기를 기대한다 → 필터가 둘 다 채우고(S3 live 복합 질문), `search_facts`는 받은 기간을 항상 `occurred_at`에, 일정 날짜를 event·task 행의 start·due에만 건다(S3 0024, `chatDeps.facts: …` DB 테스트, Codex #1).
 
 ---
 
@@ -86,26 +88,28 @@ U="$(grep '^ERURI_USER_ID=' supabase/.env | cut -d= -f2)"
 
 ```
 supabase/functions/chat/handler.ts        # S1 ScoredRow·relevantItems·factsDistinct·pickCandidates·CANDIDATE_MAX 20 / S3 ChatResult.schedule
-supabase/functions/chat/deps.ts           # S1 search → relevantItems / S3 facts → factRange
-supabase/functions/chat/filters.ts        # S3 event_from/to·normalize·factRange·scheduleOf·요일
+supabase/functions/chat/deps.ts           # S1 search → relevantItems / S3 facts → 두 기간·FACTS_LIMIT
+supabase/functions/chat/filters.ts        # S3 event_from/to·normalize·scheduleOf·요일
 supabase/migrations/0023_hybrid_numeric_tokens.sql   # S2 (다음 빈 번호)
-supabase/scripts/search-probe.ts          # S1 생성(합성 질문 6개, 개수·점수만) / S3 --filters
+supabase/migrations/0024_search_facts_ranges.sql     # S3 search_facts 받은 기간·일정 기간 분리 (다음 빈 번호)
+supabase/scripts/search-probe.ts          # S1 생성(합성 질문 6개, 개수·점수만, kw_pass·sem_pass) / S3 --filters
+supabase/scripts/eval-search.ts           # S1 후보 재현율 집계(⑩b 때 찍힌다)
 supabase/scripts/smoke-chat.ts            # S1 컷·거절 / S3 schedule
 supabase/tests/chat.test.ts               # S1·S3
-supabase/tests/chat-db.test.ts            # S1(컷 DB)·S3(facts 일정 기간)
+supabase/tests/chat-db.test.ts            # S1(컷 DB)·S3(facts 두 기간·시작 순)
 supabase/tests/search.test.ts             # S2
 ios/Packages/EruriCore/Sources/EruriCore/ProposalFlow.swift     # C2 CalendarEvent·conflicts·conflict 결과·문구
 ios/Packages/EruriCore/Sources/EruriCore/ProposalReview.swift   # C2 conflictCategory
 ios/Packages/EruriCore/Sources/EruriCore/ChatReply.swift        # C2 addFeedback conflict / C1 Schedule
-ios/Packages/EruriCore/Sources/EruriCore/DeviceCalendar.swift   # C1 생성(절 문구·거절 대체·카드 상태)
+ios/Packages/EruriCore/Sources/EruriCore/DeviceCalendar.swift   # C1 생성(절 머리·문구·카드 상태)
 ios/Packages/EruriCore/Tests/EruriCoreTests/ProposalFlowTests.swift     # C2
 ios/Packages/EruriCore/Tests/EruriCoreTests/ProposalReviewTests.swift   # C2
 ios/Packages/EruriCore/Tests/EruriCoreTests/ChatReplyTests.swift        # C2·C1
 ios/Packages/EruriCore/Tests/EruriCoreTests/DeviceCalendarTests.swift   # C1 생성
-ios/App/CalendarLookup.swift              # C2 생성(EventKit → CalendarEvent, 겹침 미리 판정) / C1 기간 일정·카드 상태
-ios/App/NotificationActions.swift         # C2 카테고리·handleAdd(confirmed)·conflictNotice·AddEventGate·델리게이트 ADD
+ios/App/CalendarLookup.swift              # C2 생성(EventKit → CalendarEvent, 공유 읽기 store, 겹침 미리 판정) / C1 기간 일정·카드 상태
+ios/App/NotificationActions.swift         # C2 카테고리·handleAdd(confirmed·lockScreen)·conflictNotice(2초)·겹침 알림 제거·AddEventGate·델리게이트 ADD
 ios/App/ProposalsView.swift               # C2 ProposalActionsView 겹침 / C1 CalendarAccessPrompt
-ios/App/ChatView.swift                    # C2 카드 확인창 / C1 기기 캘린더 절·카드 상태·거절 대체
+ios/App/ChatView.swift                    # C2 카드 확인창 / C1 기기 캘린더 절·카드 상태·재조회
 ios/App/Info.plist                        # C1 캘린더 권한 문구
 ios/project.yml                           # C2 0.8.0
 docs/superpowers/phase1/gates.md          # 행 S1·S2·S3·C2·C1
@@ -113,13 +117,21 @@ docs/superpowers/phase1/gates.md          # 행 S1·S2·S3·C2·C1
 
 ## 실행 순서
 
-| 순서 | 태스크 | 반영 | 선행 | pane |
-|---|---|---|---|---|
-| 1 | S1 후보 컷·거절 비우기 | `chat` 배포 | 스펙 `e99f208`, ⑩b 실행 중 아님 | 서버 |
-| 2 | S2 숫자 어절 변형 제거 | `db push` 0023 | S1(재현 스크립트), ⑩b 전 | 서버 |
-| 3 | S3 일정 기간 필터·`schedule` | `chat` 배포 | S2, ⑩b 전 | 서버 |
-| 4 | C2 겹침 확인(0.8.0) | — | 스펙 | iOS(서버와 병렬 가능) |
-| 5 | C1 기기 캘린더 표시 + 0.8.0 업로드 + 실기기 게이트(C2·C1) | TestFlight | C2, 게이트는 S3 배포 뒤 | iOS → 실기기 |
+Fable 리뷰 "최종 권장"(2026-10-01) 순서. 0) 스펙·계획 패치(이 판)가 먼저 커밋돼 있다.
+
+| 순서 | 태스크 | 반영 | 선행·시점 | Gmail T0 와의 관계 | ⑩b 와의 관계 | pane |
+|---|---|---|---|---|---|---|
+| 1 | S1 후보 컷·거절 비우기 | `chat` 배포 | 0) 직후, ⑩b 실행 중 아님 | 함수 코드만 — 제약 없음. probe 는 조회 6건이라 ③b2 창에도 가능 | 무관(`hits` 불변). `eval-search` 에 후보 재현율 집계만 추가 | 서버 |
+| 2 | S2 숫자 어절 변형 제거 | `db push` 0023 | S1 뒤 | 함수 정의만 — 제약 없음 | **전에** | 서버 |
+| 3 | S3 일정 기간·`search_facts` 분리·`schedule` | `db push` 0024 → `chat` 배포 | S2 뒤, 같은 평가 창 | 동일 | **전에**. 이 배포가 기준선 | 서버 |
+| 4 | C2 겹침 확인(0.8.0) | — | 0) 직후, 서버와 병렬(Ruling P) | 코드·시뮬레이터만 — 무관 | 무관 | iOS |
+| 5 | C1 기기 캘린더 표시 + 0.8.0 업로드 | TestFlight | C2 뒤. 업로드는 S3 배포 뒤(시뮬레이터 눈 확인이 성립) | 무관 | 무관 | iOS |
+| 6 | 실기기 게이트 C2·C1 | `gates.md` | S3 게이트 통과 뒤 | **③b2 창 밖**, ③c 측정 시각과 30분 이상 떨어뜨림, 합성 제안 개별 무시(Global Constraints) | ⑩b 실행 중이 아닐 때 | 실기기 |
+| 7 | ⑩b(M2 검색 평가) | `gates.md` | S3 게이트 통과 **그리고** Gmail 백필 종료(③b3 기록) 뒤. ③c2(T0+8일)까지 기다리지 않는다 | 백필 중이면 코퍼스가 변해 순위가 흔들린다. `[합성` 제목 항목은 질문에서 제외(Gmail 계획) | 보관 트랙 B(R-B4) **전에** 기준선 확보 | 사용자·메인 |
+
+- 서버 pane 한 개에서 S1 → S2 → S3 차례(같은 `handler.ts`), iOS pane 한 개에서 C2 → C1 차례(같은 `ChatView.swift`). deno 테스트와 시뮬레이터 빌드는 겹치지 않게(`pgrep`).
+- ⑩b 가 S3 보다 먼저 돌았으면 S3 뒤 재실행(Global Constraints "시점과 ⑩b").
+- 사용자 확인이 필요한 항목: 없음(개인정보 등급 변화 없음 — 캘린더 내용은 기기 안, 서버로 가는 것은 개수 `conflict:<n>`뿐. UC-4 는 범위 밖).
 
 ---
 
@@ -129,13 +141,13 @@ docs/superpowers/phase1/gates.md          # 행 S1·S2·S3·C2·C1
 - Modify: `supabase/functions/chat/handler.ts` (타입 `ScoredRow`, 상수 `CANDIDATE_MAX`·`KW_CUT`·`SEM_CUT`, 함수 `relevantItems`·`factsDistinct`·`pickCandidates`, `answerOnce`)
 - Modify: `supabase/functions/chat/deps.ts` (`search`의 `candidates`, import, 머리 주석)
 - Create: `supabase/scripts/search-probe.ts`
-- Modify: `supabase/scripts/smoke-chat.ts` (전체 교체)
+- Modify: `supabase/scripts/smoke-chat.ts` (전체 교체), `supabase/scripts/eval-search.ts` (후보 재현율 집계 4줄)
 - Test: `supabase/tests/chat.test.ts`, `supabase/tests/chat-db.test.ts`
 - Docs: `docs/superpowers/phase1/gates.md` 행 `S1`
 
 **Interfaces:**
 - Consumes: `hybrid_search(...)` → `(item_id, chunk_id, score, sem_sim, kw_score)`(0017, 변경 없음). `SearchResult = { docs: ChatHit[]; candidates: string[] }`(R-A1).
-- Produces: `export type ScoredRow = { item_id: string; sem_sim: number | null; kw_score: number | null }`; `export const CANDIDATE_MAX = 20`, `KW_CUT = 0.5`, `SEM_CUT = 0.85`; `export function relevantItems(rows: ScoredRow[]): string[]`(컷 통과 항목, 순위순·중복 없음); `export function factsDistinct(f: Filters): boolean`(S3가 본문을 바꾼다); `export function pickCandidates(o: { refused: boolean; cited: string[]; facts: string[]; searched: string[] }): string[]`. `SearchResult.candidates`의 뜻이 "융합 80 전부" → "컷 통과 항목"으로 바뀐다(타입 같음). `POST /chat`의 `candidates`는 ≤ 20, 거절이면 `[]`. 스크립트 `supabase/scripts/search-probe.ts`(질문 목록 `PROBE_QUESTIONS`, 옵션 `--user`·`--label`)를 S2가 전·후 비교에, S3가 `--filters` 추가에 쓴다. 보관 계획 R-B4의 `deps.search` 교체본이 `relevantItems`를 쓴다(그 계획에 적었다).
+- Produces: `export type ScoredRow = { item_id: string; sem_sim: number | null; kw_score: number | null }`; `export const CANDIDATE_MAX = 20`, `KW_CUT = 0.5`, `SEM_CUT = 0.85`; `export function relevantItems(rows: ScoredRow[]): string[]`(컷 통과 항목, 순위순·중복 없음); `export function factsDistinct(f: Filters): boolean`(S3가 본문을 바꾼다); `export function pickCandidates(o: { refused: boolean; cited: string[]; facts: string[]; searched: string[] }): string[]`. `SearchResult.candidates`의 뜻이 "융합 80 전부" → "컷 통과 항목"으로 바뀐다(타입 같음). `POST /chat`의 `candidates`는 ≤ 20, 거절이면 `[]`. 스크립트 `supabase/scripts/search-probe.ts`(질문 목록 `PROBE_QUESTIONS`, 옵션 `--user`·`--label`, 출력에 경로별 통과 수 `kw_pass`·`sem_pass`)를 S2가 전·후 비교에, S3가 `--filters` 추가에 쓴다. `eval-search.ts`는 ⑩b 때 `cand_recall`(답한 정답 질문의 `expected_item_ids ∩ candidates` 비율 평균, 집계만)을 함께 찍는다 — 상수 재결정의 근거(스펙 §9). 보관 계획 R-B4의 `deps.search` 교체본이 `relevantItems`를 쓴다(그 계획에 적었다).
 
 - [ ] **Step 1: 실패하는 테스트**
 
@@ -211,7 +223,8 @@ Deno.test("chatDeps.search: documents ≤ 12 from the fused list; candidates kee
     }
     const s = await chatDeps(sb).search(USER, { question: "알파합성어 베타합성어", from: null, to: null, sources: [] });
     assert(s.docs.length <= 12);
-    assertEquals(new Set(s.candidates), new Set(strong));
+    // strong ⊆ 후보 ∧ weak ∩ 후보 = ∅ — 집합 일치로 단언하지 않는다: 이전 실행이 남긴 임베딩 있는 청크가 있으면 의미 1위로 늘 통과한다(Fable N6)
+    assert(strong.every((id) => s.candidates.includes(id)));
     assert(weak.every((id) => !s.candidates.includes(id)));
   } finally {
     await sb.from("items").delete().eq("user_id", USER).in("id", [...strong, ...weak]);   // chunks cascade
@@ -240,7 +253,7 @@ export type ScoredRow = { item_id: string; sem_sim: number | null; kw_score: num
 ```ts
 // "보관함에서 보기" 후보(스펙 §9, 2026-10-01 검색·캘린더 결정): 인용 → 구별 조건 facts → 관련도 컷 통과 항목, 최대 20. 거절이면 없음
 export const CANDIDATE_MAX = 20;
-// 상대 컷: 이번 검색의 키워드 1위 × 0.5 또는 의미 유사도 1위 × 0.85 이상. 25항목 코퍼스·합성 질문 6개로 잡은 값 — 코퍼스가 커지면 S1 게이트에서 한 번 조정
+// 상대 컷: 이번 검색의 키워드 1위 × 0.5 또는 의미 유사도 1위 × 0.85 이상. 25항목 코퍼스·합성 질문 6개로 잡은 값 — ⑩b 후보 재현율(eval-search cand_recall)을 보고 스펙부터 고쳐 재결정(§9)
 export const KW_CUT = 0.5;
 export const SEM_CUT = 0.85;
 ```
@@ -313,13 +326,13 @@ Create `supabase/scripts/search-probe.ts`:
 ```ts
 // 검색 후보·순위 재현(스펙 §9, §16 2026-10-01 검색·캘린더 결정). 합성 질문 6개를 사용자 코퍼스에 던져 개수·점수만 낸다.
 // 출력에 본문·제목·item id 없음(AGENTS.md §7): hybrid_search 는 id·점수만 돌려주고 여기서도 id 는 세기만 한다. 질의 임베딩 6건(1원 미만)
-// cand_old = R-A1 규칙(융합 80 의 항목 전부, ≤ 100), cand_cut = S1 상대 컷(인용·facts 를 더하기 전, ≤ 20)
+// cand_old = R-A1 규칙(융합 80 의 항목 전부, ≤ 100), cand_cut = S1 상대 컷(인용·facts 를 더하기 전, ≤ 20), kw_pass·sem_pass = 경로별 컷 통과 항목 수(포화 원인 구분)
 // 사용: deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/search-probe.ts [--user <uuid>] [--label <이름>]
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { SERVER_AUTH } from "../functions/_shared/crypto.ts";
 import { embed, toPgVector } from "../functions/_shared/embeddings.ts";
 import { CANDIDATE_CHUNKS, DOC_CHUNKS } from "../functions/chat/deps.ts";
-import { CANDIDATE_MAX, relevantItems, type ScoredRow } from "../functions/chat/handler.ts";
+import { CANDIDATE_MAX, KW_CUT, relevantItems, type ScoredRow, SEM_CUT } from "../functions/chat/handler.ts";
 
 const PROBE_QUESTIONS = ["내일 치과 예약 몇 시야", "10월 3일 일정 있어?", "이번 주 토요일 약속 뭐 있지", "다음 주 회의 언제야",
   "화성 탐사선 발사 일정", "쿠팡에서 산 거 얼마였지"];
@@ -340,16 +353,33 @@ for (const [i, question] of PROBE_QUESTIONS.entries()) {
   const sims = rows.flatMap((r) => (r.sem_sim === null ? [] : [r.sem_sim])).sort((a, b) => b - a);
   const top = rows.slice(0, DOC_CHUNKS);
   const items = new Set(rows.map((r) => r.item_id)).size;
+  const top1 = (k: "sem_sim" | "kw_score") => Math.max(0, ...rows.map((r) => r[k] ?? 0));
+  const passed = (k: "sem_sim" | "kw_score", cut: number) =>
+    new Set(rows.filter((r) => top1(k) > 0 && (r[k] ?? 0) >= cut * top1(k)).map((r) => r.item_id)).size;
   console.log(JSON.stringify({ label, q: i + 1, question, items, kw_chunks: rows.filter((r) => r.kw_score !== null).length,
     sem_at_1_5_12: [r3(sims[0]), r3(sims[4]), r3(sims[11])],
     top12: { both: top.filter((r) => r.sem_sim !== null && r.kw_score !== null).length,
       sem_only: top.filter((r) => r.kw_score === null).length, kw_only: top.filter((r) => r.sem_sim === null).length },
-    cand_old: Math.min(items, 100), cand_cut: Math.min(relevantItems(rows).length, CANDIDATE_MAX) }));
+    cand_old: Math.min(items, 100), cand_cut: Math.min(relevantItems(rows).length, CANDIDATE_MAX),
+    kw_pass: passed("kw_score", KW_CUT), sem_pass: passed("sem_sim", SEM_CUT) }));
 }
 ```
 
 Run: `deno check supabase/scripts/search-probe.ts`
 Expected: 오류 0.
+
+`supabase/scripts/eval-search.ts` — 후보 재현율 집계(Codex #2·Fable N3). ⑩b 는 `hits`만 채점하므로 후보 축소가 정답을 떨어뜨려도 잡지 못한다. 후보 id 는 출력하지 않고 비율만 낸다(AGENTS.md §7):
+
+(1) `let httpErrors = 0;` 아래에 `const recall: number[] = [];                                      // 답한 정답 질문의 |정답 ∩ 후보| / |정답|`
+(2) 루프 안 `const hits: string[] = j.hits ?? [];` 아래에
+```ts
+    if (q.kind === "answer" && !j.refused) { const cand: string[] = j.candidates ?? []; recall.push(q.expected_item_ids.filter((id) => cand.includes(id)).length / q.expected_item_ids.length); }
+```
+(3) 마지막 `console.log(JSON.stringify({ ...sum, http_errors: httpErrors, pass: … }))`의 객체에 `cand_recall: recall.length ? Math.round(recall.reduce((a, b) => a + b, 0) / recall.length * 1000) / 1000 : null, cand_recall_n: recall.length,`를 더한다(합격 판정 `pass`에는 넣지 않는다).
+(4) 머리 주석 첫 줄 끝에 ` 후보는 재현율 집계(cand_recall)만.`을 더한다.
+
+Run: `deno check supabase/scripts/eval-search.ts && deno run --allow-net --allow-env --allow-read supabase/scripts/eval-search.ts --check --questions supabase/eval/questions.example.json`
+Expected: 오류 0, `valid true`(네트워크 없음).
 
 - [ ] **Step 7: 스모크 교체**
 
@@ -409,7 +439,7 @@ Expected: 오류 0.
 - [ ] **Step 8: 코드 커밋**
 
 ```bash
-git add supabase/functions/chat/handler.ts supabase/functions/chat/deps.ts supabase/scripts/search-probe.ts supabase/scripts/smoke-chat.ts supabase/tests/chat.test.ts supabase/tests/chat-db.test.ts
+git add supabase/functions/chat/handler.ts supabase/functions/chat/deps.ts supabase/scripts/search-probe.ts supabase/scripts/smoke-chat.ts supabase/scripts/eval-search.ts supabase/tests/chat.test.ts supabase/tests/chat-db.test.ts
 git commit -m "feat(chat): archive candidates = citations, distinct facts and a relative relevance cut (≤20); none on refusal (S1)"
 ```
 
@@ -425,7 +455,7 @@ deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/
 ```
 
 통과 기준:
-1. **재현(전·후)**: `search-probe` 6줄의 `cand_old`(R-A1 규칙) 대비 `cand_cut`(S1 규칙). 근거 있는 일정 질문 q1~q4는 `cand_old`가 20을 넘으면 `cand_cut < cand_old`이고 `cand_cut ≤ 20`. 6줄을 그대로 `gates.md`에 적는다. **조정 규칙(1회)**: q1~q4 중 3개 이상이 `cand_cut = 20`(포화)이면 `KW_CUT 0.6`·`SEM_CUT 0.9`로 올려 Step 5 테스트(기대값의 경계 숫자도 같이)를 다시 통과시키고 재측정·재배포한다. 그래도 포화면 조정하지 않고 수치만 적어 메인에게 알린다.
+1. **재현(전·후)**: `search-probe` 6줄의 `cand_old`(R-A1 규칙) 대비 `cand_cut`(S1 규칙). 근거 있는 일정 질문 q1~q4는 `cand_old`가 20을 넘으면 `cand_cut < cand_old`이고 `cand_cut ≤ 20`. 6줄(`kw_pass`·`sem_pass` 포함)을 그대로 `gates.md`에 적는다. **포화(`cand_cut = 20`)는 실패가 아니다** — 상한 20(순위순)이 처리하므로 수치만 기록한다. 이 게이트에서 `KW_CUT`·`SEM_CUT`을 바꾸지 않는다(상수는 스펙 값이고, 키워드 1위가 단일 어절이면 같은 어절 행이 모두 동점이라 컷을 올려도 포화가 풀리지 않으며 재현율만 깎인다 — Codex #2·Fable N3). 상수 재결정은 ⑩b의 `cand_recall`이 답한 질문에서 0.9 미만일 때 스펙 §9를 먼저 고친 뒤 재배포한다(S1 배포는 막지 않는다).
 2. **스모크**: `answered` = `status 200`·`refused false`·`candidates ≤ 20`·`relevant 3`·`noise 0`·`cited_subset true`, `unanswered` = `status 200`·`refused true`·`candidates 0`. `unanswered.refused`가 false면(모델이 답함) 한 번 더 돌리고, 두 번 다 false면 실패로 적고 메인에게 알린다(거절 품질 문제 — S1 범위 밖).
 3. **실기기(사용자, 앱 0.7.1 그대로)**: 채팅에서 "내일 치과 예약 몇 시야"·"10월 3일 일정 있어?"를 묻고 답이 거절이 아니면 "보관함에서 보기 (N건)"의 N(≤ 20)과 목록에서 질문과 무관한 항목 수를 사용자가 센다(개수만 받는다). "화성 탐사선 발사 일정"은 거절 + 버튼 없음. 기준: N ≤ 20, 무관 ≤ 2. 거절 답이면 N 없음으로 적는다.
 
@@ -440,7 +470,7 @@ git commit -m "docs(gates): S1 chat candidates cut deployed — probe before/aft
 
 ---
 
-### Task S2: 숫자 어절은 숫자로 끝나는 변형을 만들지 않는다
+### Task S2: 숫자 어절은 숫자로 끝나는 변형을 만들지 않는다(조사 예외) · 맨숫자 1~2자리 토큰 제외
 
 **Files:**
 - Create: `supabase/migrations/0023_hybrid_numeric_tokens.sql` (번호는 다음 빈 번호 — 먼저 `ls supabase/migrations | tail -1`로 확인하고 파일 이름·아래 명령의 번호를 실제 값으로)
@@ -449,18 +479,20 @@ git commit -m "docs(gates): S1 chat candidates cut deployed — probe before/aft
 
 **Interfaces:**
 - Consumes: 0017 `hybrid_search` 본문(인자·반환 동일), S1 `search-probe.ts`.
-- Produces: `hybrid_search(p_user uuid, p_query text, p_embedding vector(512), p_limit int, p_from timestamptz, p_to timestamptz, p_kw_weight float, p_sources text[]) → (item_id, chunk_id, score, sem_sim, kw_score)` — 시그니처·반환 그대로, `variants` 조건만 `and (v = t or t !~ '[0-9]' or v !~ '[0-9]$')`. 보관 계획 R-B4의 `0024`(예정 번호, 실제는 하나 밀림)가 이 조건을 옮겨 적는다(그 계획에 적었다).
+- Produces: `hybrid_search(p_user uuid, p_query text, p_embedding vector(512), p_limit int, p_from timestamptz, p_to timestamptz, p_kw_weight float, p_sources text[]) → (item_id, chunk_id, score, sem_sim, kw_score)` — 시그니처·반환 그대로, 두 조건만 바뀐다: `toks`에 `and t !~ '^[0-9]{1,2}$'`(맨숫자 1~2자리 토큰 제외), `variants`에 `and (v = t or t !~ '[0-9]' or v !~ '[0-9]$' or (char_length(v) >= 3 and <뗀 부분> in (조사 목록)))`. 보관 계획 R-B4(`0026`, 예정 번호)가 두 조건을 옮겨 적는다(그 계획에 적었다).
 
 - [ ] **Step 1: 실패하는 테스트**
 
 `supabase/tests/search.test.ts` 끝에 추가(파일의 `seed(text, embedding)`·`Hit` 사용, 임베딩 없음 = 키워드 경로만):
 
 ```ts
-// 2026-10-01 검색·캘린더 S2: 숫자가 든 어절은 숫자로 끝나는 변형을 만들지 않는다(10월 → 10 금지). 10월에 → 10월, 한글 어절의 조사 떼기는 그대로
-Deno.test("hybrid_search: numeric tokens do not shrink to bare numbers; Hangul particles still drop", async () => {
+// 2026-10-01 검색·캘린더 S2: 숫자가 든 어절은 숫자로 끝나는 변형을 만들지 않는다(10월 → 10, 10은 → 10 금지).
+// 예외: 3자 이상 원형에서 조사를 뗀 경우(1234는 → 1234, Codex #3). 10월에 → 10월, 한글 어절의 조사 떼기는 그대로. 맨숫자 1~2자리 토큰(10/3 의 10)은 버린다(Fable N6)
+Deno.test("hybrid_search: numeric tokens do not shrink to bare numbers except a dropped particle; bare 1-2 digit tokens ignored; Hangul particles still drop", async () => {
   const a = await seed("합성 문구: 모임알파 10월 3일 저녁 7시", null);
   const b = await seed("합성 문구: 결제베타 10,500원 승인 10:30", null);
   const c = await seed("합성 문구: 치과예약감마 안내", null);
+  const d = await seed("합성 문구: 주문델타 번호 1234 배송 시작", null);
   try {
     const found = async (q: string) =>
       new Set(((await sb.rpc("hybrid_search", { p_user: USER, p_query: q, p_embedding: null, p_limit: 20 })).data as Hit[]).map((r) => r.item_id));
@@ -470,8 +502,11 @@ Deno.test("hybrid_search: numeric tokens do not shrink to bare numbers; Hangul p
     const particle = await found("10월에");
     assert(particle.has(a) && !particle.has(b), "10월에 → 10월 은 허용, 10 은 금지");
     assert((await found("치과예약감마는")).has(c), "한글 어절 끝 글자 떼기 유지");
+    assert((await found("1234는")).has(d), "1234는 → 1234 허용(3자 이상 원형 + 조사)");
+    assert(!(await found("10은")).has(b), "10은 → 10 금지(원형 2자)");
+    assert(!(await found("10/3 모임")).has(b), "맨숫자 토큰 10 은 버린다");
   } finally {
-    await sb.from("items").delete().eq("user_id", USER).in("id", [a, b, c]);          // 청크는 cascade
+    await sb.from("items").delete().eq("user_id", USER).in("id", [a, b, c, d]);       // 청크는 cascade
   }
 });
 ```
@@ -483,12 +518,14 @@ Expected: FAIL — `10월 → 10 변형이 …` 단언(지금은 `b`가 `10`으�
 
 - [ ] **Step 3: 마이그레이션**
 
-Create `supabase/migrations/0023_hybrid_numeric_tokens.sql` — 0017 본문 그대로, `variants`의 `where`만 다르다(시그니처·반환이 같아 `create or replace`):
+Create `supabase/migrations/0023_hybrid_numeric_tokens.sql` — 0017 본문 그대로, `toks`·`variants`의 `where`만 다르다(시그니처·반환이 같아 `create or replace`):
 
 ```sql
 -- 스펙 §9 키워드(2026-10-01 검색·캘린더 결정 2b): 숫자가 든 어절은 숫자로 끝나는 변형을 만들지 않는다.
 -- 10월 → 10 이 strpos 부분 문자열로 시각·전화번호·금액의 10 에 맞아 "10월 3일 일정" 질문에서 청크 11/25 가 키워드 일치했다(재현).
--- 10월에 → 10월 (조사 떼기)은 남긴다. 한글 어절의 끝 1~2자 떼기는 0017 그대로. 인자·반환은 0017 과 같다
+-- 예외: 3자 이상 원형에서 조사를 뗀 경우(1234는 → 1234 — 10월 → 10 과 구조가 같아 조사 목록으로만 가른다, Codex #3).
+-- 10월에 → 10월 (조사 떼기)은 남긴다. 맨숫자 1~2자리 토큰("10/3 일정"의 10)은 어절에서 뺀다(Fable N6).
+-- 한글 어절의 끝 1~2자 떼기는 0017 그대로. 인자·반환은 0017 과 같다
 create or replace function hybrid_search(p_user uuid, p_query text, p_embedding extensions.vector(512), p_limit int,
                               p_from timestamptz default null, p_to timestamptz default null, p_kw_weight float default 1.0,
                               p_sources text[] default null)
@@ -507,7 +544,7 @@ with base as (
   order by embedding <=> p_embedding limit 40
 ), toks as (
   select distinct t from regexp_split_to_table(lower(p_query), '[[:space:][:punct:]]+') t
-  where char_length(t) >= 2 and t not in (
+  where char_length(t) >= 2 and t !~ '^[0-9]{1,2}$' and t not in (
     '언제','언제야','언제지','어디','어디서','어디야','어디였지','어디에','뭐','뭐야','뭐지','뭐였지','뭐였더라','몇','얼마','얼마나',
     '누가','누구','무슨','어느','어떤','했지','했어','했나','했더라','샀지','샀어','샀더라','거','것','건','좀','내가','이번','그거',
     '있어','있나','됐어','됐나','돼','해','야','지','가야','하러','가는')
@@ -515,7 +552,9 @@ with base as (
   select t, v from toks cross join lateral (values (t),
     (case when char_length(t) >= 3 then left(t, char_length(t) - 1) end),
     (case when char_length(t) >= 4 then left(t, char_length(t) - 2) end)) x(v)
-  where v is not null and (v = t or t !~ '[0-9]' or v !~ '[0-9]$')
+  where v is not null and (v = t or t !~ '[0-9]' or v !~ '[0-9]$'
+         or (char_length(v) >= 3 and right(t, char_length(t) - char_length(v)) in
+             ('은','는','이','가','을','를','에','의','도','로','와','과','만','에서','까지','부터','으로')))
 ), tokmatch as (
   select distinct b.id, vt.t from base b join variants vt on strpos(b.text, vt.v) > 0
 ), df as (
@@ -544,12 +583,12 @@ deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/
 supabase db push
 pgrep -x xcodebuild; deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/search.test.ts supabase/tests/chat-db.test.ts supabase/tests/embed-db.test.ts
 deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/search-probe.ts --label s2-after
-s "select position('or v !~ ''[0-9]\$''' in pg_get_functiondef('hybrid_search(uuid, text, extensions.vector, int, timestamptz, timestamptz, float, text[])'::regprocedure)) > 0 as numeric_rule"
+s "select position('''으로''' in d) > 0 and position('{1,2}' in d) > 0 as numeric_rule from (select pg_get_functiondef('hybrid_search(uuid, text, extensions.vector, int, timestamptz, timestamptz, float, text[])'::regprocedure) d) x"
 ```
 
 Expected: 테스트 PASS(새 테스트 + 0017 기준 `hybrid_search p_sources`·벡터 적중·S1 컷 DB 테스트), `numeric_rule true`. 전체 `deno test … supabase/tests/` 0 실패.
 
-통과 기준(실측 게이트): 같은 코퍼스에서 잰 `s2-before`/`s2-after`의 **q2("10월 3일 일정 있어?") `kw_chunks`가 줄어든다**(기준선 11 → `10월`·`3일` 원형만), 숫자가 없는 q1·q3~q6의 `kw_chunks`·`cand_cut`은 **같다**(변형 제거는 숫자 어절에만 작용). 둘 사이에 새 항목이 들어와 q1·q3~q6이 달라졌으면 두 번 다시 잰다. q2가 줄지 않으면(코퍼스에 숫자 잡음이 없어진 경우) 전·후 수치와 새 테스트 통과로 판정하고 사유를 적는다.
+통과 기준(실측 게이트): 같은 코퍼스에서 잰 `s2-before`/`s2-after`의 **q2("10월 3일 일정 있어?") `kw_chunks`가 줄어든다**(기준선 11 → `10월`·`3일` 원형과 조사 예외만), 숫자가 없는 q1·q3~q6의 `kw_chunks`·`cand_cut`은 **같다**(변형 제거·맨숫자 제외는 숫자 어절에만 작용). 둘 사이에 새 항목이 들어와 q1·q3~q6이 달라졌으면 두 번 다시 잰다. q2가 줄지 않으면(코퍼스에 숫자 잡음이 없어진 경우) 전·후 수치와 새 테스트 통과로 판정하고 사유를 적는다.
 
 - [ ] **Step 5: 기록·커밋**
 
@@ -557,33 +596,36 @@ Expected: 테스트 PASS(새 테스트 + 0017 기준 `hybrid_search p_sources`·
 
 ```bash
 git add supabase/migrations/0023_hybrid_numeric_tokens.sql supabase/tests/search.test.ts docs/superpowers/phase1/gates.md
-git commit -m "feat(search): numeric query tokens never shrink to a trailing digit (10월 ↛ 10); Hangul particle drop kept (S2)"
+git commit -m "feat(search): numeric query tokens never shrink to a trailing digit unless a particle was dropped (10월 ↛ 10, 1234는 → 1234); bare 1-2 digit tokens ignored (S2)"
 ```
 
 ---
 
-### Task S3: 일정 날짜 필터(`event_from/to`) → facts, 응답 `schedule`
+### Task S3: 일정 날짜 필터(`event_from/to`) → facts(`search_facts` 기간 분리 0024), 응답 `schedule`
 
 **Files:**
 - Modify: `supabase/functions/chat/filters.ts` (전체 교체)
 - Modify: `supabase/functions/chat/handler.ts` (import·`ChatResult.schedule`·`validateAnswer` 반환 타입·`factsDistinct`·`answerOnce`·`handleChat`)
-- Modify: `supabase/functions/chat/deps.ts` (`facts`, import)
+- Modify: `supabase/functions/chat/deps.ts` (`facts`, `FACTS_LIMIT`·`FACTS_EVENT_LIMIT`, import)
+- Create: `supabase/migrations/0024_search_facts_ranges.sql` (번호는 다음 빈 번호 — S2 뒤 `ls supabase/migrations | tail -1`로 확인)
 - Modify: `supabase/scripts/search-probe.ts` (`--filters`), `supabase/scripts/smoke-chat.ts` (일정 질문 1개)
 - Test: `supabase/tests/chat.test.ts`, `supabase/tests/chat-db.test.ts`
 - Docs: `docs/superpowers/phase1/gates.md` 행 `S3`
 
 **Interfaces:**
-- Consumes: S1 `factsDistinct`·`pickCandidates`, 0019 `search_facts`(`fact_when`).
-- Produces: `Filters = { date_from; date_to; event_from; event_to; sources; kinds; merchant }`(모두 `string | null`·`string[]`, 날짜는 `YYYY-MM-DDT00:00:00+09:00`·`…T23:59:59+09:00`); `export function factRange(f: Filters): [string | null, string | null]`; `export type Schedule = { from: string; to: string }`; `export function scheduleOf(f: Filters): Schedule | null`; `export const SCHEDULE_MAX_DAYS = 31`; `ChatResult.schedule: Schedule | null`; `POST /chat` 응답 `schedule: {from, to} | null`(거절·문서 0건에도). C1 앱이 `schedule`을 읽는다.
+- Consumes: S1 `factsDistinct`·`pickCandidates`, 0019 `search_facts`·`fact_when`.
+- Produces: `search_facts(p_user uuid, p_from timestamptz, p_to timestamptz, p_kinds text[], p_merchant text, p_limit int default 5, p_event_from timestamptz default null, p_event_to timestamptz default null)`(0024, 옛 6인자 시그니처는 drop — 오버로드 없음): `p_from/to`는 **항상** `items.occurred_at`, `p_event_from/to`는 event·task 행에만 `fact_when`(start·due), 일정 기간이 있으면 `fact_when` 오름차순(없으면 `occurred_at` 내림차순); `export const FACTS_LIMIT = 5`, `FACTS_EVENT_LIMIT = 8`(deps.ts, 문서 상한 12 안); `Filters = { date_from; date_to; event_from; event_to; sources; kinds; merchant }`(모두 `string | null`·`string[]`, 날짜는 `YYYY-MM-DDT00:00:00+09:00`·`…T23:59:59+09:00`); `export type Schedule = { from: string; to: string }`; `export function scheduleOf(f: Filters): Schedule | null`; `export const SCHEDULE_MAX_DAYS = 31`; `ChatResult.schedule: Schedule | null`; `POST /chat` 응답 `schedule: {from, to} | null`(거절·문서 0건에도). C1 앱이 `schedule`을 읽는다.
 
 - [ ] **Step 1: 실패하는 테스트**
 
 `supabase/tests/chat.test.ts`:
 
+(0) handler import 줄(S1에서 `relevantItems`를 더한 줄)에 `factsDistinct`를 더한다.
+
 (1) filters import 줄을 바꾼다:
 
 ```ts
-import { extractFilters, factRange, FILTER_SCHEMA, FILTER_SYSTEM, normalizeFilters, scheduleOf } from "../functions/chat/filters.ts";
+import { extractFilters, FILTER_SCHEMA, FILTER_SYSTEM, normalizeFilters, scheduleOf } from "../functions/chat/filters.ts";
 ```
 
 (2) `deps()` 헬퍼의 기본 필터에 일정 날짜를 더한다:
@@ -608,7 +650,7 @@ Deno.test("filter prompt: received dates only in date_from/to; schedule and dead
     assert(desc.includes("일정·약속·예약·기한의 날짜") && desc.includes("다음 주 → 그 주 월요일~일요일"), desc);
   }
   assert(FILTER_SCHEMA.required.includes("event_from") && FILTER_SCHEMA.required.includes("event_to"));
-  assert(FILTER_SYSTEM.includes("받은/저장한 시각") && FILTER_SYSTEM.includes("event_from·event_to 에"));
+  assert(FILTER_SYSTEM.includes("받은/저장한 시각") && FILTER_SYSTEM.includes("event_from·event_to 에") && FILTER_SYSTEM.includes("둘 다 채운다"));
 });
 ```
 
@@ -627,6 +669,10 @@ Deno.test({ name: "extractFilters (live): schedule dates → event_from/to, not 
   const mail = (await extractFilters("지난달 받은 견적 메일 찾아줘", "2026-10-01")).filters;
   assertEquals([mail.date_from, mail.date_to, mail.sources, mail.event_from, mail.event_to],
     ["2026-09-01T00:00:00+09:00", "2026-09-30T23:59:59+09:00", ["GMAIL"], null, null]);
+  // 받은 기간과 일정 날짜가 함께(Codex #1): 둘 다 채운다
+  const both = (await extractFilters("지난달 받은 메일 중에 10월 20일 미팅 있어?", "2026-10-01")).filters;
+  assertEquals([both.date_from, both.date_to, both.event_from, both.event_to],
+    ["2026-09-01T00:00:00+09:00", "2026-09-30T23:59:59+09:00", "2026-10-20T00:00:00+09:00", "2026-10-20T23:59:59+09:00"]);
 } });
 ```
 
@@ -643,12 +689,14 @@ Deno.test("normalizeFilters: event dates get Seoul day bounds; impossible dates 
   assertEquals([one.event_from, one.event_to], ["2026-10-03T00:00:00+09:00", null]);
 });
 
-Deno.test("factRange: event/task facts use the schedule dates when present, else the received dates", () => {
-  const base = { date_from: "R0", date_to: "R1", event_from: "E0", event_to: "E1", sources: [], merchant: null };
-  assertEquals(factRange({ ...base, kinds: ["event"] }), ["E0", "E1"]);
-  assertEquals(factRange({ ...base, kinds: ["task", "purchase"] }), ["E0", "E1"]);
-  assertEquals(factRange({ ...base, kinds: ["purchase"] }), ["R0", "R1"]);
-  assertEquals(factRange({ ...base, kinds: ["event"], event_from: null, event_to: null }), ["R0", "R1"]);
+// facts 가 후보가 되는 구별 조건: 가맹점 ∨ 받은 기간 ∨ (일정 기간 ∧ kinds ∋ event·task) — 일정 기간은 event·task 행에만 걸리므로(0024)
+Deno.test("factsDistinct: merchant, received range, or a schedule range on event/task kinds", () => {
+  const base = { date_from: null, date_to: null, event_from: null, event_to: null, sources: [], kinds: ["event"], merchant: null };
+  assertEquals(factsDistinct(base), false);
+  assertEquals(factsDistinct({ ...base, event_from: "E0" }), true);
+  assertEquals(factsDistinct({ ...base, kinds: ["purchase"], event_from: "E0" }), false);
+  assertEquals(factsDistinct({ ...base, date_to: "R1" }), true);
+  assertEquals(factsDistinct({ ...base, merchant: "합성상점" }), true);
 });
 
 // schedule: 일정 질문(kinds ∋ event) · 양 끝 · 31일 이하일 때만 — 앱이 1년치 캘린더를 읽지 않게
@@ -694,19 +742,33 @@ Deno.test("POST /chat returns schedule next to candidates (null when not a dated
 (2) 파일 끝에 추가:
 
 ```ts
-// 2026-10-01 검색·캘린더 S3: 일정 질문의 facts 는 일정 날짜(event_from/to)로 거른다 — kinds 만으로 나오던 "최근 5건" 대신 그날의 일정
-Deno.test("chatDeps.facts: event facts are filtered by the schedule dates (event_from/to)", async () => {
-  const id = await seed("GMAIL", "ev", "합성 초대", "합성 현장 미팅 10월 20일");
+// 2026-10-01 검색·캘린더 S3(0024, Codex #1·Fable N2): 받은 기간은 항상 받은 시각, 일정 기간은 event·task 의 start·due 에만, 둘 다 함께도. 일정 기간이면 시작 순
+Deno.test("chatDeps.facts: received range on occurred_at, schedule range on start only, both together; schedule range sorts by start", async () => {
+  const late = await seed("GMAIL", "ev-late", "합성 초대", "합성 현장 미팅 10월 20일");     // 9/20 에 받은 10/20 일정
+  const early = await seed("GMAIL", "ev-early", "합성 초대 2", "합성 점검 10월 5일");       // 9/10 에 받은 10/5 일정
   try {
-    assertEquals((await sb.rpc("save_fact", { p_user: USER, p_item: id, p_kind: "event", p_payload: { title: "합성 현장 미팅", start: "2026-10-20T10:00:00+09:00" },
-      p_evidence: "합성 현장 미팅", p_action: null })).error, null);
-    const f = (from: string, to: string): Filters => ({ date_from: null, date_to: null, event_from: from, event_to: to, sources: [], kinds: ["event"], merchant: null });
-    const d = chatDeps(sb);
-    assert((await d.facts(USER, f("2026-10-20T00:00:00+09:00", "2026-10-20T23:59:59+09:00"))).some((h) => h.item_id === id));
-    assert(!(await d.facts(USER, f("2026-10-21T00:00:00+09:00", "2026-10-21T23:59:59+09:00"))).some((h) => h.item_id === id));
+    for (const [id, at, start, title] of [[late, "2026-09-20T09:00:00+09:00", "2026-10-20T10:00:00+09:00", "합성 현장 미팅"],
+      [early, "2026-09-10T09:00:00+09:00", "2026-10-05T10:00:00+09:00", "합성 점검"]] as const) {
+      assertEquals((await sb.from("items").update({ occurred_at: at }).eq("user_id", USER).eq("id", id)).error, null);
+      assertEquals((await sb.rpc("save_fact", { p_user: USER, p_item: id, p_kind: "event", p_payload: { title, start },
+        p_evidence: title, p_action: null })).error, null);
+    }
+    const f = (o: Partial<Filters>): Filters => ({ date_from: null, date_to: null, event_from: null, event_to: null, sources: [], kinds: ["event"], merchant: null, ...o });
+    const ids = async (o: Partial<Filters>) => (await chatDeps(sb).facts(USER, f(o))).map((h) => h.item_id).filter((x) => x === late || x === early);
+    const SEP = { date_from: "2026-09-01T00:00:00+09:00", date_to: "2026-09-30T23:59:59+09:00" };
+    const OCT20 = { event_from: "2026-10-20T00:00:00+09:00", event_to: "2026-10-20T23:59:59+09:00" };
+    // "9월에 받은 예약": 받은 시각으로 둘 다(0019 는 이 기간을 start 에 걸어 둘 다 놓쳤다)
+    assertEquals(new Set(await ids(SEP)), new Set([late, early]));
+    assertEquals(await ids(OCT20), [late]);
+    // 두 조건 함께: 10월에 받은 것 중 10/20 일정 → 없음, 9월에 받은 것 중 → late
+    assertEquals(await ids({ date_from: "2026-10-01T00:00:00+09:00", date_to: "2026-10-31T23:59:59+09:00", ...OCT20 }), []);
+    assertEquals(await ids({ ...SEP, ...OCT20 }), [late]);
+    // 일정 기간이면 시작 순(받은 순이면 late 가 먼저)
+    assertEquals(await ids({ event_from: "2026-10-01T00:00:00+09:00", event_to: "2026-10-31T23:59:59+09:00" }), [early, late]);
+    assertEquals(await ids({}), [late, early]);
   } finally {
-    await sb.from("facts").delete().eq("user_id", USER).eq("item_id", id);
-    await sb.from("items").delete().eq("user_id", USER).eq("id", id);
+    await sb.from("facts").delete().eq("user_id", USER).in("item_id", [late, early]);
+    await sb.from("items").delete().eq("user_id", USER).in("id", [late, early]);
   }
 });
 ```
@@ -714,7 +776,7 @@ Deno.test("chatDeps.facts: event facts are filtered by the schedule dates (event
 - [ ] **Step 2: 실패 확인**
 
 Run: `pgrep -x xcodebuild; deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/chat.test.ts supabase/tests/chat-db.test.ts`
-Expected: FAIL — `factRange`·`scheduleOf` 없음, `Filters`에 `event_from` 없음(타입 검사 오류).
+Expected: FAIL — `scheduleOf` 없음, `Filters`에 `event_from` 없음(타입 검사 오류). DB 테스트는 0024 전이라 "9월에 받은 예약" 단언에서도 실패한다.
 
 - [ ] **Step 3: filters.ts**
 
@@ -746,7 +808,8 @@ export const FILTER_SCHEMA = {
 } as const;
 
 export const FILTER_SYSTEM = ["사용자의 개인 비서 검색 질문에서 필터만 뽑는다. 질문에 없는 조건은 만들지 않는다.",
-  "date_from·date_to 는 받은/저장한 시각 조건이다. 일정·약속·기한이 언제인지 묻거나 그 날짜로 대상을 가리키면 date_from·date_to 는 null 로 두고, 그 날짜는 event_from·event_to 에, 종류는 kinds 에 넣는다."].join("\n");
+  "date_from·date_to 는 받은/저장한 시각 조건이다. 일정·약속·기한이 언제인지 묻거나 그 날짜로 대상을 가리키면 그 날짜는 event_from·event_to 에, 종류는 kinds 에 넣는다.",
+  "받은/저장한 기간과 일정·기한 날짜가 한 질문에 둘 다 있으면(예: 지난달 받은 메일 중 10월 20일 미팅) 둘 다 채운다. 받은 기간이 없으면 date_from·date_to 는 null."].join("\n");
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 // 달력에 있는 YYYY-MM-DD 만. 2026-02-30 은 Postgres timestamptz 변환 오류(500)가 되므로 버린다
@@ -762,12 +825,6 @@ export function normalizeFilters(f: Filters): Filters {
   let ef = bound(f.event_from, false), et = bound(f.event_to, true);
   if (ef && et && Date.parse(ef) > Date.parse(et)) { ef = null; et = null; }        // 거꾸로 된 일정 범위는 버린다
   return { ...f, date_from: bound(f.date_from, false), date_to: bound(f.date_to, true), event_from: ef, event_to: et };
-}
-
-// facts 의 event·task 는 일정 날짜로 거른다(0019 fact_when = start·due). 일정 날짜가 없으면 받은 기간(Ruling D 그대로)
-export function factRange(f: Filters): [string | null, string | null] {
-  const dated = f.kinds.includes("event") || f.kinds.includes("task");
-  return dated && (f.event_from !== null || f.event_to !== null) ? [f.event_from, f.event_to] : [f.date_from, f.date_to];
 }
 
 // 응답 schedule(스펙 §9 "일정 질문과 기기 캘린더"): 일정 질문(kinds ∋ event)이고 일정 날짜 양 끝이 있으며 31일 이하일 때만
@@ -792,6 +849,40 @@ export async function extractFilters(question: string, today: string) {
 }
 ```
 
+- [ ] **Step 3b: 마이그레이션 0024 — `search_facts` 받은 기간·일정 기간 분리**
+
+Create `supabase/migrations/0024_search_facts_ranges.sql`(번호는 다음 빈 번호):
+
+```sql
+-- 스펙 §9 facts(2026-10-01 검색·캘린더 계획 리뷰, Codex #1·Fable N2): 받은 기간과 일정 기간을 SQL 에서 섞지 않는다.
+-- 0019 는 p_from/p_to 를 fact_when(event=start·task=due)에 걸어 "9월에 받은 예약"이 9월 시작 일정으로 걸러졌고,
+-- 두 기간을 함께 줄 수 없었으며, 혼합 kinds 에서 구매에도 일정 기간이 걸렸다.
+-- p_from/p_to = 항상 받은 시각(items.occurred_at). p_event_from/p_event_to = event·task 행에만 fact_when. 그 밖의 종류는 일정 기간을 무시한다.
+-- 일정 기간이 있으면 시작 순(가까운 일정이 늦게 받았다고 빠지지 않게), 없으면 받은 시각 역순(0019 그대로).
+-- 오버로드를 남기지 않게 옛 6인자 함수를 지우고 만든다. fact_when(0019)은 그대로.
+drop function search_facts(uuid, timestamptz, timestamptz, text[], text, int);
+create function search_facts(p_user uuid, p_from timestamptz, p_to timestamptz, p_kinds text[], p_merchant text, p_limit int default 5,
+                             p_event_from timestamptz default null, p_event_to timestamptz default null)
+returns table (fact_id uuid, item_id uuid, kind text, payload jsonb, evidence text, occurred_at timestamptz) language sql stable as $$
+  select f.id, f.item_id, f.kind, f.payload, f.evidence, i.occurred_at
+  from facts f join items i on i.id = f.item_id and i.user_id = p_user
+  where f.user_id = p_user and f.status = 'active'
+    and (p_merchant is not null or (p_kinds is not null and cardinality(p_kinds) > 0))
+    and (p_kinds is null or cardinality(p_kinds) = 0 or f.kind = any (p_kinds))
+    and (p_from is null or i.occurred_at >= p_from) and (p_to is null or i.occurred_at <= p_to)
+    and (f.kind not in ('event', 'task') or p_event_from is null or fact_when(f.kind, f.payload, i.occurred_at) >= p_event_from)
+    and (f.kind not in ('event', 'task') or p_event_to is null or fact_when(f.kind, f.payload, i.occurred_at) <= p_event_to)
+    and (p_merchant is null or strpos(lower(f.payload->>'merchant'), lower(p_merchant)) > 0)
+  order by case when p_event_from is not null or p_event_to is not null then fact_when(f.kind, f.payload, i.occurred_at) end asc nulls last,
+           i.occurred_at desc
+  limit p_limit;
+$$;
+
+revoke execute on function search_facts(uuid, timestamptz, timestamptz, text[], text, int, timestamptz, timestamptz) from public, anon, authenticated;
+```
+
+호환: 배포된 S1 chat(옛 코드)은 이름 인자 5개(`p_user`·`p_from`·`p_to`·`p_kinds`·`p_merchant`)로 부르므로 새 함수에 그대로 맞는다(나머지는 기본값). 그 호출의 기간은 이제 받은 시각에 걸린다 — 필터가 일정 날짜를 `date_from/to`에 넣는 오기입 때의 facts 쪽 안전망(Ruling D)은 사라지고 하이브리드 기간 폴백만 남는다(Fable #1, 수용). 그래서 `db push`(0024) → `functions deploy chat` 순서로 해도 중간 상태가 깨지지 않는다. start·due 가 없는 event·task 행은 `fact_when`이 받은 시각을 돌려주므로(0019) 일정 기간도 받은 시각으로 걸린다.
+
 - [ ] **Step 4: handler.ts · deps.ts**
 
 `supabase/functions/chat/handler.ts`:
@@ -799,7 +890,7 @@ export async function extractFilters(question: string, today: string) {
 (1) filters import 두 줄을 바꾼다:
 
 ```ts
-import { factRange, type Filters, type Schedule, scheduleOf } from "./filters.ts";
+import { type Filters, type Schedule, scheduleOf } from "./filters.ts";
 export type { Filters, Schedule } from "./filters.ts";
 ```
 
@@ -812,13 +903,17 @@ export type ChatResult = RawAnswer & { forced_refusal: boolean; dropped_ids: num
 
 (3) `validateAnswer`의 반환 타입을 `Omit<ChatResult, "hits" | "candidates" | "citations" | "proposals" | "model" | "schedule">`로 바꾼다.
 
-(4) S1의 `factsDistinct` 본문을 바꾼다(일정 날짜로 걸러진 facts도 구별 조건):
+(4) S1의 `factsDistinct` 본문과 주석을 바꾼다(일정 날짜로 걸러진 event·task facts도 구별 조건 — 일정 기간은 그 종류에만 걸린다, 0024):
 
 ```ts
+// facts 가 후보가 되는 것은 가맹점·받은 기간·일정 기간(event·task 질문)처럼 대상을 가려내는 조건으로 나왔을 때뿐. 종류만으로 나온 "최근 5건"은 모델 문서로만 쓴다
 export function factsDistinct(f: Filters): boolean {
-  return f.merchant !== null || factRange(f).some((x) => x !== null);
+  const scheduled = (f.event_from !== null || f.event_to !== null) && (f.kinds.includes("event") || f.kinds.includes("task"));
+  return f.merchant !== null || f.date_from !== null || f.date_to !== null || scheduled;
 }
 ```
+
+(혼합 kinds(`event`+`purchase`)에 일정 기간만 있으면 purchase 행은 종류로만 걸러진 채 후보에 들어간다 — 드문 질문이라 수용, 최대 8.)
 
 (5) `answerOnce`: `const { filters, usage: fu } = await deps.filters(question, today);` 바로 아래에
 
@@ -837,12 +932,21 @@ export function factsDistinct(f: Filters): boolean {
       citations: r.citations, proposals: r.proposals, hits: r.hits, candidates: r.candidates, schedule: r.schedule });
 ```
 
-`supabase/functions/chat/deps.ts`: import를 `import { extractFilters, factRange, type Filters } from "./filters.ts";`로, `facts`를 아래로:
+`supabase/functions/chat/deps.ts`: import는 `import { extractFilters, type Filters } from "./filters.ts";` 그대로(없으면 그렇게), `CANDIDATE_CHUNKS` 상수 옆에 더한다:
+
+```ts
+// facts 문서 수(스펙 §9): 기본 받은 시각 역순 5, 일정 기간이 있으면 시작 순 8(모델 문서 상한 12 안 — 가까운 일정이 늦게 받았다고 빠지지 않게, Fable N2)
+export const FACTS_LIMIT = 5, FACTS_EVENT_LIMIT = 8;
+```
+
+`facts`를 아래로:
 
 ```ts
     async facts(u, f: Filters) {
-      const [from, to] = factRange(f);                                       // event·task 는 일정 날짜, 없으면 받은 기간(§9)
-      const rows = (await rpc("search_facts", { p_user: u, p_from: from, p_to: to, p_kinds: f.kinds, p_merchant: f.merchant })) as
+      // 받은 기간은 늘 받은 시각, 일정 기간은 event·task 의 start·due 에만(0024, §9)
+      const scheduled = f.event_from !== null || f.event_to !== null;
+      const rows = (await rpc("search_facts", { p_user: u, p_from: f.date_from, p_to: f.date_to, p_kinds: f.kinds, p_merchant: f.merchant,
+        p_limit: scheduled ? FACTS_EVENT_LIMIT : FACTS_LIMIT, p_event_from: f.event_from, p_event_to: f.event_to })) as
         { item_id: string; kind: string; payload: Record<string, unknown>; evidence: string | null; occurred_at: string }[];
       return rows.map((r) => ({ item_id: r.item_id, occurred_at: r.occurred_at, text: factText(r) }));
     },
@@ -852,25 +956,34 @@ export function factsDistinct(f: Filters): boolean {
 
 - [ ] **Step 5: 통과 확인**
 
-Run:
+메인에게 "⑩b 실행 중 아님"을 확인받은 뒤 0024 를 올리고(DB 테스트가 새 시그니처를 쓴다) 테스트한다:
+
 ```bash
+# 머리 2줄
+git status --short supabase/migrations; ls supabase/migrations | tail -3        # 새 파일이 0024 하나뿐인지
+supabase db push
+s "select pg_get_function_identity_arguments('search_facts'::regproc) args"      # 8인자 하나뿐(오버로드 없음)
 deno check supabase/functions/chat/index.ts supabase/scripts/eval-search.ts
 pgrep -x xcodebuild; deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/chat.test.ts supabase/tests/chat-db.test.ts
 LIVE_LLM=1 deno test --allow-net --allow-env --allow-read --env-file=supabase/.env --filter "extractFilters (live)" supabase/tests/chat.test.ts
 ```
-Expected: PASS(live 1건 포함). 전체 `deno test … supabase/tests/` 0 실패. live가 실패하면(예: "다음 주"를 일요일 시작으로) `EVENT_ONLY`·`FILTER_SYSTEM` 문구만 고쳐 다시 돈다 — 기대값(월~일)은 스펙이므로 바꾸지 않는다. 세 번 고쳐도 실패하면 실패 줄을 메인에게 보고한다.
+Expected: `args`가 `p_user uuid, p_from timestamp with time zone, …, p_event_to timestamp with time zone` 한 줄(`regproc` 해석이 모호하다는 오류면 오버로드가 남은 것 — 멈추고 보고). PASS(live 1건 포함). 전체 `deno test … supabase/tests/` 0 실패. live가 실패하면(예: "다음 주"를 일요일 시작으로, 복합 질문에서 한쪽을 null로) `EVENT_ONLY`·`FILTER_SYSTEM` 문구만 고쳐 다시 돈다 — 기대값(월~일, 둘 다 채움)은 스펙이므로 바꾸지 않는다. 세 번 고쳐도 실패하면 실패 줄을 메인에게 보고한다.
 
 - [ ] **Step 6: 재현 스크립트 `--filters` · 스모크 일정 질문**
 
 `supabase/scripts/search-probe.ts`:
 
-머리 주석 사용 줄 끝에 ` [--filters]`를 더하고, 둘째 주석 줄 아래에 `// --filters: 필터(gpt-6-luna 6건, 1원 미만) → 종류·조건 유무·schedule 일수, facts 개수(받은 기간 기준 old / factRange 기준 new) — search_facts 는 item_id 열만 받는다` 를 더한다. import에 `import { extractFilters, factRange, scheduleOf } from "../functions/chat/filters.ts";`. `const r3 = …` 아래에:
+머리 주석 사용 줄 끝에 ` [--filters]`를 더하고, 둘째 주석 줄 아래에 `// --filters: 필터(gpt-6-luna 6건, 1원 미만) → 종류·조건 유무·schedule 일수, facts 개수(종류·가맹점만 kind / 두 기간까지 new) — search_facts 는 item_id 열만 받는다` 를 더한다. import에 `import { extractFilters, scheduleOf } from "../functions/chat/filters.ts";`와 `FACTS_EVENT_LIMIT, FACTS_LIMIT`(deps.ts import 줄에). `const r3 = …` 아래에:
 
 ```ts
 const withFilters = Deno.args.includes("--filters");
 const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
-async function factCount(from: string | null, to: string | null, kinds: string[], merchant: string | null): Promise<number> {
-  const { data, error } = await sb.rpc("search_facts", { p_user: user, p_from: from, p_to: to, p_kinds: kinds, p_merchant: merchant }).select("item_id");
+type Range = { date_from: string | null; date_to: string | null; event_from: string | null; event_to: string | null };
+const NO_RANGE: Range = { date_from: null, date_to: null, event_from: null, event_to: null };
+async function factCount(r: Range, kinds: string[], merchant: string | null): Promise<number> {
+  const scheduled = r.event_from !== null || r.event_to !== null;
+  const { data, error } = await sb.rpc("search_facts", { p_user: user, p_from: r.date_from, p_to: r.date_to, p_kinds: kinds, p_merchant: merchant,
+    p_limit: scheduled ? FACTS_EVENT_LIMIT : FACTS_LIMIT, p_event_from: r.event_from, p_event_to: r.event_to }).select("item_id");
   if (error) throw new Error("search_facts " + error.code);
   return (data as unknown[]).length;
 }
@@ -882,11 +995,11 @@ async function factCount(from: string | null, to: string | null, kinds: string[]
   let extra = {};
   if (withFilters) {
     const { filters: f } = await extractFilters(question, today);
-    const sch = scheduleOf(f), [ef, et] = factRange(f);
+    const sch = scheduleOf(f);
     extra = { kinds: f.kinds, merchant: f.merchant !== null, date_range: f.date_from !== null || f.date_to !== null,
       event_range: f.event_from !== null || f.event_to !== null,
       schedule_days: sch ? Math.round((Date.parse(sch.to) - Date.parse(sch.from)) / 86_400_000) : null,
-      facts_old: await factCount(f.date_from, f.date_to, f.kinds, f.merchant), facts_new: await factCount(ef, et, f.kinds, f.merchant) };
+      facts_kind: await factCount(NO_RANGE, f.kinds, f.merchant), facts_new: await factCount(f, f.kinds, f.merchant) };
   }
 ```
 
@@ -907,8 +1020,8 @@ Expected: 오류 0.
 - [ ] **Step 7: 코드 커밋**
 
 ```bash
-git add supabase/functions/chat/filters.ts supabase/functions/chat/handler.ts supabase/functions/chat/deps.ts supabase/scripts/search-probe.ts supabase/scripts/smoke-chat.ts supabase/tests/chat.test.ts supabase/tests/chat-db.test.ts
-git commit -m "feat(chat): schedule dates (event_from/to) filter event/task facts; chat returns the schedule range for the device calendar (S3)"
+git add supabase/migrations/0024_search_facts_ranges.sql supabase/functions/chat/filters.ts supabase/functions/chat/handler.ts supabase/functions/chat/deps.ts supabase/scripts/search-probe.ts supabase/scripts/smoke-chat.ts supabase/tests/chat.test.ts supabase/tests/chat-db.test.ts
+git commit -m "feat(chat): received and schedule ranges kept apart in search_facts (0024); schedule dates filter event/task facts by start; chat returns the schedule range (S3)"
 ```
 
 - [ ] **Step 8: 배포 + 실측 게이트**
@@ -917,6 +1030,7 @@ git commit -m "feat(chat): schedule dates (event_from/to) filter event/task fact
 
 ```bash
 # 머리 2줄
+supabase migration list | tail -3                                                # 0024 원격 적용(Step 5)
 supabase functions deploy chat
 deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/smoke-chat.ts
 deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/search-probe.ts --label s3 --filters
@@ -924,12 +1038,12 @@ deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/
 
 통과 기준:
 1. **스모크**: S1 기준 그대로 + `answered.schedule_null true` + `dated` = `status 200`·`schedule_ok true`.
-2. **재현(필터)**: q1~q4는 `kinds`에 `event`, `event_range true`, `date_range false`, `schedule_days` = 1·1·1·7(q2 "10월 3일"은 날짜가 지나도 1). 네 질문 모두 `facts_new ≤ facts_old`이고, `facts_old`가 5인 질문(질문과 무관한 최근 5건)이 있으면 그 질문의 `facts_new`가 더 작다. q5("화성 탐사선 발사 일정")는 `event_range false`·`schedule_days null`. q6("쿠팡에서 산 거")는 `merchant true`·`schedule_days null`. 한 질문이라도 어긋나면 그 줄을 적고 Step 5의 문구 조정 규칙을 따른다.
+2. **재현(필터)**: q1~q4는 `kinds`에 `event`, `event_range true`, `date_range false`, `schedule_days` = 1·1·1·7(q2 "10월 3일"은 날짜가 지나도 1). 네 질문 모두 `facts_new ≤ 8`(`FACTS_EVENT_LIMIT`)이고, `facts_kind`가 5인 질문(질문과 무관한 최근 5건)이 있으면 그 질문의 `facts_new`가 더 작다(그날 일정이 5건 이상이면 예외 — 사유를 적는다). q5("화성 탐사선 발사 일정")는 `event_range false`·`schedule_days null`. q6("쿠팡에서 산 거")는 `merchant true`·`schedule_days null`. 한 질문이라도 어긋나면 그 줄을 적고 Step 5의 문구 조정 규칙을 따른다.
 3. LIVE 필터 테스트(Step 5) 통과 기록.
 
 - [ ] **Step 9: 기록 커밋**
 
-`gates.md` 행 `S3`(게이트 = 위 1~3, 근거 = 배포 시각·smoke 출력·probe 6줄의 필터 항목·live 결과, 비고 = "⑩b 기준선 = 이 배포 뒤").
+`gates.md` 행 `S3`(게이트 = 위 1~3, 근거 = push·배포 시각·`args` 한 줄·smoke 출력·probe 6줄의 필터 항목·live 결과, 비고 = "⑩b 기준선 = 이 배포 뒤").
 
 ```bash
 git add docs/superpowers/phase1/gates.md
@@ -945,7 +1059,7 @@ git commit -m "docs(gates): S3 schedule range deployed — smoke, probe filters,
 - Modify: `ios/Packages/EruriCore/Sources/EruriCore/ProposalReview.swift` (`conflictCategory`, `categories`, `sheet(for:list:)`)
 - Modify: `ios/Packages/EruriCore/Sources/EruriCore/ChatReply.swift` (`addFeedback` conflict)
 - Create: `ios/App/CalendarLookup.swift`
-- Modify: `ios/App/NotificationActions.swift` (`register`, `handleAdd(fields:confirmed:)`, `conflictNotice`, `AddEventRequest`, `AddEventGate.add`, 델리게이트 ADD 분기)
+- Modify: `ios/App/NotificationActions.swift` (`register`, `handleAdd(fields:confirmed:lockScreen:)`, `conflictNotice`, `dismiss`, `trace`, `AddEventRequest`, `AddEventGate.add`, 델리게이트 ADD 분기)
 - Modify: `ios/App/ProposalsView.swift` (`ProposalActionsView`)
 - Modify: `ios/App/ChatView.swift` (카드 추가 경로 `runAdd`·확인창)
 - Modify: `ios/project.yml` (`MARKETING_VERSION: 0.8.0`)
@@ -953,7 +1067,7 @@ git commit -m "docs(gates): S3 schedule range deployed — smoke, probe filters,
 
 **Interfaces:**
 - Consumes: `ProposalFlow.marker(_:)`·`searchWindow(start:)`·`matchMarker(pid:events:)`, `ProposalReview.link`·`sheet`, `NotificationActions.handleAdd`.
-- Produces(EruriCore): `public struct ProposalFlow.CalendarEvent: Equatable, Sendable { id: String; title: String; start: Date; end: Date; allDay: Bool; canceled: Bool; url: URL? }`(init 기본값 `allDay: false, canceled: false, url: nil`); `ProposalFlow.eventDuration: TimeInterval = 3600`; `ProposalFlow.conflicts(pid: String, start: Date, events: [CalendarEvent]) -> [CalendarEvent]`; `conflictOutcome(_ n: Int) -> String`("conflict:<n>"); `conflictCount(_ outcome: String) -> Int?`; `conflictLine(_ c: [CalendarEvent]) -> String?`; `confirmTitle(_ c: [CalendarEvent]) -> String`; `conflictNoticeTitle`, `conflictNoticeBody(_ n: Int) -> String`, `conflictNoticeID(_ pid: String) -> String`; `ProposalReview.conflictCategory = "ADD_EVENT_CONFLICT"`. 앱: `enum CalendarLookup { static var fullAccess: Bool; static func events(_ store: EKEventStore, from: Date, to: Date) -> [ProposalFlow.CalendarEvent]; static func conflicts(pid: String, start: Date) -> [ProposalFlow.CalendarEvent] }`; `NotificationActions.handleAdd(fields:confirmed: Bool = false) async -> String`(반환에 `conflict:<n>` 추가); `NotificationActions.conflictNotice(fields:count:) async`. C1이 `CalendarEvent`·`conflicts`·`CalendarLookup.events`를 쓴다.
+- Produces(EruriCore): `public struct ProposalFlow.CalendarEvent: Equatable, Sendable { id: String; title: String; start: Date; end: Date; allDay: Bool; canceled: Bool; url: URL? }`(init 기본값 `allDay: false, canceled: false, url: nil`); `ProposalFlow.eventDuration: TimeInterval = 3600`; `ProposalFlow.conflicts(pid: String, start: Date, events: [CalendarEvent]) -> [CalendarEvent]`; `conflictOutcome(_ n: Int) -> String`("conflict:<n>"); `conflictCount(_ outcome: String) -> Int?`; `conflictLine(_ c: [CalendarEvent]) -> String?`; `confirmTitle(_ c: [CalendarEvent]) -> String`; `conflictNoticeTitle`, `conflictNoticeBody(_ n: Int) -> String`, `conflictNoticeID(_ pid: String) -> String`; `ProposalReview.conflictCategory = "ADD_EVENT_CONFLICT"`. 앱: `enum CalendarLookup { static var fullAccess: Bool; @MainActor static let store: EKEventStore(화면 조회 공유, 읽기 전용); static func events(_ store: EKEventStore, from: Date, to: Date) -> [ProposalFlow.CalendarEvent]; @MainActor static func conflicts(pid: String, start: Date) -> [ProposalFlow.CalendarEvent] }`; `NotificationActions.handleAdd(fields:confirmed: Bool = false, lockScreen: Bool = false) async -> String`(반환에 `conflict:<n>` 추가, `lockScreen`이고 겹침이면 안에서 로컬 알림 등록); `NotificationActions.conflictNotice(fields:count:) async -> String`(`ok`·`fail`·`timeout`, 2초 마감); `action.handled` 필드 `notice`(겹침 알림 결과). 추가 성공(`ok`·`recovered`·`dup`)·무시 `ok`면 전달된 겹침 알림(`conflict-<pid>`)을 지운다. C1이 `CalendarEvent`·`conflicts`·`CalendarLookup.events`를 쓴다.
 
 - [ ] **Step 1: 실패하는 테스트**
 
@@ -985,7 +1099,7 @@ git commit -m "docs(gates): S3 schedule range deployed — smoke, probe filters,
     XCTAssertNil(ProposalFlow.conflictCount("ok")); XCTAssertNil(ProposalFlow.conflictCount("fail:x")); XCTAssertNil(ProposalFlow.conflictCount("dup"))
     XCTAssertEqual(ProposalFlow.conflictNoticeID("p-1"), "conflict-p-1")
     XCTAssertEqual(ProposalFlow.conflictNoticeTitle, "겹치는 일정이 있습니다")
-    XCTAssertEqual(ProposalFlow.conflictNoticeBody(2), "같은 시간에 다른 일정 2건 · 탭해서 확인")
+    XCTAssertEqual(ProposalFlow.conflictNoticeBody(2), "같은 시간에 일정 2건 · 탭해서 확인")          // "다른" 없음 — 같은 일정이 이미 있는 경우가 흔하다(Fable N5)
     let t = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-04T05:00:00Z"))         // 서울 14:00
     let a = ProposalFlow.CalendarEvent(id: "a", title: "합성 회의", start: t, end: t.addingTimeInterval(3600))
     let b = ProposalFlow.CalendarEvent(id: "b", title: "합성 모임", start: t.addingTimeInterval(1800), end: t.addingTimeInterval(5400))
@@ -1017,7 +1131,7 @@ git commit -m "docs(gates): S3 schedule range deployed — smoke, probe filters,
 ```swift
   /// 겹침(conflict:<n>)은 화면이 확인창으로 가로채지만, 문구로 떨어져도 뜻이 통하고 다시 누를 수 있게
   func testAddFeedbackConflict() {
-    XCTAssertEqual(ChatReply.addFeedback("conflict:1").text, "같은 시간에 다른 일정이 있습니다")
+    XCTAssertEqual(ChatReply.addFeedback("conflict:1").text, "같은 시간에 일정이 있습니다")
     XCTAssertTrue(ChatReply.addFeedback("conflict:1").retry)
   }
 ```
@@ -1068,9 +1182,10 @@ Expected: FAIL(컴파일 오류 — `CalendarEvent`·`conflicts` 없음).
     return "같은 시간에 '\(f.title)' 일정이 있습니다. 그래도 추가할까요?"
   }
 
-  /// 잠금화면 "추가"가 겹침으로 멈췄을 때의 로컬 알림(§10). 다른 일정의 제목은 잠금화면에 쓰지 않는다. 식별자를 고정해 두 번 탭해도 1건
+  /// 잠금화면 "추가"가 겹침으로 멈췄을 때의 로컬 알림(§10). 겹친 일정의 제목은 잠금화면에 쓰지 않는다. 식별자를 고정해 두 번 탭해도 1건.
+  /// "다른 일정"이라 하지 않는다 — 메일 초대·예약은 같은 일정이 이미 캘린더에 있는 경우가 흔하다
   public static let conflictNoticeTitle = "겹치는 일정이 있습니다"
-  public static func conflictNoticeBody(_ n: Int) -> String { "같은 시간에 다른 일정 \(n)건 · 탭해서 확인" }
+  public static func conflictNoticeBody(_ n: Int) -> String { "같은 시간에 일정 \(n)건 · 탭해서 확인" }
   public static func conflictNoticeID(_ pid: String) -> String { "conflict-\(pid)" }
 
   private static let hm: DateFormatter = {
@@ -1093,7 +1208,7 @@ Expected: FAIL(컴파일 오류 — `CalendarEvent`·`conflicts` 없음).
 `ChatReply.swift` `addFeedback`의 `default:` 앞에 더한다:
 
 ```swift
-    case let o where ProposalFlow.conflictCount(o) != nil: ("같은 시간에 다른 일정이 있습니다", true)
+    case let o where ProposalFlow.conflictCount(o) != nil: ("같은 시간에 일정이 있습니다", true)
 ```
 
 그리고 이 함수 주석의 반환 목록에 `conflict:<n>`을 더한다.
@@ -1126,10 +1241,14 @@ enum CalendarLookup {
                                       allDay: e.isAllDay, canceled: e.status == .canceled, url: e.url)
   }
 
-  /// 제안 시각의 겹침(시트·제안 탭·채팅 확인창의 미리 판정). 전체 접근이 없으면 빈 배열 — 최종 판정은 AddEventGate 가 다시 한다
-  static func conflicts(pid: String, start: Date) -> [ProposalFlow.CalendarEvent] {
+  /// 화면 조회(시트·제안 탭 행·채팅) 공유 store — 행마다·앱 활성화마다 새로 만들지 않는다(Fable N4). 읽기 전용.
+  /// fullAccess 를 확인한 뒤에만 처음 만들어진다(lazy). AddEventGate 는 자체 store 로 저장한다(직렬 구간 유지)
+  @MainActor static let store = EKEventStore()
+
+  /// 제안 시각의 겹침(시트·제안 탭·채팅 확인창의 미리 판정). 전체 접근이 없으면 빈 배열 — 최종 판정은 AddEventGate 가 다시 한다.
+  /// 메인 스레드 동기 조회(±1일). 느리면 그때 백그라운드로 옮긴다
+  @MainActor static func conflicts(pid: String, start: Date) -> [ProposalFlow.CalendarEvent] {
     guard fullAccess else { return [] }
-    let store = EKEventStore()
     let (from, to) = ProposalFlow.searchWindow(start: start)
     return ProposalFlow.conflicts(pid: pid, start: start, events: events(store, from: from, to: to))
   }
@@ -1148,13 +1267,14 @@ enum CalendarLookup {
 (2) `handleAdd`를 아래로 바꾼다(주석의 반환 목록 포함):
 
 ```swift
-  /// 스펙 §10 순서 1~5. fields: proposal_id·title·start(+09:00)·version. confirmed: 겹침을 사용자가 확인했음(앱 안 확인창 뒤에만 true)
-  /// 백그라운드 실행 시간 안에 EventKit 쓰기와 완료 핸들러가 끝나도록 네트워크 구간마다 마감을 둔다(M1-②c 리뷰):
-  /// 순서 1 조회 5초 + 순서 4 보고 5초, 둘 다 토큰 갱신 포함. 겹침이면 보고를 건너뛴다(저장 안 함)
+  /// 스펙 §10 순서 1~5. fields: proposal_id·title·start(+09:00)·version. confirmed: 겹침을 사용자가 확인했음(앱 안 확인창 뒤에만 true).
+  /// lockScreen: 잠금화면 알림 액션(델리게이트) — 겹침이면 저장 대신 로컬 알림 1건을 여기서 등록한다
+  /// 백그라운드 실행 시간 안에 EventKit 쓰기와 완료 핸들러가 끝나도록 구간마다 마감을 둔다(M1-②c 리뷰):
+  /// 순서 1 조회 5초 + 순서 4 보고 5초, 둘 다 토큰 갱신 포함. 겹침이면 보고를 건너뛰고 로컬 알림 등록 2초뿐(Codex #5)
   /// 반환: AddEventGate 결과(ok·recovered·dup·conflict:<n>·fail:<코드>) · "skip_<why>" · "invalid_payload".
-  /// 알림 액션은 conflict 면 로컬 알림으로 넘기고(델리게이트), 채팅 카드·시트는 확인창을 띄운다
+  /// 채팅 카드·시트는 conflict 면 확인창을 띄운다
   @discardableResult
-  static func handleAdd(fields f: [String: String], confirmed: Bool = false) async -> String {
+  static func handleAdd(fields f: [String: String], confirmed: Bool = false, lockScreen: Bool = false) async -> String {
     let started = Date()
     guard let pid = f["proposal_id"], UUID(uuidString: pid) != nil, let title = f["title"], let s = f["start"],
           let start = ISO8601DateFormatter().date(from: s) else {
@@ -1170,25 +1290,65 @@ enum CalendarLookup {
     let version = Int(f["version"] ?? "") ?? server?.version ?? 1
     // 2~3. 확인 → 표식 조회 → 겹침 → 저장 → 기록(한 actor 구간, await 없음)
     let outcome = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, start: start, version: version, confirmed: confirmed))
-    trace(outcome, pid: pid, started: started)
+    let conflict = ProposalFlow.conflictCount(outcome)
+    // 잠금화면이 겹침으로 멈추면 앱 확인을 유도하는 로컬 알림(§10). 결과를 action.handled 에 같이 남기려고 trace 앞에서
+    var notice: String? = nil
+    if lockScreen, let n = conflict { notice = await conflictNotice(fields: f, count: n) }
+    trace(outcome, pid: pid, started: started, notice: notice)
+    // 추가됐으면 알림 센터에 남은 겹침 알림을 지운다(탭해도 "처리됨" 시트만 뜨는 죽은 알림, Fable N5)
+    if ["ok", "recovered", "dup"].contains(outcome) {
+      UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [ProposalFlow.conflictNoticeID(pid)])
+    }
     // 4. 이 제안 1건만 보고(5초). 실패·겹침(저장 안 함)은 보고하지 않는다. 나머지 미보고분은 앱 활성화 flush 가 보낸다
-    if !outcome.hasPrefix("fail"), ProposalFlow.conflictCount(outcome) == nil { await ExecutionReporter.shared.report(proposalId: pid, within: 5) }
+    if !outcome.hasPrefix("fail"), conflict == nil { await ExecutionReporter.shared.report(proposalId: pid, within: 5) }
     return outcome
   }
 
   /// 잠금화면 "추가"가 겹침으로 멈췄을 때(스펙 §10): 저장 대신 로컬 알림 1건. 원래 제안 필드를 userInfo 에 그대로 실어
-  /// 탭하면 배너 탭 경로(ProposalReview.link → 제안 시트)로 간다. 다른 일정의 제목은 쓰지 않는다. 식별자 고정 — 두 번 탭해도 1건. 네트워크 없음
-  static func conflictNotice(fields f: [String: String], count: Int) async {
-    guard let pid = f["proposal_id"] else { return }
-    let c = UNMutableNotificationContent()
-    c.title = ProposalFlow.conflictNoticeTitle; c.body = ProposalFlow.conflictNoticeBody(count)
-    c.categoryIdentifier = ProposalReview.conflictCategory
-    var info: [String: Any] = ["proposal_id": pid]
-    for k in ["title", "start"] { if let v = f[k] { info[k] = v } }
-    if let v = f["version"].flatMap({ Int($0) }) { info["version"] = v }       // 델리게이트가 version 을 Int 로 읽는다
-    c.userInfo = info
-    try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: ProposalFlow.conflictNoticeID(pid), content: c, trigger: nil))
-    DiagLog.append("ADD conflict notice n=\(count) \(pid)")
+  /// 탭하면 배너 탭 경로(ProposalReview.link → 제안 시트)로 간다. 겹친 일정의 제목은 쓰지 않는다. 식별자 고정 — 두 번 탭해도 1건.
+  /// 네트워크 없음, 2초 마감(Codex #5: 등록이 늦어도 완료 핸들러가 밀리지 않게). 반환 ok · fail · timeout(조용히 삼키지 않고 기록)
+  static func conflictNotice(fields f: [String: String], count: Int) async -> String {
+    guard let pid = f["proposal_id"] else { return "fail" }
+    let title = f["title"], start = f["start"], version = f["version"].flatMap { Int($0) }
+    let r = await Deadline.run(seconds: 2) { () async -> String? in
+      let c = UNMutableNotificationContent()
+      c.title = ProposalFlow.conflictNoticeTitle; c.body = ProposalFlow.conflictNoticeBody(count)
+      c.categoryIdentifier = ProposalReview.conflictCategory
+      var info: [String: Any] = ["proposal_id": pid]
+      if let title { info["title"] = title }
+      if let start { info["start"] = start }
+      if let version { info["version"] = version }                        // 델리게이트가 version 을 Int 로 읽는다
+      c.userInfo = info
+      do {
+        try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: ProposalFlow.conflictNoticeID(pid), content: c, trigger: nil))
+        return "ok"
+      } catch { return "fail" }
+    }
+    let result = r ?? "timeout"
+    DiagLog.append("ADD conflict notice \(result) n=\(count) \(pid)")
+    return result
+  }
+```
+
+`dismiss`의 `DiagLog.append("DISMISS …")` 줄 아래에 더한다(무시해도 겹침 알림이 남지 않게, Fable N5):
+
+```swift
+    if result == "ok" { UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [ProposalFlow.conflictNoticeID(pid)]) }
+```
+
+`trace`를 아래로 바꾼다(`notice` 필드 — 잠금화면 겹침 알림 결과. 일정 내용 없음):
+
+```swift
+  private static func trace(_ result: String, pid: String, started: Date, notice: String? = nil) {
+    Task {
+      let st = await AppState.snapshot()
+      let auth = EKEventStore.authorizationStatus(for: .event).rawValue
+      DiagLog.append("ADD \(result) \(pid) bg=\(st.bg) auth=\(auth)")
+      var base: [String: Any] = ["result": result, "dup": result == "dup", "proposal_id": pid, "auth": auth,
+                                 "elapsed_ms": Int(Date().timeIntervalSince(started) * 1000)]
+      if let notice { base["notice"] = notice }
+      Trace.log("action.handled", base.merging(st.traceFields) { _, new in new })
+    }
   }
 ```
 
@@ -1235,15 +1395,11 @@ actor AddEventGate {
 }
 ```
 
-(5) `NotificationDelegate`의 ADD 분기 끝 `Task { await NotificationActions.handleAdd(fields: fields); DispatchQueue.main.async { done.value() } }`를 아래로 바꾼다 — **완료 핸들러는 여전히 이 한 곳에서 메인 1회**:
+(5) `NotificationDelegate`의 ADD 분기 끝 `Task { await NotificationActions.handleAdd(fields: fields); DispatchQueue.main.async { done.value() } }`에서 호출만 `handleAdd(fields: fields, lockScreen: true)`로 바꾼다 — **구조와 완료 핸들러 위치는 그대로(이 한 곳에서 메인 1회)**. 겹침이면 `handleAdd` 안에서 로컬 알림(2초 마감)을 등록하고 돌아온다:
 
 ```swift
-    Task {
-      let outcome = await NotificationActions.handleAdd(fields: fields)
-      // 겹침이면 저장하지 않았다 — 앱 확인을 유도하는 로컬 알림 1건(네트워크 없음, 5초 마감 안). 그 뒤 기존처럼 완료
-      if let n = ProposalFlow.conflictCount(outcome) { await NotificationActions.conflictNotice(fields: fields, count: n) }
-      DispatchQueue.main.async { done.value() }
-    }
+    // 겹침이면 handleAdd 가 저장 대신 로컬 알림 1건을 등록하고 돌아온다(네트워크 없음, 2초 마감). 그 뒤 기존처럼 완료
+    Task { await NotificationActions.handleAdd(fields: fields, lockScreen: true); DispatchQueue.main.async { done.value() } }
 ```
 
 - [ ] **Step 6: 앱 — 제안 시트·탭 행, 채팅 카드**
@@ -1364,7 +1520,7 @@ struct ProposalActionsView: View {
 - [ ] **Step 7: 전체 테스트·빌드**
 
 Run: `pgrep -x deno; vm_stat | grep -E 'free|compressor'; cd ios && ./scripts/sim.sh gen && ./scripts/sim.sh test && ./scripts/sim.sh build`
-Expected: `EruriCoreTests` 0 failed(FM 2 skipped는 기존과 같음), `** BUILD SUCCEEDED **`. 경고로 Swift 6 동시성 오류가 새로 생기지 않는다(`CalendarLookup`은 격리 없는 enum이라 `AddEventGate` actor 안에서 `await` 없이 부른다 — `await`가 필요하다는 오류가 나면 설계가 깨진 것이니 멈추고 보고).
+Expected: `EruriCoreTests` 0 failed(FM 2 skipped는 기존과 같음), `** BUILD SUCCEEDED **`. 경고로 Swift 6 동시성 오류가 새로 생기지 않는다(`CalendarLookup.events`는 격리 없는 함수라 `AddEventGate` actor 안에서 `await` 없이 부른다 — `await`가 필요하다는 오류가 나면 설계가 깨진 것이니 멈추고 보고. 공유 `store`·`conflicts`는 `@MainActor`라 화면에서만 부른다).
 
 - [ ] **Step 8: 커밋**
 
@@ -1377,13 +1533,13 @@ git commit -m "feat(ios): overlap check before adding a proposal — confirm dia
 
 ---
 
-### Task C1: 채팅 "기기 캘린더" 절 · 제안 카드 상태 · 거절 대체 문구 (0.8.0 업로드 · 실기기 게이트)
+### Task C1: 채팅 "기기 캘린더" 절 · 제안 카드 상태 · 재조회 (0.8.0 업로드 · 실기기 게이트)
 
 **Files:**
 - Create: `ios/Packages/EruriCore/Sources/EruriCore/DeviceCalendar.swift`
 - Modify: `ios/Packages/EruriCore/Sources/EruriCore/ChatReply.swift` (`Answer.schedule`, `Schedule`)
 - Modify: `ios/App/CalendarLookup.swift` (`scheduleEvents`, `cardStatuses`)
-- Modify: `ios/App/ChatView.swift` (`Turn`, `send`, `readCalendar`, `answerRows`, `calendarRows`, `proposalCard`)
+- Modify: `ios/App/ChatView.swift` (`Turn`, `send`, `readCalendar`, `refreshCalendars`, `answerRows`, `calendarRows`, `proposalCard`, `runAdd`, `scenePhase` 훅)
 - Modify: `ios/App/ProposalsView.swift` (`CalendarAccessPrompt` 추가)
 - Modify: `ios/App/Info.plist` (`NSCalendarsFullAccessUsageDescription`)
 - Test: `ios/Packages/EruriCore/Tests/EruriCoreTests/DeviceCalendarTests.swift`(생성), `ChatReplyTests.swift`
@@ -1391,7 +1547,7 @@ git commit -m "feat(ios): overlap check before adding a proposal — confirm dia
 
 **Interfaces:**
 - Consumes: S3 `POST /chat` `schedule: {from, to} | null`, C2 `ProposalFlow.CalendarEvent`·`conflicts`·`CalendarLookup.events`/`value`/`fullAccess`.
-- Produces(EruriCore): `ChatReply.Answer.schedule: ChatReply.Schedule?`, `public struct ChatReply.Schedule: Decodable, Sendable, Equatable { from: String; to: String; var interval: DateInterval? }`; `public enum DeviceCalendar { maxLines = 5; header; emptyText; accessText; visible(_:); lines(_:) -> (lines: [String], more: Int); label(_:); refusalText(events:) -> String?; enum CardStatus { clear, inCalendar, conflict }; cardStatus(pid:title:start:events:); statusText(_:) }`. 앱: `CalendarLookup.scheduleEvents(_ interval: DateInterval) -> [ProposalFlow.CalendarEvent]`, `CalendarLookup.cardStatuses(_ cards: [(pid: String, title: String, start: Date)]) -> [String: DeviceCalendar.CardStatus]`, `struct CalendarAccessPrompt: View(message:onChange:)`.
+- Produces(EruriCore): `ChatReply.Answer.schedule: ChatReply.Schedule?`, `public struct ChatReply.Schedule: Decodable, Sendable, Equatable { from: String; to: String; var interval: DateInterval? }`(거꾸로·32일 초과면 nil — 서버 31일 제한을 앱도 지킨다, Codex #8); `public enum DeviceCalendar { maxLines = 5; header(_ n: Int) -> String; emptyText; accessText; visible(_:); lines(_:) -> (lines: [String], more: Int); label(_:); enum CardStatus { clear, inCalendar, conflict }; cardStatus(pid:title:start:events:); statusText(_:) }`(거절 대체 문구 없음 — Codex #4). 앱: `@MainActor CalendarLookup.scheduleEvents(_ interval: DateInterval) -> [ProposalFlow.CalendarEvent]`, `@MainActor CalendarLookup.cardStatuses(_ cards: [(pid: String, title: String, start: Date)]) -> [String: DeviceCalendar.CardStatus]`(둘 다 공유 `store`), `struct CalendarAccessPrompt: View(message:onChange:)`, `ChatView.refreshCalendars()`(앱 활성화·카드 추가 성공 뒤 마지막 5개 턴 재조회, Codex #6).
 
 - [ ] **Step 1: 실패하는 테스트**
 
@@ -1401,7 +1557,7 @@ Create `ios/Packages/EruriCore/Tests/EruriCoreTests/DeviceCalendarTests.swift`:
 import XCTest
 @testable import EruriCore
 
-/// 스펙 §9 "일정 질문과 기기 캘린더": 절 문구(서울, 최대 5 + 외 N건), 거절 대체 문구, 제안 카드 상태
+/// 스펙 §9 "일정 질문과 기기 캘린더": 절 머리·문구(서울, 최대 5 + 외 N건), 제안 카드 상태
 final class DeviceCalendarTests: XCTestCase {
   private let t = ISO8601DateFormatter().date(from: "2026-10-03T05:00:00Z")!            // 서울 10/3(토) 14:00
   private func ev(_ id: String, _ offset: TimeInterval, title: String? = nil, allDay: Bool = false, canceled: Bool = false,
@@ -1423,11 +1579,11 @@ final class DeviceCalendarTests: XCTestCase {
     XCTAssertEqual(DeviceCalendar.lines([]).lines, []); XCTAssertEqual(DeviceCalendar.lines([]).more, 0)
   }
 
-  /// 거절인데 그 기간 일정이 있으면 거절 문구 대신(취소된 일정은 세지 않는다)
-  func testRefusalText() {
-    XCTAssertEqual(DeviceCalendar.refusalText(events: [ev("a", 0), ev("b", 3600)]), "저장된 메일·문자에는 없고, 캘린더에 2건 있습니다")
-    XCTAssertNil(DeviceCalendar.refusalText(events: [ev("c", 0, canceled: true)]))
-    XCTAssertNil(DeviceCalendar.refusalText(events: []))
+  /// 절 머리: 보일 일정 수(취소 제외)를 붙인다. 거절 답변이어도 답 문구는 바꾸지 않고 이 머리만 보인다(Codex #4 — 기간 일치 ≠ 대상 일치)
+  func testHeader() {
+    XCTAssertEqual(DeviceCalendar.header(DeviceCalendar.visible([ev("a", 0), ev("b", 3600), ev("c", 0, canceled: true)]).count),
+                   "기기 캘린더 · 이 기간 일정 2건")
+    XCTAssertEqual(DeviceCalendar.header(0), "기기 캘린더")
   }
 
   /// 같은 표식이거나 시작(분)·제목이 같으면 이미 있음, 아니면 §10 겹침이면 겹침, 맞닿음은 없음
@@ -1438,7 +1594,7 @@ final class DeviceCalendarTests: XCTestCase {
     XCTAssertEqual(DeviceCalendar.cardStatus(pid: "p-1", title: "합성 회의", start: t, events: [ev("late", 3600)]), .clear)
     XCTAssertEqual(DeviceCalendar.cardStatus(pid: "p-1", title: "합성 회의", start: t, events: []), .clear)
     XCTAssertEqual(DeviceCalendar.statusText(.inCalendar), "이미 캘린더에 있음")
-    XCTAssertEqual(DeviceCalendar.statusText(.conflict), "같은 시간에 다른 일정 있음")
+    XCTAssertEqual(DeviceCalendar.statusText(.conflict), "같은 시간에 일정 있음")
     XCTAssertNil(DeviceCalendar.statusText(.clear))
   }
 }
@@ -1447,7 +1603,7 @@ final class DeviceCalendarTests: XCTestCase {
 `ChatReplyTests.swift`에 추가:
 
 ```swift
-  /// S3 schedule: 서울 날짜 경계 구간. 키 없음(0.7.x 서버)·null·거꾸로 된 구간은 nil
+  /// S3 schedule: 서울 날짜 경계 구간. 키 없음(0.7.x 서버)·null·거꾸로 된 구간·32일 초과는 nil
   func testScheduleDecode() throws {
     let s = #""schedule":{"from":"2026-10-03T00:00:00+09:00","to":"2026-10-03T23:59:59+09:00"},"hits":"#
     let a = try XCTUnwrap(ChatReply.decode(Data(body.replacingOccurrences(of: #""hits":"#, with: s).utf8)))
@@ -1459,6 +1615,8 @@ final class DeviceCalendarTests: XCTestCase {
     XCTAssertNil(try XCTUnwrap(ChatReply.decode(Data(null.utf8))).schedule)
     let reversed = body.replacingOccurrences(of: #""hits":"#, with: #""schedule":{"from":"2026-10-04T00:00:00+09:00","to":"2026-10-03T23:59:59+09:00"},"hits":"#)
     XCTAssertNil(try XCTUnwrap(ChatReply.decode(Data(reversed.utf8))).schedule?.interval)
+    let long = body.replacingOccurrences(of: #""hits":"#, with: #""schedule":{"from":"2026-10-01T00:00:00+09:00","to":"2026-11-29T23:59:59+09:00"},"hits":"#)
+    XCTAssertNil(try XCTUnwrap(ChatReply.decode(Data(long.utf8))).schedule?.interval)          // 60일 → 읽지 않는다(Codex #8)
   }
 ```
 
@@ -1478,7 +1636,8 @@ import Foundation
 /// 캘린더 내용은 기기 밖으로 나가지 않는다(§12 통제 2)
 public enum DeviceCalendar {
   public static let maxLines = 5
-  public static let header = "기기 캘린더"
+  /// 절 머리. 일정이 있으면 "기기 캘린더 · 이 기간 일정 N건" — 거절 답변이어도 답 문구는 그대로 두고 이 머리로만 알린다(Codex #4)
+  public static func header(_ n: Int) -> String { n > 0 ? "기기 캘린더 · 이 기간 일정 \(n)건" : "기기 캘린더" }
   public static let emptyText = "이 기간에 등록된 일정 없음"
   public static let accessText = "캘린더 접근을 허용하면 등록된 일정도 함께 확인합니다"
 
@@ -1497,11 +1656,6 @@ public enum DeviceCalendar {
     let day = "\(c.month ?? 0)/\(c.day ?? 0)(\(weekdays[((c.weekday ?? 1) + 6) % 7]))"
     return "\(day) \(e.allDay ? "종일" : String(format: "%02ld:%02ld", c.hour ?? 0, c.minute ?? 0)) \(e.title)"
   }
-  /// 거절 답변인데 그 기간 일정이 있으면 거절 문구 대신 보일 문장. 없으면 nil(거절 문구 그대로)
-  public static func refusalText(events: [ProposalFlow.CalendarEvent]) -> String? {
-    let n = visible(events).count
-    return n > 0 ? "저장된 메일·문자에는 없고, 캘린더에 \(n)건 있습니다" : nil
-  }
 
   public enum CardStatus: Equatable, Sendable { case clear, inCalendar, conflict }
   /// 제안 카드 상태: 같은 제안 표식이거나 시작 시각(분)·제목이 같은 일정이 있으면 inCalendar, 아니면 §10 겹침이 있으면 conflict
@@ -1518,7 +1672,7 @@ public enum DeviceCalendar {
     switch s {
     case .clear: nil
     case .inCalendar: "이미 캘린더에 있음"
-    case .conflict: "같은 시간에 다른 일정 있음"
+    case .conflict: "같은 시간에 일정 있음"
     }
   }
 
@@ -1545,9 +1699,10 @@ public enum DeviceCalendar {
 ```swift
   public struct Schedule: Decodable, Sendable, Equatable {
     public let from: String; public let to: String
-    /// [from, to] 구간. 읽지 못하거나 거꾸로면 nil(앱은 캘린더를 읽지 않는다)
+    /// [from, to] 구간. 읽지 못하거나 거꾸로거나 32일을 넘으면 nil(앱은 캘린더를 읽지 않는다 — 서버 31일 제한을 앱도 지킨다)
     public var interval: DateInterval? {
-      guard let a = ChatReply.iso.date(from: from), let b = ChatReply.iso.date(from: to), a <= b else { return nil }
+      guard let a = ChatReply.iso.date(from: from), let b = ChatReply.iso.date(from: to), a <= b,
+            b.timeIntervalSince(a) <= 32 * 86_400 else { return nil }
       return DateInterval(start: a, end: b)
     }
   }
@@ -1565,10 +1720,9 @@ Expected: PASS.
 `ios/App/CalendarLookup.swift`의 enum 끝에 더한다:
 
 ```swift
-  /// "기기 캘린더" 절(§9): 서버가 준 일정 기간(≤ 31일)의 일정. 생일·구독(공휴일) 캘린더는 뺀다. 진단 로그에는 개수만
-  static func scheduleEvents(_ interval: DateInterval) -> [ProposalFlow.CalendarEvent] {
+  /// "기기 캘린더" 절(§9): 서버가 준 일정 기간(≤ 31일)의 일정. 생일·구독(공휴일) 캘린더는 뺀다. 진단 로그에는 개수만. 공유 store
+  @MainActor static func scheduleEvents(_ interval: DateInterval) -> [ProposalFlow.CalendarEvent] {
     guard fullAccess else { return [] }
-    let store = EKEventStore()
     let cals = store.calendars(for: .event).filter { $0.type != .birthday && $0.type != .subscription }
     guard !cals.isEmpty else { return [] }
     let found = store.events(matching: store.predicateForEvents(withStart: interval.start, end: interval.end, calendars: cals)).compactMap(value)
@@ -1576,10 +1730,9 @@ Expected: PASS.
     return found
   }
 
-  /// 채팅 제안 카드 상태(§9): 카드마다 제안 시각 ±1일을 읽어 판정
-  static func cardStatuses(_ cards: [(pid: String, title: String, start: Date)]) -> [String: DeviceCalendar.CardStatus] {
+  /// 채팅 제안 카드 상태(§9): 카드마다 제안 시각 ±1일을 읽어 판정. 공유 store
+  @MainActor static func cardStatuses(_ cards: [(pid: String, title: String, start: Date)]) -> [String: DeviceCalendar.CardStatus] {
     guard fullAccess, !cards.isEmpty else { return [:] }
-    let store = EKEventStore()
     return cards.reduce(into: [:]) { out, c in
       let (from, to) = ProposalFlow.searchWindow(start: c.start)
       out[c.pid] = DeviceCalendar.cardStatus(pid: c.pid, title: c.title, start: c.start, events: events(store, from: from, to: to))
@@ -1646,8 +1799,8 @@ struct CalendarAccessPrompt: View {
 
 ```swift
   @ViewBuilder private func answerRows(_ t: Turn, _ a: ChatReply.Answer) -> some View {
-    // 거절인데 그 기간 기기 캘린더에 일정이 있으면 거절 문구 대신(기기 안 문구, §9)
-    Text(a.refused ? DeviceCalendar.refusalText(events: t.calendar ?? []) ?? a.answer : a.answer)
+    // 거절이어도 답 문구는 그대로(Codex #4). 기기 캘린더 절이 아래에서 "이 기간 일정 N건"을 따로 알린다
+    Text(a.answer)
     ForEach(a.citations) { c in
       HStack {
         NavigationLink {
@@ -1689,7 +1842,7 @@ struct CalendarAccessPrompt: View {
     } else if let events = t.calendar {
       let l = DeviceCalendar.lines(events)
       VStack(alignment: .leading, spacing: 2) {
-        Text(DeviceCalendar.header).font(.caption).bold()
+        Text(DeviceCalendar.header(DeviceCalendar.visible(events).count)).font(.caption).bold()
         if l.lines.isEmpty { Text(DeviceCalendar.emptyText).font(.caption2).foregroundStyle(.secondary) }
         ForEach(Array(l.lines.enumerated()), id: \.offset) { Text($0.element).font(.caption2) }
         if l.more > 0 { Text("외 \(l.more)건").font(.caption2).foregroundStyle(.secondary) }
@@ -1707,7 +1860,18 @@ struct CalendarAccessPrompt: View {
     }
     turns[idx].cardStatus = CalendarLookup.cardStatuses(cards)
   }
+
+  /// 앱 활성화(설정에서 권한을 바꾸고 돌아옴·캘린더 앱에서 일정을 바꿈)·카드 추가 성공 뒤(Codex #6): 마지막 5개 턴만 다시 읽는다.
+  /// 전체 접근이 없으면 지운다(권한 철회). EventKit 변경 알림은 구독하지 않는다
+  private func refreshCalendars() {
+    for i in turns.indices.suffix(5) {
+      guard let a = turns[i].answer else { continue }
+      if CalendarLookup.fullAccess { readCalendar(i, a) } else { turns[i].calendar = nil; turns[i].cardStatus = [:] }
+    }
+  }
 ```
+
+기존 `scenePhase` 훅 `.onChange(of: scenePhase) { _, p in if p == .active { dictation.refresh() } else { … } }`의 `.active` 분기에 `refreshCalendars()`를 더한다(`dictation.refresh(); refreshCalendars()`). C2의 `runAdd` 끝 `adds[c.id] = fb.retry ? … : …` 다음 줄에 `if !fb.retry { refreshCalendars() }`를 더한다(추가 뒤 카드 상태 "이미 캘린더에 있음"·절이 바로 바뀐다).
 
 (5) `proposalCard` 시그니처에 `status: DeviceCalendar.CardStatus`를 더하고, 버튼 아래(`switch state` 앞)에 상태 줄을 넣는다:
 
@@ -1734,43 +1898,48 @@ Expected: 0 failed, `** BUILD SUCCEEDED **`.
 
 ```bash
 git add ios/App/CalendarLookup.swift ios/App/ChatView.swift ios/App/ProposalsView.swift ios/App/Info.plist ios/Packages/EruriCore
-git commit -m "feat(ios): chat shows the device calendar for schedule questions, proposal card status, refusal replaced when the calendar has events (0.8.0, C1)"
+git commit -m "feat(ios): chat shows the device calendar for schedule questions and proposal card status, refreshed on activation and after adding (0.8.0, C1)"
 cd ios && ./scripts/testflight.sh
 ```
 Expected: `Upload succeeded`, 빌드 `0.8.0 (<yyyymmddHHMM>)`. 업로드는 S3 배포와 무관하지만 **실기기 게이트(Step 9)는 S3 배포(`gates.md` S3 통과) 뒤**에 한다.
 
 - [ ] **Step 9: 실기기 게이트 (사용자 옆, `sonnet`/`medium` 또는 `opus`/`medium`)**
 
+시점(Global Constraints "실기기 게이트와 Gmail 측정"): S3 게이트 통과 뒤, **③b2 창 밖**, ③c 측정 시각과 30분 이상 떨어진 때, ⑩b 실행 중이 아닐 때. 세션 시작 전 메인이 Gmail 원장·`gates.md`로 확인한다. 끝나면 남은 합성 제안은 제목에 `합성`이 든 것만 한 건씩 "무시"("전체 무시" 금지).
+
 준비: TestFlight 0.8.0 설치, 캘린더 "전체 접근" 허용. 날짜 `D` = 오늘 + 3일(푸시 문구 `{D+3}`와 같은 날), `E` = 오늘 + 5일. 사용자가 만드는 일정 제목은 합성 문구(`합성 겹침`, `합성 일정 가/나`)만 쓰고, 끝나면 사용자가 지운다. 서버 확인은 id·상태만:
 
 ```bash
 # 머리 2줄
-s "select at, fields->>'result' r, fields->>'bg' bg from device_traces where user_id = \$1 and event = 'action.handled' order by at desc limit 3" "$U"
+s "select at, fields->>'result' r, fields->>'notice' notice, fields->>'elapsed_ms' ms, fields->>'bg' bg from device_traces where user_id = \$1 and event = 'action.handled' order by at desc limit 3" "$U"
 s "select id, status, updated_at from proposals where user_id = \$1 order by created_at desc limit 3" "$U"
 ```
 
 **C2 (겹침 확인)**:
 1. 사용자가 캘린더 앱에서 `D` 15:00–16:00 `합성 겹침`을 만든다. 기기 잠금 20초 뒤 Mac: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/send-phrases.ts --only push` → 잠금화면 "일정 제안" → 길게 눌러 "캘린더에 추가" → Face ID(앱을 열지 않는다).
-   기대: 캘린더에 `D` 15:30 ERURI 일정 **+0**, 잠금화면에 "겹치는 일정이 있습니다 / 같은 시간에 다른 일정 1건 · 탭해서 확인" **1건**(다른 일정 제목 없음), `action.handled` 최신 `r=conflict:1`, 제안 `status=proposed`.
+   기대: 캘린더에 `D` 15:30 ERURI 일정 **+0**, 잠금화면에 "겹치는 일정이 있습니다 / 같은 시간에 일정 1건 · 탭해서 확인" **1건**(겹친 일정 제목 없음), `action.handled` 최신 `r=conflict:1`·`notice=ok`·`ms < 10000`(Codex #5), 제안 `status=proposed`.
 2. 그 알림을 탭 → 앱이 열리고 제안 시트: "겹치는 일정: 15:00–16:00 합성 겹침", 버튼 "겹쳐도 추가" → 누르면 확인창("같은 시간에 '합성 겹침' 일정이 있습니다. 그래도 추가할까요?") → "추가".
-   기대: 캘린더 `D` 15:30 ERURI 일정 **+1**, 시트 "캘린더에 추가했습니다", 제안 `status=succeeded`(보고 1초 안팎).
+   기대: 캘린더 `D` 15:30 ERURI 일정 **+1**, 시트 "캘린더에 추가했습니다", 제안 `status=succeeded`(보고 1초 안팎), 알림 센터에 그 겹침 알림이 **남지 않는다**(Fable N5).
 3. (회귀, 겹침 없음) 사용자가 `합성 겹침`과 방금 추가된 ERURI 일정을 지운다. 다시 `send-phrases.ts --only push` → 잠금화면 "캘린더에 추가" → 기대: **+1**, `r=ok`, 로컬 알림 없음, `succeeded`(M1-②d 게이트 B와 같음).
-4. (제안 탭·채팅 카드) 다시 `send-phrases.ts --only push` 하고 알림은 **누르지 않는다**. 사용자가 `D` 15:00–16:00 `합성 겹침`을 다시 만든다. 앱 "제안" 탭 → 그 행에 "겹치는 일정: 15:00–16:00 합성 겹침"·"겹쳐도 추가"가 보이면 누르지 않고 "취소"까지만 확인. 채팅에서 "합성의원 진료 예약 언제야?" → 답의 제안 카드에 "같은 시간에 다른 일정 있음" → 카드 "캘린더에 추가" → 확인창 → "추가" → **+1**, 카드 "캘린더에 추가했습니다", `succeeded`.
-5. (미리 판정 뒤 변경, Review Focus 1) 다시 `send-phrases.ts --only push`, 알림은 누르지 않는다. `합성 겹침`과 앞 단계의 ERURI 일정을 지우고 앱 "제안" 탭에서 그 행이 "캘린더에 추가"(겹침 없음)로 보이는 것을 확인 → 앱을 벗어나지 않고 **제어 센터 등으로 앱을 비활성화하지 않은 채** 다른 기기(Mac 캘린더, 같은 계정)에서 `D` 15:00–16:00 `합성 겹침`을 만들고 동기화를 기다린 뒤(최대 1분) 행의 "캘린더에 추가"를 누른다. 기대: 저장되지 않고 확인창이 뜬다 → "취소" → 캘린더 +0, 제안 `proposed`. (같은 계정 다른 기기가 없으면 이 단계는 "해당 기기 없음"으로 적고 시뮬레이터 대체는 하지 않는다 — 판정 논리는 C2 단위 테스트가 본다.)
+4. (제안 탭·채팅 카드) 다시 `send-phrases.ts --only push` 하고 알림은 **누르지 않는다**. 사용자가 `D` 15:00–16:00 `합성 겹침`을 다시 만든다. 앱 "제안" 탭 → 그 행에 "겹치는 일정: 15:00–16:00 합성 겹침"·"겹쳐도 추가"가 보이면 누르지 않고 "취소"까지만 확인. 채팅에서 "합성의원 진료 예약 언제야?" → 답의 제안 카드에 "같은 시간에 일정 있음" → 카드 "캘린더에 추가" → 확인창 → "추가" → **+1**, 카드 "캘린더에 추가했습니다"와 상태 줄 "이미 캘린더에 있음"(추가 뒤 재조회, Codex #6), `succeeded`.
+5. (미리 판정 뒤 변경, Review Focus 1 — **필수**, Codex #7) 다시 `send-phrases.ts --only push`, 알림은 누르지 않는다. `합성 겹침`과 앞 단계의 ERURI 일정을 지우고 앱 "제안" 탭에서 그 행이 "캘린더에 추가"(겹침 없음)로 보이는 것을 확인 → 앱을 벗어나지 않고 **앱을 비활성화하지 않은 채**(활성화 재판정이 끼지 않게) 다른 경로로 `D` 15:00–16:00 `합성 겹침`을 넣는다:
+   - 기본: 이 Mac의 캘린더 앱(기기와 같은 iCloud 계정)에서 만들고 동기화를 기다린다(최대 1분, 기기 캘린더 앱은 열지 않는다).
+   - 계정이 다르면 대체: 기기 단축어 "개인용 자동화 → 특정 시각(1~2분 뒤), 확인 없이 실행 → 캘린더 '새로운 이벤트 추가'(`합성 겹침`, `D` 15:00–16:00)"를 만들어 두고 ERURI를 띄운 채 그 시각을 기다린다.
+   그 뒤 행의 "캘린더에 추가"를 누른다. 기대: 저장되지 않고 확인창이 뜬다 → "취소" → 캘린더 +0, 제안 `proposed`. 두 경로 모두 못 하면 C2는 **대기**로 적는다(시뮬레이터 대체·단위 테스트로 마감하지 않는다 — AGENTS.md §5-8). 반복 일정은 EventKit 이 발생분을 펼쳐 `Date`로 주고 판정은 `Date` 비교뿐이라 따로 재지 않는다(Fable #7).
 6. 충돌 로그: 설정 → 개인정보 보호 및 보안 → 분석 및 향상 → 분석 데이터에 이 세션 시각의 `Eruri` 항목 없음(완료 핸들러 메인 1회, PoC-5).
 
 **C1 (기기 캘린더 표시)**:
 1. 사용자가 `E` 10:00 `합성 일정 가`, `E` 14:00 `합성 일정 나`를 만든다. 채팅 "<E의 M>월 <E의 D>일 일정 있어?" → 답 아래 "기기 캘린더" 절에 `M/D(요) 10:00 합성 일정 가`·`M/D(요) 14:00 합성 일정 나` 2줄.
 2. 일정이 없는 날(오늘 + 20일, 사용자 캘린더에 그날 일정이 없는지 먼저 확인)로 같은 질문 → "이 기간에 등록된 일정 없음".
-3. (거절 + 캘린더) "<E> 합성 화성 탐사 일정 있어?" → 서버 거절이면 거절 문구 대신 "저장된 메일·문자에는 없고, 캘린더에 2건 있습니다", "보관함에서 보기" 없음. 서버가 거절하지 않으면 답 그대로 + 절 2줄로 적는다.
-4. (권한) 설정 → ERURI → 캘린더 → "이벤트 추가만"으로 바꾸고 1의 질문 → 절 없음, 한 줄 "캘린더 접근을 허용하면 등록된 일정도 함께 확인합니다" + "설정에서 허용하기", 답변은 그대로. 끝나면 "전체 접근"으로 되돌린다.
+3. (거절 + 캘린더) "<E> 합성 화성 탐사 일정 있어?" → 서버 거절이면 **거절 문구 그대로** + 절 머리 "기기 캘린더 · 이 기간 일정 2건"과 2줄, "보관함에서 보기" 없음(Codex #4 — 거절 문구를 캘린더 건수로 바꾸지 않는다). 서버가 거절하지 않으면 답 그대로 + 절 2줄로 적는다.
+4. (권한·재조회) 설정 → ERURI → 캘린더 → "이벤트 추가만"으로 바꾸고 1의 질문 → 절 없음, 한 줄 "캘린더 접근을 허용하면 등록된 일정도 함께 확인합니다" + "설정에서 허용하기", 답변은 그대로. "설정에서 허용하기"로 "전체 접근"을 켜고 돌아온다 → 앱이 종료되지 않았으면 같은 턴에 절 2줄이 뜬다(활성화 재조회, Codex #6). 앱이 다시 시작됐으면(iOS 가 권한 변경 때 종료) 그 사실만 적는다.
 5. (기기 밖으로 안 나감) `grep -n 'functions/v1/chat' ios/App/ChatView.swift` → 요청 본문이 `["question": q]`뿐. 앱 설정 → 진단(있으면)의 DiagLog에 `CAL schedule n=2`처럼 개수만 있고 일정 제목 없음. `s "select count(*) from device_traces where user_id = \$1 and at > now() - interval '1 hour' and fields::text like '%합성 일정%'" "$U"` → 0.
 
-통과 기준: C2 1~4·6 기대대로(5는 해당 기기가 있을 때), C1 1~5 기대대로. 어긋나면 그 단계의 관찰(개수·상태·문구)을 적고 원인 조치 후 0.8.1로 다시 잰다.
+통과 기준: C2 1~6 기대대로(5 포함 — 못 재면 C2 대기), C1 1~5 기대대로. 어긋나면 그 단계의 관찰(개수·상태·문구)을 적고 원인 조치 후 0.8.1로 다시 잰다. 끝나면 사용자가 만든 합성 일정을 지우고 남은 합성 제안을 개별 무시한다.
 
 - [ ] **Step 10: 기록 커밋**
 
-`gates.md` 행 `C2`(게이트 = C2 1~6, 근거 = 빌드·시각·`r=` 값·제안 id·status·캘린더 증감 개수)와 `C1`(게이트 = C1 1~5, 근거 = 줄 수·문구 일치 여부·grep 결과·count 0). 사용자가 만든 합성 일정을 지웠는지 적는다.
+`gates.md` 행 `C2`(게이트 = C2 1~6, 근거 = 빌드·시각·`r=`·`notice`·`ms` 값·제안 id·status·캘린더 증감 개수·5단계 경로(Mac/단축어))와 `C1`(게이트 = C1 1~5, 근거 = 줄 수·문구 일치 여부·grep 결과·count 0). 사용자가 만든 합성 일정을 지웠는지 적는다.
 
 ```bash
 git add docs/superpowers/phase1/gates.md
@@ -1783,23 +1952,57 @@ git commit -m "docs(gates): 0.8.0 device gates — overlap check (lock screen no
 
 계획이 스펙·Fable 결정의 빈칸을 채우거나 문구를 좁힌 곳이다. 리뷰(Codex·Fable)와 메인이 판정한다. ★는 스펙 `e99f208`에 이미 이 계획의 선택으로 적었다(뒤집으면 스펙도 고친다).
 
-1. ★ **숫자 어절 규칙을 좁혔다**: Fable B-3 문구는 "숫자가 든 어절은 원형만"인데, 그러면 `10월에`·`3일에`·`14시에`가 본문의 `10월`·`3일`·`14시`에 맞지 않는다(Review Focus 3). 계획은 "숫자로 끝나는 변형만 금지"(`10월`→`10` 금지, `10월에`→`10월` 허용). Fable 문구 그대로 가려면 S2 SQL 조건을 `t !~ '[0-9]'`로 바꾸고 테스트의 `10월에` 단언을 뺀다.
-2. **facts 후보의 구별 조건에 받은 기간을 넣었다**: Fable은 "가맹점 또는 일정 기간"만 적었다. 계획은 "`kinds`만으로 나온 것이 아니면 후보" — 받은 기간(`date_from/to`)으로 걸러진 facts도 후보다(S1 `factsDistinct`). 받은 기간을 빼려면 S1·S3의 `factsDistinct`에서 날짜 조건을 `event_from/to`로만.
+1. ★ **숫자 어절 규칙을 좁혔다**: Fable B-3 문구는 "숫자가 든 어절은 원형만"인데, 그러면 `10월에`·`3일에`·`14시에`가 본문의 `10월`·`3일`·`14시`에 맞지 않는다(Review Focus 3). 계획은 "숫자로 끝나는 변형만 금지"(`10월`→`10` 금지, `10월에`→`10월` 허용) + 리뷰 반영으로 "3자 이상 원형에서 조사를 뗀 경우 허용"(`1234는`→`1234`)과 "맨숫자 1~2자리 토큰 제외"(Codex #3·Fable N6, 스펙 §9 갱신). `2026년`→`2026`은 `년`이 조사가 아니라 막힌다.
+2. **facts 후보의 구별 조건에 받은 기간을 넣었다**: Fable은 "가맹점 또는 일정 기간"만 적었다. 계획은 "`kinds`만으로 나온 것이 아니면 후보" — 가맹점 ∨ 받은 기간 ∨ (일정 기간 ∧ kinds ∋ event·task)(S1·S3 `factsDistinct`, 리뷰 반영 뒤 일정 기간은 event·task 에만 걸리므로 그 종류일 때만). 혼합 kinds(event+purchase)의 purchase 행은 종류로만 걸린 채 후보가 될 수 있다 — 수용.
 3. ★ **`schedule` 조건**: `kinds ∋ event` + 양 끝 + 31일 이하. 할 일(`task`)만 있는 질문·한쪽만 있는 범위("10월 3일 이후")·긴 범위("올해")는 `null`(캘린더 절 없음). 31일은 계획 값이다.
 4. ★ **겹침 구간은 저장 길이 1시간**: Fable은 `[start, end ?? start+1h)`인데 `AddEventGate`는 제안 `end`와 무관하게 1시간으로 저장한다(F8) — 판정과 저장을 맞췄다. 제안 `end`를 저장에 쓰게 되면 `ProposalFlow.conflicts`에 `end`를 넘긴다(후속).
 5. ★ **겹침 제외 목록**: 종일·취소·같은 제안 표식만. "한가함(free)"으로 표시된 일정, 구독 캘린더의 시각 일정은 겹침으로 센다. "기기 캘린더" 절은 생일·구독 캘린더를 빼지만 겹침 판정은 빼지 않는다(구독 공휴일은 종일이라 어차피 제외).
 6. ★ **"이미 캘린더에 있음"**: 같은 제안 표식이거나 시작 시각(분)·제목(앞뒤 공백 제거) 완전 일치. 그때도 추가 버튼은 남긴다(상태 줄만). 인용에는 일정 시각이 없어 상태를 붙이지 않는다(Fable C의 "인용된 일정마다"를 제안 카드로 좁힘).
 7. ★ **로컬 알림 카테고리 `ADD_EVENT_CONFLICT`를 새로 둔다**(버튼 없음). `ADD_EVENT`를 재사용하면 길게 눌렀을 때 "캘린더에 추가"가 다시 떠 같은 겹침 알림이 반복된다.
 8. **필터 사용자 메시지에 요일을 넣었다**(`오늘(서울): 2026-10-01(목)`) — "이번 주 토요일"·"다음 주"를 모델이 계산하게. 필터 프롬프트 캐시 앞부분(시스템)은 그대로다.
-9. **상대 컷 재조정 규칙**: S1 게이트에서 근거 있는 질문 4개 중 3개 이상이 20에 포화하면 `0.6`·`0.9`로 한 번만 올린다. 그 뒤 조정은 새 결정으로.
+9. ~~상대 컷 재조정 규칙~~ — **리뷰 반영으로 소멸**(Codex #2·Fable N3): S1 게이트의 조정 규칙을 지웠다. 포화는 기록만, 상수 재결정은 ⑩b `cand_recall` < 0.9 일 때 스펙 §9부터.
 10. **⑩b 순서**: S2·S3을 ⑩b 전에. 이미 돌았으면 재측정한다 — 사용자 시간(질문 50개는 그대로 재사용, 👍/👎 20건은 다시)이 든다.
 11. ★ **권한 문구에 한 문장을 더했다**: Fable 문구 "등록된 일정을 확인하고 제안된 일정을 추가합니다" + "일정 내용은 기기 밖으로 보내지 않습니다."(마이크 문구와 같은 형식).
-12. **거절 대체 문구가 서버 답을 덮는다**: 거절 + 캘린더 일정이면 앱이 "저장된 메일·문자에는 없고, 캘린더에 N건 있습니다"를 보인다. 인용·보관함 버튼은 여전히 없다(거절). 서버 로그·`eval-search`는 거절로 센다.
-13. **C2 실기기 5단계(미리 판정 뒤 변경)**는 같은 계정의 다른 기기가 있어야 잰다. 없으면 단위 테스트로만 보장하고 게이트 행에 "해당 기기 없음"으로 적는다 — 마감 상태로 인정할지 메인이 판정한다.
+12. ~~거절 대체 문구~~ — **리뷰 반영으로 소멸**(Codex #4): 거절 문구는 그대로, 절 머리 "기기 캘린더 · 이 기간 일정 N건"만.
+13. ~~C2 실기기 5단계 생략~~ — **리뷰 반영으로 소멸**(Codex #7): 필수. Mac 캘린더(같은 iCloud) 또는 단축어 개인용 자동화로 재고, 둘 다 못 하면 C2 대기.
+14. **받은 기간 오기입 안전망 축소**: 0024 뒤 필터가 일정 날짜를 `date_from/to`에 잘못 넣으면 facts 는 받은 시각으로 걸러 그 일정을 놓친다(0019 의 `fact_when` 안전망 제거). 하이브리드 기간 폴백(0건이면 기간 없이 1회 더)만 남는다 — Fable #1 에서 수용. 필터 live 테스트가 오기입을 잡는다.
+15. **겹침 알림 마감 2초**: 계획 값. 등록이 2초를 넘으면 `timeout`으로 기록하고 완료한다(알림이 늦게라도 뜨면 그대로 둔다).
 
 ## Self-Review
 
-1. **스펙 커버리지**: §9 흐름·필터(`event_range`) → S3; facts 일정 날짜 → S3 `factRange`·`deps.facts`; 후보 정의·최대 20·거절 없음·불변식 → S1; 숫자 어절 → S2; "일정 질문과 기기 캘린더"(schedule·절·5건·외 N건·빈 문구·거절 대체·카드 상태·권한 안내·생일/구독 제외) → S3 + C1; 응답 계약(`candidates`·`schedule`) → S1·S3; §10 순서 3 겹침(같은 배열·제외·`conflict`·보고 없음·`confirmed`) → C2 `AddEventGate`·`handleAdd`; 겹침 화면(잠금화면 로컬 알림·카테고리·식별자·userInfo·시트·탭·채팅 카드·재판정) → C2; §11 0.8.0·권한 문구 → C2 `project.yml`·C1 Info.plist; §12 통제 2(기기 밖으로 안 나감, 개수만) → Global Constraints·C1 `scheduleEvents` DiagLog·C1 게이트 5; §15 ⑩b 전 → Global Constraints; §16 UC-4 → 구현 안 함(Global Constraints). 보관 계획 R-B4 반영 → 그 계획에 적음(이 커밋). 빠진 것 없음.
+1. **스펙 커버리지**: §9 흐름·필터(`event_range`) → S3; facts 받은 기간·일정 기간 분리·시작 순·상위 8 → S3 0024·`deps.facts`; 후보 재현율 집계 → S1 `eval-search`; 후보 정의·최대 20·거절 없음·불변식 → S1; 숫자 어절 → S2; "일정 질문과 기기 캘린더"(schedule·절 머리 N건·5건·외 N건·빈 문구·거절 문구 유지·카드 상태·권한 안내·생일/구독 제외·앱 32일 상한·재조회) → S3 + C1; 응답 계약(`candidates`·`schedule`) → S1·S3; §10 순서 3 겹침(같은 배열·제외·`conflict`·보고 없음·`confirmed`) → C2 `AddEventGate`·`handleAdd`; 겹침 화면(잠금화면 로컬 알림·2초 마감·결과 기록·처리 후 제거·카테고리·식별자·userInfo·시트·탭·채팅 카드·재판정) → C2; §11 0.8.0·권한 문구 → C2 `project.yml`·C1 Info.plist; §12 통제 2(기기 밖으로 안 나감, 개수만) → Global Constraints·C1 `scheduleEvents` DiagLog·C1 게이트 5; §15 ⑩b 전 → Global Constraints; §16 UC-4 → 구현 안 함(Global Constraints). 보관 계획 R-B4 반영 → 그 계획에 적음(이 커밋). 빠진 것 없음.
 2. **자리표시 검사**: "TBD·적절히·나중에" 없음. 코드 단계는 모두 코드 블록. "Task N과 같이" 없음 — S3의 smoke·probe 확장은 추가할 줄을 그대로 적었다.
-3. **타입 일관성**: `ScoredRow`·`relevantItems`·`factsDistinct`·`pickCandidates`(S1) → S3가 `factsDistinct` 본문만 교체, 시그니처 같음. `Filters`에 `event_from/to` 추가 → 테스트 4곳·`deps` 헬퍼·chat-db `run` 모두 갱신 단계 있음. `ChatResult.schedule` → `validateAnswer` Omit에 `"schedule"` 추가 단계 있음. `ProposalFlow.CalendarEvent`(C2) ← C1 `DeviceCalendar`·`CalendarLookup.scheduleEvents`가 같은 이름으로 씀. `conflictCount`(C2) ← `handleAdd`·델리게이트·시트·채팅이 같은 이름. `AddEventRequest(…, confirmed:)`는 `var confirmed = false`라 기존 호출도 컴파일된다. `proposalCard(…, status:)`(C1)는 C2의 `runAdd` 호출을 그대로 품는다.
-4. **Review Focus**: 1 → C2 `testConflictOutcomeAndCopy` + C2 게이트 5, 2 → C2 `testConflicts`, 3 → S2 테스트 `10월에`, 4 → S3 `normalizeFilters: event dates …`·`scheduleOf: …`, 5 → S3 `answerQuestion: schedule rides along …` + S1 `candidates: refused …` + C1 `testRefusalText`·게이트 3.
+3. **타입 일관성**: `ScoredRow`·`relevantItems`·`factsDistinct`·`pickCandidates`(S1) → S3가 `factsDistinct` 본문만 교체, 시그니처 같음. `factRange`는 리뷰 반영으로 없앴다 — 남은 참조 없음(`grep -n factRange` 0). `search_facts` 8인자(0024) ← `deps.facts`·`search-probe`가 이름 인자로 부른다. `FACTS_LIMIT`·`FACTS_EVENT_LIMIT`(deps.ts) ← probe. `Filters`에 `event_from/to` 추가 → 테스트 4곳·`deps` 헬퍼·chat-db `run` 모두 갱신 단계 있음. `ChatResult.schedule` → `validateAnswer` Omit에 `"schedule"` 추가 단계 있음. `ProposalFlow.CalendarEvent`(C2) ← C1 `DeviceCalendar`·`CalendarLookup.scheduleEvents`가 같은 이름으로 씀. `conflictCount`(C2) ← `handleAdd`·델리게이트·시트·채팅이 같은 이름. `AddEventRequest(…, confirmed:)`는 `var confirmed = false`라 기존 호출도 컴파일된다. `proposalCard(…, status:)`(C1)는 C2의 `runAdd` 호출을 그대로 품는다.
+4. **Review Focus**: 1 → C2 `testConflictOutcomeAndCopy` + C2 게이트 5, 2 → C2 `testConflicts`, 3 → S2 테스트 `10월에`, 4 → S3 `normalizeFilters: event dates …`·`scheduleOf: …`, 5 → S3 `answerQuestion: schedule rides along …` + S1 `candidates: refused …` + C1 `testHeader`·게이트 3, 6 → S3 `chatDeps.facts: received range …` + live 복합 질문.
+
+## 리뷰 반영 (2026-10-01, Codex gpt-6-astra · Fable)
+
+원문: `.context/codex-review-search.out.md`(Codex), `.context/fable-review-search.md`(Fable 판정·최종 권장). 판정이 갈리면 Fable 판정을 따랐다. 개인정보 등급 변화 없음 — 사용자 확인 불필요.
+
+### Codex 8건
+
+| # | Codex(심각도) | Fable 판정 | 반영 | 바뀐 곳 |
+|---|---|---|---|---|
+| 1 | 받은 기간·일정 기간이 SQL 에서 섞임(HIGH) | 부분동의(MED) | **반영** — 0024 `search_facts`에 `p_event_from/to` 분리(받은 기간 = 항상 `occurred_at`, 일정 기간 = event·task 의 `fact_when`), 옛 시그니처 drop, `factRange` 삭제, `factsDistinct` 갱신, `FILTER_SYSTEM` "둘 다 채운다", live 복합 질문, DB 테스트(두 기간·함께·시작 순). Ruling D facts 안전망 축소는 수용 | S3 Step 1·3·3b·4·5·8, 스펙 §9 흐름·구현 항 |
+| 2 | 후보 축소 게이트가 정답 누락을 못 잡음(MED) | 부분동의(MED) | **반영(변형)** — S1 조정 규칙 삭제(포화는 기록만), probe `kw_pass`·`sem_pass`, `eval-search` `cand_recall` 집계(⑩b 때, 배포 차단 아님). 재현율 < 0.9 면 스펙부터 상수 재결정 | S1 Step 6·9, 스펙 §9 보관함 보기·§16 |
+| 3 | 숫자 뒤 조사 제거 회귀(`1234는`)(MED) | 부분동의(LOW) | **반영** — 3자 이상 원형 + 조사 목록이면 허용, 테스트 `1234는` 허용·`10은` 금지 | S2 SQL·테스트, 스펙 §9 키워드, 보관 계획 R-B4 사본 |
+| 4 | 날짜만 맞는 캘린더 건수로 거절을 덮음(MED) | 동의 | **반영** — `refusalText` 삭제, 거절 문구 유지, 절 머리 "기기 캘린더 · 이 기간 일정 N건" | C1 Step 1·3·6·9(3), Review Focus 5, 스펙 §9 |
+| 5 | 로컬 알림 등록 마감 없음, `try?`가 실패 숨김(MED) | 부분동의(LOW) | **반영** — `conflictNotice` 2초 `Deadline`, `ok/fail/timeout`을 `DiagLog`·`action.handled.notice`에(`handleAdd(lockScreen:)` 안에서 trace 앞), 게이트 C2-1 `notice=ok`·`ms < 10000`. 별도 계측 태스크는 만들지 않음 | C2 Step 5, C1 Step 9, 스펙 §10 |
+| 6 | 설정 복귀·일정 변경 뒤 채팅 캘린더가 낡음(MED) | 부분동의(LOW) | **반영(축소)** — `scenePhase .active`·카드 추가 성공 뒤 마지막 5개 턴 재조회, 권한 없으면 비움. EventKit 변경 알림 구독은 **미반영**(Fable 결정) | C1 Step 6·9(4), C2-4 기대, 스펙 §9 |
+| 7 | 게이트 5단계 선택적 생략이 §5-8 과 충돌(MED) | 동의(반복·시간대 실측은 반대) | **반영** — 5단계 필수, Mac 캘린더 또는 단축어 자동화, 둘 다 못 하면 C2 대기. 반복 일정·시간대 별도 실측은 **미반영**(`Date` 비교뿐) | C1 Step 9 C2-5·통과 기준 |
+| 8 | 앱에 31일 제한 없음(LOW) | 동의 | **반영** — `Schedule.interval` 32일 초과 nil, 60일 테스트 | C1 Step 1·3, 스펙 §9 |
+
+Codex "먼저 바꿀 3가지": ① 기간 SQL 계약 분리 → 반영(#1) ② 후보 재현율 게이트·숫자 조사 회귀 → 재현율은 ⑩b 집계로, 조사 예외는 S2(#2·#3) ③ 잠금화면 알림 마감·완료 실측 필수 → 2초 마감 + 기록 + `ms` 확인(#5).
+
+### Fable 추가 지적
+
+| # | 심각도 | 반영 | 바뀐 곳 |
+|---|---|---|---|
+| N1 | MED | **반영** — 실기기 게이트는 ③b2 창 밖·③c 측정과 30분 이상, 메인이 Gmail 원장 확인, 합성 제안 개별 무시("전체 무시" 금지) | Global Constraints, 실행 순서 6, C1 Step 9 |
+| N2 | MED | **반영** — 0024 일정 기간이면 `fact_when` 오름차순, chat `p_limit 8`(`FACTS_EVENT_LIMIT`) | S3 Step 3b·4, 스펙 §9 |
+| N3 | MED | **반영** — #2 와 같이 조정 규칙 삭제 | S1 Step 3 주석·Step 9, 스펙 확인 필요 9 |
+| N4 | LOW | **반영** — `CalendarLookup` 공유 읽기 store(`@MainActor static let`), `AddEventGate`는 자체 store 유지. 백그라운드 이동은 **미반영**(느리면 그때) | C2 Step 5, C1 Step 5 |
+| N5 | LOW | **반영** — 추가 성공(`ok`·`recovered`·`dup`)·무시 `ok`면 `conflict-<pid>` 전달 알림 제거, 문구에서 "다른" 제거(알림 본문·상태 줄·`addFeedback`). 확인창은 제목을 보이므로 그대로 | C2 Step 1·3·5, C1 Step 1·3, 스펙 §9·§10 |
+| N6 | LOW | **반영** — S1 DB 테스트 `strong ⊆ 후보 ∧ weak ∩ 후보 = ∅`, S2 `toks` 맨숫자 1~2자리 제외 | S1 Step 1, S2 SQL·테스트 |
+
+실행 순서는 Fable "최종 권장"의 표대로 "실행 순서" 절에 옮겼다. 마이그레이션은 S2 `0023` + S3 `0024`(신규) — 보관 계획 트랙 B 예정 번호가 두 칸 밀려 그 계획의 번호 표·파일명을 고쳤다(R-B1 `0025` · R-B4 `0026` · R-B7 `0027` · R-B5 `0028` · R-B6 `0029`).

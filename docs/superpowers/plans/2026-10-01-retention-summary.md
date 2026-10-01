@@ -14,7 +14,7 @@
 
 **리뷰:** 사용자 지정 절차 — 이 계획 → Codex(gpt-6-astra) 리뷰 → Fable 리뷰 → 서브에이전트 실행(SDD). 실행 방식은 이미 정해져 있으므로 묻지 않는다. Codex 9건·Fable 추가 6건은 이 수정본에 반영했다(맨 끝 "리뷰 반영"). 트랙 B 전에 R-B5·R-B6·R-B7만 Codex 재검토 1회(Global Constraints).
 
-**태스크 번호:** 트랙 A(지금 가능, Gmail 게이트와 무관) `R-A1`(chat 후보) · `R-A2`(앱 채팅→보관함, 0.7.0). 트랙 B(Gmail 게이트 ③c2 뒤) `R-B1`(보관 3년·요약 저장 구조) · `R-B2`(추출이 요약을 낸다) · `R-B3`(요약 백로그 잡·지연 요약 임베딩) · `R-B4`(요약 검색·상세 요약) · `R-B5`(용량 측정·정리·죽은 색인 제거) · `R-B6`(용량 비우기·알림·설정 RPC) · `R-B7`(청크 콜드 암호화, 필수 — UC-1 기본값 B, R-B5 앞에서 실행) · `R-B8`(서버 반영·활성화·실측 게이트) · `R-B9`(앱 요약·저장 공간). 원장에는 `R-A1`처럼 적는다. 마이그레이션 번호는 원장 Ruling M#대로 **다음 빈 번호**를 쓴다(아래 번호는 예정값, 실행 순서 기준: `0023` R-B1 · `0024` R-B4 · `0025` R-B7 · `0026` R-B5 · `0027` R-B6, 활성화는 그다음). 검색·캘린더 계획(`2026-10-01-search-calendar.md`) S2가 ⑩b 전에 먼저 번호를 쓰면(예정 `0023`) 트랙 B 번호는 하나씩 밀린다 — 파일 이름·`git add` 경로도 실제 번호로 쓴다.
+**태스크 번호:** 트랙 A(지금 가능, Gmail 게이트와 무관) `R-A1`(chat 후보) · `R-A2`(앱 채팅→보관함, 0.7.0). 트랙 B(Gmail 게이트 ③c2 뒤) `R-B1`(보관 3년·요약 저장 구조) · `R-B2`(추출이 요약을 낸다) · `R-B3`(요약 백로그 잡·지연 요약 임베딩) · `R-B4`(요약 검색·상세 요약) · `R-B5`(용량 측정·정리·죽은 색인 제거) · `R-B6`(용량 비우기·알림·설정 RPC) · `R-B7`(청크 콜드 암호화, 필수 — UC-1 기본값 B, R-B5 앞에서 실행) · `R-B8`(서버 반영·활성화·실측 게이트) · `R-B9`(앱 요약·저장 공간). 원장에는 `R-A1`처럼 적는다. 마이그레이션 번호는 원장 Ruling M#대로 **다음 빈 번호**를 쓴다(아래 번호는 예정값, 실행 순서 기준: `0025` R-B1 · `0026` R-B4 · `0027` R-B7 · `0028` R-B5 · `0029` R-B6, 활성화는 그다음). 검색·캘린더 계획(`2026-10-01-search-calendar.md`)이 ⑩b 전에 `0023`(S2 숫자 어절)·`0024`(S3 `search_facts` 기간 분리)를 먼저 쓰므로 트랙 B 번호는 두 칸 밀린 값으로 적었다(그 계획의 Codex·Fable 리뷰 반영, 2026-10-01). 실행 때 번호가 또 달라지면 파일 이름·`git add` 경로도 실제 번호로 쓴다.
 
 ## 사용자 확인 (계획 리뷰 뒤, 메인 세션이 받는다) — ★ 3건 모두 사용자 확인 대기
 
@@ -95,11 +95,11 @@ ios/App/EruriApp.swift                        # R-A2 RootView 탭 전환
 ios/App/ItemDetailView.swift                  # R-B9 요약 절
 ios/App/ContentView.swift                     # R-B9 저장 공간 절
 ios/project.yml                               # R-A2 0.7.0 / R-B9 0.9.0
-supabase/migrations/0023_retention_summaries.sql   # R-B1
-supabase/migrations/0024_summary_search.sql        # R-B4
-supabase/migrations/0025_chunk_cool.sql            # R-B7(필수, R-B5 앞 — 리뷰 반영으로 번호 재배정)
-supabase/migrations/0026_capacity_measure.sql      # R-B5
-supabase/migrations/0027_capacity_purge.sql        # R-B6
+supabase/migrations/0025_retention_summaries.sql   # R-B1
+supabase/migrations/0026_summary_search.sql        # R-B4
+supabase/migrations/0027_chunk_cool.sql            # R-B7(필수, R-B5 앞 — 리뷰 반영으로 번호 재배정)
+supabase/migrations/0028_capacity_measure.sql      # R-B5
+supabase/migrations/0029_capacity_purge.sql        # R-B6
 supabase/migrations/00NN_retention_activate.sql    # R-B8(다음 빈 번호): 기존 행 연장 + cron
 supabase/functions/_shared/summary.ts         # R-B2 신규(스키마 조각·규칙·정규화) / R-B3 요약 전용 요청
 supabase/functions/_shared/summary-store.ts   # R-B2 신규(암호화 + worker_save_summary)
@@ -128,13 +128,13 @@ docs/superpowers/phase1/gates.md              # 각 태스크 게이트 행
 | 1 | R-A1 chat 후보(서버) | — | 계획 리뷰 끝 | — |
 | 2 | R-A2 앱 채팅→보관함(0.7.0) | — | R-A1 끝(순차). 업로드·실기기 게이트는 R-A1 배포 뒤 | — |
 | — | Codex 재검토(R-B5·R-B6·R-B7) | — | 이 수정본 | 트랙 A와 병렬 가능(읽기 전용) |
-| 3 | R-B1 보관 3년·요약 저장 구조 | 0023 | Gmail ③c2 기록, Codex 재검토 반영, ★UC-3 | 직렬 |
+| 3 | R-B1 보관 3년·요약 저장 구조 | 0025 | Gmail ③c2 기록, Codex 재검토 반영, ★UC-3 | 직렬 |
 | 4 | R-B2 추출이 요약을 낸다 | — | R-B1 | 직렬 |
 | 5 | R-B3 요약 백로그·지연 요약 임베딩 | — | R-B2 | 직렬 |
-| 6 | R-B4 요약 검색·상세 요약 | 0024 | R-B3 | 직렬 |
-| 7 | R-B7 청크 콜드 암호화(필수) | 0025 | R-B4, ★UC-1(C면 멈춤) | 직렬 |
-| 8 | R-B5 용량 측정·autovacuum·색인 정리 | 0026(+보정) | R-B7 | 직렬 |
-| 9 | R-B6 용량 비우기·알림·설정 RPC | 0027 | R-B5 | 직렬 |
+| 6 | R-B4 요약 검색·상세 요약 | 0026 | R-B3 | 직렬 |
+| 7 | R-B7 청크 콜드 암호화(필수) | 0027 | R-B4, ★UC-1(C면 멈춤) | 직렬 |
+| 8 | R-B5 용량 측정·autovacuum·색인 정리 | 0028(+보정) | R-B7 | 직렬 |
+| 9 | R-B6 용량 비우기·알림·설정 RPC | 0029 | R-B5 | 직렬 |
 | 10 | R-B8 서버 반영·활성화·실측 게이트 | 다음 빈 번호 | R-B1~R-B7, ★UC-1~3 답 확인 | — |
 | 11 | R-B9 앱 요약·저장 공간 | — | R-B4·R-B6 계약 | **유일한 병렬**: `ios/**`만 만지므로 R-B5~R-B8과 나란히 구현 가능. 시뮬레이터 빌드는 deno 테스트와 겹치지 않게. 업로드는 R-B8 뒤 |
 
@@ -646,7 +646,7 @@ Expected: `Upload succeeded`, 버전 0.7.0.
 ### Task R-B1: 보관 3년 · 요약 저장 구조 · 요약 유예 만료
 
 **Files:**
-- Create: `supabase/migrations/0023_retention_summaries.sql`
+- Create: `supabase/migrations/0025_retention_summaries.sql`
 - Modify: `AGENTS.md` (§7 한 줄)
 - Test: `supabase/tests/retention-db.test.ts`
 
@@ -786,7 +786,7 @@ Deno.test("delete_gmail_source removes the source's summaries and summarize/summ
 
 파일 머리 import에 `decrypt`(crypto.ts), `toPgVector`(`../functions/_shared/embeddings.ts`)를 더한다.
 
-기존 테스트 `insert_media_item: 30-day expiry and an extract job; expired media listed by worker_expired_media`(183행)는 0023 뒤 실패한다(만료 30일 → 3년, `worker_expired_media`가 `captured_at` 기준). **지우고** 위 `retention 3y: …` 테스트로 대신한다 — 추출 잡 단언(`kind = 'extract'`, lease)은 새 테스트의 `finally` 앞에 옮겨 둔다(Fable N6a).
+기존 테스트 `insert_media_item: 30-day expiry and an extract job; expired media listed by worker_expired_media`(183행)는 0025 뒤 실패한다(만료 30일 → 3년, `worker_expired_media`가 `captured_at` 기준). **지우고** 위 `retention 3y: …` 테스트로 대신한다 — 추출 잡 단언(`kind = 'extract'`, lease)은 새 테스트의 `finally` 앞에 옮겨 둔다(Fable N6a).
 
 `purge_expired`·`capacity_purge` 대 `worker_save_chunks` 경합(Codex #2)은 기존 "delete_gmail_source vs in-flight save_fact"(85행)와 같은 두 연결 방식으로 1건 더한다: 연결 1이 `begin; select … from items where id = X for update`(= `worker_save_chunks`가 잠근 상태)로 잡은 채 연결 2가 `purge_expired(p_user)`를 부르고, 연결 1이 청크를 넣고 커밋한 뒤 연결 2가 끝나면 → X의 `content_enc`는 null, 청크 0개, 이후 `worker_save_chunks`는 false. 이름 `purge_expired vs in-flight save_chunks: no plaintext chunk survives`.
 
@@ -797,7 +797,7 @@ Expected: 새 6건 FAIL(`worker_save_summary` 없음, 만료 90일). 지운 미�
 
 - [ ] **Step 3: 마이그레이션 작성**
 
-Create `supabase/migrations/0023_retention_summaries.sql`:
+Create `supabase/migrations/0025_retention_summaries.sql`:
 
 ```sql
 -- 스펙 §2·§8 보관 3년(2026-10-01 사용자 결정)·항목 요약 영구(item_summaries)·원문 만료 뒤 요약 임베딩(지연, §7).
@@ -983,7 +983,7 @@ Expected: 기존(미디어 30일 테스트 제외) + 새 6건 PASS. 새 함수 �
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add supabase/migrations/0023_retention_summaries.sql supabase/tests/retention-db.test.ts AGENTS.md
+git add supabase/migrations/0025_retention_summaries.sql supabase/tests/retention-db.test.ts AGENTS.md
 git commit -m "feat(db): 3-year retention, encrypted item summaries, summary grace on expiry (R-B1)"
 ```
 
@@ -1628,12 +1628,12 @@ git commit -m "feat(worker): summarize backlog job and lazy summary embedding af
 ### Task R-B4: 원문이 지워진 항목을 요약으로 찾는다 · 상세에 요약
 
 **Files:**
-- Create: `supabase/migrations/0024_summary_search.sql`
+- Create: `supabase/migrations/0026_summary_search.sql`
 - Modify: `supabase/functions/chat/deps.ts` (`search` 요약 문서, `itemDetail.summary`)
 - Test: `supabase/tests/chat-db.test.ts`, `supabase/tests/chat.test.ts`
 
 **Interfaces:**
-- Consumes: R-A1 `SearchResult`·`DOC_CHUNKS`·`CANDIDATE_CHUNKS`, R-B1 `item_summaries`. **검색·캘린더 계획(`2026-10-01-search-calendar.md`)이 먼저 들어가 있다**: S1 `relevantItems(rows: ScoredRow[]) → string[]`(handler.ts, 후보 상대 컷 — `deps.search`의 `candidates`), S2 숫자 어절 조건(`hybrid_search` `variants`의 `and (v = t or t !~ '[0-9]' or v !~ '[0-9]$')`). 아래 SQL·`deps.search`는 두 규칙을 그대로 옮겨 적은 것이다 — 빼면 순위·후보가 S1·S2 이전으로 돌아간다(스펙 §16 2026-10-01 검색·캘린더 결정). 요약 문서 행도 `sem_sim`·`kw_score`를 가지므로 컷 규칙은 그대로다.
+- Consumes: R-A1 `SearchResult`·`DOC_CHUNKS`·`CANDIDATE_CHUNKS`, R-B1 `item_summaries`. **검색·캘린더 계획(`2026-10-01-search-calendar.md`)이 먼저 들어가 있다**: S1 `relevantItems(rows: ScoredRow[]) → string[]`(handler.ts, 후보 상대 컷 — `deps.search`의 `candidates`), S2 숫자 어절 조건(`hybrid_search` `toks`의 `and t !~ '^[0-9]{1,2}$'`, `variants`의 `and (v = t or t !~ '[0-9]' or v !~ '[0-9]$' or (char_length(v) >= 3 and <뗀 부분> in (조사 목록)))` — 리뷰 반영판), S3 `search_facts`(0024, 받은 기간·일정 기간 분리 8인자)·`deps.facts`(이 태스크는 건드리지 않는다 — `deps.search`만 바꾼다). 아래 SQL·`deps.search`는 두 규칙을 그대로 옮겨 적은 것이다 — 빼면 순위·후보가 S1·S2 이전으로 돌아간다(스펙 §16 2026-10-01 검색·캘린더 결정). 요약 문서 행도 `sem_sim`·`kw_score`를 가지므로 컷 규칙은 그대로다.
 - Produces: `hybrid_search(...)`(인자 동일) → `(item_id, chunk_id uuid null, score, sem_sim, kw_score, is_summary boolean)`. `chat_get_summaries(p_user uuid, p_items uuid[]) → (item_id, summary_enc, occurred_at)`(항목마다 decrypt 감사). `chat_get_item(p_user, p_item)` 반환에 `summary_enc` 추가. `POST /chat/item` 응답에 `summary: string | null`. 문서 텍스트 `[요약] <문장>`. R-B9 앱이 `summary`를 쓴다.
 
 - [ ] **Step 1: 실패하는 테스트**
@@ -1695,7 +1695,7 @@ Expected: FAIL(`is_summary` 열 없음, `summary` undefined).
 
 - [ ] **Step 3: 마이그레이션**
 
-Create `supabase/migrations/0024_summary_search.sql`:
+Create `supabase/migrations/0026_summary_search.sql`:
 
 ```sql
 -- 스펙 §9 요약 검색(2026-10-01): 문서 = 청크 ∪ 평문 청크가 없는 항목의 요약(키워드 = 제목 + keywords, 의미 = 요약 임베딩).
@@ -1726,7 +1726,7 @@ with scope as (
   order by embedding <=> p_embedding limit 40
 ), toks as (
   select distinct t from regexp_split_to_table(lower(p_query), '[[:space:][:punct:]]+') t
-  where char_length(t) >= 2 and t not in (
+  where char_length(t) >= 2 and t !~ '^[0-9]{1,2}$' and t not in (                -- 맨숫자 1~2자리 토큰 제외(검색·캘린더 S2)
     '언제','언제야','언제지','어디','어디서','어디야','어디였지','어디에','뭐','뭐야','뭐지','뭐였지','뭐였더라','몇','얼마','얼마나',
     '누가','누구','무슨','어느','어떤','했지','했어','했나','했더라','샀지','샀어','샀더라','거','것','건','좀','내가','이번','그거',
     '있어','있나','됐어','됐나','돼','해','야','지','가야','하러','가는')
@@ -1734,7 +1734,9 @@ with scope as (
   select t, v from toks cross join lateral (values (t),
     (case when char_length(t) >= 3 then left(t, char_length(t) - 1) end),
     (case when char_length(t) >= 4 then left(t, char_length(t) - 2) end)) x(v)
-  where v is not null and (v = t or t !~ '[0-9]' or v !~ '[0-9]$')     -- 숫자 어절은 숫자로 끝나는 변형 금지(검색·캘린더 S2: 10월 → 10 금지)
+  where v is not null and (v = t or t !~ '[0-9]' or v !~ '[0-9]$'     -- 숫자 어절은 숫자로 끝나는 변형 금지(검색·캘린더 S2: 10월 → 10 금지)
+         or (char_length(v) >= 3 and right(t, char_length(t) - char_length(v)) in      -- 예외: 3자 이상 원형 + 조사(1234는 → 1234)
+             ('은','는','이','가','을','를','에','의','도','로','와','과','만','에서','까지','부터','으로')))
 ), tokmatch as (
   select distinct b.doc, b.summ, vt.t from base b join variants vt on strpos(b.text, vt.v) > 0
 ), df as (
@@ -1828,7 +1830,7 @@ Expected: PASS(0017 기준 테스트 — `hybrid_search p_sources`·벡터 적�
 - [ ] **Step 6: 커밋**
 
 ```bash
-git add supabase/migrations/0024_summary_search.sql supabase/functions/chat/deps.ts supabase/tests/chat-db.test.ts
+git add supabase/migrations/0026_summary_search.sql supabase/functions/chat/deps.ts supabase/tests/chat-db.test.ts
 git commit -m "feat(chat): items whose originals are gone are found by their summary; item detail returns the summary (R-B4)"
 ```
 
@@ -1842,7 +1844,7 @@ git commit -m "feat(chat): items whose originals are gone are found by their sum
 - **C**(전부 암호화)면 멈추고 메인에게 알린다(검색 평가 재측정이 필요한 별도 계획).
 
 **Files:**
-- Create: `supabase/migrations/0025_chunk_cool.sql`, `supabase/functions/worker/cool.ts`, `supabase/functions/worker/cool-deps.ts`
+- Create: `supabase/migrations/0027_chunk_cool.sql`, `supabase/functions/worker/cool.ts`, `supabase/functions/worker/cool-deps.ts`
 - Modify: `supabase/functions/worker/index.ts`, `supabase/functions/chat/deps.ts`
 - Test: `supabase/tests/cool.test.ts`(신규), `supabase/tests/chat-db.test.ts`
 
@@ -1927,11 +1929,11 @@ Deno.test("chatDeps.search decrypts cold chunks (text null) found by their embed
 
 - [ ] **Step 3: 마이그레이션**
 
-Create `supabase/migrations/0025_chunk_cool.sql`:
+Create `supabase/migrations/0027_chunk_cool.sql`:
 
 ```sql
 -- UC-1 안 B(Codex·Fable 권장 기본값, 사용자 확인 대기 — A 로 답하면 cron 만 끈다): 수집 90일이 지난 청크의 본문을 사용자 키로 암호화(text_enc)하고 평문을 지운다. 임베딩은 유지(스펙 §12 통제 1).
--- 키워드 검색은 평문 청크만(hybrid_search 의 lower(null) 은 맞지 않는다), 그 항목은 요약 문서(0024)가 키워드를 맡는다
+-- 키워드 검색은 평문 청크만(hybrid_search 의 lower(null) 은 맞지 않는다), 그 항목은 요약 문서(0026)가 키워드를 맡는다
 alter table item_chunks add column text_enc bytea;
 alter table item_chunks alter column text drop not null;
 alter table item_chunks add constraint item_chunks_text_present check (text is not null or text_enc is not null);
@@ -2054,7 +2056,7 @@ Expected: PASS. 전체 0 실패.
 - [ ] **Step 6: 커밋**
 
 ```bash
-git add supabase/migrations/0025_chunk_cool.sql supabase/functions/worker/cool.ts supabase/functions/worker/cool-deps.ts supabase/functions/worker/index.ts supabase/functions/chat/deps.ts supabase/tests/cool.test.ts supabase/tests/chat-db.test.ts
+git add supabase/migrations/0027_chunk_cool.sql supabase/functions/worker/cool.ts supabase/functions/worker/cool-deps.ts supabase/functions/worker/index.ts supabase/functions/chat/deps.ts supabase/tests/cool.test.ts supabase/tests/chat-db.test.ts
 git commit -m "feat(db,worker): encrypt chunk text after 90 days, keep embeddings; chat decrypts cold documents (R-B7, UC-1 B default)"
 ```
 
@@ -2063,10 +2065,10 @@ git commit -m "feat(db,worker): encrypt chunk text after 90 days, keep embedding
 ### Task R-B5: 용량 측정 · 정리 · 쓰지 않는 색인 제거 · autovacuum
 
 **Files:**
-- Create: `supabase/migrations/0026_capacity_measure.sql`, `supabase/scripts/capacity.ts`, `supabase/scripts/capacity-reuse.ts`, (보정이 필요하면) 다음 빈 번호 `…_capacity_calibrate.sql`
+- Create: `supabase/migrations/0028_capacity_measure.sql`, `supabase/scripts/capacity.ts`, `supabase/scripts/capacity-reuse.ts`, (보정이 필요하면) 다음 빈 번호 `…_capacity_calibrate.sql`
 - Test: `supabase/tests/capacity-db.test.ts`(신규)
 
-선행: R-B7(0025, 청크 `text_enc`)이 먼저 적용돼 있다 — 이 태스크의 크기 산출과 R-B6의 추정식이 콜드 청크를 처음부터 센다(Fable B-2).
+선행: R-B7(0027, 청크 `text_enc`)이 먼저 적용돼 있다 — 이 태스크의 크기 산출과 R-B6의 추정식이 콜드 청크를 처음부터 센다(Fable B-2).
 
 **Interfaces:**
 - Consumes: 없음(시스템 카탈로그, `cron.job_run_details`, `jobs`).
@@ -2141,11 +2143,11 @@ Expected: FAIL.
 
 - [ ] **Step 4: 마이그레이션(방식 A 기준, B면 표시한 두 곳만 바꾼다)**
 
-Create `supabase/migrations/0026_capacity_measure.sql`:
+Create `supabase/migrations/0028_capacity_measure.sql`:
 
 ```sql
--- 스펙 §8 용량 보호(2026-10-01): 측정·기록·정리·autovacuum. 비우기·알림은 0027. cron 은 활성화(R-B8)
--- 방식 A: pgstattuple 로 재사용 가능 공간(힙·TOAST 의 free + dead)을 뺀 유효 크기로 판정. 방식 B(탐침 실패): 재사용 0 + 0027 의 유입량 상한
+-- 스펙 §8 용량 보호(2026-10-01): 측정·기록·정리·autovacuum. 비우기·알림은 0029. cron 은 활성화(R-B8)
+-- 방식 A: pgstattuple 로 재사용 가능 공간(힙·TOAST 의 free + dead)을 뺀 유효 크기로 판정. 방식 B(탐침 실패): 재사용 0 + 0029 의 유입량 상한
 create extension if not exists pgstattuple with schema extensions;           -- [방식 B: 이 줄 삭제]
 
 -- 한도·임계(한 곳). 무료 플랜 500MB(10진, 보수적). 플랜을 바꾸면 이 함수만 고친다(UC-2)
@@ -2172,7 +2174,7 @@ create table capacity_log (
   method text not null check (method in ('pgstattuple', 'fallback'))
 );
 create index on capacity_log (at desc) where scope is null;
-alter table capacity_log enable row level security;          -- 정책 없음: service role 전용(사용자는 capacity_status_user, 0027)
+alter table capacity_log enable row level security;          -- 정책 없음: service role 전용(사용자는 capacity_status_user, 0029)
 
 -- 재사용 가능 공간: 큰 공개 테이블 힙과 그 TOAST 의 free + dead. 색인 여유는 넣지 않는다(보수적)
 create or replace function capacity_reusable() returns bigint language sql stable security definer
@@ -2344,7 +2346,7 @@ try {
 
 - [ ] **Step 6: 적용·통과·실측(게이트)**
 
-`db push` 전 `git status --short supabase/migrations`로 **이 태스크의 0026만** 미적용 새 파일인지 확인한다(`db push`는 미적용 로컬 마이그레이션을 전부 올린다, Fable N5).
+`db push` 전 `git status --short supabase/migrations`로 **이 태스크의 0028만** 미적용 새 파일인지 확인한다(`db push`는 미적용 로컬 마이그레이션을 전부 올린다, Fable N5).
 
 Run:
 ```bash
@@ -2363,14 +2365,14 @@ Expected:
 - `capacity-reuse` 판정 — (1) `autovacuum_ran = true`(10분 안에 autovacuum이 돌았다), (2) 방식 A: `reusable_after_delete ≥ 0.6 × grow_first` 이고 `grow_second ≤ 0.4 × grow_first`, 방식 B: `grow_second ≤ 0.4 × grow_first`만. 기준 미달이면 **실패**로 적고 R-B6 착수 전에 메인에게 알린다(측정 전제 붕괴 — 대안: 비우기 뒤 운영자 `vacuum-full` 필수화).
 - 검색 지연: `search_ms_2000`을 청크 수에 비례해 6만 청크(3년 추정)로 외삽한다. **1.5초를 넘으면** HNSW 제거는 그대로 두고, `sem` 다리가 색인을 쓰게 `hybrid_search`를 바꾸는 후속 태스크를 원장에 연다(메인에게 알림). 넘지 않으면 기록만.
 - `vacuum-full item_chunks`의 `ms`(= 테이블 잠금 시간)를 기록한다. 운영 절차: 보고 크기 90%(`raw_reclaim`) 경보가 오면 사용이 적은 시각에 이 명령을 테이블별로 한 번.
-- 보정(Codex #9): `capacity-reuse`의 `table_bytes_per_chunk + index_bytes_per_chunk`(합성 2,000청크 증가량, `pg_table_size` 기준 — 실표본 25청크의 `sizes` 값은 색인 최소 크기·TOAST 누락으로 쓰지 않는다)가 `capacity_caps.chunk_overhead + 평균 청크 바이트`와 30% 넘게 다르면, **적용된 0026을 고치지 않고** 다음 빈 번호로 `…_capacity_calibrate.sql`(`create or replace function capacity_caps()` 전체, 값만 바꿈)을 만들어 push하고 `s "select chunk_overhead from capacity_caps()"`로 원격 반환값을 확인한다. `db push`는 적용된 버전을 다시 실행하지 않는다.
+- 보정(Codex #9): `capacity-reuse`의 `table_bytes_per_chunk + index_bytes_per_chunk`(합성 2,000청크 증가량, `pg_table_size` 기준 — 실표본 25청크의 `sizes` 값은 색인 최소 크기·TOAST 누락으로 쓰지 않는다)가 `capacity_caps.chunk_overhead + 평균 청크 바이트`와 30% 넘게 다르면, **적용된 0028을 고치지 않고** 다음 빈 번호로 `…_capacity_calibrate.sql`(`create or replace function capacity_caps()` 전체, 값만 바꿈)을 만들어 push하고 `s "select chunk_overhead from capacity_caps()"`로 원격 반환값을 확인한다. `db push`는 적용된 버전을 다시 실행하지 않는다.
 - 읽기 전용 복구(Codex #4): Supabase 공식 문서에서 "DB 크기 한도 초과 → 읽기 전용" 상태의 해제 절차(읽기 전용 해제 방법·그 상태에서 `vacuum full`·삭제가 가능한지)를 확인해 `gates.md` `R-B5` 행 아래 "용량 운영 절차"에 URL과 함께 3~5줄로 적는다(리서치는 `haiku`/`low` 서브에이전트 가능).
 - 수치를 `gates.md` `R-B5` 행에, 추정과 30% 넘게 다르면 스펙 §8 "용량 보호" 추정 문장도 고친다.
 
 - [ ] **Step 7: 커밋**
 
 ```bash
-git add supabase/migrations/0026_capacity_measure.sql supabase/scripts/capacity.ts supabase/scripts/capacity-reuse.ts supabase/tests/capacity-db.test.ts docs/superpowers/phase1/gates.md docs/superpowers/specs/2026-09-22-assistant-design.md   # 보정 마이그레이션을 만들었으면 그 파일도
+git add supabase/migrations/0028_capacity_measure.sql supabase/scripts/capacity.ts supabase/scripts/capacity-reuse.ts supabase/tests/capacity-db.test.ts docs/superpowers/phase1/gates.md docs/superpowers/specs/2026-09-22-assistant-design.md   # 보정 마이그레이션을 만들었으면 그 파일도
 git commit -m "feat(db): capacity measurement (effective + reported size), autovacuum 2%, housekeeping, drop unused tsv/trigram/hnsw indexes (R-B5)"
 ```
 
@@ -2379,7 +2381,7 @@ git commit -m "feat(db): capacity measurement (effective + reported size), autov
 ### Task R-B6: 용량 비우기 · 알림 · 설정 RPC
 
 **Files:**
-- Create: `supabase/migrations/0027_capacity_purge.sql`, `supabase/functions/worker/capacity.ts`, `supabase/functions/worker/capacity-deps.ts`
+- Create: `supabase/migrations/0029_capacity_purge.sql`, `supabase/functions/worker/capacity.ts`, `supabase/functions/worker/capacity-deps.ts`
 - Modify: `supabase/functions/worker/index.ts`
 - Test: `supabase/tests/capacity-db.test.ts`, `supabase/tests/capacity.test.ts`(신규)
 
@@ -2585,7 +2587,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: 마이그레이션**
 
-Create `supabase/migrations/0027_capacity_purge.sql`:
+Create `supabase/migrations/0029_capacity_purge.sql`:
 
 ```sql
 -- 스펙 §8 용량 보호: 판정·비우기·기록·알림 적재·설정 표시. cron(capacity-hourly)은 활성화(R-B8)
@@ -2867,7 +2869,7 @@ Expected: PASS. 전체 `deno test … supabase/tests/` 0 실패. 사후: `# 머�
 - [ ] **Step 6: 커밋**
 
 ```bash
-git add supabase/migrations/0027_capacity_purge.sql supabase/functions/worker/capacity.ts supabase/functions/worker/capacity-deps.ts supabase/functions/worker/index.ts supabase/tests/capacity.test.ts supabase/tests/capacity-db.test.ts
+git add supabase/migrations/0029_capacity_purge.sql supabase/functions/worker/capacity.ts supabase/functions/worker/capacity-deps.ts supabase/functions/worker/index.ts supabase/tests/capacity.test.ts supabase/tests/capacity-db.test.ts
 git commit -m "feat(db,worker): capacity purge (originals → summaries), hourly tick, capacity pushes, settings RPC (R-B6)"
 ```
 
@@ -2885,7 +2887,7 @@ git commit -m "feat(db,worker): capacity purge (originals → summaries), hourly
 
 - [ ] **Step 1: 선행 확인**
 
-`gates.md`에 Gmail M1-③c 행이 기록돼 있는지, 사용자가 ⑩b 평가를 돌리는 중이 아닌지 메인에게 확인. `pgrep -x xcodebuild; vm_stat | grep -E 'free|compressor'`. `supabase migration list`로 R-B1~R-B7 마이그레이션(0023~0027, 보정이 있었으면 그것까지)이 원격에 있는지 확인. ★UC-1~3 답을 메인에게 확인 — 기본값(B·무료+롤링·평문 키워드)과 다르면 계획 "사용자 확인" 표의 "다르게 답하면" 칸대로 먼저 고친다.
+`gates.md`에 Gmail M1-③c 행이 기록돼 있는지, 사용자가 ⑩b 평가를 돌리는 중이 아닌지 메인에게 확인. `pgrep -x xcodebuild; vm_stat | grep -E 'free|compressor'`. `supabase migration list`로 R-B1~R-B7 마이그레이션(0025~0029, 보정이 있었으면 그것까지)이 원격에 있는지 확인. ★UC-1~3 답을 메인에게 확인 — 기본값(B·무료+롤링·평문 키워드)과 다르면 계획 "사용자 확인" 표의 "다르게 답하면" 칸대로 먼저 고친다.
 
 - [ ] **Step 2: 함수 배포**
 
@@ -3207,9 +3209,11 @@ Codex·Fable 리뷰와 사용자에게 묻는 항목. 기본값으로 계획을 
 - **자리표시 검사**: 코드 단계마다 코드가 있다. "기존 헬퍼를 따른다"는 표시는 이 저장소의 실제 헬퍼(`seed`, `fake`, `applyRules` 인자 모양)를 가리키며, 새 이름을 만들지 않는다.
 - **이름 일치**: `SearchResult`·`CANDIDATE_MAX`·`DOC_CHUNKS`·`CANDIDATE_CHUNKS`(R-A1 → R-B4·R-B7), `Summary`·`normalizeSummary`·`keywordText`·`saveSummary`(R-B2 → R-B3), `worker_save_summary`·`worker_get_summary_source`·`worker_get_summary_embed_source`·`worker_save_summary_embedding`·`enqueue_summary_embeds`(R-B1 → R-B2·R-B3·R-B6), `capacity_caps`·`capacity_status`·`capacity_log`(R-B5 → R-B6), `capacity_status_user` 열(R-B6 → R-B9 `CapacityStatus`), `Archive.Scope`·`ArchiveRouter`(R-A2)를 대조했다.
 - **Review Focus**: 5개 모두 소유 태스크의 테스트가 있다(1 R-A2, 2 R-B1·R-B3·R-B6, 3 R-B5·R-B6, 4 R-B1, 5 R-A1·R-B3·R-B6).
-- **리뷰 반영 뒤 재대조(2026-10-01)**: R-A2 Step 5는 `e895cae`의 `ArchiveView`에 더하는 코드로 다시 썼다(`generation`·`retryReset` 유지). 마이그레이션 번호를 실행 순서로 다시 매겼다(0025 R-B7 · 0026 R-B5 · 0027 R-B6) — 본문의 파일명·주석·`git add`를 함께 고쳤다. `capacity_caps`에 `reclaim`, `capacity_status`에 `raw_pct`·`raw_reclaim`, `capacity_decide`에 `raw_reclaim`, `capacity_purge` 반환에 `through`, `capacity_status_user`에 `raw_pct`·`last_purge_summaries`를 더했고 소비처(R-B6 `capacity_tick`·`capacityPayload`, R-B9 `CapacityStatus`)와 이름을 맞췄다.
+- **리뷰 반영 뒤 재대조(2026-10-01)**: R-A2 Step 5는 `e895cae`의 `ArchiveView`에 더하는 코드로 다시 썼다(`generation`·`retryReset` 유지). 마이그레이션 번호를 실행 순서로 다시 매겼다(0027 R-B7 · 0028 R-B5 · 0029 R-B6) — 본문의 파일명·주석·`git add`를 함께 고쳤다. `capacity_caps`에 `reclaim`, `capacity_status`에 `raw_pct`·`raw_reclaim`, `capacity_decide`에 `raw_reclaim`, `capacity_purge` 반환에 `through`, `capacity_status_user`에 `raw_pct`·`last_purge_summaries`를 더했고 소비처(R-B6 `capacity_tick`·`capacityPayload`, R-B9 `CapacityStatus`)와 이름을 맞췄다.
 
 ## 리뷰 반영 (2026-10-01, Codex gpt-6-astra · Fable)
+
+> 아래 표의 마이그레이션 번호(`0023`~`0027`)는 이 리뷰 당시 번호다. 검색·캘린더 계획이 `0023`·`0024`를 먼저 써서 본문은 두 칸 밀린 번호(`0025`~`0029`)로 고쳤다(2026-10-01).
 
 원문: `.context/codex-review-retention.out.md`(Codex), `.context/fable-review-retention.md`(Fable — 판정·"최종 권장" 순서를 우선 따랐다). 스펙 §16 "외부 리뷰 반영(보관 정책 계획, Codex gpt-6-astra · Fable)"에 한 줄.
 
