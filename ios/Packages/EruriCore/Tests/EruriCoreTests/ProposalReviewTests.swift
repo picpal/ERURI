@@ -120,6 +120,71 @@ final class ProposalReviewTests: XCTestCase {
     XCTAssertEqual(ProposalReview.sheet(for: link, list: [row]), .pending(row))
     XCTAssertEqual(ProposalReview.sheet(for: link, list: []), .processed)
   }
+
+  private let p2 = "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", p3 = "2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f60"
+  private func raw(_ id: String, _ start: String, _ cat: String = "ADD_EVENT") -> [String: String] {
+    ["proposal_id": id, "title": "합성 \(id.prefix(4))", "start": start, "version": "1", "category": cat]
+  }
+
+  /// 묶음 알림 events 해석: UUID·start 없는 원소는 빼고, 같은 id 는 하나, 최대 5개. category 는 ADD_EVENT 아니면 REVIEW
+  func testBundleEvents() {
+    let ev = ProposalReview.bundleEvents([raw(pid, "2026-10-04T14:00:00+09:00"), raw(pid, "2026-10-04T14:00:00+09:00"),
+      ["proposal_id": "nope", "start": "2026-10-05"], ["proposal_id": p2, "title": "t"], raw(p3, "2026-10-23", "REVIEW")])
+    XCTAssertEqual(ev.map(\.proposalId), [pid, p3])
+    XCTAssertEqual(ev.map(\.category), ["ADD_EVENT", "REVIEW"])
+    XCTAssertEqual(ev[0].version, 1)
+    let many = (0..<7).map { _ in raw(UUID().uuidString.lowercased(), "2026-10-05") }
+    XCTAssertEqual(ProposalReview.bundleEvents(many).count, 5)
+  }
+
+  /// EVENT_BUNDLE 배너 탭: 2건 이상이면 events 를 든 링크, 1건만 남으면 그 일정의 단건 링크, 0건이면 nil. 액션 버튼 탭은 nil
+  func testBundleLink() throws {
+    let two = [raw(pid, "2026-10-04T14:00:00+09:00"), raw(p3, "2026-10-23", "REVIEW")]
+    let l = try XCTUnwrap(ProposalReview.link(actionIdentifier: ProposalReview.defaultAction, category: "EVENT_BUNDLE", fields: [:], events: two))
+    XCTAssertEqual([l.proposalId, l.category], [pid, "EVENT_BUNDLE"])
+    XCTAssertEqual(l.events.map(\.proposalId), [pid, p3])
+    let one = try XCTUnwrap(ProposalReview.link(actionIdentifier: ProposalReview.defaultAction, category: "EVENT_BUNDLE", fields: [:], events: [two[1]]))
+    XCTAssertEqual([one.proposalId, one.category], [p3, "REVIEW"]); XCTAssertTrue(one.events.isEmpty)
+    XCTAssertNil(ProposalReview.link(actionIdentifier: ProposalReview.defaultAction, category: "EVENT_BUNDLE", fields: [:], events: []))
+    XCTAssertNil(ProposalReview.link(actionIdentifier: "ADD", category: "EVENT_BUNDLE", fields: [:], events: two))
+    // 단건 경로는 그대로(events 없이 부르는 기존 호출)
+    XCTAssertEqual(ProposalReview.link(actionIdentifier: ProposalReview.defaultAction, category: "ADD_EVENT",
+      fields: ["proposal_id": pid, "title": "t", "start": "2026-10-04T14:00:00+09:00"])?.events, [])
+  }
+
+  /// Review Focus 3·6: 상태 조회 실패(statuses nil)면 카드마다 기존 판정 — 목록에 있으면 서버 값, 목록에 없으면 처리됨, REVIEW 는 확인 필요, 목록 실패면 알림 값
+  func testCardsMixedPartialAndOffline() throws {
+    let l = try XCTUnwrap(ProposalReview.link(actionIdentifier: ProposalReview.defaultAction, category: "EVENT_BUNDLE", fields: [:],
+      events: [raw(pid, "2026-10-02T15:30:00+09:00"), raw(p2, "2026-10-11T14:00:00+09:00"), raw(p3, "2026-10-23", "REVIEW")]))
+    XCTAssertEqual(l.id, "bundle:\(pid),\(p2),\(p3)")                     // 같은 첫 일정의 단건 시트와 id 가 겹치지 않는다
+    let list = try XCTUnwrap(ProposalReview.decodeList(listJSON()))          // pid 만 대기 중
+    let cards = ProposalReview.cards(for: l, list: list, statuses: nil)
+    XCTAssertEqual(cards.map(\.id), [pid, p2, p3])
+    guard case .pending(let row) = cards[0].sheet else { return XCTFail("pending") }
+    XCTAssertEqual(row.location, "합성 회의실")
+    XCTAssertEqual(cards[1].sheet, .processed)
+    XCTAssertEqual(cards[2].sheet, .needsReview)
+    let offline = ProposalReview.cards(for: l, list: nil, statuses: nil)
+    guard case .offline(let f) = offline[1].sheet else { return XCTFail("offline") }
+    XCTAssertEqual([f["proposal_id"], f["start"], f["version"]], [p2, "2026-10-11T14:00:00+09:00", "1"])
+    XCTAssertEqual(offline[2].sheet, .needsReview)
+  }
+
+  /// Codex 1: 상태 직접 조회 — 무시한 REVIEW 는 처리됨, proposed 인데 목록(50건 제한) 밖이면 알림 값(안내 없음), 행 없음은 처리됨
+  func testCardsWithStatuses() throws {
+    let l = try XCTUnwrap(ProposalReview.link(actionIdentifier: ProposalReview.defaultAction, category: "EVENT_BUNDLE", fields: [:],
+      events: [raw(pid, "2026-10-02T15:30:00+09:00"), raw(p2, "2026-10-11T14:00:00+09:00"), raw(p3, "2026-10-23", "REVIEW")]))
+    let list = try XCTUnwrap(ProposalReview.decodeList(listJSON()))          // pid 만 대기 중(= 목록 50건 안)
+    let c = ProposalReview.cards(for: l, list: list, statuses: [pid: "proposed", p2: "proposed", p3: "dismissed"])
+    guard case .pending = c[0].sheet else { return XCTFail("pending") }
+    guard case .unlisted(let f) = c[1].sheet else { return XCTFail("unlisted") }   // 대기 51건째 같은 경우
+    XCTAssertEqual([f["proposal_id"], f["start"]], [p2, "2026-10-11T14:00:00+09:00"])
+    XCTAssertEqual(c[2].sheet, .processed)                                   // 무시한 REVIEW 를 다시 열어도 처리됨
+    let r = ProposalReview.cards(for: l, list: list, statuses: [pid: "succeeded", p3: "proposed"])
+    XCTAssertEqual([r[0].sheet, r[1].sheet, r[2].sheet], [.processed, .processed, .needsReview])   // p2 행 없음 → 처리됨
+    let o = ProposalReview.cards(for: l, list: nil, statuses: [pid: "proposed", p2: "proposed", p3: "proposed"])
+    guard case .offline = o[1].sheet else { return XCTFail("offline when the list failed") }
+  }
 }
 
 /// 제안 탭 "전체 무시": 목 네트워크(dismiss 클로저)로 동시 수·마감·집계를 본다

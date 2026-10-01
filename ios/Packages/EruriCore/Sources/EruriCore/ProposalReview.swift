@@ -22,15 +22,46 @@ public enum ProposalReview {
   public static let defaultAction = "com.apple.UNNotificationDefaultActionIdentifier"
   /// 잠금화면 "추가"가 겹침으로 멈췄을 때의 로컬 알림 카테고리(액션 없음). 탭하면 ADD_EVENT 배너처럼 제안 시트(스펙 §10)
   public static let conflictCategory = "ADD_EVENT_CONFLICT"
-  public static let categories: Set<String> = ["ADD_EVENT", "ADD_REMINDER", "REVIEW", conflictCategory]
+  /// 한 항목의 일정 여러 건을 묶은 푸시(스펙 §10, 2026-10-01). 잠금화면 액션 없음 — 탭하면 시트에 카드 N장
+  public static let bundleCategory = "EVENT_BUNDLE"
+  public static let categories: Set<String> = ["ADD_EVENT", "ADD_REMINDER", "REVIEW", conflictCategory, bundleCategory]
+
+  /// 묶음 푸시 events 원소. category 는 그 일정을 단건으로 보냈을 때의 ADD_EVENT·REVIEW
+  public struct BundleEvent: Identifiable, Equatable, Sendable {
+    public let proposalId: String; public let category: String; public let title: String; public let start: String; public let version: Int?
+    public var id: String { proposalId }
+    public init(proposalId: String, category: String, title: String, start: String, version: Int?) {
+      self.proposalId = proposalId; self.category = category; self.title = title; self.start = start; self.version = version
+    }
+    /// 카드 하나의 판정은 단건 알림과 같은 경로(sheet(for:list:))로 — 이 일정만의 링크
+    public var link: Link { Link(proposalId: proposalId, category: category, title: title, start: start, due: nil, version: version) }
+  }
+
+  /// 델리게이트가 userInfo["events"] 를 문자열 사전으로 바꿔 넘긴다. UUID·start 없는 원소는 빼고, 같은 id 는 하나, 최대 5개
+  public static func bundleEvents(_ raw: [[String: String]]) -> [BundleEvent] {
+    var seen = Set<String>(), out: [BundleEvent] = []
+    for e in raw {
+      guard let pid = e["proposal_id"], UUID(uuidString: pid) != nil, let start = e["start"], !seen.contains(pid) else { continue }
+      seen.insert(pid)
+      out.append(BundleEvent(proposalId: pid, category: e["category"] == "ADD_EVENT" ? "ADD_EVENT" : "REVIEW",
+                             title: e["title"] ?? "일정", start: start, version: e["version"].flatMap { Int($0) }))
+      if out.count == 5 { break }
+    }
+    return out
+  }
 
   /// 배너 탭으로 열 제안(푸시 최상위 키, §10). 콜드 스타트에서는 UI 가 준비될 때까지 앱 상태에 보관한다
   public struct Link: Identifiable, Equatable, Sendable {
     public let proposalId: String; public let category: String; public let title: String
     public let start: String?; public let due: String?; public let version: Int?
-    public var id: String { proposalId }
-    public init(proposalId: String, category: String, title: String, start: String?, due: String?, version: Int?) {
+    /// 묶음 알림(EVENT_BUNDLE)의 일정들(시작 순, 2건 이상). 단건이면 비어 있다
+    public let events: [BundleEvent]
+    /// 묶음은 단건과 다른 id — 같은 첫 일정의 단건 시트(겹침 로컬 알림 등)가 떠 있을 때 묶음을 탭해도 루트 .sheet(item:)이 교체한다
+    public var id: String { events.isEmpty ? proposalId : "bundle:" + events.map(\.proposalId).joined(separator: ",") }
+    public init(proposalId: String, category: String, title: String, start: String?, due: String?, version: Int?,
+                events: [BundleEvent] = []) {
       self.proposalId = proposalId; self.category = category; self.title = title; self.start = start; self.due = due; self.version = version
+      self.events = events
     }
     /// 시각이 있으면 서울 벽시계, 날짜만이면 그대로, 할 일은 "…까지"
     public var whenLabel: String {
@@ -40,10 +71,18 @@ public enum ProposalReview {
     }
   }
 
-  /// 배너 탭(기본 액션)이고 제안 카테고리이며 proposal_id 가 UUID 일 때만. "변경된 제안" 같은 로컬 안내는 앱만 연다
-  public static func link(actionIdentifier: String, category: String, fields f: [String: String]) -> Link? {
-    guard actionIdentifier == defaultAction, categories.contains(category),
-          let pid = f["proposal_id"], UUID(uuidString: pid) != nil else { return nil }
+  /// 배너 탭(기본 액션)이고 제안 카테고리이며 proposal_id 가 UUID 일 때만. "변경된 제안" 같은 로컬 안내는 앱만 연다.
+  /// 묶음(EVENT_BUNDLE)은 events 로 — 2건 이상이면 묶음 링크, 하나만 남으면 그 일정의 단건 링크, 없으면 nil
+  public static func link(actionIdentifier: String, category: String, fields f: [String: String], events raw: [[String: String]] = []) -> Link? {
+    guard actionIdentifier == defaultAction, categories.contains(category) else { return nil }
+    if category == bundleCategory {
+      let events = bundleEvents(raw)
+      guard let first = events.first else { return nil }
+      if events.count == 1 { return first.link }                          // 하나만 남으면 단건 시트
+      return Link(proposalId: first.proposalId, category: bundleCategory, title: first.title, start: first.start, due: nil,
+                  version: first.version, events: events)
+    }
+    guard let pid = f["proposal_id"], UUID(uuidString: pid) != nil else { return nil }
     return Link(proposalId: pid, category: category, title: f["title"] ?? "일정", start: f["start"], due: f["due"],
                 version: f["version"].flatMap { Int($0) })
   }
@@ -53,16 +92,42 @@ public enum ProposalReview {
     case offline([String: String])        // 목록을 못 읽음: 받은 푸시 값으로 추가(§10 순서 5, 순서 1 은 handleAdd 가 다시 시도)
     case needsReview                      // 확인 필요(REVIEW)·할 일: 캘린더에 바로 넣지 않는다(수정 화면은 2단계). 무시만
     case processed                        // 목록에 없음: 이미 추가·무시됐거나 지난 제안
+    case unlisted([String: String])       // proposed 인데 목록 밖(50건 제한): 알림 값으로 추가, 안내 없음(묶음 카드만)
   }
 
   /// list = nil 이면 목록 조회 실패(오프라인·마감)
   public static func sheet(for link: Link, list: [Pending]?) -> Sheet {
     if let p = list?.first(where: { $0.proposal_id == link.proposalId }) { return .pending(p) }
     guard link.category == "ADD_EVENT" || link.category == conflictCategory else { return .needsReview }
-    guard list == nil, let start = link.start, parse(start) != nil else { return .processed }
+    guard list == nil, let f = pushFields(link) else { return .processed }
+    return .offline(f)
+  }
+
+  /// 묶음 시트의 카드 한 장 = 일정 하나 + 그 판정
+  public struct BundleCard: Identifiable, Equatable, Sendable {
+    public let event: BundleEvent; public let sheet: Sheet
+    public var id: String { event.proposalId }
+  }
+
+  /// 순서는 events(시작 순). statuses = 알림의 제안 id → 서버 status(직접 조회, 목록 50건 제한·REVIEW 미포함과 무관). nil 이면 조회 실패 → 단건 판정 그대로.
+  /// list = nil 이면 목록 조회 실패
+  public static func cards(for link: Link, list: [Pending]?, statuses: [String: String]?) -> [BundleCard] {
+    link.events.map { e in
+      guard let statuses else { return BundleCard(event: e, sheet: sheet(for: e.link, list: list)) }
+      guard statuses[e.proposalId] == "proposed" else { return BundleCard(event: e, sheet: .processed) }   // 처리됨·행 없음(REVIEW 포함)
+      if e.category != "ADD_EVENT" { return BundleCard(event: e, sheet: .needsReview) }
+      if let p = list?.first(where: { $0.proposal_id == e.proposalId }) { return BundleCard(event: e, sheet: .pending(p)) }
+      guard let f = pushFields(e.link) else { return BundleCard(event: e, sheet: .processed) }
+      return BundleCard(event: e, sheet: list == nil ? .offline(f) : .unlisted(f))
+    }
+  }
+
+  /// 알림 값으로 추가할 때의 필드(sheet(for:list:)의 offline 분기와 묶음 카드 공용)
+  static func pushFields(_ link: Link) -> [String: String]? {
+    guard let start = link.start, parse(start) != nil else { return nil }
     var f = ["proposal_id": link.proposalId, "title": link.title, "start": start]
     if let v = link.version { f["version"] = String(v) }
-    return .offline(f)
+    return f
   }
 
   /// dismiss_proposal RPC 응답: 200 의 JSON 문자열만. 그 밖은 nil(실패)

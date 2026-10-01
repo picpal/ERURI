@@ -107,6 +107,10 @@ struct ProposalSheet: View {
           ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: calendarOK ? f : nil,
                               proposalId: link.proposalId, state: $state)
           Text("서버에 연결하지 못해 알림 내용으로 보여 줍니다").font(.caption).foregroundStyle(.secondary)
+        case .unlisted(let f)?:                                                 // 묶음 카드에서만 나온다 — 알림 값, 안내 없음
+          if !calendarOK { CalendarAccessSection { calendarOK = CalendarLookup.fullAccess } }
+          ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: calendarOK ? f : nil,
+                              proposalId: link.proposalId, state: $state)
         case .needsReview?:
           ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: nil, proposalId: link.proposalId, state: $state)
           Text(link.category == "ADD_REMINDER" ? "할 일 제안은 아직 앱에서 바로 추가하지 않습니다"
