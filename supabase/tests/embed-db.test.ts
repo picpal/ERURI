@@ -26,7 +26,9 @@ Deno.test("embed source → save chunks → hybrid_search finds by vector and ke
     assertEquals(((await sb.rpc("worker_get_embed_source", { p_user: USER, p_item: quarantined })).data as unknown[]).length, 0);
     // 백로그: 대상 1건(격리 항목 제외), 백필 레인, 항목의 실행 태그를 물려받아 운영 워커가 가져가지 않는다. 대기 중이면 다시 넣지 않는다
     assertEquals((await sb.rpc("enqueue_embed_backlog", { p_user: USER, p_limit: 10 })).data, 1);
-    const { data: jobs } = await sb.from("jobs").select("lease_key, payload, priority").eq("user_id", USER).eq("kind", "embed");
+    // 이 테스트의 두 항목만 본다 — 테스트 사용자에 다른 실행이 남긴 done embed 잡(항목 삭제 뒤)이 있어도 판정이 흔들리지 않게
+    const { data: jobs } = await sb.from("jobs").select("lease_key, payload, priority").eq("user_id", USER).eq("kind", "embed")
+      .in("payload->>item_id", [item, quarantined]);
     assertEquals(jobs, [{ lease_key: `${RUN}:backfill:${USER}`, payload: { item_id: item, backfill: true }, priority: 40 }]);
     assertEquals((await sb.rpc("enqueue_embed_backlog", { p_user: USER, p_limit: 10 })).data, 0);
 
