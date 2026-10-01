@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import type { BudgetDeps } from "../functions/_shared/budget.ts";
-import { answerQuestion, type ChatDeps, type ChatHit, type Filters, factsDistinct, formatDocuments, handleChat, REFUSAL, relevantItems, validateAnswer } from "../functions/chat/handler.ts";
+import { answerQuestion, type ChatDeps, type ChatHit, type Filters, factsDistinct, formatDocuments, handleChat, mergeFactDocs, REFUSAL, relevantItems, validateAnswer } from "../functions/chat/handler.ts";
 import { extractFilters, FILTER_SCHEMA, FILTER_SYSTEM, normalizeFilters, scheduleOf } from "../functions/chat/filters.ts";
 
 const hits: ChatHit[] = [
@@ -291,4 +291,13 @@ Deno.test("POST /chat returns schedule next to candidates (null when not a dated
   const dated = await handleChat(req("chat", { question: "10월 3일 일정 있어?" }),
     deps({ filters: { kinds: ["event"], event_from: "2026-10-03T00:00:00+09:00", event_to: "2026-10-03T23:59:59+09:00" } }).d);
   assertEquals((await dated.json()).schedule, { from: "2026-10-03T00:00:00+09:00", to: "2026-10-03T23:59:59+09:00" });
+});
+
+// Review Focus 5: 같은 항목의 일정 두 개가 문서 하나로 합쳐져 둘 다 모델에 간다(item_id dedupe 가 두 번째를 버리지 않게)
+Deno.test("mergeFactDocs: same item facts join into one document in first-seen order; single-fact items unchanged", () => {
+  const a1 = { item_id: "a", occurred_at: "t", text: "[event] 합성 콘서트 · 2026-10-09T19:30" };
+  const b = { item_id: "b", occurred_at: "t", text: "[event] 합성 진료 · 2026-10-06T15:30" };
+  const a2 = { item_id: "a", occurred_at: "t", text: "[event] 합성 뮤지컬 · 2026-10-10T15:00" };
+  assertEquals(mergeFactDocs([a1, b, a2]), [{ ...a1, text: `${a1.text}\n${a2.text}` }, b]);
+  assertEquals(mergeFactDocs([a1, b]), [a1, b]);          // ⑩b 기준선: 항목당 fact 1개면 항등
 });

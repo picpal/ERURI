@@ -92,6 +92,15 @@ export function pickCandidates(o: { refused: boolean; cited: string[]; facts: st
   return o.refused ? [] : [...new Set([...o.cited, ...o.facts, ...o.searched])].slice(0, CANDIDATE_MAX);
 }
 
+// 한 항목의 fact 여러 개(다건 일정, 스펙 §7·§9 2026-10-01)는 문서 하나로 합친다 — 따로 두면 아래 item_id dedupe 가 두 번째 일정부터 버린다
+export function mergeFactDocs(docs: ChatHit[]): ChatHit[] {
+  const byItem = new Map<string, ChatHit>();
+  for (const d of docs) {
+    const prev = byItem.get(d.item_id);
+    byItem.set(d.item_id, prev ? { ...prev, text: `${prev.text}\n${d.text}` } : d);
+  }
+  return [...byItem.values()];
+}
 function dedupe(docs: ChatHit[]): ChatHit[] {
   const seen = new Set<string>();
   return docs.filter((d) => (seen.has(d.item_id) ? false : (seen.add(d.item_id), true)));
@@ -111,7 +120,7 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps): Pro
     let s = await deps.search(userId, q);
     // 기간은 받은 시각 조건이라 일정 날짜로 잘못 채워지면 0건이 된다 → 기간만 빼고 한 번 더(Ruling D). 후보도 이 최종 검색 기준
     if (s.docs.length === 0 && (q.from !== null || q.to !== null)) s = await deps.search(userId, { ...q, from: null, to: null });
-    const read = dedupe([...factDocs, ...s.docs]);
+    const read = dedupe([...mergeFactDocs(factDocs), ...s.docs]);
     const docs = read.slice(0, 12);
     if (docs.length === 0) {
       return { value: { answer: REFUSAL, source_item_ids: [], refused: true, forced_refusal: false, dropped_ids: 0, hits: [], candidates: [],
