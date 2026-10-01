@@ -34,8 +34,12 @@ public enum ProposalFlow {
   public struct CalendarEvent: Equatable, Sendable {
     public let id: String; public let title: String; public let start: Date; public let end: Date
     public let allDay: Bool; public let canceled: Bool; public let url: URL?
-    public init(id: String, title: String, start: Date, end: Date, allDay: Bool = false, canceled: Bool = false, url: URL? = nil) {
+    /// 채팅 일정 답 카드의 줄로 보일 캘린더인가(생일·구독 캘린더 = false). 겹침 판정에는 쓰지 않는다 — 겹친 일정은 어느 캘린더든 보인다(§9)
+    public let listed: Bool
+    public init(id: String, title: String, start: Date, end: Date, allDay: Bool = false, canceled: Bool = false, url: URL? = nil,
+                listed: Bool = true) {
       self.id = id; self.title = title; self.start = start; self.end = end; self.allDay = allDay; self.canceled = canceled; self.url = url
+      self.listed = listed
     }
   }
   /// AddEventGate 가 저장하는 길이. 겹침은 이 구간으로 판정한다(제안 end 는 저장에 쓰지 않는다)

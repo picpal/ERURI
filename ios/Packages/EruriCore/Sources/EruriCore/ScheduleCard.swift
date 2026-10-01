@@ -1,0 +1,224 @@
+import Foundation
+
+/// 채팅 일정 답 카드(스펙 §9 "일정 답 카드", 앱 0.8.2): 제안 한 건을 ① 찾은 곳 ② 그날 내 캘린더 ③ 상태·버튼 한 묶음으로 보인다.
+/// EventKit·SwiftUI 없이 판단·문구만 — 읽기는 앱 CalendarLookup. 캘린더 내용은 기기 밖으로 나가지 않는다(§12 통제 2)
+public enum ScheduleCard {
+  /// 제안 시각의 종류. addable 만 캘린더 대조 상태와 버튼이 있다
+  public enum Kind: Equatable, Sendable { case addable, dateOnly, needsReview, past }
+
+  /// 카드로 고른 제안. start = 시각, 날짜만이면 그날 서울 0시
+  public struct Pick: Sendable {
+    public let proposal: ChatReply.Proposal; public let kind: Kind; public let start: Date; public let timed: Bool
+    public var title: String { ScheduleCard.title(proposal) }
+    public var day: DateInterval { ScheduleCard.seoulDay(start) }
+  }
+
+  public static let maxCards = 3, maxLines = 4
+
+  /// 카드로 보일 제안이면 Pick: create_event 이고 start 가 오프셋 있는 시각(handleAdd 와 같은 파서)이거나 날짜만(YYYY-MM-DD).
+  /// 지남(시각 < now, 날짜만은 그날이 끝남) → past, uncertain → needsReview, 날짜만 → dateOnly, 나머지 addable. 서버 상태는 보지 않는다(상태는 캘린더 대조가 정한다)
+  public static func card(_ p: ChatReply.Proposal, now: Date = Date()) -> Pick? {
+    guard p.action == "create_event", let s = p.payload["start"]?.string else { return nil }
+    let uncertain: Bool = { if case .array(let u)? = p.payload["uncertain"] { return !u.isEmpty }; return false }()
+    if let at = iso.date(from: s) {
+      return Pick(proposal: p, kind: at < now ? .past : uncertain ? .needsReview : .addable, start: at, timed: true)
+    }
+    guard s.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil, let day = dayParser.date(from: s) else { return nil }
+    return Pick(proposal: p, kind: seoulDay(day).end <= now ? .past : uncertain ? .needsReview : .dateOnly, start: day, timed: false)
+  }
+
+  /// 한 답의 카드: 일정 기간이 있으면 그 안에서 시작하는 것만(인용 항목의 무관한 일정 제외), 다가올 일정을 시작 순으로 먼저,
+  /// 지난 일정은 그 뒤에 최근 것부터(추가할 수 있는 카드가 "N건 더 있음"으로 밀리지 않게). 같은 시작(분)·제목은 한 장(succeeded 가 있으면 그것), 최대 3 + 넘친 수
+  public static func pick(_ ps: [ChatReply.Proposal], schedule: DateInterval?, now: Date = Date()) -> (cards: [Pick], more: Int) {
+    let rank = { (c: Pick) in c.proposal.status == "succeeded" ? 0 : 1 }
+    // 다가올 일정 먼저(시작 순), 지난 일정은 그 뒤(최근 것부터). 1순위가 분이라 같은 분·제목 묶음에서 succeeded 가 대표가 된다(초 차이 무시)
+    let key = { (c: Pick) -> (Int, Int, Int, String) in
+      c.kind == .past ? (1, -minute(c.start), rank(c), c.proposal.id) : (0, minute(c.start), rank(c), c.proposal.id)
+    }
+    let sorted = ps.compactMap { card($0, now: now) }
+      .filter { c in schedule.map { $0.start <= c.start && c.start <= $0.end } ?? true }
+      .sorted { key($0) < key($1) }
+    var seen = Set<String>(), out: [Pick] = []
+    for c in sorted where seen.insert("\(minute(c.start))|\(c.title)").inserted { out.append(c) }
+    return (Array(out.prefix(maxCards)), max(0, out.count - maxCards))
+  }
+
+  // MARK: ① 찾은 곳
+
+  /// "문자에서 찾은 일정" — 같은 응답의 인용(item_id 일치)에서. 인용이 없으면 "저장된 정보에서 찾은 일정"
+  public static func sourceLine(_ c: ChatReply.Citation?) -> String { "\(origin(c).found)에서 찾은 일정" }
+  /// "10/1 받은 문자"(서울). 인용이 없거나 시각을 못 읽으면 nil
+  public static func receivedLine(_ c: ChatReply.Citation?) -> String? {
+    guard let c, let at = iso.date(from: c.occurred_at.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)) else { return nil }
+    return "\(md.string(from: at)) \(origin(c).received)"
+  }
+  private static func origin(_ c: ChatReply.Citation?) -> (found: String, received: String) {
+    guard let c else { return ("저장된 정보", "저장") }
+    switch c.source {
+    case "MESSAGES": return ("문자", "받은 문자")
+    case "NOTIFICATION":
+      if SourceLabel.label(source: c.source, appName: c.app_name) == "문자" { return ("문자", "받은 문자") }
+      return ("\(c.app_name.flatMap { $0.isEmpty ? nil : $0 } ?? "앱") 알림", "받은 알림")
+    case "GMAIL": return ("메일", "받은 메일")
+    case "SHARE": return ("공유한 내용", "공유함")
+    default: return ("저장된 정보", "저장")
+    }
+  }
+
+  // MARK: ② 그날 내 캘린더
+
+  public struct DayLine: Equatable, Sendable { public let text: String; public let conflict: Bool }
+  public static let emptyDayText = "이 날 등록된 일정 없음"
+  public static func dayHeader(_ day: DateInterval) -> String { "내 캘린더 · \(dayLabel(day.start))" }
+
+  /// 그날(서울 하루) 줄: 겹친 일정(어느 캘린더든, 그날 밖이어도) → 종일 → 시작 순. 나머지는 표시 대상 캘린더(listed)만, 취소 제외. 최대 4 + 넘친 수
+  public static func dayLines(day: DateInterval, events: [ProposalFlow.CalendarEvent],
+                              conflicts: [ProposalFlow.CalendarEvent]) -> (lines: [DayLine], more: Int) {
+    // id 만 보면 안 된다 — 반복 일정은 회차마다 id(eventIdentifier)가 같고 카드는 ±1일을 읽는다
+    let isHit = { (e: ProposalFlow.CalendarEvent) in conflicts.contains(e) }
+    let shown = events.filter { e in
+      !e.canceled && (isHit(e) || (e.listed && e.start < day.end && (e.end > day.start || (e.start == e.end && e.start >= day.start))))
+    }
+    let rank = { (e: ProposalFlow.CalendarEvent) in isHit(e) ? 0 : e.allDay ? 1 : 2 }
+    let lines = shown.sorted { (rank($0), $0.start, $0.id) < (rank($1), $1.start, $1.id) }
+      .map { DayLine(text: "\(span($0, within: day)) \(name($0))", conflict: isHit($0)) }
+    return (Array(lines.prefix(maxLines)), max(0, lines.count - maxLines))
+  }
+
+  // MARK: ③ 상태
+
+  public enum Status: Equatable, Sendable {
+    case added, addedMoved(Date), sameEvent, addedMissing
+    case conflict([ProposalFlow.CalendarEvent], maybeSame: Bool)
+    case clear
+  }
+
+  /// 등록 판정(§9 상태 1~6). events = 카드 날짜 ±1일 일정(표식이 옮겨졌어도 찾는다). 캘린더 실제 상태가 1순위이고
+  /// 실행 기록·서버 succeeded 는 "넣은 적 있음"의 보조 근거(succeeded 만으로 "등록됨"이라 하지 않는다). 최종 판정은 AddEventGate
+  public static func status(pid: String, title: String, start: Date, serverStatus: String, executed: Bool,
+                            events: [ProposalFlow.CalendarEvent]) -> Status {
+    let live = events.filter { !$0.canceled }, m = ProposalFlow.marker(pid), name = trimmed(title)
+    if let mine = live.filter({ $0.url == m }).min(by: { abs($0.start.timeIntervalSince(start)) < abs($1.start.timeIntervalSince(start)) }) {
+      return minute(mine.start) == minute(start) ? .added : .addedMoved(mine.start)
+    }
+    if live.contains(where: { minute($0.start) == minute(start) && trimmed($0.title) == name }) { return .sameEvent }
+    if executed || serverStatus == "succeeded" { return .addedMissing }
+    let c = ProposalFlow.conflicts(pid: pid, start: start, events: events)
+    if c.isEmpty { return .clear }
+    // 같은 예약의 재안내 → 다른 제안이 이미 넣은 일정(Fable #10). 자동 차단은 하지 않는다 — 오판이면 추가할 길이 없어진다
+    let same = c.contains { $0.url?.absoluteString.hasPrefix(markerPrefix) == true && minute($0.start) == minute(start) }
+    return .conflict(c, maybeSame: same)
+  }
+
+  public static func statusText(_ s: Status) -> String {
+    switch s {
+    case .added: return "✅ 캘린더에 등록됨"
+    case .addedMoved(let d): return "✅ 캘린더에 등록됨 · 캘린더에서는 \(dayLabel(d)) \(hm.string(from: d))"
+    case .sameEvent: return "✅ 같은 일정이 캘린더에 있음"
+    case .addedMissing: return "이전에 추가한 일정 · 이 날 캘린더에서는 찾지 못함(옮겼거나 지웠을 수 있음)"
+    case .conflict(let cs, let same):
+      guard let f = cs.first else { return "⚠️ 아직 캘린더에 없음" }
+      return "⚠️ 아직 캘린더에 없음 · 겹치는 일정 \(span(f)) \(name(f))" + (cs.count > 1 ? " 외 \(cs.count - 1)건" : "") + (same ? " (같은 일정일 수 있음)" : "")
+    case .clear: return "아직 캘린더에 없음"
+    }
+  }
+
+  // MARK: 카드 모델·버튼
+
+  public struct Model: Equatable, Sendable {
+    public let pid: String; public let itemID: String; public let title: String
+    /// 제안 payload 의 start 원문 — handleAdd 에 그대로 넘긴다(같은 파서)
+    public let startText: String
+    public let kind: Kind; public let start: Date; public let timed: Bool
+    /// addable 이고 캘린더를 읽었을 때만
+    public let status: Status?
+    /// nil = 캘린더를 읽지 못함(전체 접근 없음) — 그 자리에 허용 안내
+    public let lines: [DayLine]?
+    public let moreLines: Int
+    public var day: DateInterval { ScheduleCard.seoulDay(start) }
+  }
+
+  /// 카드 한 장. events = 카드 날짜 ±1일의 모든 캘린더 일정(앱 CalendarLookup.cardEvents), nil = 전체 접근 없음. executed = 이 기기 실행 기록
+  public static func model(_ c: Pick, events: [ProposalFlow.CalendarEvent]?, executed: Bool) -> Model {
+    let st: Status? = c.kind == .addable ? events.map {
+      status(pid: c.proposal.id, title: c.title, start: c.start, serverStatus: c.proposal.status, executed: executed, events: $0)
+    } : nil
+    var conflicts: [ProposalFlow.CalendarEvent] = []
+    if case .conflict(let cs, _)? = st { conflicts = cs }
+    let l = events.map { dayLines(day: c.day, events: $0, conflicts: conflicts) }
+    return Model(pid: c.proposal.id, itemID: c.proposal.item_id, title: c.title, startText: c.proposal.payload["start"]?.string ?? "",
+                 kind: c.kind, start: c.start, timed: c.timed, status: st, lines: l?.lines, moreLines: l?.more ?? 0)
+  }
+
+  public enum Action: Equatable, Sendable { case add, addAnyway }
+  /// 버튼: 시각 있는 미래 제안이 "아직 없음"이면 캘린더에 추가, 겹침이면 겹쳐도 추가(확인창 없음, §10). 그 밖은 없음
+  public static func action(_ m: Model) -> Action? {
+    guard m.kind == .addable else { return nil }
+    switch m.status {
+    case .clear?: return .add
+    case .conflict?: return .addAnyway
+    default: return nil
+    }
+  }
+  public static func buttonTitle(_ a: Action) -> String { a == .add ? "캘린더에 추가" : "겹쳐도 추가" }
+  /// 상태 줄: 캘린더 대조 상태, 없으면 종류 문구(시각 없음·확인 필요·지난 일정). 시각 있는 미래 제안인데 캘린더를 못 읽었으면 nil(안내가 대신한다)
+  public static func statusText(_ m: Model) -> String? {
+    if let s = m.status { return statusText(s) }
+    switch m.kind {
+    case .addable: return nil
+    case .dateOnly: return "날짜만 확인돼 바로 추가하지 않음"
+    case .needsReview: return "내용 확인이 필요해 바로 추가하지 않음"
+    case .past: return "지난 일정"
+    }
+  }
+  public static func isWarning(_ m: Model) -> Bool { if case .conflict? = m.status { return true }; return false }
+  /// "10/4(일) 15:30 제목", 날짜만이면 "10/4(일) 시간 미정 제목"
+  public static func whenLine(_ m: Model) -> String { "\(dayLabel(m.start)) \(m.timed ? hm.string(from: m.start) : "시간 미정") \(m.title)" }
+  public static func moreText(_ n: Int) -> String { "일정 제안 \(n)건 더 있음" }
+
+  /// "기기 캘린더" 절을 카드와 같이 그릴지(§9): 일정 기간이 있고, 카드가 없거나 기간이 카드 날짜 하루(서울)보다 넓을 때
+  public static func showsRangeSection(schedule: DateInterval?, cardDays: [DateInterval]) -> Bool {
+    guard let s = schedule else { return false }
+    guard !cardDays.isEmpty else { return true }
+    let day = seoulDay(s.start)
+    return !(s.start == day.start && s.end < day.end && cardDays.allSatisfy { $0 == day })
+  }
+  public static func seoulDay(_ d: Date) -> DateInterval { DateInterval(start: seoul.startOfDay(for: d), duration: 86_400) }
+
+  // MARK: 내부
+
+  static func title(_ p: ChatReply.Proposal) -> String {
+    let t = trimmed(p.payload["title"]?.string ?? "")
+    return t.isEmpty ? "일정" : t
+  }
+  /// 종일이면 "종일". day 안에 다 들면 "HH:mm–HH:mm", 아니면 "M/d HH:mm–M/d HH:mm". day 없이 부르면(상태 문구) 일정이 시작한 서울 하루로 판단 —
+  /// 다음 날 0시에 끝나면 그날 안("23:00–00:00", §9). 줄과 상태 문구가 같은 일정을 같은 표기로 쓴다
+  static func span(_ e: ProposalFlow.CalendarEvent, within day: DateInterval? = nil) -> String {
+    if e.allDay { return "종일" }
+    let d = day ?? seoulDay(e.start)
+    let inside = e.start >= d.start && e.end <= d.end
+    let f = inside ? hm : mdhm
+    return "\(f.string(from: e.start))–\(f.string(from: e.end))"
+  }
+  private static func name(_ e: ProposalFlow.CalendarEvent) -> String { let t = trimmed(e.title); return t.isEmpty ? "(제목 없음)" : t }
+  private static func trimmed(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
+  private static func minute(_ d: Date) -> Int { Int((d.timeIntervalSince1970 / 60).rounded(.down)) }
+  /// "10/4(일)"
+  static func dayLabel(_ d: Date) -> String { "\(md.string(from: d))(\(weekdays[seoul.component(.weekday, from: d) - 1]))" }
+
+  private static let markerPrefix = "assistant://proposal/"                  // ProposalFlow.marker 의 접두
+  private static let weekdays = ["일", "월", "화", "수", "목", "금", "토"]      // Calendar.weekday 1 = 일요일
+  private static let seoul: Calendar = {
+    var c = Calendar(identifier: .gregorian)
+    c.timeZone = TimeZone(identifier: "Asia/Seoul")!
+    return c
+  }()
+  // handleAdd·ChatReply 와 같은 파서여야 카드 시각과 실행이 어긋나지 않는다. SDK 가 Sendable 표시를 안 해서 unsafe(설정 후 읽기만)
+  nonisolated(unsafe) private static let iso = ISO8601DateFormatter()
+  private static let hm = seoulFormatter("HH:mm"), md = seoulFormatter("M/d"), mdhm = seoulFormatter("M/d HH:mm"), dayParser = seoulFormatter("yyyy-MM-dd")
+  private static func seoulFormatter(_ format: String) -> DateFormatter {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(identifier: "Asia/Seoul"); f.dateFormat = format
+    return f
+  }
+}
