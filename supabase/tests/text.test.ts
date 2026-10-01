@@ -6,8 +6,8 @@ import type { Job } from "../functions/_shared/job.ts";
 import { processText, type TextDeps, type TextItem } from "../functions/worker/text.ts";
 
 // 문구는 합성. 모델·DB 없이 파이프라인 분기만 본다
-const EVENT_X: TextExtraction = { kind: "event", evidence: "합성 근거",
-  event: { title: "진료", start: "2026-09-30T15:00:00+09:00", end: null, location: null, uncertain: [] } };
+const EVENT_X: TextExtraction = { kind: "event", events: [{ evidence: "합성 근거",
+  event: { title: "진료", start: "2026-09-30T15:00:00+09:00", end: null, location: null, uncertain: [] } }] };
 const BUY_X: TextExtraction = { kind: "purchase", evidence: null,
   purchase: { merchant: "합성커피", products: [], ordered_at: null, amount: 32000, currency: "KRW", order_no: null, status: "paid" } };
 function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: ClassifyResult | null | Error; result?: TextExtraction;

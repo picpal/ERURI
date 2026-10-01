@@ -17,11 +17,15 @@ export function eventFact(userId: string, itemId: string, event: ExtractedEvent,
   return { userId, itemId, kind: "event", payload: { ...event, via }, evidence };
 }
 
-export function textFact(userId: string, itemId: string, x: TextExtraction): FactInput | null {
+export type FactEntry = { payload: Record<string, unknown>; evidence: string | null };
+export type FactsInput = { userId: string; itemId: string; kind: FactKind; entries: FactEntry[] };
+
+// 텍스트 추출 → 한 항목의 fact 묶음(스펙 §7 저장, 2026-10-01): event 는 일정마다(시작 순 = 순번), task·purchase 는 1건
+export function textFacts(userId: string, itemId: string, x: TextExtraction): FactsInput | null {
   switch (x.kind) {
-    case "event": return eventFact(userId, itemId, x.event, "text", x.evidence);
-    case "task": return { userId, itemId, kind: "task", payload: { ...x.task, via: "text" }, evidence: x.evidence };
-    case "purchase": return { userId, itemId, kind: "purchase", payload: { ...x.purchase, via: "text" }, evidence: x.evidence };
+    case "event": return { userId, itemId, kind: "event", entries: x.events.map((e) => ({ payload: { ...e.event, via: "text" }, evidence: e.evidence })) };
+    case "task": return { userId, itemId, kind: "task", entries: [{ payload: { ...x.task, via: "text" }, evidence: x.evidence }] };
+    case "purchase": return { userId, itemId, kind: "purchase", entries: [{ payload: { ...x.purchase, via: "text" }, evidence: x.evidence }] };
     default: return null;
   }
 }

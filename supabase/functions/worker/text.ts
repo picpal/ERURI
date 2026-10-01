@@ -2,7 +2,7 @@ import { type BudgetDeps, costKrw, guarded } from "../_shared/budget.ts";
 import { type Classifier, classifierMeta, type ClassifyResult, gateDecision } from "../_shared/classify.ts";
 import type { ExtractUsage } from "../_shared/extract.ts";
 import type { TextExtraction, TextMeta } from "../_shared/extract-text.ts";
-import { type FactInput, type SavedFact, textFact } from "../_shared/facts.ts";
+import { type FactInput, type SavedFact, textFacts } from "../_shared/facts.ts";
 import type { Job } from "../_shared/job.ts";
 import { applyRules } from "../_shared/rules.ts";
 import { receivedDay } from "../_shared/time.ts";
@@ -80,13 +80,15 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
 
   // 3) 추출. 비용 예약(§13): 백필 항목은 1회 예산, 그 외는 월 예산. 소진이면 Deferred(다음 달) — 잡은 queued 로 남는다
   const kind = job.payload.backfill === true ? "backfill" : "extract";
-  const est = costKrw("gpt-6-luna", { input: v.masked.length + 1200, output: 400 });
+  const est = costKrw("gpt-6-luna", { input: v.masked.length + 1200, output: 700 });
   const { value: { result, usage } } = await guarded(deps.budget, user, kind, est, job.id, async () => {
     const x = await deps.extract(v.masked, meta, receivedDay(item.occurredAt));   // 상대 날짜 기준일 = 받은 날(서울)
     return { value: x, actualKrw: costKrw("gpt-6-luna", { input: x.usage.input_tokens, output: x.usage.output_tokens }) };
   });
   await deps.addTokens(user, usage.input_tokens + usage.output_tokens, job.payload.backfill === true);
-  const fact = textFact(user, itemId, result);
+  const facts = textFacts(user, itemId, result);
+  const fact: FactInput | null = facts === null ? null
+    : { userId: facts.userId, itemId: facts.itemId, kind: facts.kind, payload: facts.entries[0].payload, evidence: facts.entries[0].evidence };   // T3 이 saveFacts 로 바꾼다
   if (fact === null) {                                               // 남길 것 없음: 원문 유지(1b 검색 대상, §7)
     const st = await discard(deps, job, user, itemId, "empty", false);
     await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);
