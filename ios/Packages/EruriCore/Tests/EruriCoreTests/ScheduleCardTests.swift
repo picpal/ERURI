@@ -22,18 +22,19 @@ final class ScheduleCardTests: XCTestCase {
   private var now: Date { d("2026-10-01T03:00:00Z") }
   private let seoulZone = TimeZone(identifier: "Asia/Seoul")!                                    // 서울 10/1(목) 12:00
 
-  /// 시각 있음·미래 → addable, 날짜만 → dateOnly(서울 0시), uncertain → needsReview, 지남 → past.
+  /// 시각 있음·미래 → addable, 날짜만 → addable 종일(timed false, 서울 0시 — 0.9.1), uncertain → needsReview, 지남 → past.
   /// create_event 아님·start 없음·오프셋 없는 시각(handleAdd 가 못 읽음) → 카드 없음. 서버 상태는 kind 에 영향 없음
   func testCardKinds() throws {
     let a = try XCTUnwrap(ScheduleCard.card(prop("p", start: .string("2026-10-04T15:30:00+09:00")), now: now))
     XCTAssertEqual(a.kind, .addable); XCTAssertEqual(a.start, d("2026-10-04T06:30:00Z")); XCTAssertTrue(a.timed)
     let day = try XCTUnwrap(ScheduleCard.card(prop("p", start: .string("2026-10-04")), now: now))
-    XCTAssertEqual(day.kind, .dateOnly); XCTAssertEqual(day.start, d("2026-10-03T15:00:00Z")); XCTAssertFalse(day.timed)
+    XCTAssertEqual(day.kind, .addable); XCTAssertEqual(day.start, d("2026-10-03T15:00:00Z")); XCTAssertFalse(day.timed)
     XCTAssertEqual(ScheduleCard.card(prop("p", start: .string("2026-10-04T15:30:00+09:00"), uncertain: ["year"]), now: now)?.kind, .needsReview)
     XCTAssertEqual(ScheduleCard.card(prop("p", start: .string("2026-10-04"), uncertain: ["time"]), now: now)?.kind, .needsReview)
     XCTAssertEqual(ScheduleCard.card(prop("p", start: .string("2026-09-30T15:30:00+09:00")), now: now)?.kind, .past)
     XCTAssertEqual(ScheduleCard.card(prop("p", start: .string("2026-09-30")), now: now)?.kind, .past)
-    XCTAssertEqual(ScheduleCard.card(prop("p", start: .string("2026-10-01")), now: now)?.kind, .dateOnly)        // 오늘(서울)은 아직 안 지남
+    XCTAssertEqual(ScheduleCard.card(prop("p", start: .string("2026-10-01")), now: now)?.kind, .addable)         // 오늘(서울)은 아직 안 지남
+    XCTAssertNil(ScheduleCard.card(prop("p", start: .string("2027-02-30")), now: now))                              // 달력에 없는 날짜
     XCTAssertEqual(ScheduleCard.card(prop("p", start: .string("2026-10-01T12:00:00+09:00")), now: now)?.kind, .addable)  // start == now 는 안 지남(notify.ts)
     XCTAssertEqual(ScheduleCard.card(prop("p", start: .string("2026-10-04T15:30:00+09:00"), status: "succeeded"), now: now)?.kind, .addable)
     XCTAssertNil(ScheduleCard.card(prop("p", start: .string("2026-10-04T15:30:00+09:00"), action: "create_reminder"), now: now))
@@ -170,6 +171,41 @@ final class ScheduleCardTests: XCTestCase {
     XCTAssertEqual(s([]), .clear)
   }
 
+  /// 종일 제안(0.9.1)의 등록 판정: 이 제안 표식 종일 일정이 같은 서울 날짜 → 등록됨, 다른 날 → "캘린더에서는 10/6(화) 종일",
+  /// 표식 없이 같은 날 종일·같은 제목 → 같은 일정, 실행 기록 → 이전에 추가함, 그날 시각 있는 일정은 겹침 아님(§10 종일 제외).
+  /// 종일 일정은 기기 시간대 0시로 오므로 seoulSpan 으로 서울 날짜를 가른다
+  func testAllDayStatus() throws {
+    let start = d("2026-10-04T15:00:00Z"), m = ProposalFlow.marker("p-1")                      // 서울 10/5(월) 0시
+    func s(_ evs: [ProposalFlow.CalendarEvent], executed: Bool = false, zone: TimeZone? = nil) -> ScheduleCard.Status {
+      ScheduleCard.status(pid: "p-1", title: "합성 공지 행사", start: start, allDay: true, serverStatus: "proposed", executed: executed,
+                          events: evs, deviceZone: zone ?? seoulZone)
+    }
+    let mine = ev("mine", "2026-10-04T15:00:00Z", "2026-10-05T14:59:59Z", title: "합성 공지 행사", allDay: true, url: m)
+    XCTAssertEqual(s([mine]), .added)
+    let laZone = TimeZone(identifier: "America/Los_Angeles")!
+    let mineLA = ev("mine", "2026-10-05T07:00:00Z", "2026-10-06T06:59:59Z", title: "합성 공지 행사", allDay: true, url: m)   // LA 기기의 10/5 0시
+    XCTAssertEqual(s([mineLA], zone: laZone), .added)
+    let movedDay = ev("mine", "2026-10-05T15:00:00Z", "2026-10-06T14:59:59Z", title: "합성 공지 행사", allDay: true, url: m)
+    XCTAssertEqual(s([movedDay]), .addedMovedDay(d("2026-10-05T15:00:00Z")))
+    XCTAssertEqual(ScheduleCard.statusText(.addedMovedDay(d("2026-10-05T15:00:00Z"))), "✅ 캘린더에 등록됨 · 캘린더에서는 10/6(화) 종일")
+    let movedTimed = ev("mine", "2026-10-05T01:00:00Z", "2026-10-05T02:00:00Z", title: "합성 공지 행사", url: m)           // 시각 일정으로 바꿈
+    XCTAssertEqual(s([movedTimed]), .addedMoved(d("2026-10-05T01:00:00Z")))
+    XCTAssertEqual(s([ev("same", "2026-10-04T15:00:00Z", "2026-10-05T14:59:59Z", title: " 합성 공지 행사", allDay: true)]), .sameEvent)
+    XCTAssertEqual(s([ev("timedSame", "2026-10-05T01:00:00Z", "2026-10-05T02:00:00Z", title: "합성 공지 행사")]), .clear)   // 시각 일정은 같은 일정으로 보지 않는다
+    XCTAssertEqual(s([ev("busy", "2026-10-05T01:00:00Z", "2026-10-05T02:00:00Z", title: "합성 회의")]), .clear)
+    XCTAssertEqual(s([], executed: true), .addedMissing)
+    XCTAssertEqual(s([ev("c", "2026-10-04T15:00:00Z", "2026-10-05T14:59:59Z", title: "합성 공지 행사", allDay: true, canceled: true, url: m)]), .clear)
+  }
+
+  /// 여러 날 종일 제안: 카드 줄 "10/5(월)–10/7(수) 종일 제목", 추가 필드에 end(마지막 날)
+  func testAllDayMultiDayModel() throws {
+    var p = prop("p-5", start: .string("2026-10-05"), title: "합성 축제")
+    p = ChatReply.Proposal(id: p.id, item_id: p.item_id, action: p.action, status: p.status, payload: p.payload.merging(["end": .string("2026-10-07")]) { _, n in n })
+    let m = ScheduleCard.model(try XCTUnwrap(ScheduleCard.card(p, now: now)), events: [], executed: false)
+    XCTAssertEqual(ScheduleCard.whenLine(m), "10/5(월)–10/7(수) 종일 합성 축제")
+    XCTAssertEqual(ScheduleCard.addFields(m), ["proposal_id": "p-5", "title": "합성 축제", "start": "2026-10-05", "end": "2026-10-07"])
+  }
+
   func testStatusText() {
     let o = ev("o", "2026-10-04T06:00:00Z", "2026-10-04T07:00:00Z", title: "합성 겹침")
     let o2 = ev("o2", "2026-10-04T06:45:00Z", "2026-10-04T07:15:00Z")
@@ -209,9 +245,16 @@ final class ScheduleCardTests: XCTestCase {
     XCTAssertNil(noAccess.status); XCTAssertNil(noAccess.lines); XCTAssertNil(ScheduleCard.action(noAccess)); XCTAssertNil(ScheduleCard.statusText(noAccess))
     let past = ScheduleCard.model(try XCTUnwrap(ScheduleCard.card(prop("p-2", start: .string("2026-09-30T15:30:00+09:00")), now: now)), events: [], executed: false)
     XCTAssertNil(past.status); XCTAssertNil(ScheduleCard.action(past)); XCTAssertEqual(ScheduleCard.statusText(past), "지난 일정")
-    let dateOnly = ScheduleCard.model(try XCTUnwrap(ScheduleCard.card(prop("p-3", start: .string("2026-10-05")), now: now)), events: nil, executed: false)
-    XCTAssertEqual(ScheduleCard.statusText(dateOnly), "날짜만 확인돼 바로 추가하지 않음")
-    XCTAssertEqual(ScheduleCard.whenLine(dateOnly), "10/5(월) 시간 미정 합성의원 진료 예약")
+    // 날짜만 = 종일(0.9.1): 캘린더를 읽으면 상태·"종일 일정으로 추가", 못 읽으면 시각 있는 제안처럼 안내만
+    let dayCard = try XCTUnwrap(ScheduleCard.card(prop("p-3", start: .string("2026-10-05")), now: now))
+    let allDay = ScheduleCard.model(dayCard, events: [o], executed: false)                                  // 그날 시각 있는 일정은 겹침이 아니다
+    XCTAssertEqual(allDay.status, .clear); XCTAssertEqual(ScheduleCard.action(allDay), .add); XCTAssertFalse(ScheduleCard.isWarning(allDay))
+    XCTAssertEqual(ScheduleCard.buttonTitle(.add, allDay: true), "종일 일정으로 추가")
+    XCTAssertEqual(ScheduleCard.whenLine(allDay), "10/5(월) 종일 합성의원 진료 예약")
+    XCTAssertEqual(ScheduleCard.addFields(allDay), ["proposal_id": "p-3", "title": "합성의원 진료 예약", "start": "2026-10-05"])
+    let noAccessDay = ScheduleCard.model(dayCard, events: nil, executed: false)
+    XCTAssertNil(noAccessDay.status); XCTAssertNil(ScheduleCard.action(noAccessDay)); XCTAssertNil(ScheduleCard.statusText(noAccessDay))
+    XCTAssertEqual(ScheduleCard.addFields(clear), ["proposal_id": "p-1", "title": "합성의원 진료 예약", "start": "2026-10-04T15:30:00+09:00"])
     let review = ScheduleCard.model(try XCTUnwrap(ScheduleCard.card(prop("p-4", start: .string("2026-10-05T10:00:00+09:00"), uncertain: ["year"]), now: now)),
                                     events: [], executed: false)
     XCTAssertEqual(ScheduleCard.statusText(review), "내용 확인이 필요해 바로 추가하지 않음"); XCTAssertNil(ScheduleCard.action(review))

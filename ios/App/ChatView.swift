@@ -265,7 +265,7 @@ struct ChatView: View {
   /// 결과 문구는 실패이거나 버튼이 남아 있을 때만 — 성공하면 재조회로 상태가 "✅ 캘린더에 등록됨"으로 바뀌어 같은 말을 두 번 하지 않는다
   @ViewBuilder private func statusRow(_ c: ScheduleCard.Model, access: Bool) -> some View {
     let state = adds[c.pid], action = access ? ScheduleCard.action(c) : nil
-    let line = access || c.status == nil ? ScheduleCard.statusText(c) : nil      // 권한이 없으면 캘린더 대조 상태는 숨기고 종류 문구(시간 미정·지난 일정)만
+    let line = access || c.status == nil ? ScheduleCard.statusText(c) : nil      // 권한이 없으면 캘린더 대조 상태는 숨기고 종류 문구(확인 필요·지난 일정)만
     if line != nil || action != nil || state != nil {
       VStack(alignment: .leading, spacing: 6) {
         if let line { Text(line).font(.caption).foregroundStyle(ScheduleCard.isWarning(c) ? Color.orange : Color.secondary) }
@@ -283,8 +283,8 @@ struct ChatView: View {
   }
 
   private func addButton(_ c: ScheduleCard.Model, _ action: ScheduleCard.Action, _ state: AddState?) -> some View {
-    Button(state.isRunning ? "추가하는 중…" : ScheduleCard.buttonTitle(action)) {
-      runAdd(ConfirmAdd(id: c.pid, fields: ["proposal_id": c.pid, "title": c.title, "start": c.startText], conflicts: []),
+    Button(state.isRunning ? "추가하는 중…" : ScheduleCard.buttonTitle(action, allDay: !c.timed)) {   // 날짜만 = "종일 일정으로 추가"(0.9.1)
+      runAdd(ConfirmAdd(id: c.pid, fields: ScheduleCard.addFields(c), conflicts: []),
              confirmed: ProposalFlow.tapConfirmed(conflictsShown: action == .addAnyway))
     }
     .font(.subheadline)

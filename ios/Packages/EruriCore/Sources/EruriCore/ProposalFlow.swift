@@ -54,6 +54,17 @@ public enum ProposalFlow {
     }.sorted { $0.start < $1.start }
   }
 
+  /// 제안 일시별 겹침(0.9.1): 종일 제안은 §10 겹침 판정 대상이 아니다(기존 일정 쪽 종일을 빼는 규칙과 같은 이유 — 하루를 차지하지 않는다)
+  public static func conflicts(pid: String, timing: ProposalTiming, events: [CalendarEvent]) -> [CalendarEvent] {
+    guard case .timed(let start) = timing else { return [] }
+    return conflicts(pid: pid, start: start, events: events)
+  }
+
+  /// 추가 버튼 문구(제안 시트·제안 탭 행): 종일 "종일 일정으로 추가"(겹침 없음), 미리 판정한 겹침을 보였으면 "겹쳐도 추가", 아니면 "캘린더에 추가"
+  public static func addButtonTitle(allDay: Bool, conflictsShown: Bool) -> String {
+    allDay ? "종일 일정으로 추가" : conflictsShown ? "겹쳐도 추가" : "캘린더에 추가"
+  }
+
   /// AddEventGate 결과 "conflict:<건수>" — 저장하지 않았고 서버 보고도 없다(제안은 proposed 로 남는다)
   public static func conflictOutcome(_ n: Int) -> String { "conflict:\(n)" }
   public static func conflictCount(_ outcome: String) -> Int? {

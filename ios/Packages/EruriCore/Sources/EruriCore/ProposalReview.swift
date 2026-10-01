@@ -3,16 +3,26 @@ import Foundation
 /// 제안 리뷰(Ruling 8', 스펙 §10·§11): 배너 탭 → 제안 시트, 앱 "제안" 탭(list_pending_proposals·dismiss_proposal).
 /// 캘린더 추가는 새 경로 없이 NotificationActions.handleAdd(알림 액션·채팅 카드와 같은 §10 순서)에 넘긴다. 화면은 App/ProposalsView
 public enum ProposalReview {
-  /// list_pending_proposals 행. 서버가 푸시 ADD_EVENT 조건(시각 있는 start·uncertain 없음)으로 거르고, 제목은 푸시처럼 40자
+  /// list_pending_proposals 행. 서버가 푸시 ADD_EVENT 조건(시각 있는 start 또는 날짜만·uncertain 없음)으로 거르고, 제목은 푸시처럼 40자.
+  /// 0026(0.9.1): start·end 는 text — 시각은 서울 ISO, 종일(all_day)은 YYYY-MM-DD(end = 마지막 날). 0022 의 timestamptz 문자열도 그대로 읽는다
   public struct Pending: Identifiable, Decodable, Sendable, Equatable {
     public let proposal_id: String; public let action: String; public let title: String; public let start: String
     public let end: String?; public let location: String?; public let version: Int; public let created_at: String
+    /// 0026 부터. 없으면(0022 서버) start 형식으로 판단
+    public let all_day: Bool?
     public var id: String { proposal_id }
-    public var whenLabel: String { ChatReply.seoulLabel(start) }
-    /// handleAdd 입력(알림 페이로드와 같은 키). Postgres 소수 초를 떼고 handleAdd 의 파서가 읽는 형식으로 바꾼다. 못 읽으면 nil(버튼 없음)
+    /// 종일 행의 end 만 쓴다(시각 있는 일정은 1시간, §10). all_day 와 start 형식이 어긋나면 nil(추가 버튼 없음)
+    public var timing: ProposalTiming? {
+      guard let t = ProposalTiming.parse(start: start, end: end), all_day.map({ $0 == t.isAllDay }) ?? true else { return nil }
+      return t
+    }
+    public var isAllDay: Bool { timing?.isAllDay ?? false }
+    public var whenLabel: String { timing?.allDayLabel ?? ChatReply.seoulLabel(start) }
+    /// handleAdd 입력(알림 페이로드와 같은 키). 시각은 Postgres 소수 초를 떼고 handleAdd 의 파서가 읽는 형식으로, 종일은 날짜 그대로(여러 날이면 end).
+    /// 못 읽으면 nil(버튼 없음)
     public var addFields: [String: String]? {
-      guard let at = ProposalReview.parse(start) else { return nil }
-      return ["proposal_id": proposal_id, "title": title, "start": ProposalReview.iso.string(from: at), "version": String(version)]
+      guard let t = timing else { return nil }
+      return t.fieldValues.merging(["proposal_id": proposal_id, "title": title, "version": String(version)]) { a, _ in a }
     }
   }
 
@@ -26,15 +36,16 @@ public enum ProposalReview {
   public static let bundleCategory = "EVENT_BUNDLE"
   public static let categories: Set<String> = ["ADD_EVENT", "ADD_REMINDER", "REVIEW", conflictCategory, bundleCategory]
 
-  /// 묶음 푸시 events 원소. category 는 그 일정을 단건으로 보냈을 때의 ADD_EVENT·REVIEW
+  /// 묶음 푸시 events 원소. category 는 그 일정을 단건으로 보냈을 때의 ADD_EVENT·REVIEW. end = 여러 날 종일의 마지막 날(0.9.1 서버)
   public struct BundleEvent: Identifiable, Equatable, Sendable {
     public let proposalId: String; public let category: String; public let title: String; public let start: String; public let version: Int?
+    public let end: String?
     public var id: String { proposalId }
-    public init(proposalId: String, category: String, title: String, start: String, version: Int?) {
-      self.proposalId = proposalId; self.category = category; self.title = title; self.start = start; self.version = version
+    public init(proposalId: String, category: String, title: String, start: String, version: Int?, end: String? = nil) {
+      self.proposalId = proposalId; self.category = category; self.title = title; self.start = start; self.version = version; self.end = end
     }
     /// 카드 하나의 판정은 단건 알림과 같은 경로(sheet(for:list:))로 — 이 일정만의 링크
-    public var link: Link { Link(proposalId: proposalId, category: category, title: title, start: start, due: nil, version: version) }
+    public var link: Link { Link(proposalId: proposalId, category: category, title: title, start: start, end: end, due: nil, version: version) }
   }
 
   /// 델리게이트가 userInfo["events"] 를 문자열 사전으로 바꿔 넘긴다. UUID·start 없는 원소는 빼고, 같은 id 는 하나, 최대 5개
@@ -44,7 +55,7 @@ public enum ProposalReview {
       guard let pid = e["proposal_id"], UUID(uuidString: pid) != nil, let start = e["start"], !seen.contains(pid) else { continue }
       seen.insert(pid)
       out.append(BundleEvent(proposalId: pid, category: e["category"] == "ADD_EVENT" ? "ADD_EVENT" : "REVIEW",
-                             title: e["title"] ?? "일정", start: start, version: e["version"].flatMap { Int($0) }))
+                             title: e["title"] ?? "일정", start: start, version: e["version"].flatMap { Int($0) }, end: e["end"]))
       if out.count == 5 { break }
     }
     return out
@@ -54,18 +65,23 @@ public enum ProposalReview {
   public struct Link: Identifiable, Equatable, Sendable {
     public let proposalId: String; public let category: String; public let title: String
     public let start: String?; public let due: String?; public let version: Int?
+    /// 여러 날 종일 일정의 마지막 날(YYYY-MM-DD, 0.9.1 서버 페이로드). 그 밖은 nil
+    public let end: String?
     /// 묶음 알림(EVENT_BUNDLE)의 일정들(시작 순, 2건 이상). 단건이면 비어 있다
     public let events: [BundleEvent]
     /// 묶음은 단건과 다른 id — 같은 첫 일정의 단건 시트(겹침 로컬 알림 등)가 떠 있을 때 묶음을 탭해도 루트 .sheet(item:)이 교체한다
     public var id: String { events.isEmpty ? proposalId : "bundle:" + events.map(\.proposalId).joined(separator: ",") }
-    public init(proposalId: String, category: String, title: String, start: String?, due: String?, version: Int?,
+    public init(proposalId: String, category: String, title: String, start: String?, end: String? = nil, due: String?, version: Int?,
                 events: [BundleEvent] = []) {
       self.proposalId = proposalId; self.category = category; self.title = title; self.start = start; self.due = due; self.version = version
-      self.events = events
+      self.end = end; self.events = events
     }
-    /// 시각이 있으면 서울 벽시계, 날짜만이면 그대로, 할 일은 "…까지"
+    /// 시각이 있으면 서울 벽시계, 날짜만이면 종일("10/8(목) · 종일", 확인 필요는 날짜만), 할 일은 "…까지"
     public var whenLabel: String {
-      if let start { return ChatReply.seoulLabel(start) }
+      if let start {
+        if let t = ProposalTiming.parse(start: start, end: end), t.isAllDay { return (category == "REVIEW" ? t.dayLabel : t.allDayLabel) ?? start }
+        return ChatReply.seoulLabel(start)
+      }
       if let due { return "\(ChatReply.seoulLabel(due))까지" }
       return ""
     }
@@ -83,7 +99,7 @@ public enum ProposalReview {
                   version: first.version, events: events)
     }
     guard let pid = f["proposal_id"], UUID(uuidString: pid) != nil else { return nil }
-    return Link(proposalId: pid, category: category, title: f["title"] ?? "일정", start: f["start"], due: f["due"],
+    return Link(proposalId: pid, category: category, title: f["title"] ?? "일정", start: f["start"], end: f["end"], due: f["due"],
                 version: f["version"].flatMap { Int($0) })
   }
 
@@ -124,8 +140,9 @@ public enum ProposalReview {
 
   /// 알림 값으로 추가할 때의 필드(sheet(for:list:)의 offline 분기와 묶음 카드 공용)
   static func pushFields(_ link: Link) -> [String: String]? {
-    guard let start = link.start, parse(start) != nil else { return nil }
+    guard let start = link.start, let t = ProposalTiming.parse(start: start, end: link.end) else { return nil }
     var f = ["proposal_id": link.proposalId, "title": link.title, "start": start]
+    if t.isAllDay, let end = t.fieldValues["end"] { f["end"] = end }           // 종일 여러 날(시각 있는 일정은 end 를 쓰지 않는다)
     if let v = link.version { f["version"] = String(v) }
     return f
   }
@@ -191,9 +208,4 @@ public enum ProposalReview {
     return result
   }
 
-  // ChatReply 와 같은 파서(handleAdd 가 ISO8601DateFormatter 기본값으로 읽는다). 설정 후 읽기·쓰기만 한다
-  nonisolated(unsafe) private static let iso = ISO8601DateFormatter()
-  private static func parse(_ s: String) -> Date? {
-    iso.date(from: s.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression))
-  }
 }

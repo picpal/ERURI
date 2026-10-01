@@ -187,7 +187,7 @@ struct ProposalActionsView: View {
       if addFields != nil, !finished, let line = ProposalFlow.conflictLine(conflicts) { Text(line).font(.caption).foregroundStyle(.orange) }
       HStack {
         if addFields != nil {
-          Button(state == .running ? "처리하는 중…" : (conflicts.isEmpty || finished ? "캘린더에 추가" : "겹쳐도 추가")) {
+          Button(state == .running ? "처리하는 중…" : ProposalFlow.addButtonTitle(allDay: allDay, conflictsShown: !conflicts.isEmpty && !finished)) {
             add(confirmed: ProposalFlow.tapConfirmed(conflictsShown: !conflicts.isEmpty))
           }.buttonStyle(.borderedProminent)
         }
@@ -213,10 +213,13 @@ struct ProposalActionsView: View {
   }
 
   private var finished: Bool { if case .finished = state { return true }; return false }
+  private var timing: ProposalTiming? { addFields?["start"].flatMap { ProposalTiming.parse(start: $0, end: addFields?["end"]) } }
+  /// 날짜만 = 종일(0.9.1): "종일 일정으로 추가", 겹침 미리 판정 없음(§10 종일 제외)
+  private var allDay: Bool { timing?.isAllDay ?? false }
 
   private func refreshConflicts() {
-    conflicts = addFields?["start"].flatMap { ISO8601DateFormatter().date(from: $0) }
-      .map { CalendarLookup.conflicts(pid: proposalId, start: $0) } ?? []
+    guard case .timed(let start)? = timing else { conflicts = []; return }
+    conflicts = CalendarLookup.conflicts(pid: proposalId, start: start)
   }
 
   /// §10 경로 그대로(handleAdd). 미리 겹침 없이 불렀는데 겹침(conflict)이면 저장하지 않고 돌아오므로 다시 읽고 확인창

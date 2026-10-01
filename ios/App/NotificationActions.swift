@@ -22,7 +22,8 @@ enum NotificationActions {
     ])
   }
 
-  /// 스펙 §10 순서 1~5. fields: proposal_id·title·start(+09:00)·version. confirmed: 겹침을 사용자가 확인했음(앱 안 확인창 뒤에만 true).
+  /// 스펙 §10 순서 1~5. fields: proposal_id·title·start(+09:00 시각 또는 날짜만 = 종일)·end(종일 여러 날의 마지막 날)·version.
+  /// confirmed: 겹침을 사용자가 확인했음(앱 안 확인창 뒤에만 true).
   /// lockScreen: 잠금화면 알림 액션(델리게이트) — 겹침이면 저장 대신 로컬 알림 1건을 여기서 등록한다
   /// 백그라운드 실행 시간 안에 EventKit 쓰기와 완료 핸들러가 끝나도록 구간마다 마감을 둔다(M1-②c 리뷰):
   /// 순서 1 조회 5초 + 순서 4 보고 5초, 둘 다 토큰 갱신 포함. 겹침이면 보고를 건너뛰고 로컬 알림 등록 2초뿐(Codex #5)
@@ -32,7 +33,7 @@ enum NotificationActions {
   static func handleAdd(fields f: [String: String], confirmed: Bool = false, lockScreen: Bool = false) async -> String {
     let started = Date()
     guard let pid = f["proposal_id"], UUID(uuidString: pid) != nil, let title = f["title"], let s = f["start"],
-          let start = ISO8601DateFormatter().date(from: s) else {
+          let timing = ProposalTiming.parse(start: s, end: f["end"]) else {
       Trace.log("action.handled", ["result": "invalid_payload"]); return "invalid_payload"
     }
     // 1. 서버 최신 상태(토큰 갱신 포함 5초). 넘기거나 오프라인이면 건너뛰고 받은 버전으로 실행(순서 5)
@@ -44,7 +45,7 @@ enum NotificationActions {
     // 기록·보고 version 은 실제로 넣은 내용(푸시 페이로드)의 것. 서버가 더 새 version 이면 보고 결과 changed 로 알린다(순서 5)
     let version = Int(f["version"] ?? "") ?? server?.version ?? 1
     // 2~3. 확인 → 표식 조회 → 겹침 → 저장 → 기록(한 actor 구간, await 없음)
-    let outcome = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, start: start, version: version, confirmed: confirmed))
+    let outcome = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, timing: timing, version: version, confirmed: confirmed))
     let conflict = ProposalFlow.conflictCount(outcome)
     // 잠금화면이 겹침으로 멈추면 앱 확인을 유도하는 로컬 알림(§10). 결과를 action.handled 에 같이 남기려고 trace 앞에서
     var notice: String? = nil
@@ -72,6 +73,7 @@ enum NotificationActions {
       var info: [String: Any] = ["proposal_id": pid]
       if let title { info["title"] = title }
       if let start { info["start"] = start }
+      if let end = f["end"] { info["end"] = end }
       if let version { info["version"] = version }                        // 델리게이트가 version 을 Int 로 읽는다
       c.userInfo = info
       do {
@@ -131,7 +133,7 @@ enum NotificationActions {
   }
 }
 
-struct AddEventRequest: Sendable { let pid: String; let title: String; let start: Date; let version: Int; var confirmed = false }
+struct AddEventRequest: Sendable { let pid: String; let title: String; let timing: ProposalTiming; let version: Int; var confirmed = false }
 
 /// 확인 → 표식 조회 → 겹침 판정 → 저장 → 기록을 await 없이 한 actor 안에서 처리한다(스펙 §10 순서 2~3, PoC-5 실측: 동시 두 번 탭 +1).
 /// 반환: "ok" · "recovered"(저장 후 기록 전 종료 복구) · "dup" · "conflict:<n>"(겹침, 저장 안 함) · "fail:<코드>"
@@ -145,20 +147,22 @@ actor AddEventGate {
       // 화면은 전체 접근일 때만 추가 버튼을 보이므로 이 경로는 권한을 바꾼 직후의 낡은 화면·알림뿐이다
       guard CalendarLookup.fullAccess else { return "fail:no_full_access" }
       let store = EKEventStore()
-      let (from, to) = ProposalFlow.searchWindow(start: r.start)
+      let (from, to) = ProposalFlow.searchWindow(start: r.timing.anchor)                 // 종일은 첫날 서울 0시 ±1일
       let events = CalendarLookup.events(store, from: from, to: to)
       if let found = ProposalFlow.matchMarker(pid: r.pid, events: events.map { (id: $0.id, url: $0.url) }) {
         try ex.record(proposalId: r.pid, eventkitId: found, version: r.version)
         return "recovered"
       }
-      // 겹침(§10 순서 3): 표식 조회에 쓴 같은 배열로 판정 — EventKit 조회·await 가 늘지 않는다. 확인받지 않았으면 저장하지 않는다
+      // 겹침(§10 순서 3): 표식 조회에 쓴 같은 배열로 판정 — EventKit 조회·await 가 늘지 않는다. 확인받지 않았으면 저장하지 않는다. 종일은 판정 대상 아님
       if !r.confirmed {
-        let c = ProposalFlow.conflicts(pid: r.pid, start: r.start, events: events)
+        let c = ProposalFlow.conflicts(pid: r.pid, timing: r.timing, events: events)
         if !c.isEmpty { return ProposalFlow.conflictOutcome(c.count) }
       }
       guard let cal = store.defaultCalendarForNewEvents, cal.allowsContentModifications else { return "fail:no_writable_calendar" }  // §10 읽기 전용 제외
       let ev = EKEvent(eventStore: store)
-      ev.title = r.title; ev.startDate = r.start; ev.endDate = r.start.addingTimeInterval(ProposalFlow.eventDuration)
+      // 시각: [start, +1시간). 종일(0.9.1): isAllDay + 서울 날짜를 기기 달력의 같은 날 0시로(하루면 시작 = 끝, 여러 날이면 마지막 날 0시)
+      let span = r.timing.eventSpan(deviceZone: .current)
+      ev.title = r.title; ev.isAllDay = r.timing.isAllDay; ev.startDate = span.start; ev.endDate = span.end
       ev.calendar = cal
       ev.url = ProposalFlow.marker(r.pid)
       try store.save(ev, span: .thisEvent, commit: true)
@@ -181,7 +185,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     // userInfo 는 Sendable 이 아니므로 Task 밖에서 문자열 값만 뽑아 넘긴다(handleAdd·시트가 쓰는 키 그대로)
     let content = response.notification.request.content
     let info = content.userInfo
-    var fields = ["proposal_id", "title", "start", "due"].reduce(into: [String: String]()) { d, k in
+    var fields = ["proposal_id", "title", "start", "end", "due"].reduce(into: [String: String]()) { d, k in
       if let v = info[k] as? String { d[k] = v }
     }
     if let v = info["version"] as? Int { fields["version"] = String(v) }

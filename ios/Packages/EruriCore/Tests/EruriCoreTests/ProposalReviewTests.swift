@@ -39,6 +39,42 @@ final class ProposalReviewTests: XCTestCase {
     XCTAssertNil(bad.addFields)                                             // 읽지 못할 시각이면 추가 버튼 없음
   }
 
+  /// 0026 종일 행(0.9.1): start·end 는 YYYY-MM-DD, all_day = true. 표시 "10/8(목) · 종일", 추가 필드는 날짜 그대로(여러 날이면 end).
+  /// 0026 의 시각 있는 행(+09:00 text)은 그대로 읽힌다. all_day 와 start 형식이 어긋나면 추가 버튼 없음
+  func testAllDayRows() throws {
+    let rows = try XCTUnwrap(ProposalReview.decodeList(Data("""
+      [{"proposal_id":"\(pid)","action":"ADD_EVENT","title":"합성 공지 행사","start":"2026-10-08","end":null,"all_day":true,"location":null,"version":1,"created_at":"x"},
+       {"proposal_id":"\(p2)","action":"ADD_EVENT","title":"합성 축제","start":"2026-10-08","end":"2026-10-10","all_day":true,"location":null,"version":4,"created_at":"x"},
+       {"proposal_id":"\(p3)","action":"ADD_EVENT","title":"합성 회의","start":"2026-10-02T15:30:00+09:00","end":null,"all_day":false,"location":null,"version":1,"created_at":"x"},
+       {"proposal_id":"\(p3)","action":"ADD_EVENT","title":"합성 어긋남","start":"2026-10-02T15:30:00+09:00","end":null,"all_day":true,"location":null,"version":1,"created_at":"x"}]
+      """.utf8)))
+    XCTAssertEqual(rows.map(\.whenLabel), ["10/8(목) · 종일", "10/8(목)–10/10(토) · 종일", "2026-10-02 15:30", "2026-10-02 15:30"])
+    XCTAssertEqual(rows[0].addFields, ["proposal_id": pid, "title": "합성 공지 행사", "start": "2026-10-08", "version": "1"])
+    XCTAssertEqual(rows[1].addFields, ["proposal_id": p2, "title": "합성 축제", "start": "2026-10-08", "end": "2026-10-10", "version": "4"])
+    XCTAssertEqual(rows[2].addFields?["start"].flatMap { ISO8601DateFormatter().date(from: $0) }, ISO8601DateFormatter().date(from: "2026-10-02T06:30:00Z"))
+    XCTAssertNil(rows[2].addFields?["end"])
+    XCTAssertNil(rows[3].addFields)
+    XCTAssertTrue(rows[0].isAllDay); XCTAssertFalse(rows[2].isAllDay)
+  }
+
+  /// 날짜만 ADD_EVENT 알림(0.9.1 서버): 배너 탭 링크는 end 를 들고, 목록을 못 읽으면 알림 값으로 종일 추가. 표시도 종일
+  func testAllDayPushLink() throws {
+    let l = try XCTUnwrap(ProposalReview.link(actionIdentifier: ProposalReview.defaultAction, category: "ADD_EVENT",
+      fields: ["proposal_id": pid, "title": "합성 축제", "start": "2026-10-08", "end": "2026-10-10", "version": "2"]))
+    XCTAssertEqual(l.end, "2026-10-10"); XCTAssertEqual(l.whenLabel, "10/8(목)–10/10(토) · 종일")
+    guard case .offline(let f) = ProposalReview.sheet(for: l, list: nil) else { return XCTFail("offline") }
+    XCTAssertEqual(f, ["proposal_id": pid, "title": "합성 축제", "start": "2026-10-08", "end": "2026-10-10", "version": "2"])
+    XCTAssertEqual(ProposalReview.sheet(for: l, list: []), .processed)
+    // 묶음 원소의 end 도 카드 링크·알림 값까지 간다
+    let ev = ProposalReview.bundleEvents([["proposal_id": p2, "title": "합성 축제", "start": "2026-10-08", "end": "2026-10-10", "version": "1", "category": "ADD_EVENT"]])
+    XCTAssertEqual(ev.first?.end, "2026-10-10"); XCTAssertEqual(ev.first?.link.end, "2026-10-10")
+    let b = try XCTUnwrap(ProposalReview.link(actionIdentifier: ProposalReview.defaultAction, category: "EVENT_BUNDLE", fields: [:],
+      events: [raw(pid, "2026-10-04T14:00:00+09:00"), ["proposal_id": p2, "title": "합성 축제", "start": "2026-10-08", "end": "2026-10-10", "version": "1", "category": "ADD_EVENT"]]))
+    let c = ProposalReview.cards(for: b, list: [], statuses: [pid: "proposed", p2: "proposed"])
+    guard case .unlisted(let u) = c[1].sheet else { return XCTFail("unlisted") }
+    XCTAssertEqual([u["start"], u["end"]], ["2026-10-08", "2026-10-10"])
+  }
+
   /// 배너 탭(기본 액션)만, 세 제안 카테고리만, 제안 id 가 UUID 일 때만 딥링크
   func testLinkFromNotification() {
     let fields = ["proposal_id": pid, "title": "합성 회의", "start": "2026-10-02T15:30:00+09:00", "version": "2"]
@@ -75,7 +111,8 @@ final class ProposalReviewTests: XCTestCase {
   func testLinkWhenLabel() {
     XCTAssertEqual(ProposalReview.Link(proposalId: pid, category: "ADD_EVENT", title: "t", start: "2026-10-02T15:30:00+09:00", due: nil, version: nil).whenLabel,
                    "2026-10-02 15:30")
-    XCTAssertEqual(ProposalReview.Link(proposalId: pid, category: "REVIEW", title: "t", start: "2026-10-24", due: nil, version: nil).whenLabel, "2026-10-24")
+    XCTAssertEqual(ProposalReview.Link(proposalId: pid, category: "REVIEW", title: "t", start: "2026-10-24", due: nil, version: nil).whenLabel, "10/24(토)")   // 확인 필요는 종일이라 하지 않는다
+    XCTAssertEqual(ProposalReview.Link(proposalId: pid, category: "ADD_EVENT", title: "t", start: "2026-10-24", due: nil, version: nil).whenLabel, "10/24(토) · 종일")
     XCTAssertEqual(ProposalReview.Link(proposalId: pid, category: "ADD_REMINDER", title: "t", start: nil, due: "2026-10-03", version: nil).whenLabel,
                    "2026-10-03까지")
     XCTAssertEqual(ProposalReview.Link(proposalId: pid, category: "ADD_REMINDER", title: "t", start: nil, due: nil, version: nil).whenLabel, "")
