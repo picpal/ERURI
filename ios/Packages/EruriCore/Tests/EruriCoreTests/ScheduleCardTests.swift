@@ -19,7 +19,8 @@ final class ScheduleCardTests: XCTestCase {
   private func cite(_ source: String, app: String? = nil, at occurred: String = "2026-10-01T00:10:00.123456+00:00") -> ChatReply.Citation {
     ChatReply.Citation(item_id: "item-1", source: source, app_name: app, title: "합성", occurred_at: occurred, expired: false)
   }
-  private var now: Date { d("2026-10-01T03:00:00Z") }                                    // 서울 10/1(목) 12:00
+  private var now: Date { d("2026-10-01T03:00:00Z") }
+  private let seoulZone = TimeZone(identifier: "Asia/Seoul")!                                    // 서울 10/1(목) 12:00
 
   /// 시각 있음·미래 → addable, 날짜만 → dateOnly(서울 0시), uncertain → needsReview, 지남 → past.
   /// create_event 아님·start 없음·오프셋 없는 시각(handleAdd 가 못 읽음) → 카드 없음. 서버 상태는 kind 에 영향 없음
@@ -87,6 +88,9 @@ final class ScheduleCardTests: XCTestCase {
     XCTAssertEqual(ScheduleCard.receivedLine(cite("SHARE")), "10/1 공유함")
     XCTAssertNil(ScheduleCard.receivedLine(cite("GMAIL", at: "어제")))
     XCTAssertNil(ScheduleCard.receivedLine(nil))
+    // 알 수 없는 출처: 찾은 곳은 "저장된 정보", 받은 줄은 스펙에 없는 문구 대신 없음("원문 보기"만, T1 리뷰 M4)
+    XCTAssertEqual(ScheduleCard.sourceLine(cite("OTHER")), "저장된 정보에서 찾은 일정")
+    XCTAssertNil(ScheduleCard.receivedLine(cite("OTHER")))
   }
 
   /// ② 그날(서울) 줄: 겹친 일정(어느 캘린더든) → 종일 → 시작 순. 표시 대상 캘린더(listed)만·취소·다른 날 제외. 최대 4 + 넘친 수.
@@ -105,7 +109,7 @@ final class ScheduleCardTests: XCTestCase {
       ev("edge", "2026-10-03T14:00:00Z", "2026-10-03T15:00:00Z"),                                   // 10/3 23:00–24:00 맞닿음 → 그날 아님
       ev("am", "2026-10-04T00:00:00Z", "2026-10-04T01:00:00Z", title: "합성 오전"),                  // 09:00–10:00
     ]
-    let l = ScheduleCard.dayLines(day: day, events: evs, conflicts: [sub])
+    let l = ScheduleCard.dayLines(day: day, events: evs, conflicts: [sub], deviceZone: seoulZone)
     XCTAssertEqual(l.lines.map(\.text), ["15:00–16:00 합성 구독 경기", "종일 합성 여행", "10/3 23:00–10/4 01:00 합성 야간", "09:00–10:00 합성 오전"])
     XCTAssertEqual(l.lines.map(\.conflict), [true, false, false, false])
     XCTAssertEqual(l.more, 1)                                                                       // 18:00 합성 저녁
@@ -120,6 +124,25 @@ final class ScheduleCardTests: XCTestCase {
     // 다음 날 0시에 끝남 → 그날 안(§9, Codex #6)
     let mid = ev("mid", "2026-10-04T14:00:00Z", "2026-10-04T15:00:00Z", title: "합성 심야")                // 10/4 23:00–10/5 00:00
     XCTAssertEqual(ScheduleCard.dayLines(day: day, events: [mid], conflicts: []).lines.map(\.text), ["23:00–00:00 합성 심야"])
+  }
+
+  /// 종일 일정은 EventKit 이 기기 시간대 0시로 준다 — 기기 시간대가 서울이 아니어도 그 날짜(서울 하루)에만 놓인다(Review Focus 4, T1 리뷰 M5).
+  /// 시각 있는 일정은 옮기지 않는다
+  func testDayLinesAllDayInOtherDeviceZone() throws {
+    let d3 = DateInterval(start: d("2026-10-02T15:00:00Z"), duration: 86_400), d4 = DateInterval(start: d("2026-10-03T15:00:00Z"), duration: 86_400)
+    let d5 = DateInterval(start: d("2026-10-04T15:00:00Z"), duration: 86_400)
+    let la = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles")), nz = try XCTUnwrap(TimeZone(identifier: "Pacific/Auckland"))
+    func texts(_ day: DateInterval, _ e: ProposalFlow.CalendarEvent, _ z: TimeZone) -> [String] {
+      ScheduleCard.dayLines(day: day, events: [e], conflicts: [], deviceZone: z).lines.map(\.text)
+    }
+    let laDay = ev("la", "2026-10-04T07:00:00Z", "2026-10-05T07:00:00Z", title: "합성 종일", allDay: true)       // 10/4 0시–10/5 0시 PDT
+    XCTAssertEqual(texts(d4, laDay, la), ["종일 합성 종일"]); XCTAssertEqual(texts(d5, laDay, la), [])
+    let laEnd = ev("la2", "2026-10-04T07:00:00Z", "2026-10-05T06:59:59Z", title: "합성 종일", allDay: true)      // 끝이 그날 23:59:59 인 경우
+    XCTAssertEqual(texts(d4, laEnd, la), ["종일 합성 종일"]); XCTAssertEqual(texts(d5, laEnd, la), [])
+    let nzDay = ev("nz", "2026-10-03T11:00:00Z", "2026-10-04T11:00:00Z", title: "합성 종일", allDay: true)       // 10/4 0시–10/5 0시 NZDT(+13)
+    XCTAssertEqual(texts(d4, nzDay, nz), ["종일 합성 종일"]); XCTAssertEqual(texts(d3, nzDay, nz), [])
+    let timed = ev("t", "2026-10-04T07:00:00Z", "2026-10-04T08:00:00Z", title: "합성 회의")                      // 서울 16:00–17:00
+    XCTAssertEqual(texts(d4, timed, la), ["16:00–17:00 합성 회의"])
   }
 
   /// ③ 등록 판정(§9 상태 1~6): EventKit 표식이 1순위, 실행 기록·서버 succeeded 는 "넣은 적 있음" 보조 근거, 그다음 §10 겹침
@@ -209,5 +232,7 @@ final class ScheduleCardTests: XCTestCase {
     XCTAssertTrue(ScheduleCard.showsRangeSection(schedule: week, cardDays: [DateInterval(start: d("2026-10-05T15:00:00Z"), duration: 86_400)]))
     XCTAssertTrue(ScheduleCard.showsRangeSection(schedule: DateInterval(start: d("2026-10-04T15:00:00Z"), duration: 86_399), cardDays: [d4]))
     XCTAssertEqual(ScheduleCard.seoulDay(d("2026-10-04T14:59:59Z")), d4)                          // 서울 23:59:59 는 그날
+    // 끝을 다음 날 0시로 줘도 하루 질문이다 — 23:59:59 표기에 묶이지 않는다(T1 리뷰 M3)
+    XCTAssertFalse(ScheduleCard.showsRangeSection(schedule: DateInterval(start: d("2026-10-03T15:00:00Z"), duration: 86_400), cardDays: [d4]))
   }
 }

@@ -47,13 +47,13 @@ public enum ScheduleCard {
 
   /// "문자에서 찾은 일정" — 같은 응답의 인용(item_id 일치)에서. 인용이 없으면 "저장된 정보에서 찾은 일정"
   public static func sourceLine(_ c: ChatReply.Citation?) -> String { "\(origin(c).found)에서 찾은 일정" }
-  /// "10/1 받은 문자"(서울). 인용이 없거나 시각을 못 읽으면 nil
+  /// "10/1 받은 문자"(서울). 인용이 없거나 출처를 모르거나 시각을 못 읽으면 nil(스펙 §9 에 없는 문구를 만들지 않는다)
   public static func receivedLine(_ c: ChatReply.Citation?) -> String? {
-    guard let c, let at = iso.date(from: c.occurred_at.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)) else { return nil }
-    return "\(md.string(from: at)) \(origin(c).received)"
+    guard let c, let received = origin(c).received, let at = iso.date(from: c.occurred_at.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)) else { return nil }
+    return "\(md.string(from: at)) \(received)"
   }
-  private static func origin(_ c: ChatReply.Citation?) -> (found: String, received: String) {
-    guard let c else { return ("저장된 정보", "저장") }
+  private static func origin(_ c: ChatReply.Citation?) -> (found: String, received: String?) {
+    guard let c else { return ("저장된 정보", nil) }
     switch c.source {
     case "MESSAGES": return ("문자", "받은 문자")
     case "NOTIFICATION":
@@ -61,7 +61,7 @@ public enum ScheduleCard {
       return ("\(c.app_name.flatMap { $0.isEmpty ? nil : $0 } ?? "앱") 알림", "받은 알림")
     case "GMAIL": return ("메일", "받은 메일")
     case "SHARE": return ("공유한 내용", "공유함")
-    default: return ("저장된 정보", "저장")
+    default: return ("저장된 정보", nil)
     }
   }
 
@@ -71,18 +71,30 @@ public enum ScheduleCard {
   public static let emptyDayText = "이 날 등록된 일정 없음"
   public static func dayHeader(_ day: DateInterval) -> String { "내 캘린더 · \(dayLabel(day.start))" }
 
-  /// 그날(서울 하루) 줄: 겹친 일정(어느 캘린더든, 그날 밖이어도) → 종일 → 시작 순. 나머지는 표시 대상 캘린더(listed)만, 취소 제외. 최대 4 + 넘친 수
-  public static func dayLines(day: DateInterval, events: [ProposalFlow.CalendarEvent],
-                              conflicts: [ProposalFlow.CalendarEvent]) -> (lines: [DayLine], more: Int) {
+  /// 그날(서울 하루) 줄: 겹친 일정(어느 캘린더든, 그날 밖이어도) → 종일 → 시작 순. 나머지는 표시 대상 캘린더(listed)만, 취소 제외. 최대 4 + 넘친 수.
+  /// conflicts 는 같은 events 에서 고른 값이어야 한다(값 비교 — 다른 조회 결과면 주황 줄이 조용히 사라진다, T1 리뷰 M1).
+  /// deviceZone = EventKit 이 종일 일정을 준 기기 시간대(그 0시) — 종일 일정만 같은 벽시계의 서울 시각으로 옮겨 그날을 가른다(Review Focus 4)
+  public static func dayLines(day: DateInterval, events: [ProposalFlow.CalendarEvent], conflicts: [ProposalFlow.CalendarEvent],
+                              deviceZone: TimeZone = .current) -> (lines: [DayLine], more: Int) {
     // id 만 보면 안 된다 — 반복 일정은 회차마다 id(eventIdentifier)가 같고 카드는 ±1일을 읽는다
     let isHit = { (e: ProposalFlow.CalendarEvent) in conflicts.contains(e) }
     let shown = events.filter { e in
-      !e.canceled && (isHit(e) || (e.listed && e.start < day.end && (e.end > day.start || (e.start == e.end && e.start >= day.start))))
+      let (s, t) = seoulSpan(e, deviceZone: deviceZone)
+      return !e.canceled && (isHit(e) || (e.listed && s < day.end && (t > day.start || (s == t && s >= day.start))))
     }
     let rank = { (e: ProposalFlow.CalendarEvent) in isHit(e) ? 0 : e.allDay ? 1 : 2 }
     let lines = shown.sorted { (rank($0), $0.start, $0.id) < (rank($1), $1.start, $1.id) }
       .map { DayLine(text: "\(span($0, within: day)) \(name($0))", conflict: isHit($0)) }
     return (Array(lines.prefix(maxLines)), max(0, lines.count - maxLines))
+  }
+
+  /// 종일 일정의 [시작, 끝]을 기기 시간대 벽시계 그대로 서울 시각으로 옮긴다(기기가 서울이면 그대로). 시각 있는 일정은 그대로
+  static func seoulSpan(_ e: ProposalFlow.CalendarEvent, deviceZone: TimeZone) -> (Date, Date) {
+    guard e.allDay else { return (e.start, e.end) }
+    var local = Calendar(identifier: .gregorian)
+    local.timeZone = deviceZone
+    let move = { (d: Date) in seoul.date(from: local.dateComponents([.year, .month, .day, .hour, .minute, .second], from: d)) ?? d }
+    return (move(e.start), move(e.end))
   }
 
   // MARK: ③ 상태
@@ -139,13 +151,13 @@ public enum ScheduleCard {
   }
 
   /// 카드 한 장. events = 카드 날짜 ±1일의 모든 캘린더 일정(앱 CalendarLookup.cardEvents), nil = 전체 접근 없음. executed = 이 기기 실행 기록
-  public static func model(_ c: Pick, events: [ProposalFlow.CalendarEvent]?, executed: Bool) -> Model {
+  public static func model(_ c: Pick, events: [ProposalFlow.CalendarEvent]?, executed: Bool, deviceZone: TimeZone = .current) -> Model {
     let st: Status? = c.kind == .addable ? events.map {
       status(pid: c.proposal.id, title: c.title, start: c.start, serverStatus: c.proposal.status, executed: executed, events: $0)
     } : nil
     var conflicts: [ProposalFlow.CalendarEvent] = []
     if case .conflict(let cs, _)? = st { conflicts = cs }
-    let l = events.map { dayLines(day: c.day, events: $0, conflicts: conflicts) }
+    let l = events.map { dayLines(day: c.day, events: $0, conflicts: conflicts, deviceZone: deviceZone) }
     return Model(pid: c.proposal.id, itemID: c.proposal.item_id, title: c.title, startText: c.proposal.payload["start"]?.string ?? "",
                  kind: c.kind, start: c.start, timed: c.timed, status: st, lines: l?.lines, moreLines: l?.more ?? 0)
   }
@@ -181,7 +193,7 @@ public enum ScheduleCard {
     guard let s = schedule else { return false }
     guard !cardDays.isEmpty else { return true }
     let day = seoulDay(s.start)
-    return !(s.start == day.start && s.end < day.end && cardDays.allSatisfy { $0 == day })
+    return !(s.start == day.start && s.end <= day.end && cardDays.allSatisfy { $0 == day })   // 끝 23:59:59·다음 날 0시 둘 다 하루(T1 리뷰 M3)
   }
   public static func seoulDay(_ d: Date) -> DateInterval { DateInterval(start: seoul.startOfDay(for: d), duration: 86_400) }
 
@@ -206,7 +218,7 @@ public enum ScheduleCard {
   /// "10/4(일)"
   static func dayLabel(_ d: Date) -> String { "\(md.string(from: d))(\(weekdays[seoul.component(.weekday, from: d) - 1]))" }
 
-  private static let markerPrefix = "assistant://proposal/"                  // ProposalFlow.marker 의 접두
+  private static let markerPrefix = ProposalFlow.marker("").absoluteString     // ProposalFlow.marker 의 접두 — 표식 형식이 바뀌면 같이 바뀐다(T1 리뷰 M2)
   private static let weekdays = ["일", "월", "화", "수", "목", "금", "토"]      // Calendar.weekday 1 = 일요일
   private static let seoul: Calendar = {
     var c = Calendar(identifier: .gregorian)
