@@ -58,7 +58,9 @@ async function peersWith0027(calls: [string, string][]): Promise<{ peers: Peer[]
   let out: { peers: Peer[][]; anon: boolean; authenticated: boolean } | null = null;
   try {
     await sql.begin(async (tx) => {
-      await tx.unsafe(MIGRATION);
+      // 배포 전에는 0027 을 이 트랜잭션에만 적용, 배포 뒤에는 배포본을 그대로 쓴다(create function 재실행 불가)
+      const [{ deployed }] = await tx.unsafe("select to_regprocedure('public.worker_pending_event_peers(uuid, uuid)') is not null as deployed");
+      if (!deployed) await tx.unsafe(MIGRATION);
       const sig = "public.worker_pending_event_peers(uuid, uuid)";
       const [g] = await tx.unsafe(`select has_function_privilege('anon', '${sig}', 'execute') as anon,
         has_function_privilege('authenticated', '${sig}', 'execute') as authenticated`);
