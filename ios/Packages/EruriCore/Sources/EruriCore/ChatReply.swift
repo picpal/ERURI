@@ -33,7 +33,7 @@ public enum ChatReply {
     return start
   }
 
-  /// 제안 카드 결과 문구(handleAdd 반환: ok·recovered·dup·skip_<status>·fail:<코드>·invalid_payload).
+  /// 제안 카드 결과 문구(handleAdd 반환: ok·recovered·dup·conflict:<n>·skip_<status>·fail:<코드>·invalid_payload).
   /// retry 는 실패일 때만 — 버튼을 다시 켠다. dup·skip 은 다시 눌러도 같은 결과
   public static func addFeedback(_ outcome: String) -> (text: String, retry: Bool) {
     switch outcome {
@@ -41,6 +41,7 @@ public enum ChatReply {
     case "dup", "skip_succeeded": ("이미 캘린더에 추가된 제안입니다", false)
     case "skip_stale": ("제안이 바뀌어 추가하지 않았습니다", false)
     case "fail:no_writable_calendar": ("쓸 수 있는 기본 캘린더가 없어 추가하지 못했습니다", true)
+    case let o where ProposalFlow.conflictCount(o) != nil: ("같은 시간에 일정이 있습니다", true)
     default: ("추가하지 못했습니다. 다시 눌러 주세요", true)
     }
   }

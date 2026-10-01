@@ -109,6 +109,17 @@ final class ProposalReviewTests: XCTestCase {
     XCTAssertEqual(ProposalReview.ActionState.after(ChatReply.addFeedback("fail:x")), .failed("추가하지 못했습니다. 다시 눌러 주세요"))
     XCTAssertEqual(ProposalReview.ActionState.after(ProposalReview.dismissFeedback(nil)), .failed("처리하지 못했습니다. 다시 눌러 주세요"))
   }
+
+  /// §10 겹침 로컬 알림: 탭하면 ADD_EVENT 배너처럼 제안 시트. 목록에 있으면 서버 값, 목록을 못 읽으면 알림 값으로 추가(offline), 목록에 없으면 처리됨
+  func testConflictNoticeOpensSheet() throws {
+    let f = ["proposal_id": pid, "title": "합성 회의", "start": "2026-10-02T15:30:00+09:00", "version": "2"]
+    XCTAssertTrue(ProposalReview.categories.contains(ProposalReview.conflictCategory))
+    let link = try XCTUnwrap(ProposalReview.link(actionIdentifier: ProposalReview.defaultAction, category: ProposalReview.conflictCategory, fields: f))
+    XCTAssertEqual(ProposalReview.sheet(for: link, list: nil), .offline(f))
+    let row = try XCTUnwrap(ProposalReview.decodeList(listJSON())?.first)
+    XCTAssertEqual(ProposalReview.sheet(for: link, list: [row]), .pending(row))
+    XCTAssertEqual(ProposalReview.sheet(for: link, list: []), .processed)
+  }
 }
 
 /// 제안 탭 "전체 무시": 목 네트워크(dismiss 클로저)로 동시 수·마감·집계를 본다

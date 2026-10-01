@@ -128,21 +128,26 @@ struct ProposalSheet: View {
   }
 }
 
-/// 제안 한 건: 제목·시각·장소, "캘린더에 추가"(addFields 가 있을 때만)·"무시". 결과를 아래에 쓰고, 실패면 버튼을 다시 켠다
+/// 제안 한 건: 제목·시각·장소, "캘린더에 추가"(addFields 가 있을 때만)·"무시". 결과를 아래에 쓰고, 실패면 버튼을 다시 켠다.
+/// 겹침(스펙 §10, 0.8.0): 뜰 때·앱 활성화 때 미리 판정해 "겹치는 일정" 줄과 "겹쳐도 추가"를 보이고, 확인창 뒤 confirmed 로 부른다.
+/// 최종 판정은 AddEventGate — 미리 판정 뒤 캘린더가 바뀌어 conflict 가 오면 다시 읽고 같은 확인창
 struct ProposalActionsView: View {
   let title: String; let when: String; let location: String?; let addFields: [String: String]?; let proposalId: String
   @Binding var state: ProposalReview.ActionState
+  @Environment(\.scenePhase) private var scenePhase
+  @State private var conflicts: [ProposalFlow.CalendarEvent] = []
+  @State private var askConfirm = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Text(title).font(.headline)
       Text(when).font(.subheadline).foregroundStyle(.secondary)
       if let location { Label(location, systemImage: "mappin.and.ellipse").font(.caption).foregroundStyle(.secondary) }
+      if addFields != nil, let line = ProposalFlow.conflictLine(conflicts) { Text(line).font(.caption).foregroundStyle(.orange) }
       HStack {
-        if let addFields {
-          Button(state == .running ? "처리하는 중…" : "캘린더에 추가") {
-            state = .running
-            Task { state = .after(ChatReply.addFeedback(await NotificationActions.handleAdd(fields: addFields))) }
+        if addFields != nil {
+          Button(state == .running ? "처리하는 중…" : (conflicts.isEmpty ? "캘린더에 추가" : "겹쳐도 추가")) {
+            if conflicts.isEmpty { add(confirmed: false) } else { askConfirm = true }
           }.buttonStyle(.borderedProminent)
         }
         Button("무시") {
@@ -158,6 +163,28 @@ struct ProposalActionsView: View {
       }
     }
     .padding(.vertical, 4)
+    .task(id: addFields?["start"]) { refreshConflicts() }
+    .onChange(of: scenePhase) { _, phase in if phase == .active { refreshConflicts() } }   // 캘린더 앱에서 바꾸고 돌아온 경우
+    .confirmationDialog(ProposalFlow.confirmTitle(conflicts), isPresented: $askConfirm, titleVisibility: .visible) {
+      Button("추가") { add(confirmed: true) }
+      Button("취소", role: .cancel) {}
+    }
+  }
+
+  private func refreshConflicts() {
+    conflicts = addFields?["start"].flatMap { ISO8601DateFormatter().date(from: $0) }
+      .map { CalendarLookup.conflicts(pid: proposalId, start: $0) } ?? []
+  }
+
+  /// §10 경로 그대로(handleAdd). 겹침(conflict)이면 저장하지 않고 돌아오므로 다시 읽고 확인창
+  private func add(confirmed: Bool) {
+    guard let fields = addFields else { return }
+    state = .running
+    Task {
+      let outcome = await NotificationActions.handleAdd(fields: fields, confirmed: confirmed)
+      if ProposalFlow.conflictCount(outcome) != nil { refreshConflicts(); state = .idle; askConfirm = true }
+      else { state = .after(ChatReply.addFeedback(outcome)) }
+    }
   }
 }
 

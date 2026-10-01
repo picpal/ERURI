@@ -29,4 +29,52 @@ public enum ProposalFlow {
     default: return .done
     }
   }
+
+  /// 기기 캘린더 일정 한 건(EventKit 을 모르는 판단용 값). 앱 CalendarLookup 이 EKEvent 에서 만든다
+  public struct CalendarEvent: Equatable, Sendable {
+    public let id: String; public let title: String; public let start: Date; public let end: Date
+    public let allDay: Bool; public let canceled: Bool; public let url: URL?
+    public init(id: String, title: String, start: Date, end: Date, allDay: Bool = false, canceled: Bool = false, url: URL? = nil) {
+      self.id = id; self.title = title; self.start = start; self.end = end; self.allDay = allDay; self.canceled = canceled; self.url = url
+    }
+  }
+  /// AddEventGate 가 저장하는 길이. 겹침은 이 구간으로 판정한다(제안 end 는 저장에 쓰지 않는다)
+  public static let eventDuration: TimeInterval = 3600
+
+  /// 겹침(스펙 §10 순서 3): 저장 구간 [start, start+1시간)과 겹치는 기존 일정, 시작 순.
+  /// 종일·취소·같은 제안 표식(복구 경로)은 제외, 맞닿기만 하면(끝 = 시작) 겹침 아님
+  public static func conflicts(pid: String, start: Date, events: [CalendarEvent]) -> [CalendarEvent] {
+    let end = start.addingTimeInterval(eventDuration), m = marker(pid)
+    return events.filter { !$0.allDay && !$0.canceled && $0.url != m && $0.start < end && $0.end > start }.sorted { $0.start < $1.start }
+  }
+
+  /// AddEventGate 결과 "conflict:<건수>" — 저장하지 않았고 서버 보고도 없다(제안은 proposed 로 남는다)
+  public static func conflictOutcome(_ n: Int) -> String { "conflict:\(n)" }
+  public static func conflictCount(_ outcome: String) -> Int? {
+    guard outcome.hasPrefix("conflict:") else { return nil }
+    return Int(outcome.dropFirst("conflict:".count))
+  }
+
+  /// 제안 시트·제안 탭 줄: "겹치는 일정: 14:00–15:00 합성 회의"(서울), 여러 건이면 " 외 N건"
+  public static func conflictLine(_ c: [CalendarEvent]) -> String? {
+    guard let f = c.first else { return nil }
+    return "겹치는 일정: \(hm.string(from: f.start))–\(hm.string(from: f.end)) \(f.title)" + (c.count > 1 ? " 외 \(c.count - 1)건" : "")
+  }
+  /// 확인창 제목(앱 안에서만 — 제목을 보여도 된다)
+  public static func confirmTitle(_ c: [CalendarEvent]) -> String {
+    guard let f = c.first else { return "같은 시간에 다른 일정이 있습니다. 그래도 추가할까요?" }
+    return "같은 시간에 '\(f.title)' 일정이 있습니다. 그래도 추가할까요?"
+  }
+
+  /// 잠금화면 "추가"가 겹침으로 멈췄을 때의 로컬 알림(§10). 겹친 일정의 제목은 잠금화면에 쓰지 않는다. 식별자를 고정해 두 번 탭해도 1건.
+  /// "다른 일정"이라 하지 않는다 — 메일 초대·예약은 같은 일정이 이미 캘린더에 있는 경우가 흔하다
+  public static let conflictNoticeTitle = "겹치는 일정이 있습니다"
+  public static func conflictNoticeBody(_ n: Int) -> String { "같은 시간에 일정 \(n)건 · 탭해서 확인" }
+  public static func conflictNoticeID(_ pid: String) -> String { "conflict-\(pid)" }
+
+  private static let hm: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(identifier: "Asia/Seoul"); f.dateFormat = "HH:mm"
+    return f
+  }()
 }

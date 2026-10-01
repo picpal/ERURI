@@ -20,7 +20,9 @@ public enum ProposalReview {
 
   /// UNNotificationDefaultActionIdentifier 값(EruriCore 는 UserNotifications 를 들이지 않는다)
   public static let defaultAction = "com.apple.UNNotificationDefaultActionIdentifier"
-  public static let categories: Set<String> = ["ADD_EVENT", "ADD_REMINDER", "REVIEW"]
+  /// 잠금화면 "추가"가 겹침으로 멈췄을 때의 로컬 알림 카테고리(액션 없음). 탭하면 ADD_EVENT 배너처럼 제안 시트(스펙 §10)
+  public static let conflictCategory = "ADD_EVENT_CONFLICT"
+  public static let categories: Set<String> = ["ADD_EVENT", "ADD_REMINDER", "REVIEW", conflictCategory]
 
   /// 배너 탭으로 열 제안(푸시 최상위 키, §10). 콜드 스타트에서는 UI 가 준비될 때까지 앱 상태에 보관한다
   public struct Link: Identifiable, Equatable, Sendable {
@@ -56,7 +58,7 @@ public enum ProposalReview {
   /// list = nil 이면 목록 조회 실패(오프라인·마감)
   public static func sheet(for link: Link, list: [Pending]?) -> Sheet {
     if let p = list?.first(where: { $0.proposal_id == link.proposalId }) { return .pending(p) }
-    guard link.category == "ADD_EVENT" else { return .needsReview }
+    guard link.category == "ADD_EVENT" || link.category == conflictCategory else { return .needsReview }
     guard list == nil, let start = link.start, parse(start) != nil else { return .processed }
     var f = ["proposal_id": link.proposalId, "title": link.title, "start": start]
     if let v = link.version { f["version"] = String(v) }

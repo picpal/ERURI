@@ -24,4 +24,40 @@ final class ProposalFlowTests: XCTestCase {
     XCTAssertEqual(ProposalFlow.reportFollowUp("stale"), .doneNotifyChanged)
     XCTAssertEqual(ProposalFlow.reportFollowUp(nil), .retryLater)                // 네트워크 실패: 다음 앱 실행 때
   }
+
+  /// §10 겹침: 저장 구간 [start, start+1h)와 겹치는 일정, 시작 순. 맞닿음·종일·취소·같은 제안 표식은 제외, 다른 제안이 넣은 일정은 겹침
+  func testConflicts() {
+    let t = Date(timeIntervalSince1970: 1_800_000_000)
+    func ev(_ id: String, _ a: TimeInterval, _ b: TimeInterval, allDay: Bool = false, canceled: Bool = false, url: URL? = nil) -> ProposalFlow.CalendarEvent {
+      ProposalFlow.CalendarEvent(id: id, title: "합성 \(id)", start: t.addingTimeInterval(a), end: t.addingTimeInterval(b),
+                                 allDay: allDay, canceled: canceled, url: url)
+    }
+    let events = [
+      ev("inside", 1800, 5400), ev("around", -3600, 7200),
+      ev("before", -3600, 0), ev("after", 3600, 7200),
+      ev("allday", -36_000, 50_400, allDay: true), ev("canceled", 0, 3600, canceled: true),
+      ev("mine", 0, 3600, url: ProposalFlow.marker("p-1")), ev("other", 0, 3600, url: ProposalFlow.marker("p-2")),
+    ]
+    XCTAssertEqual(ProposalFlow.conflicts(pid: "p-1", start: t, events: events).map(\.id), ["around", "other", "inside"])
+    XCTAssertEqual(ProposalFlow.conflicts(pid: "p-1", start: t, events: []), [])
+    XCTAssertEqual(ProposalFlow.eventDuration, 3600)
+  }
+
+  /// gate 결과 "conflict:<n>" 해석과 화면·잠금화면 문구. 잠금화면 본문에는 다른 일정의 제목이 없다
+  func testConflictOutcomeAndCopy() throws {
+    XCTAssertEqual(ProposalFlow.conflictOutcome(2), "conflict:2")
+    XCTAssertEqual(ProposalFlow.conflictCount("conflict:2"), 2)
+    XCTAssertNil(ProposalFlow.conflictCount("ok")); XCTAssertNil(ProposalFlow.conflictCount("fail:x")); XCTAssertNil(ProposalFlow.conflictCount("dup"))
+    XCTAssertEqual(ProposalFlow.conflictNoticeID("p-1"), "conflict-p-1")
+    XCTAssertEqual(ProposalFlow.conflictNoticeTitle, "겹치는 일정이 있습니다")
+    XCTAssertEqual(ProposalFlow.conflictNoticeBody(2), "같은 시간에 일정 2건 · 탭해서 확인")          // "다른" 없음 — 같은 일정이 이미 있는 경우가 흔하다(Fable N5)
+    let t = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-04T05:00:00Z"))         // 서울 14:00
+    let a = ProposalFlow.CalendarEvent(id: "a", title: "합성 회의", start: t, end: t.addingTimeInterval(3600))
+    let b = ProposalFlow.CalendarEvent(id: "b", title: "합성 모임", start: t.addingTimeInterval(1800), end: t.addingTimeInterval(5400))
+    XCTAssertEqual(ProposalFlow.conflictLine([a]), "겹치는 일정: 14:00–15:00 합성 회의")
+    XCTAssertEqual(ProposalFlow.conflictLine([a, b]), "겹치는 일정: 14:00–15:00 합성 회의 외 1건")
+    XCTAssertNil(ProposalFlow.conflictLine([]))
+    XCTAssertEqual(ProposalFlow.confirmTitle([a]), "같은 시간에 '합성 회의' 일정이 있습니다. 그래도 추가할까요?")
+    XCTAssertEqual(ProposalFlow.confirmTitle([]), "같은 시간에 다른 일정이 있습니다. 그래도 추가할까요?")
+  }
 }

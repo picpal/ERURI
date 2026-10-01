@@ -117,4 +117,10 @@ final class ChatReplyTests: XCTestCase {
     let empty = body.replacingOccurrences(of: #""hits":"#, with: #""candidates":[],"hits":"#)
     XCTAssertNil(try XCTUnwrap(ChatReply.decode(Data(empty.utf8))).archiveIDs)
   }
+
+  /// 겹침(conflict:<n>)은 화면이 확인창으로 가로채지만, 문구로 떨어져도 뜻이 통하고 다시 누를 수 있게
+  func testAddFeedbackConflict() {
+    XCTAssertEqual(ChatReply.addFeedback("conflict:1").text, "같은 시간에 일정이 있습니다")
+    XCTAssertTrue(ChatReply.addFeedback("conflict:1").retry)
+  }
 }

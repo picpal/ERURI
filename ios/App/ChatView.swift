@@ -13,6 +13,8 @@ struct ChatView: View {
   @State private var judged: [String: Bool] = [:]      // "<answer_id>|<item_id>" → ok
   @State private var judging: Set<String> = []         // 기록 요청 중인 키 — 연타가 도착 순서 경합을 만들지 않게 막는다
   @State private var adds: [String: AddState] = [:]    // 제안 id → 캘린더 추가 진행·결과
+  @State private var confirm: ConfirmAdd?              // 겹침 확인창(§10): 제안 id·handleAdd 필드·다시 읽은 겹치는 일정
+  struct ConfirmAdd: Identifiable { let id: String; let fields: [String: String]; let conflicts: [ProposalFlow.CalendarEvent] }
   @State private var dictation = SpeechDictation()     // 기기 안 받아쓰기(§9·§12)
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.colorScheme) private var scheme
@@ -34,6 +36,12 @@ struct ChatView: View {
       .scrollBounceBehavior(.always)   // 대화가 비었거나 짧아 넘치지 않아도 끌려서 아래로 쓸면 키보드가 내려간다
       .simultaneousGesture(TapGesture().onEnded { inputFocused = false })   // 목록 탭은 행 버튼·링크를 막지 않고 포커스만 푼다
       .safeAreaInset(edge: .bottom) { inputPanel }
+      .confirmationDialog(ProposalFlow.confirmTitle(confirm?.conflicts ?? []),
+                          isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
+                          titleVisibility: .visible, presenting: confirm) { c in
+        Button("추가") { runAdd(c, confirmed: true) }
+        Button("취소", role: .cancel) {}
+      }
       .navigationTitle("채팅")
       .onAppear { dictation.onText = { input = $0 }; dictation.refresh() }
       .onDisappear { dictation.stopIfRecording() }
@@ -117,12 +125,7 @@ struct ChatView: View {
     let state = adds[p.id]
     VStack(alignment: .leading, spacing: 4) {
       Button(state.isRunning ? "추가하는 중… · \(title)" : "캘린더에 추가 · \(title) \(ChatReply.seoulLabel(start))") {
-        adds[p.id] = .running
-        Task {
-          // 알림 액션과 같은 §10 경로(서버 상태 확인 → 표식 조회 → 저장 → 보고). 결과를 카드에 쓰고, 실패면 버튼을 다시 켠다
-          let fb = ChatReply.addFeedback(await NotificationActions.handleAdd(fields: ["proposal_id": p.id, "title": title, "start": start]))
-          adds[p.id] = fb.retry ? .failed(fb.text) : .finished(fb.text)
-        }
+        runAdd(ConfirmAdd(id: p.id, fields: ["proposal_id": p.id, "title": title, "start": start], conflicts: []), confirmed: false)
       }
       .disabled(state.isRunning || state.isFinished)
       switch state {
@@ -130,6 +133,23 @@ struct ChatView: View {
       case .failed(let t)?: Text(t).font(.caption).foregroundStyle(.red)
       default: EmptyView()
       }
+    }
+  }
+
+  /// 알림 액션과 같은 §10 경로(서버 상태 확인 → 표식 조회 → 겹침 → 저장 → 보고). 겹침이면 저장하지 않고 돌아오므로
+  /// 겹치는 일정을 다시 읽어 확인창을 띄우고, "추가"면 confirmed 로 다시 부른다. 결과를 카드에 쓰고, 실패면 버튼을 다시 켠다
+  private func runAdd(_ c: ConfirmAdd, confirmed: Bool) {
+    adds[c.id] = .running
+    Task {
+      let outcome = await NotificationActions.handleAdd(fields: c.fields, confirmed: confirmed)
+      if ProposalFlow.conflictCount(outcome) != nil {
+        adds[c.id] = nil
+        let start = c.fields["start"].flatMap { ISO8601DateFormatter().date(from: $0) }
+        confirm = ConfirmAdd(id: c.id, fields: c.fields, conflicts: start.map { CalendarLookup.conflicts(pid: c.id, start: $0) } ?? [])
+        return
+      }
+      let fb = ChatReply.addFeedback(outcome)
+      adds[c.id] = fb.retry ? .failed(fb.text) : .finished(fb.text)
     }
   }
 
