@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert";
 import type { ClassifyMeta, ClassifyResult } from "../functions/_shared/classify.ts";
 import type { TextExtraction, TextMeta } from "../functions/_shared/extract-text.ts";
-import type { FactInput } from "../functions/_shared/facts.ts";
+import type { FactsInput } from "../functions/_shared/facts.ts";
 import type { Job } from "../functions/_shared/job.ts";
 import { processText, type TextDeps, type TextItem } from "../functions/worker/text.ts";
 
@@ -12,12 +12,12 @@ const BUY_X: TextExtraction = { kind: "purchase", evidence: null,
   purchase: { merchant: "합성커피", products: [], ordered_at: null, amount: 32000, currency: "KRW", order_no: null, status: "paid" } };
 function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: ClassifyResult | null | Error; result?: TextExtraction;
   failEnqueue?: number; pushed?: boolean; budget?: "ok" | "degraded" | "refused" } = {}) {
-  const calls = { decrypt: 0, classify: [] as string[], extract: [] as { text: string; today: string }[], saved: [] as FactInput[],
+  const calls = { decrypt: 0, classify: [] as string[], extract: [] as { text: string; today: string }[], saved: [] as FactsInput[],
     status: [] as [string, boolean][], tokens: 0, notify: [] as string[], classifyMeta: [] as ClassifyMeta[], extractMeta: [] as TextMeta[],
     backfill: [] as boolean[], gate: [] as [string, number][], quarantine: [] as string[], embed: [] as [string, boolean][] };
   const base: TextItem = { contentEnc: "enc", source: "NOTIFICATION", appName: "Slack", sender: null, title: null,
     occurredAt: "2026-09-28T15:30:00Z", capturedAt: "2026-09-28T15:30:05Z", status: "queued" };
-  // save_fact 처럼 status 를 extracted 로 바꾸고 제안을 기억한다 → 같은 fake 로 processText 를 다시 부르면 실제 재시도가 된다
+  // save_facts 처럼 status 를 extracted 로 바꾸고 제안을 기억한다 → 같은 fake 로 processText 를 다시 부르면 실제 재시도가 된다
   const state = { status: o.item?.status ?? base.status, proposals: [] as string[], failEnqueue: o.failEnqueue ?? 0 };
   const d: TextDeps = {
     getItem: async () => (o.item === null ? null : { ...base, ...o.item, status: state.status }),
@@ -26,14 +26,15 @@ function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: Cla
     threshold: 0.8,
     extract: async (text, m, today) => { calls.extract.push({ text, today }); calls.extractMeta.push(m); return { result: o.result ?? EVENT_X, usage: { input_tokens: 900, output_tokens: 60 } }; },
     addTokens: async (_u, n, bf) => { calls.tokens += n; calls.backfill.push(bf); },
-    saveFact: async (f) => { calls.saved.push(f); state.status = "extracted"; const proposalId = f.kind === "purchase" ? null : "p1";
-      if (proposalId && !state.proposals.includes(proposalId)) state.proposals.push(proposalId);
-      return { factId: "f1", proposalId, created: calls.saved.length === 1 }; },
+    saveFacts: async (f) => { calls.saved.push(f); state.status = "extracted";
+      return f.entries.map((_, i) => { const proposalId = f.kind === "purchase" ? null : `p${i + 1}`;
+        if (proposalId && !state.proposals.includes(proposalId)) state.proposals.push(proposalId);
+        return { factId: `f${i + 1}`, proposalId, created: calls.saved.length === 1 }; }); },
     setStatus: async (_u, _i, s, w) => { calls.status.push([s, w]); },
     recordGate: async (_u, _i, l, c) => { calls.gate.push([l, c]); },
     quarantine: async (_u, _i, s) => { calls.quarantine.push(s); state.status = s; },
     enqueueNotify: async (_u, p) => { if (state.failEnqueue > 0) { state.failEnqueue--; throw new Error("enqueue_job XX000"); } calls.notify.push(p); },
-    unpushedProposals: async () => (o.pushed ? [] : state.proposals),
+    unpushedProposals: async () => (o.pushed ? [] : state.proposals.slice(0, 1)),
     enqueueEmbed: async (_u, i, bf) => { calls.embed.push([i, bf]); },
     budget: { reserve: async () => o.budget ?? "ok", settle: async () => {}, acquire: async () => 1, release: async () => {},
       now: () => new Date("2026-10-15T00:00:00Z") },
@@ -52,7 +53,7 @@ Deno.test("backfill job: extraction tokens go to the backfill counter", async ()
 Deno.test("event → proposed; fact via text; tokens counted; status left to save_fact", async () => {
   const { d, calls } = fake({ verdict: { label: "actionable", confidence: 0.99 } });
   assertEquals(await processText(d, job()), "proposed");
-  assertEquals([calls.saved.length, calls.saved[0].kind, calls.saved[0].payload.via, calls.tokens, calls.status], [1, "event", "text", 960, []]);
+  assertEquals([calls.saved.length, calls.saved[0].kind, calls.saved[0].entries[0].payload.via, calls.tokens, calls.status], [1, "event", "text", 960, []]);
 });
 
 // 최종 리뷰 I1: 메신저 알림의 title 은 발신자 표시 이름이다 → 분류기(Jev)에는 null, 비메신저는 그대로
@@ -168,6 +169,27 @@ Deno.test("retry after enqueue failure: item already extracted → notify re-enq
   const gone = fake({ item: { status: "discarded:server:otp" } });
   gone.d.unpushedProposals = () => { throw new Error("must not query"); };
   assertEquals(await processText(gone.d, job()), "discarded:server:otp");
+});
+
+const MULTI_X: TextExtraction = { kind: "event", events: [
+  { evidence: "합성 1회차", event: { title: "합성 클래스 1회차", start: "2026-10-04T14:00:00+09:00", end: null, location: null, uncertain: [] } },
+  { evidence: "합성 2회차", event: { title: "합성 클래스 2회차", start: "2026-10-11T14:00:00+09:00", end: null, location: null, uncertain: [] } },
+] };
+
+Deno.test("multi-event: one save_facts call with both entries; notify enqueued once for the lead (ordinal 0)", async () => {
+  const { d, calls } = fake({ result: MULTI_X });
+  assertEquals(await processText(d, job()), "proposed");
+  assertEquals([calls.saved.length, calls.saved[0].kind, calls.saved[0].entries.length], [1, "event", 2]);
+  assertEquals(calls.saved[0].entries.map((e) => e.payload.via), ["text", "text"]);
+  assertEquals(calls.notify, ["p1"]);
+});
+
+// Review Focus 2: save_facts 커밋 뒤 enqueue 전에 죽으면 재시도는 대표 하나만 다시 넣는다(모델 재호출 없음)
+Deno.test("multi-event retry after a lost enqueue: re-enqueues only the lead, no re-extraction", async () => {
+  const { d, calls } = fake({ result: MULTI_X, failEnqueue: 1 });
+  await assertRejects(() => processText(d, job()));
+  assertEquals(await processText(d, job()), "extracted");
+  assertEquals([calls.extract.length, calls.notify], [1, ["p1"]]);
 });
 
 Deno.test("budget exhausted → Deferred to next month before extraction (job stays queued)", async () => {

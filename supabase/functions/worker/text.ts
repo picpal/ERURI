@@ -2,12 +2,12 @@ import { type BudgetDeps, costKrw, guarded } from "../_shared/budget.ts";
 import { type Classifier, classifierMeta, type ClassifyResult, gateDecision } from "../_shared/classify.ts";
 import type { ExtractUsage } from "../_shared/extract.ts";
 import type { TextExtraction, TextMeta } from "../_shared/extract-text.ts";
-import { type FactInput, type SavedFact, textFacts } from "../_shared/facts.ts";
+import { type FactsInput, type SavedFact, textFacts } from "../_shared/facts.ts";
 import type { Job } from "../_shared/job.ts";
 import { applyRules } from "../_shared/rules.ts";
 import { receivedDay } from "../_shared/time.ts";
 
-// process 잡(스펙 §7 "0단계 예외" 0b): 규칙 재적용 → 분류 게이트(Jev) → 텍스트 추출 → save_fact → embed 잡(1b).
+// process 잡(스펙 §7 "0단계 예외" 0b): 규칙 재적용 → 분류 게이트(Jev) → 텍스트 추출 → save_facts → embed 잡(1b).
 // 로그에는 id·코드·개수만(본문·추출값 금지)
 export type TextItem = { contentEnc: string | null; source: string; appName: string | null; sender: string | null; title: string | null;
   occurredAt: string; capturedAt: string; status: string };
@@ -19,7 +19,7 @@ export type TextDeps = {
   threshold: number;
   extract(text: string, meta: TextMeta, today: string): Promise<{ result: TextExtraction; usage: ExtractUsage }>;
   addTokens(userId: string, tokens: number, backfill: boolean): Promise<void>;
-  saveFact(f: FactInput): Promise<SavedFact>;
+  saveFacts(f: FactsInput): Promise<SavedFact[]>;
   enqueueNotify(userId: string, proposalId: string): Promise<void>;
   unpushedProposals(userId: string, itemId: string): Promise<string[]>;
   setStatus(userId: string, itemId: string, status: string, wipe: boolean): Promise<void>;
@@ -35,7 +35,7 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   const item = await deps.getItem(user, itemId);
   if (!item) throw new Error("worker_get_text_item not_found");
   if (item.status !== "queued") {                                  // 재시도 멱등: 모델 재호출 없음
-    // save_fact 가 extracted 를 커밋한 뒤 notify enqueue 전에 끊겼을 수 있다. 푸시 기록이 없는 제안은 다시 넣는다(기기별 1회가 중복을 막는다)
+    // save_facts 가 extracted 를 커밋한 뒤 notify enqueue 전에 끊겼을 수 있다. 대표 제안에 푸시 기록이 없으면 다시 넣는다(기기별 1회가 중복을 막는다)
     const again = item.status === "extracted" ? await deps.unpushedProposals(user, itemId) : [];
     for (const p of again) await deps.enqueueNotify(user, p);
     // embed 잡 적재 전에 끊겼을 수도 있다. 검색 대상이면 다시 넣는다(embed 잡은 청크가 이미 있으면 건너뛴다)
@@ -87,19 +87,18 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   });
   await deps.addTokens(user, usage.input_tokens + usage.output_tokens, job.payload.backfill === true);
   const facts = textFacts(user, itemId, result);
-  const fact: FactInput | null = facts === null ? null
-    : { userId: facts.userId, itemId: facts.itemId, kind: facts.kind, payload: facts.entries[0].payload, evidence: facts.entries[0].evidence };   // T3 이 saveFacts 로 바꾼다
-  if (fact === null) {                                               // 남길 것 없음: 원문 유지(1b 검색 대상, §7)
+  if (facts === null) {                                              // 남길 것 없음: 원문 유지(1b 검색 대상, §7)
     const st = await discard(deps, job, user, itemId, "empty", false);
     await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);
     return st;
   }
 
-  // 4) 저장(items.status = extracted 는 save_fact 가 한다)
-  const saved = await deps.saveFact(fact);
-  if (saved.proposalId) await deps.enqueueNotify(user, saved.proposalId);
+  // 4) 저장(한 트랜잭션, items.status = extracted 는 save_facts 가 한다). 알림은 항목당 1개 — 대표 = 순번이 가장 작은 제안(§7 notify)
+  const saved = await deps.saveFacts(facts);
+  const lead = saved.find((s) => s.proposalId !== null)?.proposalId ?? null;
+  if (lead) await deps.enqueueNotify(user, lead);
   await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);   // 청크·임베딩(백필 항목은 백필 레인)
-  return log(job, saved.proposalId ? "proposed" : "extracted", { kind: fact.kind, created: saved.created,
+  return log(job, lead ? "proposed" : "extracted", { kind: facts.kind, facts: saved.length, created: saved.some((s) => s.created),
     label: verdict?.label ?? null, confidence: verdict?.confidence ?? null, tokens: usage.input_tokens + usage.output_tokens });
 }
 

@@ -14,7 +14,8 @@ export async function runPhrase(p: { id: string; text: string }, o: { classifier
     threshold: o.threshold,
     extract: o.extract,
     addTokens: async (_u, n) => { tokens += n; },
-    saveFact: async (f) => { kind = f.kind; status = "extracted"; return { factId: "mem-fact", proposalId: f.kind === "purchase" ? null : "mem-proposal", created: true }; },
+    saveFacts: async (f) => { kind = f.kind; status = "extracted";
+      return f.entries.map((_, i) => ({ factId: `mem-fact-${i}`, proposalId: f.kind === "purchase" ? null : `mem-proposal-${i}`, created: true })); },
     setStatus: async (_u, _i, s) => { status = s; },
     recordGate: async () => {},
     quarantine: async (_u, _i, s) => { status = s; },

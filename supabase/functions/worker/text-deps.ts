@@ -4,7 +4,7 @@ import { budgetDeps } from "../_shared/budget-deps.ts";
 import type { Classifier } from "../_shared/classify.ts";
 import { decrypt } from "../_shared/crypto.ts";
 import { extractTextDetailed } from "../_shared/extract-text.ts";
-import { enqueueNotify, saveFact } from "../_shared/facts.ts";
+import { enqueueNotify, saveFacts } from "../_shared/facts.ts";
 import { addExtractTokens } from "./media-deps.ts";
 import type { TextDeps, TextItem } from "./text.ts";
 
@@ -27,7 +27,7 @@ export function textDeps(sb: SupabaseClient, o: { classifier: Classifier; thresh
     threshold: o.threshold,
     extract: o.extract ?? ((text, meta, today) => extractTextDetailed(text, meta, today)),
     addTokens: (userId, tokens, backfill) => addExtractTokens(sb, userId, tokens, backfill),
-    saveFact: (f) => saveFact(sb, f),
+    saveFacts: (f) => saveFacts(sb, f),
     enqueueNotify: (userId, proposalId) => enqueueNotify(sb, userId, proposalId, o.leasePrefix ?? ""),
     async unpushedProposals(userId, itemId) {
       const { data, error } = await sb.rpc("worker_unpushed_proposals", { p_user: userId, p_item: itemId });
