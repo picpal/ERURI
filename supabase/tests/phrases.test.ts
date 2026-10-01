@@ -6,7 +6,7 @@ import { runPhrase } from "../eval/phrase-harness.ts";
 
 const TODAY = "2026-09-29";   // 화요일
 const SAMPLE: Record<"event" | "task" | "purchase", TextExtraction> = {
-  event: { kind: "event", evidence: null, event: { title: "합성", start: "2026-10-02T15:30:00+09:00", end: null, location: null, uncertain: [] } },
+  event: { kind: "event", events: [{ evidence: null, event: { title: "합성", start: "2026-10-02T15:30:00+09:00", end: null, location: null, uncertain: [] } }] },
   task: { kind: "task", evidence: null, task: { title: "합성 납부", due: "2026-10-10", uncertain: [] } },
   purchase: { kind: "purchase", evidence: null, purchase: { merchant: "합성", products: [], ordered_at: null, amount: 1, currency: "KRW", order_no: null, status: null } },
 };

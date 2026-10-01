@@ -9,8 +9,8 @@ import { deleteRunJobs, RUN, service as sb, testUser } from "./_testenv.ts";
 
 // 호스팅 DB. 전용 테스트 사용자·실행 태그만(AGENTS.md §7). 분류·추출은 가짜(합성), 저장·상태·복호화는 실제 RPC
 const USER = (await testUser()).id;
-const EVENT_X: TextExtraction = { kind: "event", evidence: "합성 근거",
-  event: { title: "합성 진료", start: "2026-10-02T15:00:00+09:00", end: null, location: null, uncertain: [] } };
+const EVENT_X: TextExtraction = { kind: "event", events: [{ evidence: "합성 근거",
+  event: { title: "합성 진료", start: "2026-10-02T15:00:00+09:00", end: null, location: null, uncertain: [] } }] };
 async function seed(text: string, tag: string): Promise<string> {
   const { data, error } = await sb.rpc("insert_item", { p_user: USER, p_source: "NOTIFICATION", p_idempotency_key: `${RUN}:text:${tag}`,
     p_sender: null, p_title: null, p_content_enc: toBytea(await encrypt(USER, text)), p_occurred_at: new Date().toISOString(), p_enqueue: false });
