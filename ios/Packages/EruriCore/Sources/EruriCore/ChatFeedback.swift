@@ -1,17 +1,17 @@
 import Foundation
 
-/// 채팅 답 아래 아이콘 막대(스펙 §9, 0.8.3): 복사 · 👍 · 👎. 👍👎는 검색 평가 라벨(eval_judgments, 0018 — 항목 단위)을 서버 변경 없이 답 단위로 묶는다.
-/// 👍 = 이 답의 인용 항목 전부 관련 있음, 👎 = 시트에서 항목별 관련 있음/없음을 골라 저장(닫기만 하면 기록 없음)
+/// 채팅 답 아래 텍스트 버튼 막대(스펙 §9, 0.8.3 → 0.9.0 텍스트 캡슐): 맞아요(.up) · 틀렸어요(.down) · 복사. 판정은 검색 평가 라벨(eval_judgments, 0018 — 항목 단위)을 서버 변경 없이 답 단위로 묶는다.
+/// 맞아요 = 이 답의 인용 항목 전부 관련 있음, 틀렸어요 = 시트에서 항목별 관련 있음/없음을 골라 저장(닫기만 하면 기록 없음)
 public enum ChatFeedback {
   public enum Verdict: Equatable, Sendable { case up, down }
 
   /// judged 사전 키. 같은 인용을 다시 누르면 서버가 merge-duplicates 로 바꾼다
   public static func key(answer: String, item: String) -> String { "\(answer)|\(item)" }
 
-  /// 👍👎를 보일지 — 인용이 없는 답(거절)은 평가할 항목이 없어 복사만 남긴다
+  /// 맞아요·틀렸어요를 보일지 — 인용이 없는 답(거절)은 평가할 항목이 없어 복사만 남긴다
   public static func showsJudge(citationCount: Int) -> Bool { citationCount > 0 }
 
-  /// 막대 표시 상태: 인용 중 하나라도 관련 없음이면 👎, 전부 관련 있음이면 👍, 아직 다 고르지 않았으면 nil
+  /// 막대 표시 상태: 인용 중 하나라도 관련 없음이면 틀렸어요, 전부 관련 있음이면 맞아요, 아직 다 고르지 않았으면 nil
   public static func verdict(answer: String, items: [String], judged: [String: Bool]) -> Verdict? {
     let marks = items.map { judged[key(answer: answer, item: $0)] }
     if marks.contains(false) { return .down }
@@ -19,12 +19,12 @@ public enum ChatFeedback {
     return nil
   }
 
-  /// 👍: 인용 항목 전부 관련 있음
+  /// 맞아요: 인용 항목 전부 관련 있음
   public static func upMarks(items: [String]) -> [String: Bool] {
     Dictionary(items.map { ($0, true) }, uniquingKeysWith: { a, _ in a })
   }
 
-  /// 👎 시트의 첫 토글 값: 이미 고른 값, 없으면 관련 없음(👎를 누른 뜻)
+  /// 틀렸어요 시트의 첫 토글 값: 이미 고른 값, 없으면 관련 없음(틀렸어요를 누른 뜻)
   public static func sheetDefaults(answer: String, items: [String], judged: [String: Bool]) -> [String: Bool] {
     Dictionary(items.map { ($0, judged[key(answer: answer, item: $0)] ?? false) }, uniquingKeysWith: { a, _ in a })
   }

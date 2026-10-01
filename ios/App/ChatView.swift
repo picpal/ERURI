@@ -1,7 +1,7 @@
 import SwiftUI
 import EruriCore
 
-/// 채팅(스펙 §9): 질문 → 답변 + 인용 항목의 제안 카드(Ruling 8) + 답 맨 아래 아이콘 막대(복사·👍·👎 — eval_judgments, §9 평가 절차 4, 0.8.3)
+/// 채팅(스펙 §9): 질문 → 답변 + 인용 항목의 제안 카드(Ruling 8) + 답 맨 아래 텍스트 버튼 막대(맞아요·틀렸어요·복사 — eval_judgments, §9 평가 절차 4, 0.9.0)
 /// + 일정 질문이면 "기기 캘린더" 절(§9 일정 질문과 기기 캘린더 — 기기 안에서만 읽는다)
 struct ChatView: View {
   struct Turn: Identifiable {
@@ -17,7 +17,7 @@ struct ChatView: View {
   @State private var busy = false
   @State private var judged: [String: Bool] = [:]      // "<answer_id>|<item_id>" → ok
   @State private var judging: Set<String> = []         // 기록 요청 중인 키 — 연타가 도착 순서 경합을 만들지 않게 막는다
-  @State private var judgeSheet: JudgeSheet.Model?     // 👎 시트: 인용 항목별 관련 있음/없음. 닫기만 하면 기록하지 않는다
+  @State private var judgeSheet: JudgeSheet.Model?     // 틀렸어요 시트: 인용 항목별 관련 있음/없음. 닫기만 하면 기록하지 않는다
   @State private var copied: String?                   // 방금 복사한 answer_id — 잠깐 체크 아이콘으로 바꾼다
   @State private var adds: [String: AddState] = [:]    // 제안 id → 캘린더 추가 진행·결과
   struct ScrollRequest: Equatable { let id: UUID; let seq: Int }
@@ -138,39 +138,47 @@ struct ChatView: View {
     feedbackBar(a)
   }
 
-  /// 답 맨 아래 아이콘 막대(§9, 0.8.3 — 근거 줄을 대신한다): 복사 · 👍 · 👎. 거절(인용 없음)이면 복사만.
-  /// 👍 = 인용 항목 전부 관련 있음, 👎 = 항목별 시트. 다시 누르면 바꾼다(merge-duplicates). 버튼은 borderless 로 행 탭이 아니라 자기 탭으로 눌린다
+  /// 답 맨 아래 텍스트 버튼 막대(§9, 0.9.0 — 0.8.3 아이콘 막대를 대신한다): 맞아요 · 틀렸어요 · 복사. 거절(인용 없음)이면 복사만.
+  /// 맞아요 = 인용 항목 전부 관련 있음, 틀렸어요 = 항목별 시트. 다시 누르면 바꾼다(merge-duplicates).
+  /// 캡슐은 라벨로 그리고 스타일은 borderless 로 둔다 — List 행 탭이 아니라 버튼 자기 탭으로 한 번에 눌린다
   private func feedbackBar(_ a: ChatReply.Answer) -> some View {
     let items = a.citations.map(\.item_id)
     let verdict = ChatFeedback.verdict(answer: a.answer_id, items: items, judged: judged)
     let busy = items.contains { judging.contains(ChatFeedback.key(answer: a.answer_id, item: $0)) }
-    return HStack(spacing: 4) {
-      barButton(copied == a.answer_id ? "checkmark" : "doc.on.doc", on: false, label: "답 복사") {
-        UIPasteboard.general.string = a.answer
-        copied = a.answer_id
-        Task { try? await Task.sleep(for: .seconds(1.5)); if copied == a.answer_id { copied = nil } }
-      }
+    return HStack(spacing: 6) {
       if ChatFeedback.showsJudge(citationCount: items.count) {
-        barButton(verdict == .up ? "hand.thumbsup.fill" : "hand.thumbsup", on: verdict == .up, label: "좋은 답") {
+        barButton("맞아요", on: verdict == .up, label: "맞아요, 근거 전부 관련 있음") {
           record(a.answer_id, ChatFeedback.upMarks(items: items))
         }
         .disabled(busy)
-        barButton(verdict == .down ? "hand.thumbsdown.fill" : "hand.thumbsdown", on: verdict == .down, label: "근거 평가") {
+        barButton("틀렸어요", on: verdict == .down, label: "틀렸어요, 근거 항목별 평가") {
           judgeSheet = JudgeSheet.Model(answerID: a.answer_id, citations: a.citations,
                                         marks: ChatFeedback.sheetDefaults(answer: a.answer_id, items: items, judged: judged))
         }
         .disabled(busy)
       }
+      barButton(copied == a.answer_id ? "복사됨" : "복사", on: false, label: "답 복사") {
+        UIPasteboard.general.string = a.answer
+        copied = a.answer_id
+        Task { try? await Task.sleep(for: .seconds(1.5)); if copied == a.answer_id { copied = nil } }
+      }
       Spacer()
     }
   }
 
-  private func barButton(_ symbol: String, on: Bool, label: String, action: @escaping () -> Void) -> some View {
+  /// 작은 테두리 캡슐. 고른 쪽은 강조색으로 채운다
+  private func barButton(_ title: String, on: Bool, label: String, action: @escaping () -> Void) -> some View {
     Button(action: action) {
-      Image(systemName: symbol).font(.footnote).foregroundStyle(on ? Color.accentColor : Color.secondary)
-        .frame(width: 32, height: 28).contentShape(Rectangle())
+      Text(title).font(.caption)
+        .foregroundStyle(on ? Color.white : Color.secondary)
+        .padding(.horizontal, 10).padding(.vertical, 4)
+        .background(Capsule().fill(on ? Color.accentColor : Color.clear))
+        .overlay(Capsule().strokeBorder(on ? Color.accentColor : Color.secondary.opacity(0.5), lineWidth: 1))
+        .contentShape(Capsule())
     }
-    .buttonStyle(.borderless).accessibilityLabel(label)
+    .buttonStyle(.borderless)
+    .accessibilityLabel(label)
+    .accessibilityAddTraits(on ? .isSelected : [])
   }
 
   /// "기기 캘린더" 절(§9 일정 질문과 기기 캘린더). 전체 접근이 없으면(추가만 허용 포함) 절 대신 안내 한 줄 — 허용하면 이 턴을 다시 읽는다
@@ -358,7 +366,7 @@ struct ChatView: View {
   }
 }
 
-/// 👎 시트(§9, 0.8.3): 인용 항목마다 제목·출처·시각·원문 보기와 "관련 있음" 토글. 저장할 때만 항목별로 기록하고, 닫기만 하면 아무것도 기록하지 않는다
+/// 틀렸어요 시트(§9, 0.8.3 · 0.9.0 이름): 인용 항목마다 제목·출처·시각·원문 보기와 "관련 있음" 토글. 저장할 때만 항목별로 기록하고, 닫기만 하면 아무것도 기록하지 않는다
 struct JudgeSheet: View {
   struct Model: Identifiable { var id: String { answerID }; let answerID: String; let citations: [ChatReply.Citation]; var marks: [String: Bool] }
   @State var model: Model
