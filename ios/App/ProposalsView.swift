@@ -84,51 +84,87 @@ struct ProposalsView: View {
   }
 }
 
-/// 배너 탭 시트: 목록에서 그 제안을 찾아 서버 값(장소 포함)으로 보이고, 못 읽으면 푸시 값으로(§10 순서 5)
+/// 시트의 제안 한 장(단건 시트와 묶음 카드 공용): 판정(Sheet)에 따라 추가·무시·안내. 권한 안내는 시트가 맨 위에 한 번
+struct SheetCardView: View {
+  let link: ProposalReview.Link
+  let sheet: ProposalReview.Sheet
+  let calendarOK: Bool
+  @Binding var state: ProposalReview.ActionState
+
+  var body: some View {
+    switch sheet {
+    case .pending(let p):
+      ProposalActionsView(title: p.title, when: p.whenLabel, location: p.location, addFields: calendarOK ? p.addFields : nil,
+                          proposalId: p.proposal_id, state: $state)
+    case .offline(let f):
+      ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: calendarOK ? f : nil,
+                          proposalId: link.proposalId, state: $state)
+      Text("서버에 연결하지 못해 알림 내용으로 보여 줍니다").font(.caption).foregroundStyle(.secondary)
+    case .unlisted(let f):                                                     // proposed 인데 목록 50건 밖 — 알림 값, 안내 없음
+      ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: calendarOK ? f : nil,
+                          proposalId: link.proposalId, state: $state)
+    case .needsReview:
+      ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: nil, proposalId: link.proposalId, state: $state)
+      Text(link.category == "ADD_REMINDER" ? "할 일 제안은 아직 앱에서 바로 추가하지 않습니다"
+           : "날짜나 내용 확인이 필요한 제안이라 바로 추가하지 않습니다. 캘린더 앱에서 직접 추가해 주세요")
+        .font(.caption).foregroundStyle(.secondary)
+    case .processed:
+      Text(link.title); Text(link.whenLabel).font(.caption).foregroundStyle(.secondary)
+      Text("이미 추가·무시됐거나 지난 제안입니다").foregroundStyle(.secondary)
+    }
+  }
+}
+
+/// 배너 탭 시트: 목록에서 그 제안을 찾아 서버 값(장소 포함)으로 보이고, 못 읽으면 푸시 값으로(§10 순서 5).
+/// 묶음 알림(EVENT_BUNDLE, 0.9.0)이면 events 순서대로 카드 N장 — 카드마다 따로 판정·추가·무시
 struct ProposalSheet: View {
   let link: ProposalReview.Link
   @Environment(\.dismiss) private var close
   @Environment(\.scenePhase) private var scenePhase
   @State private var sheet: ProposalReview.Sheet?
+  @State private var cards: [ProposalReview.BundleCard]?
   @State private var state = ProposalReview.ActionState.idle
+  @State private var states: [String: ProposalReview.ActionState] = [:]
   @State private var calendarOK = CalendarLookup.fullAccess
+
+  private var isBundle: Bool { link.events.count >= 2 }
+  /// 추가할 수 있는 카드가 있을 때만 권한 안내(단건 시트의 기존 위치 = 맨 위)
+  private var needsAccessPrompt: Bool {
+    let sheets = isBundle ? (cards ?? []).map(\.sheet) : [sheet].compactMap { $0 }
+    return !calendarOK && sheets.contains { switch $0 { case .pending, .offline, .unlisted: true; default: false } }
+  }
 
   var body: some View {
     NavigationStack {
       List {
-        switch sheet {
-        case nil: ProgressView()
-        case .pending(let p)?:
-          if !calendarOK { CalendarAccessSection { calendarOK = CalendarLookup.fullAccess } }
-          ProposalActionsView(title: p.title, when: p.whenLabel, location: p.location, addFields: calendarOK ? p.addFields : nil,
-                              proposalId: p.proposal_id, state: $state)
-        case .offline(let f)?:
-          if !calendarOK { CalendarAccessSection { calendarOK = CalendarLookup.fullAccess } }
-          ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: calendarOK ? f : nil,
-                              proposalId: link.proposalId, state: $state)
-          Text("서버에 연결하지 못해 알림 내용으로 보여 줍니다").font(.caption).foregroundStyle(.secondary)
-        case .unlisted(let f)?:                                                 // 묶음 카드에서만 나온다 — 알림 값, 안내 없음
-          if !calendarOK { CalendarAccessSection { calendarOK = CalendarLookup.fullAccess } }
-          ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: calendarOK ? f : nil,
-                              proposalId: link.proposalId, state: $state)
-        case .needsReview?:
-          ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: nil, proposalId: link.proposalId, state: $state)
-          Text(link.category == "ADD_REMINDER" ? "할 일 제안은 아직 앱에서 바로 추가하지 않습니다"
-               : "날짜나 내용 확인이 필요한 제안이라 바로 추가하지 않습니다. 캘린더 앱에서 직접 추가해 주세요")
-            .font(.caption).foregroundStyle(.secondary)
-        case .processed?:
-          Text(link.title); Text(link.whenLabel).font(.caption).foregroundStyle(.secondary)
-          Text("이미 추가·무시됐거나 지난 제안입니다").foregroundStyle(.secondary)
-        }
+        if needsAccessPrompt { CalendarAccessSection { calendarOK = CalendarLookup.fullAccess } }
+        if isBundle {
+          if let cards {
+            ForEach(cards) { c in Section { SheetCardView(link: c.event.link, sheet: c.sheet, calendarOK: calendarOK, state: binding(c.id)) } }
+          } else { ProgressView() }
+        } else if let sheet {
+          SheetCardView(link: link, sheet: sheet, calendarOK: calendarOK, state: $state)
+        } else { ProgressView() }
       }
-      .navigationTitle("제안").navigationBarTitleDisplayMode(.inline)
+      .navigationTitle(isBundle ? "제안 \(link.events.count)건" : "제안").navigationBarTitleDisplayMode(.inline)
       .toolbar { ToolbarItem(placement: .confirmationAction) { Button("닫기") { close() } } }
       .task {
-        sheet = ProposalReview.sheet(for: link, list: await NotificationActions.pendingProposals(timeout: 5))
+        if isBundle {                                                         // 목록과 상태를 같은 5초 마감으로 병렬 조회(§10 묶음 판정)
+          async let list = NotificationActions.pendingProposals(timeout: 5)
+          async let st = NotificationActions.proposalStatuses(link.events.map(\.proposalId), timeout: 5)
+          cards = ProposalReview.cards(for: link, list: await list, statuses: await st)
+        } else { sheet = ProposalReview.sheet(for: link, list: await NotificationActions.pendingProposals(timeout: 5)) }
       }
       .onChange(of: state) { _, s in if case .finished = s { ProposalRouter.shared.revision += 1 } }
+      .onChange(of: states) { old, new in
+        if new.contains(where: { k, v in if case .finished = v, old[k] != v { true } else { false } }) { ProposalRouter.shared.revision += 1 }
+      }
       .onChange(of: scenePhase) { _, phase in if phase == .active { calendarOK = CalendarLookup.fullAccess } }   // 설정에서 허용하고 돌아온 경우
     }
+  }
+
+  private func binding(_ id: String) -> Binding<ProposalReview.ActionState> {
+    Binding(get: { states[id] ?? .idle }, set: { states[id] = $0 })
   }
 }
 

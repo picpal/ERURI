@@ -17,6 +17,8 @@ enum NotificationActions {
       UNNotificationCategory(identifier: review, actions: [], intentIdentifiers: []),
       // 겹침으로 멈춘 잠금화면 추가의 로컬 알림(§10, 0.8.0). 버튼 없음 — 탭하면 제안 시트
       UNNotificationCategory(identifier: ProposalReview.conflictCategory, actions: [], intentIdentifiers: []),
+      // 한 항목의 일정 여러 건 묶음(§10, 0.9.0). 버튼 없음 — 탭하면 시트에 카드 N장(잠금화면 일괄 추가는 PoC-5 마감·겹침 규칙과 맞지 않아 두지 않는다)
+      UNNotificationCategory(identifier: ProposalReview.bundleCategory, actions: [], intentIdentifiers: []),
     ])
   }
 
@@ -101,6 +103,14 @@ enum NotificationActions {
     return ProposalReview.decodeList(r.data)
   }
 
+  /// 묶음 시트(§10, 0.9.0): 알림의 제안 id(≤5) → status. 목록(list_pending_proposals)은 50건 제한·ADD_EVENT 조건이라 카드 판정에 쓰지 않는다. 실패면 nil
+  static func proposalStatuses(_ ids: [String], timeout: TimeInterval = 5) async -> [String: String]? {
+    let ok = ids.filter { UUID(uuidString: $0) != nil }
+    guard !ok.isEmpty, let r = await API.send("rest/v1/proposals?id=in.(\(ok.joined(separator: ",")))&select=id,status", timeout: timeout),
+          r.status == 200, let rows = try? JSONSerialization.jsonObject(with: r.data) as? [[String: Any]] else { return nil }
+    return rows.reduce(into: [String: String]()) { d, row in if let id = row["id"] as? String, let st = row["status"] as? String { d[id.lowercased()] = st } }
+  }
+
   private struct ServerProposal: Sendable { let status: String?; let version: Int? }
   private static func serverProposal(_ pid: String) async -> ServerProposal? {
     guard let r = await API.send("rest/v1/proposals?id=eq.\(pid)&select=status,version", timeout: 5), r.status == 200,
@@ -175,6 +185,13 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
       if let v = info[k] as? String { d[k] = v }
     }
     if let v = info["version"] as? Int { fields["version"] = String(v) }
+    // 묶음 알림 events(§10): 원소의 문자열·정수 값만 문자열 사전으로 옮긴다
+    let events: [[String: String]] = (info["events"] as? [[String: Any]] ?? []).map { e in
+      e.reduce(into: [String: String]()) { d, kv in
+        if let s = kv.value as? String { d[kv.key] = s } else if let n = kv.value as? Int { d[kv.key] = String(n) }
+      }
+    }
+    if !events.isEmpty { DiagLog.append("notif bundle n=\(events.count)") }   // 개수만(제목 금지)
     switch action {
     case "ADD": break
     case "IGNORE":
@@ -187,7 +204,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
       return
     default:
       // 배너 탭: 제안이면 시트를 띄울 딥링크를 앱 상태에 둔다(콜드 스타트면 UI 준비 후 표시). 그 밖은 앱만 연다
-      let link = ProposalReview.link(actionIdentifier: action, category: content.categoryIdentifier, fields: fields)
+      let link = ProposalReview.link(actionIdentifier: action, category: content.categoryIdentifier, fields: fields, events: events)
       DispatchQueue.main.async {
         if let link { MainActor.assumeIsolated { ProposalRouter.shared.open(link) } }
         done.value()
