@@ -4,13 +4,13 @@
 
 **Goal:** 날짜가 여러 개인 문자·메일 1건에서 일정을 **최대 5개** 뽑아 각각 제안으로 만들고, 알림은 **항목당 1개**로 묶어 탭하면 제안 시트를 여러 장 보여 준다. 1건이면 지금과 같다(잠금화면 "캘린더에 추가" 유지). 서버(마이그레이션 + extract·worker·notify·chat) + 앱 0.9.0.
 
-**Architecture:** 원인은 설계다(`.context/sms-multidate.report.md` — 입력 잘림 없음, `TEXT_SCHEMA` 단일 객체·지시문 "하나를 골라"·`save_fact` "같은 항목·같은 종류 active fact 1개"). 추출 스키마의 event를 `events` 배열로 바꾸고 서버가 정규화(시작 없는 것 버림·같은 시작+제목 하나로·시작 순·5개 상한)한다. 저장은 새 RPC `save_facts`가 한 항목의 fact 전부를 **한 트랜잭션**으로 넣는다(`facts.ordinal` 0~4, 부분 unique index 교체) — 일부만 저장된 채 `extracted`가 되면 재시도가 나머지를 다시 뽑지 않기 때문이다. 기존 `save_fact`는 1건짜리 래퍼로 남아 이미지 경로와 배포 중인 옛 워커가 그대로 돈다. 알림은 notify 잡을 **대표 제안(순번 0)** 하나로만 넣고, 워커가 그 항목의 형제 제안을 읽어 푸시 가능한 것이 1건이면 기존 단건 페이로드, 2건 이상이면 새 카테고리 `EVENT_BUNDLE`(잠금화면 액션 없음)의 묶음 페이로드 1건을 보낸다. 앱은 `EVENT_BUNDLE` 배너 탭을 제안 시트 N장(카드마다 기존 `ProposalActionsView`)으로 연다. 채팅은 같은 항목의 fact 문서를 하나로 합친다(지금은 `item_id` dedupe 로 두 번째 일정부터 모델 문서에서 빠진다).
+**Architecture:** 원인은 둘이다 — 수집 잘림(알림 트리거가 본문을 약 255자로 자른다, 스펙 §16 "2026-10-01 수집 자동화 앱별 분리"로 해결 — 문자는 메시지 트리거 `MESSAGES`로 원문 전체, F15)과 별개로, 항목당 하나 설계(`.context/sms-multidate.report.md` — `TEXT_SCHEMA` 단일 객체·지시문 "하나를 골라"·`save_fact` "같은 항목·같은 종류 active fact 1개"). 추출 스키마의 event를 `events` 배열로 바꾸고 서버가 정규화(시작 없는 것 버림·같은 시작+제목 하나로·시작 순·5개 상한)한다. 저장은 새 RPC `save_facts`가 한 항목의 fact 전부를 **한 트랜잭션**으로 넣는다(`facts.ordinal` 0~4, 부분 unique index 교체) — 일부만 저장된 채 `extracted`가 되면 재시도가 나머지를 다시 뽑지 않기 때문이다. 기존 `save_fact`는 1건짜리 래퍼로 남아 이미지 경로와 배포 중인 옛 워커가 그대로 돈다. 알림은 notify 잡을 **대표 제안(순번 0)** 하나로만 넣고, 워커가 그 항목의 형제 제안을 읽어 푸시 가능한 것이 1건이면 기존 단건 페이로드, 2건 이상이면 새 카테고리 `EVENT_BUNDLE`(잠금화면 액션 없음)의 묶음 페이로드 1건을 보낸다. 앱은 `EVENT_BUNDLE` 배너 탭을 제안 시트 N장(카드마다 기존 `ProposalActionsView`)으로 연다. 채팅은 같은 항목의 fact 문서를 하나로 합친다(지금은 `item_id` dedupe 로 두 번째 일정부터 모델 문서에서 빠진다).
 
 **Tech Stack:** Supabase(Postgres 마이그레이션, Edge Functions Deno/TS, `deno test`), OpenAI Responses API `gpt-6-luna` strict json_schema, APNs, SwiftUI iOS 26 앱 `Eruri` + Swift Package `EruriCore`(XCTest), xcodegen `ios/project.yml`, XCUITest(게이트 전용 임시 타깃), TestFlight(`ios/scripts/testflight.sh`).
 
-**Spec:** `docs/superpowers/specs/2026-09-22-assistant-design.md` — T0이 §7(303행 `text_fact`·313행 출력 상한·335행 저장·341행 notify)·§8(386행 `facts`)·§9(436행 facts SQL)·§10(477~485행 카테고리·페이로드·배너 탭)·§11(522행 버전)·§16(새 소절 + 773행 버전 표)을 먼저 고친다. 입력: 조사 보고 `.context/sms-multidate.report.md`, 사용자 결정(2026-10-01, 아래 "사용자 결정"). 실행 규칙은 `AGENTS.md` §3(모델)·§5-8(실측 게이트)·§6(기계)·§7(개인정보)·§8(버전).
+**Spec:** `docs/superpowers/specs/2026-09-22-assistant-design.md` — T0이 §7(303행 `text_fact`·313행 출력 상한·335행 저장·341행 notify)·§8(386행 `facts`)·§9(438행 facts SQL)·§10(478~486행 카테고리·페이로드·배너 탭)·§11(523행 버전)·§16(새 소절 + 774행 버전 표)을 먼저 고친다(행 번호는 9892be6 기준 — 실행 때 grep 으로 다시 찾는다). 입력: 조사 보고 `.context/sms-multidate.report.md`, 사용자 결정(2026-10-01, 아래 "사용자 결정"). 실행 규칙은 `AGENTS.md` §3(모델)·§5-8(실측 게이트)·§6(기계)·§7(개인정보)·§8(버전).
 
-**출발점:** main `5d04fba` 위. 서버 `0001`~`0024` 적용, 앱 0.8.2(채팅 일정 답 카드 — 인용 항목의 제안 여럿 → 최대 3장, 이미 지원). Gmail 게이트 계획이 측정 중(T0 = **2026-10-01 14:53:11 KST**, ③b3 판정 대기, ③c1 ≈ 10-07, ③c2 ≈ 10-08 15시 이후). 보관 계획 트랙 B(`2026-10-01-retention-summary.md` R-B1~R-B9)는 ③c2 뒤 시작이고 마이그레이션 `0025`부터를 예정값으로 잡아 두었다(원장 Ruling M#: 실행 때 **다음 빈 번호**).
+**출발점:** main `9892be6` 위. 서버 `0001`~`0024` 적용, 앱 0.8.3(채팅 일정 답 카드 0.8.2 — 인용 항목의 제안 여럿 → 최대 3장, 이미 지원. 0.8.3 — 답 아래 인용 줄 삭제, 답 맨 아래 복사·👍·👎 막대, 👍/👎 판정은 **항목 단위** `eval_judgments`, 스펙 §9 "채팅 답 표시"). **T1 직전 커밋 해시를 원장에 적어 둔다**(T6 복구 기준). Gmail 게이트 계획이 측정 중(T0 = **2026-10-01 14:53:11 KST**, ③b3 판정 대기, ③c1 ≈ 10-07, ③c2 ≈ 10-08 15시 이후). 보관 계획 트랙 B(`2026-10-01-retention-summary.md` R-B1~R-B9)는 ③c2 뒤 시작이고 마이그레이션 `0025`부터를 예정값으로 잡아 두었다(원장 Ruling M#: 실행 때 **다음 빈 번호**).
 
 **태스크:** `T0` 스펙 → `T1` 추출 스키마·정규화(TDD) → `T2` 합성 공지문 추출 평가(실제 모델, 게이트) → `T3` 마이그레이션 `save_facts`·워커 저장 → `T4` 묶음 알림(notify) → `T5` 채팅 fact 문서 합치기 → `T6` 서버 배포·스모크(측정 창 밖) → `T7` EruriCore 묶음 링크·카드(TDD) → `T8` 앱 알림 카테고리·시트 여러 장·0.9.0 → `T9` 시뮬레이터 게이트·TestFlight·실기기 게이트. 원장 `.superpowers/sdd/2026-10-01-multi-event/progress.md`(상위 원장 `.superpowers/sdd/2026-09-30-phase1/progress.md`의 Rulings 승계).
 
@@ -23,6 +23,8 @@
 | U3 | task/purchase 는 1개 유지 | T1 정규화, T3 `save_facts` 검사 |
 | U4 | 알림은 한 항목당 1개. 탭하면 상세로 제안 여러 건을 시트(여러 장)로. 1건이면 기존과 동일(잠금화면 "캘린더에 추가" 유지) | T4 `planBundlePush`, T7·T8 시트 |
 | U5 | 2건 이상일 때 잠금화면 액션은 계획에서 결정 | **결정: 액션 없음(배너 탭 → 시트만)** — 아래 "잠금화면 액션 결정" |
+| U6 | (리뷰 권장 기본 채택, 2026-10-01 — **T0 전 메인이 사용자 확인**) 일정이 2개 이상인 항목에서 연도 없는 일정이 받은 날 기준 60일 이내 과거면 지난 회차로 보고 버린다(내년으로 넘기지 않는다). 단건은 지금처럼 다음 해 | T0 Step 1, T1 정규화 `PAST_SESSION_DAYS`, T2 m15 |
+| U7 | (리뷰 권장 기본 채택 — **T0 전 메인이 사용자 확인**) 기관 월간 소식처럼 수신자 예약이 아닌 행사 나열은 U1대로 최대 5건 제안. 결과를 gates.md 비고에 적고 실사용 1주 관찰. 광고·홍보성 라인업은 `none` | T2 m16·m18 |
 
 ### 잠금화면 액션 결정 (U5) — 2건 이상이면 액션 버튼 없이 열기만
 
@@ -33,7 +35,7 @@
 | C. "첫 일정만 추가" | 기각. 어느 것이 들어갔는지 잠금화면에서 보이지 않고, 나머지를 따로 처리하러 결국 앱을 열어야 한다 |
 | D. "모두 무시" | 기각(YAGNI). N건 `dismiss_proposal` 을 백그라운드 5초 안에 끝내야 하고, 무시는 시트·제안 탭에서 한 번에 할 수 있다 |
 
-카테고리 이름은 `EVENT_BUNDLE`, 제목 `일정 제안 N건`, 본문 `<가장 이른 일정의 M월 D일(요) HH:mm> · <제목 ≤40자> 외 N−1건`(원문 금지, §12). 이전 앱(≤0.8.2)은 이 카테고리를 등록하지 않아 배너 탭이 앱만 연다 — 제안은 "제안" 탭에 그대로 보이므로 잃는 것은 없다(배포 순서 T6 → T9 업로드 사이의 짧은 구간).
+카테고리 이름은 `EVENT_BUNDLE`, 제목 `일정 제안 N건`, 본문 `<가장 이른 일정의 M월 D일(요) HH:mm> · <제목 ≤40자> 외 N−1건`(원문 금지, §12). 이전 앱(≤0.8.3)은 이 카테고리를 등록하지 않아 배너 탭이 앱만 연다 — `ADD_EVENT` 일정은 "제안" 탭에 보이지만, 날짜만·확인 필요(`REVIEW`) 일정은 목록 조건(`list_pending_proposals`는 ADD_EVENT 조건만)에 걸려 0.9.0 설치 전까지 어디에도 안 보인다. 그래서 **앱을 먼저 올린다**(실행 순서: 앱 게이트 G1~G4·G3b·G6 → TestFlight → T6 서버 배포).
 
 ## Global Constraints
 
@@ -48,12 +50,12 @@
   - ③c2: **10-08(목) 14:30 KST ~ ③c2 완료 기록**(`reauth_required` 확인 뒤 세션 — 10-09까지 갈 수 있다)
   - 정확한 시각은 매번 메인이 원장의 마지막 `status.t0`로 다시 계산한다(T0가 보충 재탭으로 몇 분 움직일 수 있다). 못 맞추면 그 단계를 미룬다.
   - 실사용자 `items`·`jobs`·`connections` 를 이 계획이 직접 고치지 않는다(마이그레이션도 행 갱신 없음). 제안 탭 **"전체 무시" 금지** — 게이트가 남긴 합성 제안은 제목에 `합성`이 든 것만 한 건씩 무시.
-- **M2 검색 평가 ⑩b:** 아직 돌지 않았다(⑩b는 ③b3 백필 완료 기록 뒤). ⑩b **실행 중이면** T3 push·T6 배포를 그 뒤로 미룬다(함수 재배포가 평가 호출을 끊는다). 영향: 기존 코퍼스는 항목당 fact 1개라 `mergeFactDocs`(T5)가 항등이고 `search_facts` 결과도 같다 → **⑩b 기준선은 이 배포 전후로 같다**. 배포 뒤 새로 들어온 다건 항목만 facts 수가 늘어(일정 질문 facts 상한 8 중 한 항목이 최대 5칸) 문서 구성이 달라진다. ⑩b 질문이 배포 뒤 들어온 다건 항목을 겨냥하면 그 질문의 결과는 이 변경을 포함한 값으로 기록한다(메인이 ⑩b 기록 비고에 적는다). 재실행은 필요 없다.
+- **M2 검색 평가 ⑩b:** 아직 돌지 않았다(⑩b는 ③b3 백필 완료 기록 뒤). ⑩b **실행 중이면** T3 push·T6 배포를 그 뒤로 미룬다(함수 재배포가 평가 호출을 끊는다). 영향: 기존 코퍼스는 항목당 fact 1개라 `mergeFactDocs`(T5)가 항등이고 `search_facts` 결과도 같다 → ⑩b 기준선은 **코퍼스가 고정이면** 같다. 배포 뒤 들어온 다건 항목은 facts 상한(5·8, `FACTS_LIMIT`) 칸을 여러 개 쓴다(한 항목이 최대 5칸) — 그 항목을 직접 묻지 않는 질문도 기존 후보가 밀릴 수 있다. 그래서 메인이 ⑩b 기록 비고에 **실행 시각·T6 배포 시각·코퍼스 경계**를 적는다. 재실행은 필요 없다(SQL 변경은 이 계획 범위 밖).
 - **개인정보(AGENTS.md §7, 스펙 §12):** 푸시 문구는 추출 제목·일시만(원문 금지), 로그·진단에는 개수·코드·id만(`events`·`facts` 개수, 제목 금지). 테스트·평가 문구는 합성(`합성` 포함), 실제 문자·메일 원문을 픽스처에 넣지 않는다. `items.content_enc` 복호화 조회 금지(디버깅은 `item_id`·상태·개수).
-- **보관 계획 트랙 B와 겹침:** R-B2가 같은 `extract-text.ts`(요약 필드·`max_output_tokens: 800`)와 `worker/text.ts`를 고친다. 이 계획이 먼저 들어가므로 R-B2 실행 때 (1) `max_output_tokens`를 **1,200**(다건 1,024 + 요약 약 150 → 올림)으로, (2) `TextDeps.extract` 반환에 `summary`를 더할 때 이 계획의 `saveFacts`/`textFacts`를 쓰도록 맞춘다 — T0 Step 8이 보관 계획 R-B2 머리에 이 두 줄을 적는다. 마이그레이션 번호: 이 계획이 `0025`를 쓰면 트랙 B 예정 번호는 한 칸씩 밀린다(원장 Ruling M#, 실행 때 다음 빈 번호).
+- **보관 계획 트랙 B와 겹침:** R-B2가 같은 `extract-text.ts`(요약 필드·`max_output_tokens: 800`)와 `worker/text.ts`를 고친다. 이 계획이 먼저 들어가므로 R-B2 실행 때 (1) `max_output_tokens`를 **2,200**(다건 2,048 + 요약 약 150 → 올림)으로, (2) `TextDeps.extract` 반환에 `summary`를 더할 때 이 계획의 `saveFacts`/`textFacts`를 쓰도록 맞춘다 — T0 Step 8이 보관 계획 R-B2 머리에 이 두 줄을 적는다. 마이그레이션 번호: 이 계획이 `0025`를 쓰면 트랙 B 예정 번호는 한 칸씩 밀린다(원장 Ruling M#, 실행 때 다음 빈 번호).
 - **기계(AGENTS.md §6):** `deno test`·빌드·시뮬레이터 전 `vm_stat | grep -E 'free|compressor'`. 시뮬레이터 빌드와 deno 테스트를 동시에 돌리지 않는다(`pgrep -x deno`가 비었을 때만 시뮬레이터, `pgrep -x xcodebuild`가 비었을 때만 deno). 시뮬레이터는 pane 전용 UDID(`ios/.sim-udid`, 게이트는 새로 만든 전용 기기).
 - **테스트 명령:** 서버 `deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/<파일>`(저장소 루트에서), 타입 확인 `deno check supabase/functions/worker/index.ts supabase/functions/chat/index.ts supabase/scripts/*.ts supabase/eval/*.ts`. 앱 `cd ios && ./scripts/sim.sh gen && ./scripts/sim.sh test EruriCoreTests/<클래스>`, 빌드 `cd ios && ./scripts/sim.sh build`.
-- **호스팅 DB 테스트(AGENTS.md §7):** 전용 테스트 사용자(`tests/_testenv.ts` `testUser(n)`)·실행 태그(`RUN`)만, 자기 행만 지운다. `truncate`·조건 없는 `delete` 금지.
+- **호스팅 DB 테스트(AGENTS.md §7):** 전용 테스트 사용자(`tests/_testenv.ts` `testUser(n)`)·실행 태그(`RUN`)만, 자기 행만 지운다. `truncate`·조건 없는 `delete` 금지. 앱 세션(Keychain refresh token)이 살아 있어야 하는 게이트 도구는 비밀번호를 바꾸지 않는 `testUserId(n)`(T4 Step 5)만 쓴다.
 - **모델(AGENTS.md §3):** T0 `opus`/`high`. T1·T3·T4·T5·T7·T8 구현·리뷰 `opus`/`high`. T2 평가(판정·지시문 조정) `opus`/`high`. T6 배포·스모크 `opus`/`medium`. T9 시뮬레이터 게이트 `opus`/`medium`, 실기기 세션(사용자 조작·대기) `sonnet`/`medium`, 판정·기록이 섞이면 `opus`/`medium`.
 - **기록:** `docs/superpowers/phase1/gates.md`에 행 `MEV-eval`(T2)·`MEV-server`(T6)·`MEV-sim`·`MEV-device`(T9). 상태는 통과·실패·대기만("부분"은 마감 아님, AGENTS.md §5-8). 커밋 칸은 비우고 메인이 채운다.
 - **커밋:** 태스크마다, 트레일러 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. **push 금지**(메인이 회수 후 `git push origin main`).
@@ -76,16 +78,22 @@
 | F12 | 0.8.2 게이트 하네스: 전용 시뮬레이터 + 임시 xcodegen 스펙(`ios/project.gate081.yml` → `EruriGate.xcodeproj`) + `GateHostTests`(테스트 사용자 refresh token 을 앱 Keychain 에) + `GateUITests`(러너 프로세스 EventKit). `testUser()`는 호출마다 비밀번호를 바꿔 앱 refresh token 을 무효화한다 | `.context/sim-gate-081.report.md`, `.context/sim-gate-081-shots/Gate.swift.txt`, `gates.md` C3-sim |
 | F13 | `send-phrases.ts`는 Slack 웹훅으로 합성 문구를 보내고(`--only push` = 발송일 기준 미래 날짜 `PUSH_TEMPLATE`), 기기 알림 자동화 → 실사용자로 수집된다 | `scripts/send-phrases.ts`, `scripts/_phrase-sender.ts`, `eval/phrases.ts:27-35` |
 | F14 | `smoke-gate.ts`: 테스트 사용자 1 + 가짜 sandbox 토큰 기기 → ingest → 배포 워커 → extracted → `proposal_pushes`(400 BadDeviceToken `rejected`면 통과), 끝나면 자기 행만 지운다 | `scripts/smoke-gate.ts` |
+| F15 | 수집: 알림 트리거는 본문을 약 255자로 자른다(251자 도착). 2026-10-01부터 문자는 메시지 트리거 → `source = MESSAGES`·원문 전체(708자 실측), 그 밖의 앱은 알림 트리거(255자 이내). Slack 웹훅 발송(F13)은 알림 트리거 경로라 장문을 못 싣는다 — 장문 다건은 T2 평가가 맡는다 | 스펙 §16 "2026-10-01 수집 자동화 앱별 분리" |
+| F16 | 출력이 상한에서 잘리면(`status !== "completed"`) `parseStructured`가 throw → 잡 재시도도 같은 결과 → 그 항목은 일정 0개 | `_shared/extract.ts:113` |
+| F17 | `list_pending_proposals`는 ADD_EVENT 조건·생성 30일·시작 순 `limit 50`. `sheet(for:list:)`는 REVIEW 를 상태 확인 없이 `.needsReview`. 앱은 이미 `rest/v1/proposals?id=eq.<pid>&select=status,version`(RLS 본인 행)을 쓴다 | `0022_proposal_list_safe_cast.sql:18-28`, `ProposalReview.swift:61`, `App/NotificationActions.swift:106` |
+| F18 | `nearestFutureYear`: 연도 없는 날짜가 받은 날보다 앞이면 +1년(지시문도 같은 규칙) | `_shared/extract.ts:83-86` |
 
 ## Review Focus
 
-1. **공지형 문자 오분할**: 접수 기간·신청 마감·발표·변경 기한·금식 안내가 든 행사 공지 1건. 사람은 본 행사 일정 1개(또는 회차 수만큼)를 기대하고 "마감"·"발표"가 캘린더 제안으로 나오면 소음으로 느낀다 → 지시문 규칙(T1 `testInstruction`) + 합성 공지 12종 × 3회 실제 모델 평가에서 오분할 0(T2 m01·m03·m05·m08·m09).
+1. **공지형 문자 오분할**: 접수 기간·신청 마감·발표·변경 기한·금식 안내가 든 행사 공지 1건. 사람은 본 행사 일정 1개(또는 회차 수만큼)를 기대하고 "마감"·"발표"가 캘린더 제안으로 나오면 소음으로 느낀다 → 지시문 규칙(T1 `testInstruction`) + 합성 공지 18종 × 3회 실제 모델 평가에서 오분할 0(T2 m01·m03·m05·m08·m09). 광고성 라인업은 `none`(T2 m16).
 2. **저장 도중 워커가 죽는다**: 일정 3개 중 2개를 저장한 뒤 워커가 죽으면 `extracted`가 커밋돼 재시도가 다시 뽑지 않고 3번째가 영영 사라진다. 사람은 재시도 뒤 3개 전부를 기대한다 → `save_facts` 한 트랜잭션, 잘못된 항목이 하나라도 있으면 아무것도 저장 안 됨, 같은 입력 재호출은 같은 id(T3 DB 테스트 `save_facts: atomic …`·`save_facts: three events … retry …`, T3 `multi-event retry after a lost enqueue`).
 3. **묶음 중 일부가 이미 지났거나 확인 필요**: 대표(가장 이른) 일정이 이미 지났고 나머지 1개만 미래, 또는 날짜만 있는 일정이 섞였다. 사람은 지난 일정이 알림에 안 나오고, 1개만 남으면 지금처럼 잠금화면 "캘린더에 추가"를 기대한다 → 푸시 가능한 것만 묶고, 1개면 그 제안의 단건 `ADD_EVENT` 페이로드(기기별 1회 기록은 대표 id), 날짜만 일정은 묶음 안에서 `REVIEW` 카드(T4 `bundle: past lead and dismissed siblings drop out…`·`bundle: two or more → EVENT_BUNDLE…`, T7 `testCardsMixedPartialAndOffline`).
-4. **모델이 같은 일정을 두 번 내거나 6개 이상 낸다**: 같은 시작·제목 두 줄, 또는 날짜 6개짜리 일정표. 사람은 중복 제안 없이 가장 가까운 일정들을 기대한다 → 같은 시작+제목은 하나, 시작 순, 앞 5개(T1 `normalize: duplicates collapsed, sorted, capped at 5`, T2 m07).
+4. **모델이 같은 일정을 두 번 내거나 6개 이상 낸다**: 같은 시작·제목 두 줄, 또는 날짜 6개짜리 일정표. 사람은 중복 제안 없이 가장 가까운 일정들을 기대한다 → 모델에 "5개를 넘으면 시작이 이른 5개"(서버 정렬은 모델이 빠뜨린 일정을 되살리지 못한다), 서버는 같은 시작+제목은 하나, 시작 순, 앞 5개(T1 `normalize: duplicates collapsed, sorted, capped at 5`, T2 m07·m14 섞인 순서).
 5. **같은 항목의 일정 두 개를 채팅으로 묻는다**: "합성극장 뮤지컬 언제야?"에서 그 문자의 두 번째 일정이 답에서 빠진다(지금 `dedupe`가 같은 `item_id` 첫 문서만 남김). 사람은 그 문자의 일정 전부가 근거로 쓰이길 기대한다 → 같은 항목 fact 문서는 한 문서로 합친다(T5 `mergeFactDocs`), 카드는 그 항목 제안 중 최대 3장(T9 G5).
-6. **묶음 알림을 탭했는데 그사이 일부를 제안 탭에서 처리했거나 목록을 못 읽는다**: 사람은 처리된 카드는 "이미 처리됨", 나머지는 추가·무시 가능을 기대하고, 오프라인이면 알림 값으로 추가할 수 있길 기대한다 → 카드마다 기존 `sheet(for:list:)` 판정(T7 `testCardsMixedPartialAndOffline`, T9 G2).
+6. **묶음 알림을 탭했는데 그사이 일부를 제안 탭에서 처리했거나(REVIEW 카드 무시 포함) 목록을 못 읽거나 대기 제안이 50건을 넘는다**: 사람은 처리된 카드는 "이미 처리됨", 나머지는 추가·무시 가능을 기대하고, 오프라인이면 알림 값으로 추가할 수 있길 기대한다 → 알림에 든 제안 id(≤5)의 상태를 직접 조회해 판정(목록은 50건 제한·REVIEW 미포함, F17): proposed 아님 → 처리됨, proposed인데 목록에 없음 → 알림 값, 상태 조회 실패 → 기존 판정(T7 `testCardsMixedPartialAndOffline`·`testCardsWithStatuses`, T9 G2).
 7. **묶음 페이로드가 APNs 4KB 를 넘는다**: 일정 5개 × 제목 40자(한글 3바이트) + id·시각. 넘으면 APNs 413 `rejected`로 알림이 영영 안 간다 → 5개·40자 최대치 직렬화가 4,096바이트 미만임을 단언(T4 `bundle payload stays under 4KB`).
+8. **장문 공지에서 일정 5개를 뽑다 출력이 상한에서 잘린다**: 메시지 트리거로 708자 원문이 오고(F15) 일정마다 evidence 를 적으면 출력이 길어진다. 잘리면 그 항목은 일정 0개(F16) — 지금(1개)보다 나쁘다. 사람은 장문 공지에서도 일정이 나오길 기대한다 → 상한 2,048(과금이 아니라 잘림 방지), evidence 는 일정마다 80자 이내 한 구절, 장문 5건 사례에서 최대 출력 < 1,230(상한의 60%)(T1 `text request`, T2 m13, 평가기 `error` 코드).
+9. **회차 공지를 회차 중간에 받는다**: 10/5에 받은 "1회차 10월 4일, 2회차 10월 11일"(연도 없음). 지금 규칙(F18)이면 1회차가 2027-10-04 제안이 된다. 사람은 지난 회차가 안 나오길 기대한다 → 2개 이상일 때 60일 이내 과거는 버림(U6, T1 `past session … dropped`, T2 m15). 12월에 받은 "12월 28일, 1월 4일"의 1월은 그대로 다음 해.
 
 ---
 
@@ -94,9 +102,9 @@
 ```
 docs/superpowers/specs/2026-09-22-assistant-design.md          # T0 §7·§8·§9·§10·§11·§16
 docs/superpowers/plans/2026-10-01-retention-summary.md          # T0 R-B2 머리 메모·R-B9 0.10.0
-supabase/functions/_shared/extract-text.ts                     # T1 events 배열·지시문·정규화·출력 1,024
+supabase/functions/_shared/extract-text.ts                     # T1 events 배열·지시문·정규화(지난 회차)·출력 2,048
 supabase/tests/extract-text.test.ts                            # T1
-supabase/eval/multi-event.json                                 # T2 생성: 합성 공지 12종(기대 일정)
+supabase/eval/multi-event.json                                 # T2 생성: 합성 공지 18종(기대 일정, 장문·섞인 순서·지난 회차·광고·Gmail 메타 포함)
 supabase/eval/run-multi-event-eval.ts                          # T2 생성: 실제 gpt-6-luna 평가(DB 없음)
 supabase/eval/phrases.ts                                       # T2 MULTI_TEMPLATE(실기기 게이트 발송용)
 supabase/scripts/_phrase-sender.ts                             # T2 --only multi
@@ -108,12 +116,13 @@ supabase/functions/_shared/notify.ts                           # T4 planBundlePu
 supabase/functions/worker/notify.ts, notify-deps.ts            # T4 getBundle
 supabase/tests/notify.test.ts, notify-db.test.ts               # T4
 supabase/scripts/smoke-gate.ts                                 # T4 --multi
-supabase/scripts/seed-bundle.ts                                # T4 생성: 시뮬레이터 게이트용 시드 + APNs JSON
+supabase/scripts/seed-bundle.ts                                # T4 생성: 시뮬레이터 게이트용 시드 + APNs JSON(--items n)
+supabase/tests/_testenv.ts                                     # T4 testUserId(비밀번호 불변)
 supabase/functions/chat/handler.ts                             # T5 mergeFactDocs
 supabase/tests/chat.test.ts                                    # T5
-ios/Packages/EruriCore/Sources/EruriCore/ProposalReview.swift  # T7 bundleCategory·BundleEvent·link(events:)·cards
+ios/Packages/EruriCore/Sources/EruriCore/ProposalReview.swift  # T7 bundleCategory·BundleEvent·link(events:)·cards(statuses:)
 ios/Packages/EruriCore/Tests/EruriCoreTests/ProposalReviewTests.swift  # T7
-ios/App/NotificationActions.swift                              # T8 카테고리 등록·events 파싱
+ios/App/NotificationActions.swift                              # T8 카테고리 등록·events 파싱·proposalStatuses(id ≤5 상태 조회)
 ios/App/ProposalsView.swift                                    # T8 ProposalSheet 여러 장(SheetCardView)
 ios/project.yml                                                # T8 0.9.0
 docs/superpowers/phase1/gates.md                               # T2·T6·T9 행
@@ -123,30 +132,32 @@ docs/superpowers/phase1/gates.md                               # T2·T6·T9 행
 
 | 순서 | 태스크 | 선행 | pane | Gmail 창·⑩b |
 |---|---|---|---|---|
-| 1 | T0 스펙 | 이 계획 커밋 | 문서 | 무관 |
+| 1 | T0 스펙 | 이 계획 커밋 + U6·U7 사용자 확인 | 문서 | 무관 |
 | 2 | T1 추출 스키마·정규화 | T0 | 서버 | 무관(로컬 테스트) |
 | 3 | T2 합성 공지 추출 평가 | T1 | 서버 | 무관(DB 없음, OpenAI 직접 — 사용자 LLM 슬롯을 쓰지 않는다) |
 | 4 | T3 마이그레이션·저장 | T2 통과 | 서버 | **`db push`·스모크는 창 밖**, ⑩b 실행 중 아님 |
 | 5 | T4 묶음 알림 | T3 | 서버 | DB 테스트만 — 창 무관(테스트 사용자, 워커 미사용) |
 | 6 | T5 채팅 문서 합치기 | T3 | 서버 | 무관(로컬 테스트) |
-| 7 | T6 배포·스모크 | T4·T5 | 서버 | **창 밖**, ⑩b 실행 중 아님 |
 | 2' | T7 EruriCore | T0 | iOS(시뮬레이터 UDID) | 무관 |
 | 3' | T8 앱 시트·0.9.0 | T7 | iOS(같은 pane) | 무관(빌드만) |
-| 8 | T9-a 시뮬레이터 게이트 G1~G6 | T6·T8 | 게이트 pane(새 전용 시뮬레이터) | **창 밖** |
-| 9 | T9-b TestFlight 업로드 | G1~G6 통과 | 게이트 pane | 무관 |
-| 10 | T9-c 실기기 D1·D2 | 업로드 처리 끝 | 실기기(사용자 + `sonnet`) | **창 밖**, ③c1·③c2 와 30분 이상 |
+| 7 | T9-a 시뮬레이터 게이트 G1~G4·G3b·G6 | T3 push·T4·T8 (서버 배포 불필요 — 시드가 `save_facts`·로컬 `planBundlePush`를 쓴다) | 게이트 pane(새 전용 시뮬레이터) | **창 밖**(시드가 호스팅 DB 를 쓴다) |
+| 8 | T9-b TestFlight 업로드 | T9-a 통과 + Step 5 사용자 확인 | 게이트 pane | 무관 |
+| 9 | T6 서버 배포·스모크 | T4·T5 + **0.9.0 VALID·사용자 기기 설치** | 서버 | **창 밖**, ⑩b 실행 중 아님 |
+| 10 | T9-a' G5 채팅 카드 | T6 | 게이트 pane(같은 시뮬레이터 — 앱 세션 유지) | **창 밖** |
+| 11 | T9-c 실기기 D1 | T6 | 실기기(사용자 + `sonnet`) | **창 밖**, ③c1·③c2 와 30분 이상 |
 
+- 앱을 서버보다 먼저 올린다: 서버가 `EVENT_BUNDLE`을 보내기 시작할 때 0.9.0이 이미 설치돼 있어, 0.8.3 에서 묶음 속 REVIEW 일정이 어디에도 안 보이는 구간이 없다. Gmail 측정 창 때문에 T6이 밀려도 앱 쪽 게이트는 먼저 닫힌다.
 - 서버 pane(T1~T6)과 iOS pane(T7~T8)은 T0 뒤 **동시에** 돌 수 있다(파일이 겹치지 않는다). 계약은 T4가 만드는 묶음 페이로드 키(`events[].proposal_id·title·start·version·category`, `aps.category = "EVENT_BUNDLE"`)이고 T0 스펙 §10에 글자 그대로 적힌다.
 - deno 테스트(서버 pane)와 시뮬레이터 빌드(iOS pane)를 같은 순간에 돌리지 않는다(AGENTS.md §6) — 각 pane은 실행 전 상대 프로세스(`pgrep -x xcodebuild` / `pgrep -x deno`)를 확인하고 있으면 기다린다.
 - T2가 통과하지 못하면 T3 이후를 멈추고 메인에게 보고한다(지시문 조정 2회까지는 T2 안에서).
-- 사용자 확인이 필요한 항목: T9 Step 5(G1 스크린샷 문구·구성 확인, 업로드 전), D1·D2 실기기 조작.
+- 사용자 확인이 필요한 항목: U6·U7(T0 전), T9 Step 5(G1 스크린샷 문구·구성 확인, 업로드 전), D1 실기기 조작.
 
 ---
 
 ### Task T0: 스펙 §7·§8·§9·§10·§11·§16 — 다건 일정·묶음 알림
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-09-22-assistant-design.md`(303·313·335~337·341·346행 근처, 386행, 436~438행, 477~485행, 522행, 773행, §16 새 소절)
+- Modify: `docs/superpowers/specs/2026-09-22-assistant-design.md`(303·313·335~337·341·346행 근처, 386행, 438행, 478~486행, 523행, 774행, §16 새 소절 2개 — 9892be6 기준 행 번호, 실행 때 각 Step 의 문장으로 grep)
 - Modify: `docs/superpowers/plans/2026-10-01-retention-summary.md`(R-B2 머리 메모, R-B9 버전)
 
 **Interfaces:**
@@ -167,13 +178,16 @@ docs/superpowers/phase1/gates.md                               # T2·T6·T9 행
       텍스트 항목(0b, 2026-09-29 · 다건 일정 2026-10-01 사용자 결정): 한 항목에서 종류를 event·task·purchase 중 하나(없으면 none)로 고르는 단일 strict 스키마 `text_fact`.
       **event는 `events` 배열에 최대 5개**: 날짜가 다른 별개 일정(1회차·2회차, 서로 다른 진료·공연)은 각각, 한 행사가 여러 날 이어지면 start~end 하나,
       접수·신청 기간·마감·발표·변경 기한·준비 안내(금식 등) 같은 **부수 일시는 별개 일정이 아니다**(본 행사가 없고 마감만 있으면 task), '매주' 같은 반복 표현은
-      첫 회 하나(§10 반복 규칙). 서버가 시작 없는 항목을 버리고, 같은 시작·제목은 하나로, 시작 순으로 정렬해 앞 5개만 남긴다(모델이 더 내도). evidence는 일정마다
-      그 일정의 근거 구절. task·purchase는 1개(최상위 필드). 출력 상한 512 → 1,024토큰(일정 5개 × 약 90토큰 + 여유).
+      첫 회 하나(§10 반복 규칙). 일정이 5개를 넘으면 **시작이 이른 5개**(모델 지시 — 서버 정렬은 모델이 빠뜨린 일정을 되살리지 못한다). 서버가 시작 없는 항목을 버리고,
+      같은 시작·제목은 하나로, 시작 순으로 정렬해 앞 5개만 남긴다(모델이 더 내도). 일정이 2개 이상이고 연도 없는 일정이 받은 날 기준 60일 이내 과거면 지난 회차로 보고
+      버린다(내년으로 넘기지 않는다 — 단건은 지금처럼 다음 해, 12월에 받은 1월 일정은 350일 전이라 그대로 다음 해). evidence는 일정마다 그 일정이 적힌 한 구절(80자 이내 지시,
+      서버 절단 300은 §8 그대로). task·purchase는 1개(최상위 필드). 출력 상한 512 → 2,048토큰(상한은 과금이 아니라 잘림 방지 — 잘리면 파서가 throw해 그 항목 전체가
+      일정 0개가 된다. 장문 5건 실측 최대 < 1,230, §16 평가).
 ```
 
 - [ ] **Step 2: §7 313행 — 요약 출력 상한 문구**
 
-313행 끝의 `출력 상한 512 → 800토큰.`을 `출력 상한은 다건 일정 1,024에 요약 약 150을 더해 1,200토큰(보관 계획 R-B2가 올린다).`로 바꾼다.
+313행 끝의 `출력 상한 512 → 800토큰.`을 `출력 상한은 다건 일정 2,048에 요약 약 150을 더해 2,200토큰(보관 계획 R-B2가 올린다).`로 바꾼다.
 
 - [ ] **Step 3: §7 335~337행 — 저장**
 
@@ -224,13 +238,13 @@ docs/superpowers/phase1/gates.md                               # T2·T6·T9 행
 
 386행 `facts` 행의 핵심 컬럼 `item_id, kind, payload jsonb, …`를 `item_id, kind, ordinal(0~4, 2026-10-01), payload jsonb, …`로, 비고 끝에 ` 한 항목에 event fact 최대 5개(순번), 부분 unique (item_id, kind, ordinal) where active(0025)`를 더한다.
 
-438행 `event_range 가 있으면 일정 시작 순 상위 8, 없으면 받은 시각 역순 상위 5 — 0024)` 끝의 `)` 앞에 `. 상한은 fact 단위라 다건 항목 하나가 여러 칸을 쓴다. 같은 항목의 fact 문서는 한 문서로 합친다(2026-10-01 — 따로 두면 item_id 중복 제거가 두 번째 일정부터 버린다)`를 넣는다.
+438행 `event_range 가 있으면 일정 시작 순 상위 8, 없으면 받은 시각 역순 상위 5 — 0024)` 끝의 `)` 앞에 `. 상한은 fact 단위라 다건 항목 하나가 여러 칸을 쓴다. 같은 항목의 fact 문서는 한 문서로 합친다(2026-10-01 — 따로 두면 item_id 중복 제거가 두 번째 일정부터 버린다. 인용·👍👎 판정(0.8.3)은 원래 항목 단위라 그대로)`를 넣는다.
 
-- [ ] **Step 6: §10 477~485행 — 카테고리·묶음 페이로드·배너 탭**
+- [ ] **Step 6: §10 478~486행 — 카테고리·묶음 페이로드·배너 탭**
 
-477행 `- 푸시 카테고리 \`ADD_EVENT\`, \`ADD_REMINDER\`, \`REVIEW\`.`를 `- 푸시 카테고리 \`ADD_EVENT\`, \`ADD_REMINDER\`, \`REVIEW\`, \`EVENT_BUNDLE\`(2026-10-01, 앱 0.9.0).`로 바꾼다.
+478행 `- 푸시 카테고리 \`ADD_EVENT\`, \`ADD_REMINDER\`, \`REVIEW\`.`를 `- 푸시 카테고리 \`ADD_EVENT\`, \`ADD_REMINDER\`, \`REVIEW\`, \`EVENT_BUNDLE\`(2026-10-01, 앱 0.9.0).`로 바꾼다.
 
-481행(`0단계 앱은 \`ADD_EVENT\`만 등록하므로 …`) 바로 위에 다음을 넣는다:
+482행(`0단계 앱은 \`ADD_EVENT\`만 등록하므로 …`) 바로 위에 다음을 넣는다:
 
 ```
   **묶음 푸시(2026-10-01 사용자 결정, 앱 0.9.0)**: 한 항목에서 푸시할 일정 제안이 2건 이상이면(§7 notify) 알림 1건 — `aps.category` `EVENT_BUNDLE`,
@@ -239,42 +253,63 @@ docs/superpowers/phase1/gates.md                               # T2·T6·T9 행
   `ADD_EVENT`·`REVIEW`). 5건·40자에서도 4KB 미만. **잠금화면 액션은 없다**(배너 탭 → 시트만): "모두 추가"는 순서 1·4의 마감(조회 5초 + 보고 5초)이 N배가 되어
   백그라운드 실행 시간 안에 끝난다는 보장이 없고(PoC-5 — 완료 핸들러는 메인에서 정확히 1회), 겹치면 저장 대신 로컬 알림을 띄우는 잠금화면 겹침 규칙(아래)이 N건에서
   일부 저장 + 겹침 알림 여러 개가 되며, 날짜 여러 개 공지는 회차 중 하나를 고르는 경우가 흔해 전부 넣기가 뜻이 아닐 수 있다. 1건이면 지금과 같다(`ADD_EVENT` 잠금화면
-  "캘린더에 추가" 유지). 0.8.2 이하 앱은 이 카테고리를 등록하지 않아 배너 탭이 앱만 연다(제안 탭에는 보인다)
+  "캘린더에 추가" 유지). 0.8.3 이하 앱은 이 카테고리를 등록하지 않아 배너 탭이 앱만 연다 — ADD_EVENT 일정은 제안 탭에 보이지만 날짜만·확인 필요 일정은
+  보이지 않으므로 앱 0.9.0을 서버 배포보다 먼저 올린다
 ```
 
-484~485행 배너 탭 항목의 `\`REVIEW\`·\`ADD_REMINDER\` 알림의 시트는 "무시"만 둔다(시각을 확정할 수 없어 추가는 2단계 수정 화면).` 뒤에 이어 쓴다:
+485~486행 배너 탭 항목의 `\`REVIEW\`·\`ADD_REMINDER\` 알림의 시트는 "무시"만 둔다(시각을 확정할 수 없어 추가는 2단계 수정 화면).` 뒤에 이어 쓴다:
 
 ```
-    `EVENT_BUNDLE` 알림은 시트 하나에 `events` 순서대로 카드 N장(카드마다 위와 같은 판정 — 목록에 있으면 서버 값, 목록을 못 읽으면 알림 값, `REVIEW` 일정은 "무시"만,
-    목록에 없으면 "이미 처리됨")을 두고 카드마다 따로 추가·무시한다. 카드마다 겹침 미리 판정·"겹쳐도 추가" 규칙(아래)이 그대로다. 캘린더 권한 안내는 시트 맨 위에 한 번
+    `EVENT_BUNDLE` 알림은 시트 하나에 `events` 순서대로 카드 N장을 두고 카드마다 따로 추가·무시한다. 판정은 목록(50건 제한·ADD_EVENT 조건만)이 아니라 알림에 든
+    제안 id(≤5)의 상태를 직접 조회해서(`proposals?id=in.(…)&select=id,status`, 본인 행, 목록 조회와 같은 5초 마감으로 병렬): status ≠ proposed → "이미 처리됨"(REVIEW 포함),
+    proposed + 목록에 있음 → 서버 값, proposed + 목록에 없음 → 알림 값(안내 문구 없이), `REVIEW` 일정은 "무시"만, 상태 조회 실패 → 위 단건 판정 그대로(목록에 없으면
+    "이미 처리됨", 목록도 못 읽으면 알림 값). 카드마다 겹침 미리 판정·"겹쳐도 추가" 규칙(아래)이 그대로다. 캘린더 권한 안내는 시트 맨 위에 한 번
 ```
 
-- [ ] **Step 7: §11 522행·§16 773행 — 버전**
+- [ ] **Step 7: §11 523행·§16 774행 — 버전**
 
-522행 괄호 안 `요약·저장 공간 화면은 서버 반영 뒤라 0.9.0)`을 `다건 일정 묶음 알림 시트는 0.9.0, 요약·저장 공간 화면은 서버 반영 뒤라 0.10.0)`으로 바꾼다. 773행 표 `| 5 | 버전: … 요약·저장 공간 화면(보관 계획 R-B9)은 0.9.0(§11) |`의 `0.9.0`을 `0.10.0(0.9.0은 다건 일정, 2026-10-01)`으로 바꾼다.
+523행 괄호 안 `요약·저장 공간 화면은 서버 반영 뒤라 0.9.0)`을 `다건 일정 묶음 알림 시트는 0.9.0, 요약·저장 공간 화면은 서버 반영 뒤라 0.10.0)`으로 바꾼다. 774행 표 `| 5 | 버전: … 요약·저장 공간 화면(보관 계획 R-B9)은 0.9.0(§11) |`의 `0.9.0`을 `0.10.0(0.9.0은 다건 일정, 2026-10-01)`으로 바꾼다.
 
-- [ ] **Step 8: §16 새 소절 + 보관 계획 메모**
+- [ ] **Step 8: §16 새 소절 2개 + 보관 계획 메모**
 
-§16 `### 2026-10-01 검색·캘린더 결정` 소절 끝(`**2026-10-01 실기기 C2 피드백**` 문단 다음)에 소절을 더한다:
+§16 `### 2026-10-01 수집 자동화 앱별 분리(사용자 결정)` 소절 끝(`### 플랜 B` 바로 위)에 두 소절을 더한다:
 
 ```
 ### 2026-10-01 다건 일정·묶음 알림 (사용자 결정, 앱 0.9.0)
 
-실사용 문자 1건(날짜 여럿)이 일정 제안 1건만 만든 원인을 조사했다(`.context/sms-multidate.report.md` — 원문 없이 길이·id·상태만): 수집·암호화·추출 입력 어디에서도 잘림이 없고(251자 < 4,000자), 스키마(단일 객체)·지시문("하나를 골라")·`save_fact`(같은 항목·같은 종류 active fact 1개)가 모두 "항목당 하나"로 설계돼 있었다. 결정: event 최대 5개(별개 일정은 각각, 같은 행사 기간은 하나, 부수 일시는 일정 아님), task·purchase 1개, 알림은 항목당 1개 — 2건 이상이면 `EVENT_BUNDLE` 묶음(잠금화면 액션 없음, 배너 탭 → 시트 N장), 1건이면 그대로(§7·§10). 저장은 한 트랜잭션(`save_facts`, 0025). 기존 항목은 다시 추출하지 않는다. 계획 `docs/superpowers/plans/2026-10-01-multi-event.md`. 영향: 출력 토큰 상한 512 → 1,024(항목당 비용 소폭 증가, luna 출력 단가 기준 무시할 수준), 채팅 facts 상한(5·8)은 fact 단위라 다건 항목이 여러 칸을 쓴다, M2 검색 평가 ⑩b — 기존 코퍼스는 항목당 fact 1개라 기준선은 배포 전후 같다(배포 뒤 들어온 다건 항목만 달라진다). 회귀 위험은 공지형 문자 오분할 — 합성 공지 12종 × 3회 실제 모델 평가(`supabase/eval/run-multi-event-eval.ts`)로 게이트한다.
+실사용 문자 1건(날짜 여럿)이 일정 제안 1건만 만든 원인은 둘이었다(`.context/sms-multidate.report.md` — 원문 없이 길이·id·상태만): 수집에서 알림 트리거가 본문을 255자로 잘랐고(위 "수집 자동화 앱별 분리"로 해결 — 문자는 원문 전체), 그와 별개로 스키마(단일 객체)·지시문("하나를 골라")·`save_fact`(같은 항목·같은 종류 active fact 1개)가 모두 "항목당 하나"로 설계돼 있었다. 결정: event 최대 5개(별개 일정은 각각, 같은 행사 기간은 하나, 부수 일시는 일정 아님, 넘치면 시작이 이른 5개), 2개 이상일 때 60일 이내 지난 회차는 버림, task·purchase 1개, 알림은 항목당 1개 — 2건 이상이면 `EVENT_BUNDLE` 묶음(잠금화면 액션 없음, 배너 탭 → 시트 N장, 카드 판정은 제안 id 상태 직접 조회), 1건이면 그대로(§7·§10). 저장은 한 트랜잭션(`save_facts`, 0025). 기존 항목은 다시 추출하지 않는다. 앱 0.9.0을 서버 배포보다 먼저 올린다(0.8.3 이하는 묶음 속 확인 필요 일정을 보이지 못한다). 계획 `docs/superpowers/plans/2026-10-01-multi-event.md`. 영향: 출력 토큰 상한 512 → 2,048(상한은 잘림 방지 — 실사용량만 과금, 평균·최대 출력은 평가 기록 `MEV-eval`), 채팅 facts 상한(5·8)은 fact 단위라 다건 항목이 여러 칸을 쓴다, M2 검색 평가 ⑩b — 코퍼스가 고정이면 기준선은 같고, 배포 뒤 다건 항목이 facts 칸을 여러 개 쓰므로 ⑩b 기록에 실행 시각·배포 시각을 적는다. 회귀 위험은 공지형 문자 오분할·장문 출력 잘림 — 합성 공지 <실제 개수>종 × 3회 실제 모델 평가(`supabase/eval/run-multi-event-eval.ts`)로 게이트한다.
+
+### 외부 리뷰 반영 (다건 일정 계획, Codex gpt-6-astra · Fable, 2026-10-01)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| 1 | 묶음 카드 상태를 50건 제한 목록으로 판정(Codex 1) | 반영(경량) — 알림의 제안 id ≤5 상태를 REST 로 직접 조회, 새 RPC 없음(§10). "대기 51건"은 단위 테스트만 |
+| 2 | 서버 롤백 절차(Codex 2) | 반영(하향) — DB 는 되돌리지 않고 옛 워커 재배포·전진 수정 기준만(계획 T6). "다건 추출만 끄는 복구 버전"은 미반영(옛 워커 재배포가 그 역할) |
+| 3 | 장문·5건 출력 상한(Codex 3 · Fable N1) | 반영 — 상한 2,048, evidence 80자 지시, 장문 사례·`error` 코드 |
+| 4 | 날짜 접두 비교가 시각 환각 통과(Codex 4) | 반영 — 날짜만 기대는 완전 일치, 원인 코드 `time` |
+| 5 | 6개 이상일 때 고르는 5개(Codex 5) | 반영 — 지시문 "시작이 이른 5개" + 섞인 순서 사례 |
+| 6 | 시드·G1 불일치(Codex 6) | 반영 — 출력 디렉터리 생성, 시드를 시작 순으로 |
+| 7 | 연도 없는 지난 회차가 내년으로(Fable N2) | 반영 — 2개 이상일 때 60일 이내 과거는 버림(사용자 확인) |
+| 8 | 전제 "입력 잘림 없음"이 §16 과 모순(Fable N3) | 반영 — 위 소절 문구 |
+| 9 | 게이트 재시드가 앱 세션을 끊음(Fable N4) | 반영 — 비밀번호 불변 `testUserId`, 시드 한 번에 두 항목 |
+| 10 | 내 일정이 아닌 행사 목록 증폭(Fable N5) | 반영 — 광고 라인업 `none`, 기관 월간 소식은 최대 5건 + 1주 관찰(사용자 확인) |
+| 11 | 배포 순서·실기기 최소화·`save_facts` payload 검증·시트 식별·grep 기대(Fable N6~N10) | 반영 |
 ```
 
+(`<실제 개수>`는 T2 가 끝난 픽스처 수 — T0 시점 계획값 18.)
+
 `docs/superpowers/plans/2026-10-01-retention-summary.md`에서:
-- `### Task R-B2:` 제목 바로 아래 줄에 `> **다건 일정(2026-10-01 multi-event 계획)이 먼저 들어간다:** \`max_output_tokens\`는 800이 아니라 **1,200**(다건 1,024 + 요약), \`TEXT_SCHEMA\`는 \`events\` 배열판에 요약 필드를 더하고, 워커는 \`textFacts\`·\`saveFacts\`(배열)를 쓴다. 이 태스크의 800 단언·\`saveFact\` 코드는 실행 때 그에 맞춘다.`를 넣는다.
+- `### Task R-B2:` 제목 바로 아래 줄에 `> **다건 일정(2026-10-01 multi-event 계획)이 먼저 들어간다:** \`max_output_tokens\`는 800이 아니라 **2,200**(다건 2,048 + 요약), \`TEXT_SCHEMA\`는 \`events\` 배열판에 요약 필드를 더하고, 워커는 \`textFacts\`·\`saveFacts\`(배열)를 쓴다. 이 태스크의 800 단언·\`saveFact\` 코드는 실행 때 그에 맞춘다.`를 넣는다.
 - R-B9의 `0.9.0`(앱 버전 표기, `grep -n "0\.9\.0" docs/superpowers/plans/2026-10-01-retention-summary.md`로 찾는다)을 모두 `0.10.0`으로 바꾼다.
 
 - [ ] **Step 9: 확인·커밋**
 
 Run: `grep -n "EVENT_BUNDLE\|save_facts\|ordinal" docs/superpowers/specs/2026-09-22-assistant-design.md | head; grep -c "0\.9\.0" docs/superpowers/plans/2026-10-01-retention-summary.md`
-Expected: 스펙에 세 단어가 모두 나오고, 보관 계획의 `0.9.0` 은 0개.
+Expected: 스펙에 세 단어가 모두 나오고, 보관 계획의 `0.9.0` 은 0개. `grep -n "잘림이 없고\|1,024" docs/superpowers/specs/2026-09-22-assistant-design.md` 0건(§16 수집 소절과 모순되는 문장 없음).
 
 ```bash
 git add docs/superpowers/specs/2026-09-22-assistant-design.md docs/superpowers/plans/2026-10-01-retention-summary.md
-git commit -m "docs(spec): multi-event extraction (≤5 events, side dates are not events) and one bundled push per item — EVENT_BUNDLE without lock-screen actions, banner tap opens N proposal cards; save_facts in one transaction, facts.ordinal (§7·§8·§9·§10·§11·§16, app 0.9.0; retention R-B9 → 0.10.0)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "docs(spec): multi-event extraction (≤5 events, side dates are not events) and one bundled push per item — EVENT_BUNDLE without lock-screen actions, banner tap opens N proposal cards judged by direct status lookup; past sessions dropped, output cap 2,048; save_facts in one transaction, facts.ordinal; external review table (§7·§8·§9·§10·§11·§16, app 0.9.0; retention R-B9 → 0.10.0)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -292,7 +327,8 @@ git commit -m "docs(spec): multi-event extraction (≤5 events, side dates are n
   - `export const MAX_EVENTS = 5;`
   - `export type TextEvent = { event: ExtractedEvent; evidence: string | null };`
   - `TextExtraction`의 event 변형이 `{ kind: "event"; events: TextEvent[] }`(1~5개, 시작 순)로 바뀐다. task·purchase·none 은 그대로.
-  - `buildTextExtractRequest(...).max_output_tokens === 1024`.
+  - `buildTextExtractRequest(...).max_output_tokens === 2048`.
+  - `export const PAST_SESSION_DAYS = 60;`(U6 — 2개 이상일 때 지난 회차 판정 창).
   - T3이 `textFacts`에서 `x.events`를 쓴다.
 
 - [ ] **Step 1: 실패하는 테스트 — 스키마·지시문·출력 상한**
@@ -320,11 +356,11 @@ Deno.test("text schema: events array of strict event objects; no top-level start
   assertEquals([...item.required].sort(), ["end", "evidence", "lunar", "location", "start", "title", "uncertain", "year_in_text"]);
 });
 
-Deno.test("text request: output cap 1,024; instruction carries the multi-event rules", () => {
+Deno.test("text request: output cap 2,048; instruction carries the multi-event rules", () => {
   const r = buildTextExtractRequest("[합성센터] 1회차 10월 4일, 2회차 10월 11일", META, "2026-10-01");
-  assertEquals(r.max_output_tokens, 1024);
+  assertEquals(r.max_output_tokens, 2048);
   const ins = textOf(r, 1);
-  for (const s of ["최대 5개", "별개 일정", "start~end 하나", "부수 일시", "마감", "발표", "첫 회 하나"]) assert(ins.includes(s), s);
+  for (const s of ["최대 5개", "이른 5개", "별개 일정", "start~end 하나", "부수 일시", "마감", "발표", "첫 회 하나", "80자 이내"]) assert(ins.includes(s), s);
   assert(!ins.includes("하나를 골라"));
 });
 ```
@@ -376,6 +412,36 @@ Deno.test("normalize: date-only events sort as Seoul midnight; evidence per even
   assertEquals(x.kind === "event" && x.events.map((e) => e.event.start), ["2026-10-16T15:00:00+09:00", "2026-10-23"]);
   assertEquals(x.kind === "event" && x.events[0].evidence!.length, EVIDENCE_MAX);
 });
+
+// Review Focus 9 (U6): 2개 이상일 때 연도 없는 지난 회차(60일 이내 과거)는 버린다. 단건·연말→연초 목록은 그대로 다음 해
+Deno.test("normalize: past session without a year is dropped when the item has 2+ events", () => {
+  const x = normalizeTextExtraction(raw({ kind: "event", events: [
+    ev({ title: "합성 1회차", start: "2026-10-04T14:00", year_in_text: false }),
+    ev({ title: "합성 2회차", start: "2026-10-11T14:00", year_in_text: false })] }), "2026-10-05");
+  assertEquals(x.kind === "event" && x.events.map((e) => e.event.start), ["2026-10-11T14:00:00+09:00"]);
+  // 모델이 이미 다음 해로 채워 와도(지시문 규칙) 월·일로 판정한다
+  const y = normalizeTextExtraction(raw({ kind: "event", events: [
+    ev({ title: "합성 1회차", start: "2027-10-04T14:00", year_in_text: false }),
+    ev({ title: "합성 2회차", start: "2026-10-11T14:00", year_in_text: false })] }), "2026-10-05");
+  assertEquals(y.kind === "event" && y.events.length, 1);
+  // 모두 지난 회차면 none
+  assertEquals(normalizeTextExtraction(raw({ kind: "event", events: [ev({ start: "2026-10-01", year_in_text: false }),
+    ev({ title: "합성 b", start: "2026-10-03", year_in_text: false })] }), "2026-10-05"), { kind: "none" });
+});
+
+Deno.test("normalize: a single past event without a year still rolls to next year", () => {
+  const x = normalizeTextExtraction(raw({ kind: "event", events: [ev({ title: "합성 치과", start: "2026-10-04T14:00", year_in_text: false })] }), "2026-10-05");
+  assertEquals(x.kind === "event" && x.events[0].event.start, "2027-10-04T14:00:00+09:00");
+});
+
+Deno.test("normalize: a Dec→Jan list keeps the January event (350 days back is not a past session); year in text is never dropped", () => {
+  const x = normalizeTextExtraction(raw({ kind: "event", events: [ev({ title: "합성 a", start: "2026-12-28T10:00", year_in_text: false }),
+    ev({ title: "합성 b", start: "2027-01-04T10:00", year_in_text: false })] }), "2026-12-20");
+  assertEquals(x.kind === "event" && x.events.map((e) => e.event.start), ["2026-12-28T10:00:00+09:00", "2027-01-04T10:00:00+09:00"]);
+  const z = normalizeTextExtraction(raw({ kind: "event", events: [ev({ title: "합성 a", start: "2026-10-04T14:00", year_in_text: true }),
+    ev({ title: "합성 b", start: "2026-10-11T14:00", year_in_text: true })] }), "2026-10-05");
+  assertEquals(z.kind === "event" && z.events.length, 2);
+});
 ```
 
 import 에 `MAX_EVENTS` 를 더한다.
@@ -401,7 +467,7 @@ const EVENT_ITEM = {
     uncertain: { type: "array", items: { type: "string", enum: [...UNCERTAIN] } },
     year_in_text: { type: "boolean", description: "이 일정 날짜의 연도가 원문에 적혀 있으면 true" },
     lunar: { type: "boolean", description: "날짜가 음력으로만 적혀 있으면 true" },
-    evidence: S("이 일정의 근거 구절 원문 그대로(300자 이내)"),
+    evidence: S("이 일정이 적힌 한 구절 원문 그대로(80자 이내)"),
   },
 } as const;
 
@@ -454,12 +520,12 @@ type RawText = { kind: TextKind; title: string | null; events: RawTextEvent[]; d
 const TEXT_INSTRUCTION = (today: string) => [
   `이 메시지를 받은 날은 ${today}(Asia/Seoul)이다. '내일'·'목요일' 같은 상대 날짜는 이 날짜를 기준으로 계산하라.`,
   "메시지에서 캘린더·미리알림·구매 기록에 남길 종류를 정해 kind로 쓰고 그 kind의 필드만 채워라. 나머지는 null(products·events는 빈 배열).",
-  "- event: 날짜가 정해진 약속·예약·진료·행사. events에 일정마다 하나씩, 최대 5개. 시작 일시가 없는 것은 넣지 않는다.",
+  "- event: 날짜가 정해진 약속·예약·진료·행사. events에 일정마다 하나씩, 최대 5개. 일정이 5개를 넘으면 시작이 이른 5개만 넣는다. 시작 일시가 없는 것은 넣지 않는다.",
   "  · 날짜가 다른 별개 일정(1회차·2회차, 서로 다른 진료·공연·행사)은 각각 넣는다.",
   "  · 한 행사가 여러 날 이어지면 start~end 하나로 넣는다.",
   "  · 접수·신청 기간, 마감, 발표, 변경·취소 기한, 준비 안내(금식 등) 같은 부수 일시는 별개 일정이 아니다. 본 행사·약속만 넣는다. 본 행사 없이 마감만 있으면 task다.",
   "  · '매주 화요일'처럼 반복되는 일정은 첫 회 하나만 넣는다.",
-  "  · 같은 일정을 두 번 넣지 않는다. evidence는 그 일정의 근거 구절이다.",
+  "  · 같은 일정을 두 번 넣지 않는다. evidence는 그 일정이 적힌 근거 한 구절(80자 이내)이다.",
   "- task: 기한이 있는 할 일(납부·제출·회신). due는 기한.",
   "- purchase: 주문·결제·배송·카드 승인. 배송 도착 안내도 purchase다.",
   "- none: 잡담·인사·광고·단순 안내처럼 남길 것이 없는 메시지.",
@@ -469,7 +535,7 @@ const TEXT_INSTRUCTION = (today: string) => [
 ].join("\n");
 ```
 
-`buildTextExtractRequest`의 `max_output_tokens: 512` → `max_output_tokens: 1024`(주석 `// 일정 5개 × 약 90토큰 + 여유(스펙 §7)`).
+`buildTextExtractRequest`의 `max_output_tokens: 512` → `max_output_tokens: 2048`(주석 `// 잘림 방지 상한(과금 아님) — 잘리면 항목 전체가 실패(스펙 §7)`).
 
 정규화의 `case "event"`:
 
@@ -477,7 +543,9 @@ const TEXT_INSTRUCTION = (today: string) => [
     case "event": {
       const seen = new Set<string>();
       const events: TextEvent[] = [];
+      const multi = raw.events.length >= 2;
       for (const r of raw.events) {
+        if (multi && isPastSession(r, today)) continue;                // U6: 지난 회차는 내년으로 넘기지 않고 버린다
         const e = normalizeEvent({ title: r.title, start: r.start, end: r.end, location: r.location, uncertain: r.uncertain,
           year_in_text: r.year_in_text, lunar: r.lunar }, today);
         if (e.start === null) continue;
@@ -496,6 +564,14 @@ const TEXT_INSTRUCTION = (today: string) => [
 
 ```ts
 const startMs = (iso: string) => Date.parse(/T\d{2}:\d{2}/.test(iso) ? iso : `${iso}T00:00:00+09:00`);
+export const PAST_SESSION_DAYS = 60;   // 2개 이상인 항목에서 연도 없는 일정이 이 기간 안의 과거면 지난 회차(스펙 §7, U6)
+// 연도가 원문에 없을 때 받은 해의 같은 월·일이 받은 날보다 앞이고 PAST_SESSION_DAYS 이내면 지난 회차(모델이 채운 연도는 보지 않는다)
+function isPastSession(r: RawTextEvent, today: string): boolean {
+  if (r.year_in_text || r.lunar || r.start === null || !/^\d{4}-\d{2}-\d{2}/.test(r.start)) return false;
+  const sameYear = Date.parse(`${today.slice(0, 4)}${r.start.slice(4, 10)}T00:00:00+09:00`);
+  const t = Date.parse(`${today}T00:00:00+09:00`);
+  return sameYear < t && t - sameYear <= PAST_SESSION_DAYS * 86_400_000;
+}
 ```
 
 (`normalizeEvent`는 `title: clean(raw.title)`을 돌려준다 — `_shared/extract.ts:109`.) `case "task"`·`"purchase"`의 `evidence`는 지금처럼 최상위 `raw.evidence`.
@@ -527,7 +603,7 @@ import { type FactInput, type SavedFact, textFacts } from "../_shared/facts.ts";
     : { userId: facts.userId, itemId: facts.itemId, kind: facts.kind, payload: facts.entries[0].payload, evidence: facts.entries[0].evidence };   // T3 이 saveFacts 로 바꾼다
 ```
 
-같은 파일 79행 `output: 400` → `output: 700`(출력 상한이 1,024로 오른 만큼 예약 추정도 올린다). `tests/facts-db.test.ts`의 `textFact(...)` 두 곳(40·41행)은 T3이 바꾼다 — 이 태스크의 Run 대상이 아니다.
+같은 파일 79행 `output: 400` → `output: 700`(예약 추정은 평균 출력 근처 — 상한 2,048은 잘림 방지라 예약에 쓰지 않는다. T2 평균 출력이 700을 넘으면 그 값으로 맞춘다). `tests/facts-db.test.ts`의 `textFact(...)` 두 곳(40·41행)은 T3이 바꾼다 — 이 태스크의 Run 대상이 아니다.
 
 - [ ] **Step 4: 통과 확인**
 
@@ -538,7 +614,7 @@ Expected: PASS. `text.test.ts`는 아직 단건 경로라 그대로 통과해야
 
 ```bash
 git add supabase/functions/_shared/extract-text.ts supabase/functions/_shared/facts.ts supabase/functions/worker/text.ts supabase/tests/extract-text.test.ts supabase/tests/text.test.ts
-git commit -m "feat(extract): text_fact events array — up to 5 events per item, side dates (deadline, announcement, registration) are not events, ranges stay one, recurrences take the first; server drops startless, merges same start+title, sorts by start, caps at 5; output cap 1,024; textFacts (spec §7)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "feat(extract): text_fact events array — up to 5 events per item, side dates (deadline, announcement, registration) are not events, ranges stay one, recurrences take the first; server drops startless, merges same start+title, sorts by start, caps at 5 (model told to keep the earliest 5), drops past sessions without a year in 2+ event items; evidence ≤80 chars; output cap 2,048; textFacts (spec §7)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -558,11 +634,11 @@ git commit -m "feat(extract): text_fact events array — up to 5 events per item
 
 - [ ] **Step 1: 픽스처 `supabase/eval/multi-event.json`**
 
-모두 합성(실제 문자 원문 아님), 받은 날 2026-10-01(목) 고정:
+모두 합성(실제 문자 원문 아님), 받은 날 2026-10-01(목)(m15만 사례 `today` 2026-10-05). m13~m18은 리뷰 반영(장문·섞인 순서·지난 회차·광고·Gmail 메타·기관 소식):
 
 ```json
 {
-  "_note": "다건 일정 추출 평가용 합성 공지 12종(실제 문자·메일 원문 아님). today = 2026-10-01(목). starts 는 기대 시작의 접두(날짜만이면 날짜, 시각이면 YYYY-MM-DDTHH:mm), 순서는 시작 순",
+  "_note": "다건 일정 추출 평가용 합성 공지 18종(실제 문자·메일 원문 아님). today = 2026-10-01(목), 사례의 today 가 있으면 그 값. meta 가 없으면 MESSAGES(메시지 트리거, F15). starts: 날짜만이면 정규화 결과와 완전 일치, 시각이면 YYYY-MM-DDTHH:mm 접두. 순서는 시작 순",
   "today": "2026-10-01",
   "cases": [
     { "id": "m01", "why": "회차 둘 + 신청 마감(부수)", "kind": "event", "text": "[합성문화센터] 도자기 클래스 1회차 10월 4일(일) 오후 2시, 2회차 10월 11일(일) 오후 2시입니다. 신청 마감은 10월 3일(토)까지입니다.", "starts": ["2026-10-04T14:00", "2026-10-11T14:00"] },
@@ -576,7 +652,13 @@ git commit -m "feat(extract): text_fact events array — up to 5 events per item
     { "id": "m09", "why": "행사 하나 + 신청 마감·발송 시작(부수)", "kind": "event", "text": "[합성마라톤] 10월 25일(일) 오전 8시 합성공원에서 출발합니다. 참가 신청은 10월 12일 마감, 배번호는 10월 20일부터 발송됩니다.", "starts": ["2026-10-25T08:00"] },
     { "id": "m10", "why": "할 일(마감만)", "kind": "task", "text": "[합성관리사무소] 10월분 관리비는 10월 26일까지 납부해 주세요.", "starts": [] },
     { "id": "m11", "why": "남길 것 없음", "kind": "none", "text": "[합성카페] 가을 신메뉴가 나왔습니다. 많은 관심 부탁드립니다.", "starts": [] },
-    { "id": "m12", "why": "예매 둘(별개 공연)", "kind": "event", "text": "[합성극장] 예매 완료: 10월 9일(금) 19:30 합성 콘서트, 10월 10일(토) 15:00 합성 뮤지컬.", "starts": ["2026-10-09T19:30", "2026-10-10T15:00"] }
+    { "id": "m12", "why": "예매 둘(별개 공연)", "kind": "event", "text": "[합성극장] 예매 완료: 10월 9일(금) 19:30 합성 콘서트, 10월 10일(토) 15:00 합성 뮤지컬.", "starts": ["2026-10-09T19:30", "2026-10-10T15:00"] },
+    {"id": "m13", "why": "장문(700자 이상) 수강 확정 + 일정 다섯이 본문 끝, 발표·조사 마감(부수)", "kind": "event", "text": "[합성문화재단] 합성 가을 인문 아카데미 수강 신청이 완료되었습니다. 이번 아카데미는 지역 주민의 평생학습을 돕기 위해 합성문화재단과 합성도서관이 함께 준비한 프로그램으로, 강의마다 정원이 30명으로 제한되어 있어 결석하실 경우 다음 대기자에게 기회가 넘어갈 수 있습니다. 수강료는 무료이며 교재는 첫 강의 때 현장에서 나누어 드립니다. 건물 주차장은 협소하오니 가급적 대중교통을 이용해 주시고, 주차가 꼭 필요하신 분은 안내데스크에서 2시간 무료 주차 등록을 하시기 바랍니다. 강의실은 합성도서관 3층 다목적실이며 엘리베이터는 정문 쪽에 있습니다. 개인 사정으로 수강을 취소하시려면 각 강의 시작 이틀 전까지 누리집 마이페이지에서 직접 취소해 주세요. 수료증은 다섯 번의 강의 중 네 번 이상 출석하신 분께 마지막 날 드리며, 수료 명단 발표는 11월 6일에 누리집에 게시됩니다. 만족도 조사는 10월 30일까지 문자로 보내 드리는 링크에서 참여하실 수 있습니다. 문의는 평일 오전 9시부터 오후 6시까지 합성문화재단 평생학습팀으로 연락 주세요. 강의 일정은 다음과 같습니다. 첫째, 10월 8일(목) 저녁 7시 합성 역사 산책. 둘째, 10월 15일(목) 저녁 7시 합성 고전 읽기. 셋째, 10월 22일(목) 저녁 7시 합성 미술 이야기. 넷째, 10월 29일(목) 저녁 7시 합성 음악 감상. 다섯째, 11월 5일(목) 저녁 7시 합성 철학 토론과 수료식.", "starts": ["2026-10-08T19:00", "2026-10-15T19:00", "2026-10-22T19:00", "2026-10-29T19:00", "2026-11-05T19:00"]},
+    {"id": "m14", "why": "섞인 순서 여섯(가장 이른 것이 마지막, 같은 날 두 시각) → 이른 다섯", "kind": "event", "text": "[합성테니스클럽] 10월 레슨 일정입니다: 24일(토) 오전 10시 정규 레슨, 17일(토) 오전 10시 정규 레슨, 31일(토) 오전 10시 정규 레슨, 10일(토) 오후 3시 보충 레슨, 10일(토) 오전 10시 정규 레슨, 7일(수) 저녁 8시 야간 레슨.", "starts": ["2026-10-07T20:00", "2026-10-10T10:00", "2026-10-10T15:00", "2026-10-17T10:00", "2026-10-24T10:00"]},
+    {"id": "m15", "why": "지난 회차(연도 없음, 받은 날 10-05) + 남은 회차 둘 → 지난 것 버림(U6)", "kind": "event", "today": "2026-10-05", "text": "[합성공방] 가죽 공예 1회차 10월 4일(일) 오후 2시, 2회차 10월 11일(일) 오후 2시, 3회차 10월 18일(일) 오후 2시에 진행됩니다.", "starts": ["2026-10-11T14:00", "2026-10-18T14:00"]},
+    {"id": "m16", "why": "광고성 라인업(수신자 예약 아님) → none", "kind": "none", "text": "[합성뮤직페스티벌] 라인업 공개! 10월 17일(토) 합성밴드·합성가수, 10월 18일(일) 합성트리오·합성DJ 출연. 얼리버드 티켓은 10월 5일까지 20% 할인, 지금 예매하세요!", "starts": []},
+    {"id": "m17", "why": "Gmail 메타(제목 있음) 예매 확인 둘 + 취소 기한(부수)", "kind": "event", "meta": {"source": "GMAIL", "appName": null, "title": "[합성티켓] 예매 확인 안내"}, "text": "합성티켓 예매가 완료되었습니다. 1) 합성 오케스트라 정기공연 2026년 10월 16일(금) 19:30 합성홀 2) 합성 발레 갈라 2026년 10월 25일(일) 15:00 합성극장. 취소는 공연 전날 17시까지 가능합니다.", "starts": ["2026-10-16T19:30", "2026-10-25T15:00"]},
+    {"id": "m18", "why": "기관 월간 소식 여섯 나열(수신자 예약 아님) → U7 기본: 이른 다섯(사용자 확인 뒤 기대값 확정, 결과는 gates.md 비고)", "kind": "event", "text": "[합성구청] 10월 구정 소식: 10월 3일(토) 오전 10시 합성공원 걷기대회, 10월 9일(금) 오후 2시 한글날 기념 강연, 10월 15일(목) 오후 3시 주민 건강 강좌, 10월 22일(목) 저녁 7시 작은 음악회, 10월 28일(수) 오전 10시 일자리 박람회, 10월 31일(토) 오후 1시 가을 축제. 자세한 내용은 구청 누리집을 참고하세요.", "starts": ["2026-10-03T10:00", "2026-10-09T14:00", "2026-10-15T15:00", "2026-10-22T19:00", "2026-10-28T10:00"]}
   ]
 }
 ```
@@ -586,40 +668,54 @@ git commit -m "feat(extract): text_fact events array — up to 5 events per item
 ```ts
 // 다건 일정 추출 평가(스펙 §7 2026-10-01): 실제 gpt-6-luna 추출만(DB·분류기 없음), 문구는 합성(multi-event.json).
 // 사용: deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/eval/run-multi-event-eval.ts [--runs 3]
-// 판정(사례·회차마다): kind 일치 · event 면 개수 = 기대 개수, 기대 시작마다 접두가 맞는 일정이 순서대로 있음, ends 가 있으면 end 접두.
-// 원인 코드: kind(종류 틀림) · split(기대보다 많음 = 오분할) · missing(적거나 기대 시작이 없음) · end. 출력은 id·개수·코드·토큰만
-import { extractTextDetailed } from "../functions/_shared/extract-text.ts";
+// 판정(사례·회차마다): kind 일치 · event 면 개수 = 기대 개수, 기대 시작이 순서대로 맞음(날짜만 기대는 완전 일치, 시각 기대는 접두), ends 도 같은 규칙.
+// 원인 코드: kind(종류 틀림) · split(기대보다 많음 = 오분할) · missing(적거나 기대 시작이 없음) · time(날짜만 기대인데 시각이 붙음 — 서버가 ADD_EVENT 로 보낸다)
+// · end · error(추출 throw — 출력 잘림 등, 사례별 집계). 출력은 id·개수·코드·토큰만
+import { extractTextDetailed, type TextMeta } from "../functions/_shared/extract-text.ts";
 
-type Case = { id: string; kind: string; text: string; starts: string[]; ends?: string[] };
+type Case = { id: string; kind: string; text: string; starts: string[]; ends?: string[]; today?: string; meta?: TextMeta };
 const spec = JSON.parse(await Deno.readTextFile(new URL("./multi-event.json", import.meta.url))) as { today: string; cases: Case[] };
 const arg = (k: string) => { const i = Deno.args.indexOf(k); return i >= 0 ? Deno.args[i + 1] : undefined; };
 const runs = Math.max(1, Number(arg("--runs") ?? 3));
-const META = { source: "NOTIFICATION", appName: "메시지", title: null };
-const tally = { ok: 0, kind: 0, split: 0, missing: 0, end: 0 };
-let maxOut = 0;
+const META: TextMeta = { source: "MESSAGES", appName: null, title: null };   // 문자 = 메시지 트리거(F15)
+const OUT_GATE = 1230;                                                       // 상한 2,048 의 60%
+const tally = { ok: 0, kind: 0, split: 0, missing: 0, time: 0, end: 0, error: 0 };
+let maxOut = 0, sumOut = 0, nOut = 0;
 
-export function judge(c: Case, got: { kind: string; starts: string[]; ends: (string | null)[] }): keyof typeof tally {
+// 날짜만 기대(T 없음)는 완전 일치 — 접두면 "2026-10-23T09:00…" 같은 시각 환각이 통과한다
+const same = (w: string, g: string | null | undefined): "ok" | "time" | "miss" =>
+  w.includes("T") ? ((g ?? "").startsWith(w) ? "ok" : "miss") : g === w ? "ok" : (g ?? "").startsWith(`${w}T`) ? "time" : "miss";
+
+export function judge(c: Case, got: { kind: string; starts: string[]; ends: (string | null)[] }): Exclude<keyof typeof tally, "error"> {
   if (got.kind !== c.kind) return "kind";
   if (c.kind !== "event") return "ok";
   if (got.starts.length > c.starts.length) return "split";
-  if (got.starts.length < c.starts.length || c.starts.some((w, i) => !got.starts[i]?.startsWith(w))) return "missing";
-  if (c.ends?.some((w, i) => !(got.ends[i] ?? "").startsWith(w))) return "end";
+  if (got.starts.length < c.starts.length) return "missing";
+  const s = c.starts.map((w, i) => same(w, got.starts[i]));
+  if (s.includes("miss")) return "missing";
+  if (s.includes("time")) return "time";
+  if (c.ends?.some((w, i) => same(w, got.ends[i]) !== "ok")) return "end";
   return "ok";
 }
 
 if (import.meta.main) {
   for (let r = 1; r <= runs; r++) {
     for (const c of spec.cases) {
-      const { result, usage } = await extractTextDetailed(c.text, META, spec.today);
-      const events = result.kind === "event" ? result.events : [];
-      const v = judge(c, { kind: result.kind, starts: events.map((e) => e.event.start ?? ""), ends: events.map((e) => e.event.end) });
-      tally[v]++;
-      maxOut = Math.max(maxOut, usage.output_tokens);
-      console.log([r, c.id, c.kind, c.starts.length, result.kind, events.length, v, usage.output_tokens].join("\t"));
+      try {
+        const { result, usage } = await extractTextDetailed(c.text, c.meta ?? META, c.today ?? spec.today);
+        const events = result.kind === "event" ? result.events : [];
+        const v = judge(c, { kind: result.kind, starts: events.map((e) => e.event.start ?? ""), ends: events.map((e) => e.event.end) });
+        tally[v]++;
+        maxOut = Math.max(maxOut, usage.output_tokens); sumOut += usage.output_tokens; nOut++;
+        console.log([r, c.id, c.kind, c.starts.length, result.kind, events.length, v, usage.output_tokens].join("\t"));
+      } catch (e) {                                                            // 메시지 원문은 찍지 않는다(코드만)
+        tally.error++;
+        console.log([r, c.id, c.kind, c.starts.length, "-", 0, "error", /incomplete|max_output/i.test(String((e as Error).message)) ? "incomplete" : "throw"].join("\t"));
+      }
     }
   }
-  console.log(JSON.stringify({ runs, cases: spec.cases.length, ...tally, max_output_tokens: maxOut }));
-  Deno.exit(tally.ok === runs * spec.cases.length && maxOut < 820 ? 0 : 1);
+  console.log(JSON.stringify({ runs, cases: spec.cases.length, ...tally, max_output_tokens: maxOut, mean_output_tokens: nOut ? Math.round(sumOut / nOut) : 0 }));
+  Deno.exit(tally.ok === runs * spec.cases.length && maxOut < OUT_GATE ? 0 : 1);
 }
 ```
 
@@ -627,12 +723,14 @@ if (import.meta.main) {
 
 ```ts
 import { judge } from "../eval/run-multi-event-eval.ts";
-Deno.test("multi-event eval judge: split / missing / end / kind codes", () => {
+Deno.test("multi-event eval judge: split / missing / time / end / kind codes; date-only expectations match exactly", () => {
   const c = { id: "x", kind: "event", text: "", starts: ["2026-10-04T14:00", "2026-10-11"], ends: [] as string[] };
   assertEquals(judge(c, { kind: "event", starts: ["2026-10-04T14:00:00+09:00", "2026-10-11"], ends: [null, null] }), "ok");
   assertEquals(judge(c, { kind: "event", starts: ["2026-10-03", "2026-10-04T14:00:00+09:00", "2026-10-11"], ends: [] }), "split");
   assertEquals(judge(c, { kind: "event", starts: ["2026-10-04T14:00:00+09:00"], ends: [] }), "missing");
   assertEquals(judge(c, { kind: "event", starts: ["2026-10-04T15:00:00+09:00", "2026-10-11"], ends: [] }), "missing");
+  // Codex 4: 날짜만 기대에 시각이 붙으면 통과가 아니다(서버가 ADD_EVENT 로 보낸다)
+  assertEquals(judge(c, { kind: "event", starts: ["2026-10-04T14:00:00+09:00", "2026-10-11T09:00:00+09:00"], ends: [] }), "time");
   assertEquals(judge({ ...c, starts: ["2026-10-15"], ends: ["2026-10-18"] }, { kind: "event", starts: ["2026-10-15"], ends: [null] }), "end");
   assertEquals(judge(c, { kind: "task", starts: [], ends: [] }), "kind");
 });
@@ -657,13 +755,13 @@ Expected: PASS, dry-run 이 `multi` 1건만 보인다(발송 없음). `phrase-se
 - [ ] **Step 4: 평가 실행(3회)**
 
 Run: `vm_stat | grep -E 'free|compressor'; deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/eval/run-multi-event-eval.ts --runs 3`
-Expected: 마지막 줄 `{"runs":3,"cases":12,"ok":36,"kind":0,"split":0,"missing":0,"end":0,"max_output_tokens":<820 미만>}`, 종료 코드 0.
+Expected: 마지막 줄 `{"runs":3,"cases":18,"ok":54,"kind":0,"split":0,"missing":0,"time":0,"end":0,"error":0,"max_output_tokens":<1230 미만>,"mean_output_tokens":<n>}`, 종료 코드 0.
 
-**통과 기준(게이트):** 36/36 ok(오분할 0·누락 0·종류 0·종료 0), 최대 출력 토큰 < 820(상한 1,024의 80% — 넘으면 잘림 위험).
+**통과 기준(게이트):** 54/54 ok(오분할 0·누락 0·시각 0·종류 0·종료 0·오류 0), 최대 출력 토큰 < 1,230(상한 2,048의 60% — 장문 m13 포함). `mean_output_tokens`가 700을 넘으면 T1의 예약 추정(`output: 700`)을 그 값으로 올린다(같은 태스크 안에서). m18 결과는 통과·실패와 별개로 gates.md 비고에 적는다(U7 실사용 1주 관찰).
 
 - [ ] **Step 5: 실패하면 — 지시문만 조정(최대 2회)**
 
-MISS 행의 사례 id·원인 코드로 `TEXT_INSTRUCTION`의 event 규칙 줄만 고친다(예: m03 split 반복 → "발표·접수 기간은 날짜가 있어도 넣지 않는다"를 더 직접적으로; m04 missing → "시각이 없는 날짜 일정도 넣는다"). 스키마·정규화·상한은 바꾸지 않는다. 고칠 때마다 Step 4 를 3회 전부 다시 돈다. 2회 조정 뒤에도 실패면 **멈추고** 메인에게 사례 id·코드·회차 표를 보고한다(메인이 사용자와 기준 조정 또는 설계 재검토를 정한다 — T3 이후 진행 금지). 지시문을 고쳤으면 T1 `text request` 테스트의 문자열 목록이 여전히 맞는지 다시 돈다.
+MISS 행의 사례 id·원인 코드로 `TEXT_INSTRUCTION`의 event·none 규칙 줄을 고친다(예: m03 split 반복 → "발표·접수 기간은 날짜가 있어도 넣지 않는다"를 더 직접적으로; m04 missing → "시각이 없는 날짜 일정도 넣는다"; `time` → "원문에 시각이 없으면 날짜만 쓴다"; m16 kind → none 줄에 "광고·홍보성 행사 목록"; m14 missing → "이른 5개"를 더 직접적으로). 스키마·정규화는 바꾸지 않는다. 상한·evidence 길이는 m13 실측(`error incomplete` 또는 최대 출력 ≥ 1,230)으로 조정할 수 있다 — **스펙 §7 문장을 먼저 고치고**(T0 Step 1 문장) 코드·T1 테스트를 맞춘다. 고칠 때마다 Step 4 를 3회 전부 다시 돈다. 2회 조정 뒤에도 실패면 **멈추고** 메인에게 사례 id·코드·회차 표를 보고한다(메인이 사용자와 기준 조정 또는 설계 재검토를 정한다 — T3 이후 진행 금지). 지시문을 고쳤으면 T1 `text request` 테스트의 문자열 목록이 여전히 맞는지 다시 돈다.
 
 - [ ] **Step 6: 회귀 — 기존 10문구 평가**
 
@@ -675,12 +773,12 @@ Expected: 마지막 줄 `miss=0/30`(기존 d01~d10 기준선 그대로). 문구 
 `docs/superpowers/phase1/gates.md` 표 끝에 행:
 
 ```
-| MEV-eval | 다건 일정 추출 — 합성 공지 12종 × 3회 실제 gpt-6-luna: 오분할 0·누락 0·종류 0, 최대 출력 토큰 < 820, 기존 10문구 miss 0/30 | <통과|실패> | <ok/kind/split/missing/end 집계, max_output_tokens, 지시문 조정 횟수와 바꾼 줄 요지, run-phrase-eval miss> | | <날짜> |
+| MEV-eval | 다건 일정 추출 — 합성 공지 18종(장문·섞인 순서·지난 회차·광고·Gmail 메타·기관 소식 포함) × 3회 실제 gpt-6-luna: 오분할 0·누락 0·시각 0·종류 0·오류 0, 최대 출력 토큰 < 1,230, 기존 10문구 miss 0/30 | <통과|실패> | <ok/kind/split/missing/time/end/error 집계, max·mean_output_tokens, 지시문 조정 횟수와 바꾼 줄 요지, run-phrase-eval miss, m18 결과(U7 관찰)> | | <날짜> |
 ```
 
 ```bash
 git add supabase/eval/multi-event.json supabase/eval/run-multi-event-eval.ts supabase/eval/phrases.ts supabase/scripts/_phrase-sender.ts supabase/tests/extract-text.test.ts supabase/functions/_shared/extract-text.ts docs/superpowers/phase1/gates.md
-git commit -m "test(eval): multi-event extraction eval — 12 synthetic notices x3 on gpt-6-luna (split 0, missing 0), judge unit test, MULTI_TEMPLATE and send-phrases --only multi for the device gate; gates MEV-eval" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "test(eval): multi-event extraction eval — 18 synthetic notices x3 on gpt-6-luna (long notice, shuffled six, past session, ad lineup, Gmail meta; split 0, missing 0, time 0, error 0, max output < 1,230), judge unit test (date-only exact), MULTI_TEMPLATE and send-phrases --only multi for the device gate; gates MEV-eval" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -727,7 +825,8 @@ Deno.test("save_facts: three events → ordinals 0..2, three proposals, extracte
 });
 
 // Review Focus 2: 하나라도 잘못되면 아무것도 저장하지 않는다(부분 저장 뒤 extracted 금지)
-Deno.test("save_facts: atomic — 6 events, two tasks, empty, or a mid-loop failure save nothing and leave the item queued", async () => {
+// (루프 중간 예외도 RPC 한 번 = 한 트랜잭션이라 함수 전체가 되돌려진다 — 검사는 루프 전에 모아 둔다)
+Deno.test("save_facts: atomic — 6 events, two tasks, empty, or a non-object payload save nothing and leave the item queued", async () => {
   const id = await seedText("합성 원자성", "atomic");
   try {
     const six = Array.from({ length: 6 }, (_, i) => evAt(`2026-10-${String(10 + i).padStart(2, "0")}`));
@@ -738,10 +837,13 @@ Deno.test("save_facts: atomic — 6 events, two tasks, empty, or a mid-loop fail
     assert(r2.error !== null);
     const r3 = await sb.rpc("save_facts", { p_user: USER, p_item: id, p_kind: "event", p_entries: [], p_action: "create_event" });
     assert(r3.error !== null);
-    // 루프 중간 실패: 첫 일정 insert 뒤 두 번째가 payload not null 위반 → 함수 전체가 되돌려진다
+    // payload 가 객체가 아님(jsonb null 은 not null 을 통과한다) → 루프 전 bad entries, 아무것도 저장 안 됨
     const r4 = await sb.rpc("save_facts", { p_user: USER, p_item: id, p_kind: "event",
       p_entries: [evAt("2026-10-04T14:00:00+09:00"), { payload: null, evidence: null }], p_action: "create_event" });
     assert(r4.error !== null);
+    // purchase(p_action null)에서도 같은 검사 — 제안 insert 의 우연한 오류에 기대지 않는다
+    const r5 = await sb.rpc("save_facts", { p_user: USER, p_item: id, p_kind: "purchase", p_entries: [{ payload: null, evidence: null }], p_action: null });
+    assert(r5.error !== null);
     const { count } = await sb.from("facts").select("id", { count: "exact", head: true }).eq("user_id", USER).eq("item_id", id);
     assertEquals(count, 0);
     const { data: item } = await sb.from("items").select("status").eq("id", id).single();
@@ -790,6 +892,8 @@ begin
   if p_action is not null and p_action not in ('create_event', 'create_reminder') then raise exception 'bad action'; end if;
   n := coalesce(jsonb_array_length(p_entries), 0);
   if n < 1 or n > 5 or (p_kind <> 'event' and n > 1) then raise exception 'bad entries'; end if;
+  -- jsonb 'null'·스칼라 payload 는 not null 을 통과하므로 따로 막는다(purchase 는 제안 insert 가 없어 그대로 저장될 수 있다)
+  if exists (select 1 from jsonb_array_elements(p_entries) e where jsonb_typeof(e->'payload') is distinct from 'object') then raise exception 'bad entries'; end if;
   if not exists (select 1 from items i where i.id = p_item and i.user_id = p_user) then raise exception 'item not found'; end if;
   for r in select x.value as entry, (x.ord - 1)::int as ord from jsonb_array_elements(p_entries) with ordinality as x(value, ord) loop
     v_fact := null; v_prop := null; v_created := true;
@@ -849,7 +953,7 @@ revoke execute on function save_facts(uuid, uuid, text, jsonb, text), save_fact(
   worker_unpushed_proposals(uuid, uuid), worker_get_proposal_bundle(uuid, uuid) from public, anon, authenticated;
 ```
 
-`grep -rn "on conflict (item_id, kind)" supabase/migrations supabase/functions` 로 옛 색인 추론을 쓰는 다른 곳이 없는지 확인한다(0001의 `save_fact`뿐이어야 한다 — 이 파일이 대체). 있으면 같은 파일에서 `(item_id, kind, ordinal)`로 다시 만든다.
+`grep -rn "on conflict (item_id, kind)" supabase/migrations supabase/functions` 로 옛 색인 추론을 쓰는 다른 곳이 없는지 확인한다. 기대: **0001의 두 곳뿐**(552행 `save_event_fact` — 0001:632에서 drop돼 무해, 581행 `save_fact` — 이 파일이 대체)과 이 파일의 `(item_id, kind, ordinal)`. 그 밖에 있으면 같은 파일에서 `(item_id, kind, ordinal)`로 다시 만든다.
 
 - [ ] **Step 3: `facts.ts` `saveFacts`**
 
@@ -960,7 +1064,7 @@ git commit -m "feat(server): save_facts stores an item's facts in one transactio
 ### Task T4: 묶음 알림 — `planBundlePush` · notify 워커 · 게이트 도구
 
 **Files:**
-- Modify: `supabase/functions/_shared/notify.ts`, `supabase/functions/worker/notify.ts`, `supabase/functions/worker/notify-deps.ts`, `supabase/scripts/smoke-gate.ts`
+- Modify: `supabase/functions/_shared/notify.ts`, `supabase/functions/worker/notify.ts`, `supabase/functions/worker/notify-deps.ts`, `supabase/scripts/smoke-gate.ts`, `supabase/tests/_testenv.ts`(`testUserId`)
 - Create: `supabase/scripts/seed-bundle.ts`
 - Test: `supabase/tests/notify.test.ts`, `supabase/tests/notify-db.test.ts`
 
@@ -972,7 +1076,8 @@ git commit -m "feat(server): save_facts stores an item's facts in one transactio
   - `export function planBundlePush(rows: ProposalRow[], now: Date): PushPlan`.
   - 묶음 페이로드(앱 T7 계약): `{ aps: { alert: { title: "일정 제안 N건", body }, category: "EVENT_BUNDLE", sound: "default" }, proposal_id, version, title, start, events: [{ proposal_id, version, title, start, category: "ADD_EVENT" | "REVIEW" }] }`.
   - `NotifyDeps.getBundle(userId, proposalId): Promise<ProposalRow[]>`.
-  - `seed-bundle.ts`(T9 시뮬레이터 게이트가 쓴다): 테스트 사용자 항목 1 + 일정 3(시각 2 + 날짜만 1) 저장, `bundle.apns`·`single.apns` 파일 출력, `--cleanup <run>`.
+  - `tests/_testenv.ts` `export async function testUserId(n = 1): Promise<string>` — `poc-test-<n>@example.com` 의 id 를 `listUsers`로 찾기만 한다(비밀번호를 바꾸지 않는다 → 앱 Keychain 의 refresh token 이 살아 있다, F12). 없으면 throw(게이트 전 `testUser(n)`으로 한 번 만들어 둔다).
+  - `seed-bundle.ts`(T9 시뮬레이터 게이트가 쓴다): 테스트 사용자 항목 n개(`--items`, 기본 1) × 일정 3(시각 2 + 날짜만 1, **순번 = 시작 순**) 저장, 항목마다 `bundle-<i>.apns`·`single-<i>.apns` 출력, `--cleanup <run>`. 사용자 조회는 `testUserId`만.
 
 - [ ] **Step 1: 실패하는 테스트 — `planBundlePush` (Review Focus 3·7)**
 
@@ -992,7 +1097,7 @@ Deno.test("bundle: two or more → EVENT_BUNDLE, earliest first, title/body coun
   if (p.skip !== null) return;
   assertEquals([p.category, aps(p)!.category, aps(p)!.alert.title, aps(p)!.alert.body],
     [BUNDLE_CATEGORY, "EVENT_BUNDLE", "일정 제안 3건", "10월 4일(일) 14:00 · 합성 p2 외 2건"]);
-  assertEquals([p.payload.proposal_id, p.payload.start], ["p2", "2026-10-04T14:00:00+09:00"]);
+  assertEquals([p.payload.proposal_id, p.payload.start], ["p2", "2026-10-04T14:00:00+09:00"]);   // 입력 순서(순번)가 시작 순이 아니어도 시작 순
   assertEquals(p.payload.events, [
     { proposal_id: "p2", version: 1, title: "합성 p2", start: "2026-10-04T14:00:00+09:00", category: "ADD_EVENT" },
     { proposal_id: "p1", version: 1, title: "합성 p1", start: "2026-10-11T14:00:00+09:00", category: "ADD_EVENT" },
@@ -1103,24 +1208,24 @@ Expected: PASS.
 
 - [ ] **Step 4: `smoke-gate.ts --multi`**
 
-`supabase/scripts/smoke-gate.ts`: `const multi = Deno.args.includes("--multi");`, 본문을 `renderPhrase(multi ? MULTI_TEMPLATE : PUSH_TEMPLATE, seoulToday())`, 상단 주석에 사용법 `[--multi]`. `--multi`면 통과 조건을 바꾼다 — 항목 `extracted`, 그 항목 facts **2**, 제안 2, `proposal_pushes`가 있는 제안이 **정확히 1개**(순번 0, `rejected` 400), 그 항목 notify 잡(lease `notify:<id>`) 1개. 출력 JSON 에 `facts`·`proposals`·`pushed_proposals`·`notify_jobs`(개수만)를 더한다. 단건 모드 조건은 그대로.
+`supabase/scripts/smoke-gate.ts`: `const multi = Deno.args.includes("--multi");`, 본문을 `renderPhrase(multi ? MULTI_TEMPLATE : PUSH_TEMPLATE, seoulToday())`, 상단 주석에 사용법 `[--multi]`. `--multi`면 통과 조건을 바꾼다 — 항목 `extracted`, 그 항목 facts **2**, 제안 2, `proposal_pushes`가 있는 제안이 **정확히 1개**(순번 0, `rejected` 400), 그 항목 notify 잡(lease `notify:<id>`) 1개. 출력 JSON 에 `facts`·`proposals`·`pushed_proposals`·`notify_jobs`(개수만)를 더한다. 단건 모드 조건은 그대로. `--keep`(T9 G5 대안용): 마지막 정리를 건너뛰고 `run`·`item_id`를 출력한다 — 기존 정리 블록을 함수로 빼 `--cleanup <run>`으로 따로 부를 수 있게 한다(자기 행만, 실행 태그로).
 
 - [ ] **Step 5: `seed-bundle.ts` (시뮬레이터 게이트 도구)**
 
 ```ts
-// 시뮬레이터 게이트(T9) 시드: 테스트 사용자 항목 1 + 일정 3(시각 2 + 날짜만 1)을 save_facts 로 저장하고(워커·LLM 없음),
+// 시뮬레이터 게이트(T9) 시드: 테스트 사용자 항목 n개 × 일정 3(시각 2 + 날짜만 1)을 save_facts 로 저장하고(워커·LLM 없음),
 // 서버와 같은 planBundlePush 로 만든 APNs JSON 을 쓴다 — xcrun simctl push <udid> com.picpal.eruri <파일>.
-// 사용: deno run --allow-net --allow-env --allow-read --allow-write --env-file=supabase/.env supabase/scripts/seed-bundle.ts --user <n> --out <dir> [--days 3]
+// 사용: deno run --allow-net --allow-env --allow-read --allow-write --env-file=supabase/.env supabase/scripts/seed-bundle.ts --user <n> --out <dir> [--items 2] [--days 3]
 //       … seed-bundle.ts --user <n> --cleanup <run>
-// 전용 테스트 사용자·실행 태그만, 자기 행만 지운다(AGENTS.md §7). 출력은 run·id 만, 문구는 합성
+// 사용자는 testUserId(비밀번호 불변 — 앱 세션을 끊지 않는다). 전용 테스트 사용자·실행 태그만, 자기 행만 지운다(AGENTS.md §7). 출력은 run·id 만, 문구는 합성
 import { encrypt, toBytea } from "../functions/_shared/crypto.ts";
 import { saveFacts } from "../functions/_shared/facts.ts";
 import { planBundlePush, planProposalPush, type ProposalRow } from "../functions/_shared/notify.ts";
 import { seoulToday } from "../functions/_shared/time.ts";
-import { RUN, service as sb, testUser } from "../tests/_testenv.ts";
+import { RUN, service as sb, testUserId } from "../tests/_testenv.ts";
 
 const arg = (k: string) => { const i = Deno.args.indexOf(k); return i >= 0 ? Deno.args[i + 1] : undefined; };
-const user = (await testUser(Number(arg("--user") ?? 1))).id;
+const user = await testUserId(Number(arg("--user") ?? 1));
 const cleanup = arg("--cleanup");
 if (cleanup) {
   const { data: items } = await sb.from("items").select("id").eq("user_id", user).like("idempotency_key", `${cleanup}:%`);
@@ -1133,29 +1238,51 @@ if (cleanup) {
   Deno.exit(0);
 }
 const out = arg("--out") ?? ".";
+await Deno.mkdir(out, { recursive: true });
 const base = Number(arg("--days") ?? 3);
-const day = (n: number) => new Date(Date.parse(`${seoulToday()}T00:00:00+09:00`) + n * 86_400_000 + 9 * 3600_000).toISOString().slice(0, 10);
-const { data: itemId, error } = await sb.rpc("insert_item", { p_user: user, p_source: "MESSAGES", p_idempotency_key: `${RUN}:bundle:1`,
-  p_sender: null, p_title: null, p_content_enc: toBytea(await encrypt(user, "[합성문화센터] 합성 게이트 시드")), p_occurred_at: new Date().toISOString(), p_enqueue: false });
-if (error) throw new Error("insert_item " + error.code);
-const entries = [
-  { title: "합성 클래스 1회차", start: `${day(base)}T14:00:00+09:00` },
-  { title: "합성 클래스 2회차", start: `${day(base + 7)}T14:00:00+09:00` },
-  { title: "합성 전시 관람", start: day(base + 1) },                       // 날짜만 → REVIEW 카드
-].map((e) => ({ payload: { ...e, end: null, location: null, uncertain: [], via: "text" }, evidence: "합성 근거" }));
-const saved = await saveFacts(sb, { userId: user, itemId: itemId as string, kind: "event", entries });
-const { data: rows } = await sb.rpc("worker_get_proposal_bundle", { p_user: user, p_proposal: saved[0].proposalId });
+const n = Math.max(1, Number(arg("--items") ?? 1));
+const day = (d: number) => new Date(Date.parse(`${seoulToday()}T00:00:00+09:00`) + d * 86_400_000 + 9 * 3600_000).toISOString().slice(0, 10);
 const now = new Date();
 const write = async (name: string, plan: ReturnType<typeof planBundlePush>) => {
   if (plan.skip !== null) throw new Error("plan " + plan.skip);
   await Deno.writeTextFile(`${out}/${name}`, JSON.stringify({ "Simulator Target Bundle": "com.picpal.eruri", ...plan.payload }));
 };
-await write("bundle.apns", planBundlePush(rows as ProposalRow[], now));
-await write("single.apns", planProposalPush((rows as ProposalRow[])[0], now));
-console.log(JSON.stringify({ run: RUN, item_id: itemId, proposals: saved.map((s) => s.proposalId) }));
+const made: { item_id: string; proposals: (string | null)[] }[] = [];
+for (let i = 1; i <= n; i++) {
+  const { data: itemId, error } = await sb.rpc("insert_item", { p_user: user, p_source: "MESSAGES", p_idempotency_key: `${RUN}:bundle:${i}`,
+    p_sender: null, p_title: null, p_content_enc: toBytea(await encrypt(user, `[합성문화센터] 합성 게이트 시드 ${i}`)), p_occurred_at: now.toISOString(), p_enqueue: false });
+  if (error) throw new Error("insert_item " + error.code);
+  // 순번 = 시작 순(워커가 만드는 데이터와 같은 불변식 — 대표 = 가장 이른 일정). 항목마다 2주씩 밀어 두 항목의 일정이 겹치지 않게
+  const o = base + (i - 1) * 14;
+  const entries = [
+    { title: `합성 클래스 1회차${i > 1 ? ` ${i}` : ""}`, start: `${day(o)}T14:00:00+09:00` },
+    { title: `합성 전시 관람${i > 1 ? ` ${i}` : ""}`, start: day(o + 1) },                    // 날짜만 → REVIEW 카드
+    { title: `합성 클래스 2회차${i > 1 ? ` ${i}` : ""}`, start: `${day(o + 7)}T14:00:00+09:00` },
+  ].map((e) => ({ payload: { ...e, end: null, location: null, uncertain: [], via: "text" }, evidence: "합성 근거" }));
+  const saved = await saveFacts(sb, { userId: user, itemId: itemId as string, kind: "event", entries });
+  const { data: rows } = await sb.rpc("worker_get_proposal_bundle", { p_user: user, p_proposal: saved[0].proposalId });
+  await write(`bundle-${i}.apns`, planBundlePush(rows as ProposalRow[], now));
+  await write(`single-${i}.apns`, planProposalPush((rows as ProposalRow[])[0], now));
+  made.push({ item_id: itemId as string, proposals: saved.map((s) => s.proposalId) });
+}
+console.log(JSON.stringify({ run: RUN, items: made }));
 ```
 
 `RUN`이 실행마다 달라지므로 정리는 출력된 `run` 값으로 `--cleanup <run>`. `insert_item` 인자는 `tests/facts-db.test.ts` `seedText`와 같다(다르면 그 함수에 맞춘다).
+
+`supabase/tests/_testenv.ts`에 더한다(`testUser` 아래):
+
+```ts
+// 게이트 도구용: 비밀번호를 바꾸지 않고 id 만 찾는다(testUser 는 호출마다 비밀번호를 바꿔 앱 refresh token 을 무효화한다 — 0.8.1 게이트 "주의")
+export async function testUserId(n = 1): Promise<string> {
+  const email = `poc-test-${n}@example.com`;
+  const { data, error } = await service.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (error) throw new Error("listUsers " + error.code);
+  const found = data.users.find((u) => u.email === email);
+  if (!found) throw new Error("no test user " + n);
+  return found.id;
+}
+```
 
 Run: `deno check supabase/scripts/seed-bundle.ts supabase/scripts/smoke-gate.ts && deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/notify.test.ts`
 Expected: PASS. (seed-bundle 실행은 T9.)
@@ -1163,8 +1290,8 @@ Expected: PASS. (seed-bundle 실행은 T9.)
 - [ ] **Step 6: 커밋**
 
 ```bash
-git add supabase/functions/_shared/notify.ts supabase/functions/worker/notify.ts supabase/functions/worker/notify-deps.ts supabase/scripts/smoke-gate.ts supabase/scripts/seed-bundle.ts supabase/tests/notify.test.ts supabase/tests/notify-db.test.ts
-git commit -m "feat(notify): one push per item — the lead's notify job reads the item's proposals, one pushable keeps the single ADD_EVENT payload, two or more send EVENT_BUNDLE (no lock-screen actions, earliest first, events with per-event category, under 4KB); smoke-gate --multi; seed-bundle for the simulator gate (spec §7·§10)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git add supabase/functions/_shared/notify.ts supabase/functions/worker/notify.ts supabase/functions/worker/notify-deps.ts supabase/scripts/smoke-gate.ts supabase/scripts/seed-bundle.ts supabase/tests/_testenv.ts supabase/tests/notify.test.ts supabase/tests/notify-db.test.ts
+git commit -m "feat(notify): one push per item — the lead's notify job reads the item's proposals, one pushable keeps the single ADD_EVENT payload, two or more send EVENT_BUNDLE (no lock-screen actions, earliest first, events with per-event category, under 4KB); smoke-gate --multi; seed-bundle (--items, ordinal = start order) and testUserId (password untouched) for the simulator gate (spec §7·§10)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -1178,6 +1305,7 @@ git commit -m "feat(notify): one push per item — the lead's notify job reads t
 **Interfaces:**
 - Consumes: `ChatHit`(기존).
 - Produces: `export function mergeFactDocs(docs: ChatHit[]): ChatHit[]`.
+- 0.8.3(9892be6, 스펙 §9 "채팅 답 표시")과의 관계: 서버 응답 계약(`citations`·`proposals`·`candidates`)은 바꾸지 않는다. 인용과 👍/👎 판정(`eval_judgments`)은 원래 항목 단위라, 한 항목의 fact 여러 개를 한 문서로 합쳐도 인용은 그 항목 1건 — 👎 시트에 같은 항목이 두 번 나오지 않는다. 앱 채팅 코드(`ChatView.swift`·`ChatFeedback.swift`)는 이 계획에서 고치지 않는다.
 
 - [ ] **Step 1: 실패하는 테스트 (Review Focus 5)**
 
@@ -1234,12 +1362,12 @@ git commit -m "fix(chat): facts of one item merge into one document so a multi-e
 - Modify: `docs/superpowers/phase1/gates.md`(행 `MEV-server`)
 
 **Interfaces:**
-- Consumes: T1~T5 커밋, 0025 적용(T3).
-- Produces: 배포된 `worker`·`chat`. T9가 기대는 서버 상태.
+- Consumes: T1~T5 커밋, 0025 적용(T3), **T9-a 통과·T9-b 0.9.0 업로드 VALID**(앱 먼저 — 실행 순서).
+- Produces: 배포된 `worker`·`chat`. T9 G5·D1이 기대는 서버 상태.
 
 - [ ] **Step 1: 시각 확인**
 
-메인이 Gmail 원장·`gates.md`로 확인: ③b3 세션 중 아님, ③c1(10-07 14:30~16:30)·③c2(10-08 14:30 ~ 완료) 창 밖, ⑩b 실행 중 아님. 못 맞추면 멈춘다.
+메인이 Gmail 원장·`gates.md`로 확인: ③b3 세션 중 아님, ③c1(10-07 14:30~16:30)·③c2(10-08 14:30 ~ 완료) 창 밖, ⑩b 실행 중 아님, **0.9.0 TestFlight 빌드가 VALID이고 사용자 기기에 설치됨**(`MEV-sim` 통과 기록·사용자 확인). 못 맞추면 멈춘다. 원장에 적어 둔 **T1 직전 커밋 해시**(`<prev>`)를 확인한다(아래 복구 기준).
 
 - [ ] **Step 2: 전체 테스트**
 
@@ -1254,6 +1382,13 @@ supabase functions deploy chat
 ```
 
 배포 시각(KST)을 적는다.
+
+**복구(스모크 실패 시)** — DB 는 되돌리지 않는다:
+1. 0025 는 되돌리지 않는다(다건 active fact 가 생긴 뒤에는 옛 `(item_id, kind)` 색인을 만들 수 없고, 실사용자 행 삭제는 금지). 옛 워커는 0025 위에서 돈다(T3 Step 6에서 확인).
+2. 기준 해시는 `git rev-parse HEAD~`가 아니라 원장의 **T1 직전 커밋 `<prev>`**.
+3. 단건 스모크 실패 → `git worktree add /tmp/eruri-prev <prev>` 에서 `supabase functions deploy worker`로 즉시 되돌린다. 옛 notify 는 대표 1건을 단건으로 보내고 나머지는 제안 탭에 남는다(데이터 손실 없음 — 옛 추출은 `save_fact` 래퍼로 1건). 원인 수정 뒤 다시 배포.
+4. `--multi`만 실패 → 되돌리지 않고 전진 수정(단건 경로는 정상).
+5. `smoke-chat` 실패 → chat 만 `<prev>`로 되돌린다(`mergeFactDocs` 전 동작 — 다건 항목의 두 번째 일정만 답에서 빠진다).
 
 - [ ] **Step 4: 스모크 — 단건 회귀 + 다건**
 
@@ -1286,10 +1421,11 @@ git commit -m "docs(gates): MEV-server — 0025, worker and chat deployed; smoke
 - Produces(T8이 쓴다):
   - `ProposalReview.bundleCategory = "EVENT_BUNDLE"`(그리고 `categories`에 포함).
   - `public struct BundleEvent: Identifiable, Equatable, Sendable { proposalId, category, title, start: String; version: Int?; var link: Link }`.
-  - `Link`에 `public let events: [BundleEvent]`(기본 `[]`), init 에 `events: [BundleEvent] = []`.
+  - `Link`에 `public let events: [BundleEvent]`(기본 `[]`), init 에 `events: [BundleEvent] = []`. `Link.id`는 `events.isEmpty ? proposalId : "bundle:" + 이벤트 id 들을 ","로 이은 값` — 같은 첫 일정의 단건 시트(예: 겹침 로컬 알림)가 떠 있을 때 묶음을 탭해도 루트 `.sheet(item:)`이 교체한다(Fable N9).
+  - `Sheet`에 `case unlisted([String: String])` — 상태는 proposed 인데 목록(50건 제한)에 없음 → 알림 값으로 추가 가능, `.offline`과 달리 "서버에 연결하지 못해…" 안내를 두지 않는다.
   - `static func bundleEvents(_ raw: [[String: String]]) -> [BundleEvent]`.
   - `static func link(actionIdentifier:category:fields:events:) -> Link?`(`events` 기본 `[]`).
-  - `public struct BundleCard: Identifiable, Equatable, Sendable { event: BundleEvent; sheet: Sheet }`, `static func cards(for: Link, list: [Pending]?) -> [BundleCard]`.
+  - `public struct BundleCard: Identifiable, Equatable, Sendable { event: BundleEvent; sheet: Sheet }`, `static func cards(for: Link, list: [Pending]?, statuses: [String: String]?) -> [BundleCard]` — `statuses` = 알림의 제안 id(≤5) → 서버 `status`(T8 `proposalStatuses`, 실패면 nil). 규칙: statuses 가 있으면 status ≠ proposed(행 없음 포함) → `.processed`(REVIEW 포함), proposed + REVIEW → `.needsReview`, proposed + 목록에 있음 → `.pending`, proposed + 목록에 없음 → 목록도 못 읽었으면 `.offline`, 읽었으면 `.unlisted`. statuses = nil → 기존 `sheet(for:list:)` 판정(Codex 1 · Fable C1).
 
 - [ ] **Step 1: 실패하는 테스트**
 
@@ -1327,21 +1463,38 @@ git commit -m "docs(gates): MEV-server — 0025, worker and chat deployed; smoke
       fields: ["proposal_id": pid, "title": "t", "start": "2026-10-04T14:00:00+09:00"])?.events, [])
   }
 
-  /// Review Focus 3·6: 카드마다 기존 판정 — 목록에 있으면 서버 값, 목록에 없으면 처리됨, REVIEW 는 확인 필요, 목록 실패면 알림 값
+  /// Review Focus 3·6: 상태 조회 실패(statuses nil)면 카드마다 기존 판정 — 목록에 있으면 서버 값, 목록에 없으면 처리됨, REVIEW 는 확인 필요, 목록 실패면 알림 값
   func testCardsMixedPartialAndOffline() throws {
     let l = try XCTUnwrap(ProposalReview.link(actionIdentifier: ProposalReview.defaultAction, category: "EVENT_BUNDLE", fields: [:],
       events: [raw(pid, "2026-10-02T15:30:00+09:00"), raw(p2, "2026-10-11T14:00:00+09:00"), raw(p3, "2026-10-23", "REVIEW")]))
+    XCTAssertEqual(l.id, "bundle:\(pid),\(p2),\(p3)")                     // 같은 첫 일정의 단건 시트와 id 가 겹치지 않는다
     let list = try XCTUnwrap(ProposalReview.decodeList(listJSON()))          // pid 만 대기 중
-    let cards = ProposalReview.cards(for: l, list: list)
+    let cards = ProposalReview.cards(for: l, list: list, statuses: nil)
     XCTAssertEqual(cards.map(\.id), [pid, p2, p3])
     guard case .pending(let row) = cards[0].sheet else { return XCTFail("pending") }
     XCTAssertEqual(row.location, "합성 회의실")
     XCTAssertEqual(cards[1].sheet, .processed)
     XCTAssertEqual(cards[2].sheet, .needsReview)
-    let offline = ProposalReview.cards(for: l, list: nil)
+    let offline = ProposalReview.cards(for: l, list: nil, statuses: nil)
     guard case .offline(let f) = offline[1].sheet else { return XCTFail("offline") }
     XCTAssertEqual([f["proposal_id"], f["start"], f["version"]], [p2, "2026-10-11T14:00:00+09:00", "1"])
     XCTAssertEqual(offline[2].sheet, .needsReview)
+  }
+
+  /// Codex 1: 상태 직접 조회 — 무시한 REVIEW 는 처리됨, proposed 인데 목록(50건 제한) 밖이면 알림 값(안내 없음), 행 없음은 처리됨
+  func testCardsWithStatuses() throws {
+    let l = try XCTUnwrap(ProposalReview.link(actionIdentifier: ProposalReview.defaultAction, category: "EVENT_BUNDLE", fields: [:],
+      events: [raw(pid, "2026-10-02T15:30:00+09:00"), raw(p2, "2026-10-11T14:00:00+09:00"), raw(p3, "2026-10-23", "REVIEW")]))
+    let list = try XCTUnwrap(ProposalReview.decodeList(listJSON()))          // pid 만 대기 중(= 목록 50건 안)
+    let c = ProposalReview.cards(for: l, list: list, statuses: [pid: "proposed", p2: "proposed", p3: "dismissed"])
+    guard case .pending = c[0].sheet else { return XCTFail("pending") }
+    guard case .unlisted(let f) = c[1].sheet else { return XCTFail("unlisted") }   // 대기 51건째 같은 경우
+    XCTAssertEqual([f["proposal_id"], f["start"]], [p2, "2026-10-11T14:00:00+09:00"])
+    XCTAssertEqual(c[2].sheet, .processed)                                   // 무시한 REVIEW 를 다시 열어도 처리됨
+    let r = ProposalReview.cards(for: l, list: list, statuses: [pid: "succeeded", p3: "proposed"])
+    XCTAssertEqual([r[0].sheet, r[1].sheet, r[2].sheet], [.processed, .processed, .needsReview])   // p2 행 없음 → 처리됨
+    let o = ProposalReview.cards(for: l, list: nil, statuses: [pid: "proposed", p2: "proposed", p3: "proposed"])
+    guard case .offline = o[1].sheet else { return XCTFail("offline when the list failed") }
   }
 ```
 
@@ -1380,7 +1533,7 @@ Expected: FAIL — `error:` 줄(`bundleEvents`·`cards`·`events` 없음).
   }
 ```
 
-`Link`에 `public let events: [BundleEvent]`를 더하고 init 끝에 `events: [BundleEvent] = []` 매개변수와 `self.events = events`. `link(...)`:
+`Link`에 `public let events: [BundleEvent]`를 더하고 init 끝에 `events: [BundleEvent] = []` 매개변수와 `self.events = events`. `public var id: String { events.isEmpty ? proposalId : "bundle:" + events.map(\.proposalId).joined(separator: ",") }`. `Sheet`에 `case unlisted([String: String])  // proposed 인데 목록 밖(50건 제한): 알림 값으로 추가, 안내 없음(묶음 카드만)`. `sheet(for:list:)`의 offline 분기는 `pushFields`를 쓴다(동작 동일). `link(...)`:
 
 ```swift
   public static func link(actionIdentifier: String, category: String, fields f: [String: String], events raw: [[String: String]] = []) -> Link? {
@@ -1403,9 +1556,25 @@ Expected: FAIL — `error:` 줄(`bundleEvents`·`cards`·`events` 없음).
     public var id: String { event.proposalId }
   }
 
-  /// list = nil 이면 목록 조회 실패(모든 카드가 알림 값으로). 순서는 events(시작 순)
-  public static func cards(for link: Link, list: [Pending]?) -> [BundleCard] {
-    link.events.map { BundleCard(event: $0, sheet: sheet(for: $0.link, list: list)) }
+  /// 순서는 events(시작 순). statuses = 알림의 제안 id → 서버 status(직접 조회, 목록 50건 제한·REVIEW 미포함과 무관). nil 이면 조회 실패 → 단건 판정 그대로.
+  /// list = nil 이면 목록 조회 실패
+  public static func cards(for link: Link, list: [Pending]?, statuses: [String: String]?) -> [BundleCard] {
+    link.events.map { e in
+      guard let statuses else { return BundleCard(event: e, sheet: sheet(for: e.link, list: list)) }
+      guard statuses[e.proposalId] == "proposed" else { return BundleCard(event: e, sheet: .processed) }   // 처리됨·행 없음(REVIEW 포함)
+      if e.category != "ADD_EVENT" { return BundleCard(event: e, sheet: .needsReview) }
+      if let p = list?.first(where: { $0.proposal_id == e.proposalId }) { return BundleCard(event: e, sheet: .pending(p)) }
+      guard let f = pushFields(e.link) else { return BundleCard(event: e, sheet: .processed) }
+      return BundleCard(event: e, sheet: list == nil ? .offline(f) : .unlisted(f))
+    }
+  }
+
+  /// 알림 값으로 추가할 때의 필드(sheet(for:list:)의 offline 분기와 공용 — 그 분기도 이 함수를 쓰게 고친다)
+  static func pushFields(_ link: Link) -> [String: String]? {
+    guard let start = link.start, parse(start) != nil else { return nil }
+    var f = ["proposal_id": link.proposalId, "title": link.title, "start": start]
+    if let v = link.version { f["version"] = String(v) }
+    return f
   }
 ```
 
@@ -1416,7 +1585,7 @@ Expected: PASS(기존 테스트 포함).
 
 ```bash
 git add ios/Packages/EruriCore/Sources/EruriCore/ProposalReview.swift ios/Packages/EruriCore/Tests/EruriCoreTests/ProposalReviewTests.swift
-git commit -m "feat(core): EVENT_BUNDLE banner link — events parsed (UUID and start required, unique, ≤5), one left falls back to the single link; bundle cards judged per event through the single-sheet rules (spec §10, 0.9.0, T7)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "feat(core): EVENT_BUNDLE banner link — events parsed (UUID and start required, unique, ≤5), one left falls back to the single link, bundle link id distinct from the lead's single sheet; bundle cards judged by direct status lookup (not proposed → processed incl. REVIEW, proposed but off the 50-row list → push values), single-sheet rules when the lookup fails (spec §10, 0.9.0, T7)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -1424,13 +1593,13 @@ git commit -m "feat(core): EVENT_BUNDLE banner link — events parsed (UUID and 
 ### Task T8: 앱 — 카테고리 등록 · 델리게이트 · 시트 여러 장 · 0.9.0
 
 **Files:**
-- Modify: `ios/App/NotificationActions.swift`(`register`, `NotificationDelegate.didReceive`)
+- Modify: `ios/App/NotificationActions.swift`(`register`, `NotificationDelegate.didReceive`, 새 `static func proposalStatuses(_:timeout:)`)
 - Modify: `ios/App/ProposalsView.swift`(`ProposalSheet` → 카드 뷰 분리)
 - Modify: `ios/project.yml`(`MARKETING_VERSION: 0.9.0`)
 
 **Interfaces:**
-- Consumes: T7 전부. 기존 `ProposalActionsView`·`CalendarAccessSection`·`NotificationActions.pendingProposals(timeout:)`.
-- Produces: 화면(게이트 대상). 새 공개 API 없음.
+- Consumes: T7 전부. 기존 `ProposalActionsView`·`CalendarAccessSection`·`NotificationActions.pendingProposals(timeout:)`·`API.send`.
+- Produces: 화면(게이트 대상). `NotificationActions.proposalStatuses(_ ids: [String], timeout: TimeInterval) async -> [String: String]?`(앱 내부).
 
 - [ ] **Step 1: 카테고리 등록**
 
@@ -1457,6 +1626,20 @@ git commit -m "feat(core): EVENT_BUNDLE banner link — events parsed (UUID and 
 
 `default:` 분기의 `ProposalReview.link(actionIdentifier: action, category: content.categoryIdentifier, fields: fields)`에 `, events: events`를 더한다. `ADD`·`IGNORE` 분기는 그대로(묶음에는 액션이 없다).
 
+`NotificationActions`에 묶음 카드용 상태 조회를 더한다(`serverProposal` 옆, 같은 REST·RLS 본인 행):
+
+```swift
+  /// 묶음 시트(§10, 0.9.0): 알림의 제안 id(≤5) → status. 목록(list_pending_proposals)은 50건 제한·ADD_EVENT 조건이라 카드 판정에 쓰지 않는다. 실패면 nil
+  static func proposalStatuses(_ ids: [String], timeout: TimeInterval = 5) async -> [String: String]? {
+    let ok = ids.filter { UUID(uuidString: $0) != nil }
+    guard !ok.isEmpty, let r = await API.send("rest/v1/proposals?id=in.(\(ok.joined(separator: ",")))&select=id,status", timeout: timeout),
+          r.status == 200, let rows = try? JSONSerialization.jsonObject(with: r.data) as? [[String: Any]] else { return nil }
+    return rows.reduce(into: [String: String]()) { d, row in if let id = row["id"] as? String, let st = row["status"] as? String { d[id.lowercased()] = st } }
+  }
+```
+
+(`API.send`는 `(status: Int, data: Data)?`. 서버 id·페이로드 id 는 모두 소문자 UUID 라 키를 소문자로 맞춘다. 상태 조회는 본인 행만 보이므로(RLS) 남의 id·지워진 행은 결과에 없고 T7 규칙상 "이미 처리됨".)
+
 - [ ] **Step 3: 시트 — 카드 여러 장**
 
 `ProposalsView.swift`의 `ProposalSheet`를 바꾼다. 기존 `switch sheet` 본문(권한 안내 제외)을 새 뷰로 옮긴다:
@@ -1478,6 +1661,9 @@ struct SheetCardView: View {
       ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: calendarOK ? f : nil,
                           proposalId: link.proposalId, state: $state)
       Text("서버에 연결하지 못해 알림 내용으로 보여 줍니다").font(.caption).foregroundStyle(.secondary)
+    case .unlisted(let f):                                                     // proposed 인데 목록 50건 밖 — 알림 값, 안내 없음
+      ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: calendarOK ? f : nil,
+                          proposalId: link.proposalId, state: $state)
     case .needsReview:
       ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: nil, proposalId: link.proposalId, state: $state)
       Text(link.category == "ADD_REMINDER" ? "할 일 제안은 아직 앱에서 바로 추가하지 않습니다"
@@ -1510,7 +1696,7 @@ struct ProposalSheet: View {
   /// 추가할 수 있는 카드가 있을 때만 권한 안내(단건 시트의 기존 위치 = 맨 위)
   private var needsAccessPrompt: Bool {
     let sheets = isBundle ? (cards ?? []).map(\.sheet) : [sheet].compactMap { $0 }
-    return !calendarOK && sheets.contains { if case .pending = $0 { true } else if case .offline = $0 { true } else { false } }
+    return !calendarOK && sheets.contains { switch $0 { case .pending, .offline, .unlisted: true; default: false } }
   }
 
   var body: some View {
@@ -1528,8 +1714,11 @@ struct ProposalSheet: View {
       .navigationTitle(isBundle ? "제안 \(link.events.count)건" : "제안").navigationBarTitleDisplayMode(.inline)
       .toolbar { ToolbarItem(placement: .confirmationAction) { Button("닫기") { close() } } }
       .task {
-        let list = await NotificationActions.pendingProposals(timeout: 5)
-        if isBundle { cards = ProposalReview.cards(for: link, list: list) } else { sheet = ProposalReview.sheet(for: link, list: list) }
+        if isBundle {                                                         // 목록과 상태를 같은 5초 마감으로 병렬 조회(§10 묶음 판정)
+          async let list = NotificationActions.pendingProposals(timeout: 5)
+          async let st = NotificationActions.proposalStatuses(link.events.map(\.proposalId), timeout: 5)
+          cards = ProposalReview.cards(for: link, list: await list, statuses: await st)
+        } else { sheet = ProposalReview.sheet(for: link, list: await NotificationActions.pendingProposals(timeout: 5)) }
       }
       .onChange(of: state) { _, s in if case .finished = s { ProposalRouter.shared.revision += 1 } }
       .onChange(of: states) { old, new in
@@ -1549,7 +1738,7 @@ struct ProposalSheet: View {
 
 - [ ] **Step 4: 버전·빌드**
 
-`ios/project.yml`의 `MARKETING_VERSION: 0.8.2` → `MARKETING_VERSION: 0.9.0`.
+`ios/project.yml`의 `MARKETING_VERSION: 0.8.3` → `MARKETING_VERSION: 0.9.0`(0.8.3 채팅 변경 `ChatView.swift`·`ChatFeedback.swift`는 건드리지 않는다).
 
 Run: `vm_stat | grep -E 'free|compressor'; pgrep -x deno; cd ios && ./scripts/sim.sh gen && ./scripts/sim.sh build && ./scripts/sim.sh test EruriCoreTests`
 Expected: 빌드 성공, `EruriCoreTests` 전부 통과.
@@ -1558,88 +1747,104 @@ Expected: 빌드 성공, `EruriCoreTests` 전부 통과.
 
 ```bash
 git add ios/App/NotificationActions.swift ios/App/ProposalsView.swift ios/project.yml
-git commit -m "feat(ios): EVENT_BUNDLE category without actions; banner tap opens one sheet with a card per event (each judged, added and dismissed on its own through the existing proposal actions), access prompt once at the top; delegate passes events as string maps and logs only the count (0.9.0, T8)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "feat(ios): EVENT_BUNDLE category without actions; banner tap opens one sheet with a card per event (each judged, added and dismissed on its own through the existing proposal actions), access prompt once at the top; cards judged with a parallel status lookup of the bundle's proposal ids (≤5) next to the pending list; delegate passes events as string maps and logs only the count (0.9.0, T8)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task T9: 시뮬레이터 게이트 G1~G6 · TestFlight · 실기기 D1·D2
+### Task T9: 시뮬레이터 게이트 G1~G6(G1c·G3b 포함) · TestFlight · 실기기 D1
 
 **Files:**
 - Modify: `docs/superpowers/phase1/gates.md`(행 `MEV-sim`·`MEV-device`)
 - 게이트 하네스(임시, 커밋하지 않는다): `ios/project.gate090.yml`, `EruriGate.xcodeproj`, `GateHostTests`·`GateUITests` — 0.8.2 하네스(`.context/sim-gate-081-shots/Gate.swift.txt`, F12)를 복사해 쓴다.
 
 **Interfaces:**
-- Consumes: 배포된 서버(T6), 앱 0.9.0(T8), `seed-bundle.ts`(T4), `send-phrases --only multi|push`(T2).
+- Consumes: 0025(T3 push), `seed-bundle.ts`·`testUserId`(T4), 앱 0.9.0(T8) — G1~G4·G3b·G6. 배포된 서버(T6) — G5·D1. `send-phrases --only multi`(T2).
 - Produces: 게이트 기록.
 
-**게이트 원칙(사용자 지시):** 시뮬레이터로 확인할 수 있는 것은 전부 시뮬레이터 pane 에서 닫고, 실기기는 **실제 APNs·잠금화면이 있어야만 보이는 것**(묶음 알림이 잠금화면에 액션 없이 오는지·탭으로 시트, 단건 잠금화면 액션 유지)만 한다.
+**게이트 원칙(사용자 지시):** 시뮬레이터로 확인할 수 있는 것은 전부 시뮬레이터 pane 에서 닫고, 실기기는 **실제 APNs·잠금화면이 있어야만 보이는 것**(묶음 알림이 1건만 오는지·잠금화면에 액션 없이 오는지·탭으로 시트)만 한다. 단건 잠금화면 액션 유지(옛 D2)는 ① 단건 페이로드 불변(T4 `bundle: one pushable → the existing single payload`) ② 카테고리 등록(G3b)으로 닫는다. **순서:** T9-a(G1~G4·G3b·G6, 서버 배포 전) → Step 5 사용자 확인 → T9-b 업로드 → (T6 배포) → G5 → T9-c D1.
 
 - [ ] **Step 1: 시각·기계 확인**
 
-메인: Gmail 창 밖·⑩b 실행 중 아님. pane: `vm_stat | grep -E 'free|compressor'`, `pgrep -x deno` 비었음. 새 전용 시뮬레이터 `Eruri-gate090`(iPhone 17, iOS 26.x)을 만들고 UDID 를 pane 안에서만 쓴다.
+메인: Gmail 창 밖·⑩b 실행 중 아님(시드가 호스팅 DB 를 쓴다). pane: `vm_stat | grep -E 'free|compressor'`, `pgrep -x deno` 비었음. 새 전용 시뮬레이터 `Eruri-gate090`(iPhone 17, iOS 26.x)을 만들고 UDID 를 pane 안에서만 쓴다. G5까지 이 시뮬레이터를 지우지 않는다(앱 세션 유지).
 
-- [ ] **Step 2: 하네스·시드**
+- [ ] **Step 2: 시드 → 하네스**
 
-0.8.2 하네스로 `GateHostTests`가 테스트 사용자 n 의 refresh token 을 앱 Keychain 에 넣는다(F12 — `testUser()`는 비밀번호를 바꾸므로 시드 스크립트와 **같은 n**을 쓰되, 시드를 먼저 돌리고 그 뒤 Host 주입). 시드:
+테스트 사용자 n 이 없으면 `testUser(n)`으로 한 번 만든다. 시드는 비밀번호를 건드리지 않는 `testUserId`만 쓰므로 앱 세션을 끊지 않지만, 순서는 **시드 먼저, 그다음 Host 주입**으로 고정한다(Host 주입 뒤에는 `testUser()`를 부르는 도구를 돌리지 않는다 — F12):
 
-Run: `deno run --allow-net --allow-env --allow-read --allow-write --env-file=supabase/.env supabase/scripts/seed-bundle.ts --user <n> --out .context/gate090`
-Expected: `{"run":"test:…","item_id":"…","proposals":[3개]}`, `.context/gate090/bundle.apns`·`single.apns`. `run` 값을 적어 둔다(정리용).
+Run: `deno run --allow-net --allow-env --allow-read --allow-write --env-file=supabase/.env supabase/scripts/seed-bundle.ts --user <n> --out .context/gate090 --items 2`
+Expected: `{"run":"test:…","items":[{item_id, proposals:[3개]}, {…}]}`, `.context/gate090/bundle-1.apns`·`single-1.apns`·`bundle-2.apns`·`single-2.apns`. `run` 값을 적어 둔다(정리용). 항목 1 = G1~G4, 항목 2 = G5(손대지 않는다).
 
-- [ ] **Step 3: 게이트 G1~G6**
+그다음 0.8.2 하네스로 `GateHostTests`가 테스트 사용자 n 의 refresh token 을 앱 Keychain 에 넣는다.
+
+- [ ] **Step 3: 게이트 G1~G4·G3b·G6 (서버 배포 전)**
+
+카드 버튼은 화면 위치가 아니라 **카드 제목 텍스트**(`합성 클래스 1회차` 등)로 찾는다.
 
 | G | 절차 | 기대 |
 |---|---|---|
-| G1 묶음 시트 | 앱 백그라운드 → `xcrun simctl push <udid> com.picpal.eruri .context/gate090/bundle.apns` → XCUITest 가 스프링보드 배너를 탭 | 배너 제목 "일정 제안 3건", 본문 "<1회차 날짜> 14:00 · 합성 클래스 1회차 외 2건". 시트 제목 "제안 3건", 카드 3장(시작 순): 1회차·2회차는 "캘린더에 추가"·"무시", 전시(날짜만)는 "무시"만 + "날짜나 내용 확인이 필요한…". 스크린샷 `g1-bundle` |
-| G1b 카드 하나 추가 | G1 시트에서 2회차 "캘린더에 추가" 1회 탭 | 그 카드만 결과 문구·버튼 비활성, 나머지 카드 버튼 그대로. 러너 EventKit 으로 2회차 시각 일정 +1(표식 `assistant://proposal/<p2>`), 서버 그 제안 `succeeded`. 1회차는 `proposed` |
-| G2 일부 처리 뒤 다시 탭 | 1회차를 "무시" → 시트 닫기 → 같은 `bundle.apns` 다시 push·탭 | 1회차 카드 "이미 추가·무시됐거나 지난 제안입니다", 2회차도 같은 문구(succeeded — 목록에 없음), 전시 카드 "무시"만. 스크린샷 `g2-partial` |
-| G3 단건 회귀 | `single.apns` push(시드 대표의 단건 페이로드) → 배너 탭 | 기존 단건 시트(제목 "제안", 카드 1장). `simctl push` 페이로드 카테고리 `ADD_EVENT` 확인 |
-| G4 권한 없음 | 설정에서 캘린더 "추가만 허용" → `bundle.apns` push·탭 | 시트 맨 위 권한 안내 1개, 카드 버튼은 "무시"만(추가 없음). 원복 |
-| G5 채팅 카드 | 새 시드(Step 2 재실행) 뒤 채팅 "합성 클래스 언제야?" | 답 아래 일정 답 카드가 그 항목 제안 중 다가올 것부터 최대 3장(0.8.2 규칙), 각 카드 ① "문자에서 찾은 일정" + 서로 다른 날짜. 진단 로그 `CAL card n=…` |
+| G1 묶음 시트 | 앱 백그라운드 → `xcrun simctl push <udid> com.picpal.eruri .context/gate090/bundle-1.apns` → XCUITest 가 스프링보드 배너를 탭 | 배너 제목 "일정 제안 3건", 본문 "<1회차 날짜> 14:00 · 합성 클래스 1회차 외 2건". 시트 제목 "제안 3건", 카드 3장(시작 순): **1회차 · 전시(날짜만) · 2회차**. 1회차·2회차는 "캘린더에 추가"·"무시", 전시는 "무시"만 + "날짜나 내용 확인이 필요한…". 스크린샷 `g1-bundle` |
+| G1c 콜드 스타트 | `xcrun simctl terminate <udid> com.picpal.eruri` → `bundle-1.apns` push → 배너 탭 | G1과 같은 시트·카드 3장(앱 실행 직후 라우팅). 스크린샷 `g1c-cold` |
+| G1b 카드 하나 추가 | G1 시트에서 2회차 "캘린더에 추가" 1회 탭 | 그 카드만 결과 문구·버튼 비활성, 나머지 카드 버튼 그대로. 러너 EventKit 으로 2회차 시각 일정 +1(표식 `assistant://proposal/<p2회차>`), 서버 그 제안 `succeeded`. 1회차는 `proposed` |
+| G2 일부 처리 뒤 다시 탭 | ① 1회차 "무시" → 시트 닫기 → 같은 `bundle-1.apns` 다시 push·탭 ② 전시(REVIEW) 카드 "무시" → 시트 닫기 → 다시 push·탭 | ① 1회차 카드 "이미 추가·무시됐거나 지난 제안입니다", 2회차도 같은 문구(succeeded), 전시 카드 "무시"만. 스크린샷 `g2-partial` ② 세 카드 모두 "이미 추가·무시됐거나…"(무시한 REVIEW 를 다시 열어도 처리됨 — 상태 직접 조회, Codex 1). 스크린샷 `g2-review` |
+| G3 단건 회귀 | `single-2.apns` push(항목 2 대표의 단건 페이로드) → 배너 탭 → 시트 닫기만 | 기존 단건 시트(제목 "제안", 카드 1장, "캘린더에 추가"·"무시" — 누르지 않는다, 항목 2는 G5용). 페이로드 카테고리 `ADD_EVENT` 확인 |
+| G3b 카테고리 등록 | `GateHostTests`에서 `UNUserNotificationCenter.current().notificationCategories()` 단언(캘린더 전체 접근 상태) | `ADD_EVENT` 액션 `ADD`·`IGNORE` 2개, `EVENT_BUNDLE` 액션 0개, `ADD_REMINDER`·`REVIEW`·`ADD_EVENT_CONFLICT` 0개(옛 D2의 "단건 잠금화면 액션 유지"를 여기서 닫는다) |
+| G4 권한 없음 | 설정에서 캘린더 "추가만 허용" → `bundle-2.apns` push·탭(항목 2 — 미처리) → 시트 닫기만 | 시트 맨 위 권한 안내 1개, 카드 버튼은 "무시"만(추가 없음). 아무 카드도 누르지 않는다(항목 2는 G5용). 원복 |
 | G6 개인정보 | `eruri.log`·테스트 사용자 `device_traces`(1시간) | `notif bundle n=3` 줄은 있고 `합성` 문자열 0건(제목 없음) |
 
 G1의 배너 탭이 XCUITest 로 안 잡히면(스프링보드 배너 위치·시간) 알림 센터를 내려 탭하는 경로로 대신하고 그 사실을 적는다. 두 경로 모두 안 되면 멈추고 메인에게 보고(실기기 D1로 넘기지 않는다 — 시트 판정은 시뮬레이터에서 닫는다).
 
-- [ ] **Step 4: 정리**
+- [ ] **Step 4: 사용자 확인 (업로드 전)**
 
-Run: `deno run --allow-net --allow-env --allow-read --allow-write --env-file=supabase/.env supabase/scripts/seed-bundle.ts --user <n> --cleanup <run>`(Step 2·G5 의 run 마다) → 러너가 만든 `합성` 일정 삭제 → 테스트 사용자 `device_traces` 이번 게이트 행 삭제 → 시뮬레이터 삭제.
+메인이 `g1-bundle`·`g2-partial`·`g2-review` 스크린샷을 사용자에게 보여 묶음 알림 문구·시트 구성에 고칠 점이 있는지 묻는다. 있으면 T8 수정 태스크로 반영하고 해당 G 를 다시 돈다.
 
-- [ ] **Step 5: 사용자 확인 (업로드 전)**
-
-메인이 `g1-bundle`·`g2-partial` 스크린샷을 사용자에게 보여 묶음 알림 문구·시트 구성에 고칠 점이 있는지 묻는다. 있으면 T8 수정 태스크로 반영하고 해당 G 를 다시 돈다.
-
-- [ ] **Step 6: TestFlight 업로드**
+- [ ] **Step 5: TestFlight 업로드 (T9-b)**
 
 Run: `vm_stat | grep -E 'free|compressor'; cd ios && ./scripts/testflight.sh`
-Expected: 업로드 성공, 빌드 번호(`date +%Y%m%d%H%M`) 기록, App Store Connect 처리 VALID.
+Expected: 업로드 성공, 빌드 번호(`date +%Y%m%d%H%M`) 기록, App Store Connect 처리 VALID. 메인이 사용자에게 0.9.0 설치를 부탁하고, 설치 확인 뒤 **T6**(서버 배포)로 간다.
 
-- [ ] **Step 7: 실기기 시각 확인**
+- [ ] **Step 6: G5 채팅 카드 (T6 뒤, 같은 시뮬레이터)**
 
-메인: ③b3 세션 중 아님, ③c1·③c2 측정 시각과 **30분 이상** 떨어짐(Global Constraints). 못 맞추면 D1·D2를 미룬다(시뮬레이터 결과로 닫지 않는다).
+메인: T6 통과(`MEV-server`), Gmail 창 밖. 시뮬레이터 앱 세션이 살아 있는지(채팅 1회 응답) 먼저 본다 — 400이면 Host 주입을 다시 한다.
 
-- [ ] **Step 8: 실기기 D1·D2 (사용자 + pane `sonnet`/`medium`)**
+| G | 절차 | 기대 |
+|---|---|---|
+| G5 채팅 카드 | 채팅 "합성 클래스 일정 언제야?" | 답 본문에 **항목 2의 1회차·2회차 날짜가 모두** 나온다(같은 항목 두 번째 일정이 빠지지 않음 — T5). 답 아래 일정 답 카드가 인용 항목 제안 중 다가올 것부터 최대 3장(0.8.2 규칙), 카드마다 ① "문자에서 찾은 일정" + 서로 다른 날짜. 0.8.3 표시: 인용 줄 없음, 답 맨 아래 복사·👍·👎 막대, 👎 시트의 인용 항목 목록에 항목 2가 **한 번만**(닫기만 — 기록하지 않는다). 진단 로그 `CAL card n=…`. 스크린샷 `g5-chat` |
 
-사용자가 0.9.0 설치·잠금 상태로 둔다. pane 이 `send-phrases --only multi` **1회**(합성, 실사용자 `items`·`jobs`·`proposals` 생성).
+시드 항목은 청크·임베딩이 없어 필터가 `kinds: [event]`를 뽑아 `search_facts`가 fact 문서를 줄 때만 성립한다. 안 나오면(거절 또는 항목 2 미인용) 대안: `smoke-gate.ts --multi --keep`(워커 처리 항목, 청크 있음)을 만든 뒤 — `smoke-gate`는 `testUser()`로 비밀번호를 바꾸므로 **Host 주입을 다시 하고** — 그 항목의 합성 제목으로 같은 질문. 정리는 `smoke-gate.ts --cleanup <run>`. 대안을 썼으면 기록에 적는다.
+
+- [ ] **Step 7: 정리 (시뮬레이터)**
+
+Run: `deno run --allow-net --allow-env --allow-read --allow-write --env-file=supabase/.env supabase/scripts/seed-bundle.ts --user <n> --cleanup <run>`(Step 2 의 run, G5 대안을 썼으면 그 run 도) → 러너가 만든 `합성` 일정 삭제 → 테스트 사용자 `device_traces` 이번 게이트 행 삭제 → 시뮬레이터 삭제.
+
+- [ ] **Step 8: 실기기 시각 확인**
+
+메인: T6 통과, ③b3 세션 중 아님, ③c1·③c2 측정 시각과 **30분 이상** 떨어짐(Global Constraints). 못 맞추면 D1을 미룬다(시뮬레이터 결과로 닫지 않는다).
+
+- [ ] **Step 9: 실기기 D1 (사용자 + pane `sonnet`/`medium`)**
+
+사용자가 0.9.0 설치·잠금 상태로 둔다. pane 이 `send-phrases --only multi` **1회**(합성, 실사용자 `items`·`jobs`·`proposals` 생성 — Slack 웹훅 → 알림 트리거 경로, 255자 이내 문구).
 
 | D | 절차 | 기대 |
 |---|---|---|
-| D1 묶음 잠금화면 | 잠금화면에 온 알림 확인 → 길게 누르기 → 탭(잠금 해제) | 알림 1건(같은 문자에서 2건이 오지 않는다), 제목 "일정 제안 2건", 본문 "<D+3> 14:00 · …1회차 외 1건". 길게 눌러도 액션 버튼 없음. 탭하면 시트 "제안 2건" 카드 2장. 사용자가 한 장만 "캘린더에 추가" → 캘린더 +1, 메인이 `device_traces` `action.handled` `result=ok`·그 제안 `succeeded`, 다른 제안 `proposed` 확인. 서버: 그 항목 facts 2·제안 2·`proposal_pushes` 대표 1행 `sent` |
-| D2 단건 회귀 | pane 이 `send-phrases --only push` 1회 → 잠금화면 알림 길게 누르기 | 제목 "일정 제안", 액션 "캘린더에 추가"·"무시"가 보인다(추가는 누르지 않아도 된다 — PoC-5 경로는 이번 변경과 무관, 카테고리 등록 회귀만 본다) |
+| D1 묶음 잠금화면 | 잠금화면에 온 알림 확인 → 길게 누르기 → 탭(잠금 해제) | ① 알림 **1건**(같은 문자에서 2건이 오지 않는다), 제목 "일정 제안 2건", 본문 "<D+3> 14:00 · …1회차 외 1건" ② 길게 눌러도 액션 버튼 없음 ③ 탭하면 시트 "제안 2건" 카드 2장. 서버(메인): 그 항목 facts 2·제안 2·`proposal_pushes` 대표 1행 `sent`. (선택) 한 장 "캘린더에 추가" → 캘린더 +1·`action.handled` `result=ok`·그 제안 `succeeded` — G1b와 같은 경로라 필수 아님 |
 
-정리: 사용자가 D1이 넣은 `합성` 일정을 캘린더에서 지운다. 남은 합성 제안은 제목에 `합성`이 든 것만 제안 탭에서 **한 건씩** "무시"(**"전체 무시" 금지**). `succeeded`는 그대로.
+정리: 사용자가 D1이 넣은 `합성` 일정이 있으면 캘린더에서 지운다. 남은 합성 제안은 제목에 `합성`이 든 것만 제안 탭에서 **한 건씩** "무시"(**"전체 무시" 금지**). `succeeded`는 그대로.
 
-- [ ] **Step 9: 기록·커밋**
+- [ ] **Step 10: 기록·커밋**
 
 `gates.md` 행:
 
 ```
-| MEV-sim | 0.9.0 시뮬레이터: G1 묶음 배너 → 시트 카드 3장(시작 순·날짜만 카드는 무시만)·G1b 카드 하나만 추가·G2 일부 처리 뒤 재탭·G3 단건 회귀·G4 권한 없음 안내 1개·G5 채팅 카드 다건·G6 로그에 제목 없음 | <통과|실패> | <시각 KST, 시뮬레이터, 시드 run·proposal id, 각 G 관찰, 스크린샷 경로 .context/sim-gate-090-shots/, 정리 결과> | | <날짜> |
-| MEV-device | 0.9.0 실기기: D1 다건 문자 → 잠금화면 묶음 알림 1건(액션 없음)·탭 → 카드 2장·한 장 추가, D2 단건 잠금화면 액션 유지 | <통과|실패|대기> | <빌드 번호, item·proposal id, push 행, trace result, Gmail 창과의 간격, 사용자 관찰 원문> | | <날짜> |
+| MEV-sim | 0.9.0 시뮬레이터: G1 묶음 배너 → 시트 카드 3장(시작 순 1회차·전시·2회차, 날짜만 카드는 무시만)·G1c 콜드 스타트·G1b 카드 하나만 추가·G2 일부 처리 뒤 재탭(무시한 REVIEW 포함 처리됨)·G3 단건 회귀·G3b 카테고리 등록(ADD_EVENT 2 액션·EVENT_BUNDLE 0)·G4 권한 없음 안내 1개·G5 채팅 다건(같은 항목 두 일정, 0.8.3 막대·👎 시트 항목 1회)·G6 로그에 제목 없음 | <통과|실패> | <시각 KST, 시뮬레이터, 시드 run·proposal id, 각 G 관찰, G5 대안 사용 여부, 스크린샷 경로 .context/sim-gate-090-shots/, 정리 결과> | | <날짜> |
+| MEV-device | 0.9.0 실기기: D1 다건 문자 → 잠금화면 묶음 알림 1건·액션 없음·탭 → 카드 2장(추가는 선택) | <통과|실패|대기> | <빌드 번호, item·proposal id, push 행, Gmail 창과의 간격, 사용자 관찰 원문> | | <날짜> |
 ```
+
+G1~G4·G3b·G6 통과 시점에 `MEV-sim`을 "대기"(G5 남음)로 먼저 적고 업로드한다 — G5 뒤 "통과"로 고친다.
 
 ```bash
 git add docs/superpowers/phase1/gates.md
-git commit -m "docs(gates): MEV-sim and MEV-device — 0.9.0 bundled multi-event push: simulator G1–G6, device D1–D2" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "docs(gates): MEV-sim and MEV-device — 0.9.0 bundled multi-event push: simulator G1–G6 (cold start, category registration, REVIEW re-tap), device D1" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -1651,13 +1856,45 @@ git commit -m "docs(gates): MEV-sim and MEV-device — 0.9.0 bundled multi-event
 | U1 최대 5·별개 각각·기간 하나 | T1 지시문·정규화, T2 m01·m02·m04·m07·m12, T3 `save_facts` n ≤ 5 |
 | U2 부수 일시 오분할 방지 | T1 지시문, T2 m01·m03·m05·m08·m09 |
 | U3 task·purchase 1개 | T1(최상위 필드), T3 `bad entries`(event 아닌데 2개) |
-| U4 항목당 알림 1개·탭 → 시트 여러 장·1건 동일 | T3 대표만 enqueue, T4 `planBundlePush`(1건 = 단건 페이로드 동일), T7·T8, T9 G1~G3·D1·D2 |
+| U4 항목당 알림 1개·탭 → 시트 여러 장·1건 동일 | T3 대표만 enqueue, T4 `planBundlePush`(1건 = 단건 페이로드 동일), T7·T8, T9 G1~G3·G1c·G3b·D1 |
+| U6 지난 회차 버림 · U7 기관 소식 5건 | T0 Step 1, T1 `isPastSession`·테스트 3개, T2 m15·m16·m18 (둘 다 T0 전 사용자 확인) |
+| 묶음 카드 판정(상태 직접 조회) | T0 Step 6, T7 `cards(statuses:)`·`testCardsWithStatuses`, T8 `proposalStatuses`, T9 G2② |
+| 출력 잘림 방지 | T0 Step 1, T1 상한 2,048·evidence 80자, T2 m13·`error`·< 1,230 |
+| 0.8.3 채팅(9892be6)과의 정합 | 출발점, T5 Interfaces(서버 계약 불변·항목 단위 인용), T8 Step 4(0.8.3 → 0.9.0, 채팅 코드 불변), T9 G5(인용 줄 없음·막대·👎 시트 항목 1회) |
 | U5 잠금화면 액션 결정 | 머리 "잠금화면 액션 결정", T0 §10, T8 카테고리 액션 `[]`, T9 D1 |
 | Gmail 경로 포함 | F7 — 같은 `processText`라 별도 코드 없음. 백필 항목은 푸시 안 함(T4 `backfill` 테스트) |
 | 서버 = 마이그레이션 + extract·worker·notify | T1·T3·T4(+ chat T5 — 다건 fact 가 모델 문서에서 빠지는 회귀를 막는다) |
 | Gmail 측정 창·실사용자 행 | Global Constraints, T3 Step 4·6, T6 Step 1, T9 Step 1·7 |
 | ⑩b 영향 | Global Constraints "M2 검색 평가 ⑩b", T5 항등 테스트, T0 §16 |
 | 합성 공지 픽스처 평가 | T2 |
-| 게이트: 시뮬레이터 우선, 실기기는 필수만 | T9 원칙·G1~G6·D1·D2 |
+| 게이트: 시뮬레이터 우선, 실기기는 필수만 | T9 원칙·G1~G6(G1c·G3b)·D1 — 옛 D2 → G3b, D1 추가는 선택 |
+| 앱 먼저 배포 | 머리 "잠금화면 액션 결정" 끝, 실행 순서, T6 Step 1 |
+| 서버 복구 | T6 Step 3 "복구" |
 | 버전 0.9.0, R-B9 → 0.10.0 | T0 Step 7·8, T8 Step 4 |
 | 보관 계획 R-B2 와 같은 파일 | Global Constraints, T0 Step 8 |
+
+## 리뷰 반영 (Codex gpt-6-astra `.context/codex-review-multievent.out.md` · Fable `.context/fable-review-multievent-plan.md`, 2026-10-01)
+
+Fable §3 수정 지시와 최종 권장을 기본으로 채택했다. Fable 이 Codex 에 반대·부분 판정한 건은 Fable 쪽을 따랐다.
+
+| # | 지적(출처·심각도) | 판정 | 계획에서 |
+|---|---|---|---|
+| C1 | 묶음 카드를 50건 제한 목록으로 판정 — 미처리 카드가 처리됨, 무시한 REVIEW 가 미처리처럼(Codex 1 MED · Fable 부분 동의) | 반영(경량) — 알림의 제안 id ≤5를 REST 로 직접 조회, 새 RPC·마이그레이션 없음. "대기 51건 게이트"는 미반영(단위 테스트 `testCardsWithStatuses`로 충분) | Review Focus 6, F17, T0 Step 6, T7, T8 Step 2·3, T9 G2② |
+| C2 | 서버 롤백 절차 없음(Codex 2 MED → Fable LOW) | 반영(하향) — DB 불변, T1 직전 해시 재배포·전진 수정·chat 만 복구. "다건 추출만 끄는 복구 버전"은 미반영(옛 워커 재배포가 그 역할, 데이터 손실 없음) | 출발점, T6 Step 1·3 |
+| C3 / N1 | 장문·5건 출력 상한 미평가 — 잘리면 항목 전체 실패(Codex 3 MED → Fable HIGH) | 반영 — 상한 2,048, 일정별 evidence 80자 지시(서버 절단 300 유지), 장문 m13, 평가기 `error` 사례별 집계, 게이트 < 1,230, R-B2 2,200 | Review Focus 8, F16, Global Constraints, T0 Step 1·2·8, T1, T2 |
+| C4 | 날짜 접두 비교가 시각 환각 통과(Codex 4 MED) | 반영 — 날짜만 기대는 완전 일치, 원인 코드 `time`, judge 음성 테스트 | T2 Step 2 |
+| C5 | 6개 이상일 때 고르는 5개(Codex 5 MED → Fable LOW) | 반영 — 지시문 "시작이 이른 5개", 섞인 순서 m14(같은 날 두 시각 포함) | Review Focus 4, T0 Step 1, T1 Step 1·3, T2 m14 |
+| C6 | 시드 디렉터리·G1 순서 불일치, 시드가 순번 ≠ 시작 순(Codex 6 LOW · Fable 보강) | 반영 — `Deno.mkdir`, entries 시작 순, G1 기대 "1회차·전시·2회차", 버튼은 제목 텍스트로 | T4 Step 5, T9 Step 3 |
+| N2 | 연도 없는 지난 회차가 내년 일정으로(Fable MED) | 반영(권장 기본, **사용자 확인 대기** U6) — 2개 이상일 때 60일 이내 과거는 버림 | U6, Review Focus 9, F18, T0 Step 1, T1, T2 m15 |
+| N3 | 전제 "입력 잘림 없음(251자)"이 스펙 §16과 모순(Fable MED) | 반영 — 원인 둘(수집 잘림 + 항목당 하나), F15, 평가 기본 META `MESSAGES`, §16 새 소절 문구·위치(수집 소절 뒤) | Architecture, F15, T0 Step 8, T2 Step 2 |
+| N4 | G5 재시드가 `testUser()`로 앱 세션을 끊음(Fable MED) | 반영 — `testUserId`(비밀번호 불변), 시드 `--items 2` 한 번(Host 주입 전), G5 대안 `smoke-gate --multi --keep`(Host 재주입) | Global Constraints, T4 Interfaces·Step 4·5, T9 Step 2·6 |
+| N5 | 내 일정이 아닌 행사 목록이 제안 5건으로 증폭(Fable MED) | 반영 — 광고 라인업 m16 `none`, Gmail 메타 m17, 기관 소식 m18은 U7(5건 + 1주 관찰, **사용자 확인 대기**) | U7, T2 m16~m18·Step 5 |
+| N6 | 배포 순서 — 0.8.x 구간에서 묶음 속 REVIEW 가 안 보임(Fable LOW) | 반영 — 앱 게이트 → TestFlight → T6 → G5 → D1, "잃는 것은 없다" 문구 수정 | 머리, 실행 순서, T6 Step 1, T9 |
+| N7 | 실기기 D2·D1 추가는 시뮬레이터로 닫힌다(Fable LOW) | 반영 — D2 삭제 → G3b, D1 추가는 선택 | T9 원칙·G3b·Step 9 |
+| N8 | `save_facts` payload jsonb `null` 통과(Fable LOW) | 반영 — 루프 전 `jsonb_typeof ≠ object` 검사, r4 주석 수정, purchase r5 추가 | T3 Step 1·2 |
+| N9 | 묶음 `Link.id` = 첫 일정 id → 단건 시트와 겹침, 콜드 스타트 게이트 없음(Fable LOW) | 반영 — `bundle:<ids>` id, G1c | T7, T9 G1c |
+| N10 | T3 grep 기대값(0001에 2곳)(Fable LOW) | 반영 | T3 Step 2 |
+| ⑩b | "기준선 동일"은 코퍼스 고정일 때만(Codex 타당한 부분 · Fable 동의) | 반영 — 문구 한정, ⑩b 비고에 실행·배포 시각·코퍼스 경계 | Global Constraints, T0 Step 8 |
+| 비용 | "무시할 수준" 대신 실측 평균·최대(Codex 타당한 부분) | 반영 — 평가기 `mean_output_tokens`, §16 문구는 "실사용량만 과금, `MEV-eval` 기록", 예약 추정 700은 평균 실측으로 조정 | T1 Step 3, T2 Step 2·4, T0 Step 8 |
+| 0.8.3 | 오늘 채팅 근거 줄 삭제 → 답 하단 👍👎 막대(9892be6, 스펙 §9) | 정합 — 서버 계약·채팅 코드 불변, 인용·판정은 항목 단위라 fact 병합과 충돌 없음, 출발점·버전 0.8.3 → 0.9.0, G5 기대에 막대·👎 시트 항목 1회 | 출발점, T5 Interfaces, T8 Step 4, T9 G5 |
+
