@@ -2,13 +2,15 @@ import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/asse
 import type { APNsResult, ApnsEnv } from "../functions/_shared/apns.ts";
 import { apnsP8 } from "../functions/_shared/apns.ts";
 import type { Job } from "../functions/_shared/job.ts";
-import { isPermanentFailure, planProposalPush, type ProposalRow, whenLabel } from "../functions/_shared/notify.ts";
+import { BUNDLE_CATEGORY, isPermanentFailure, planBundlePush, planProposalPush, type ProposalRow, whenLabel } from "../functions/_shared/notify.ts";
 import { type Device, notifyProposal, type NotifyDeps, type PushRecord } from "../functions/worker/notify.ts";
 
 const NOW = new Date("2026-09-29T06:00:00Z");                  // 서울 15:00
 const row = (o: Partial<ProposalRow> & { payload?: Record<string, unknown> } = {}): ProposalRow => ({ id: "p1", action: "create_event", status: "proposed", version: 1,
   occurred_at: "2026-09-29T05:00:00Z", captured_at: "2026-09-29T05:00:05Z",
   payload: { title: "합성 치과", start: "2026-10-02T15:30:00+09:00", end: null, location: null, uncertain: [] }, ...o });
+const ev = (id: string, start: string, o: Partial<ProposalRow> & { title?: string; uncertain?: string[] } = {}) =>
+  row({ id, ...o, payload: { title: o.title ?? `합성 ${id}`, start, end: null, location: null, uncertain: o.uncertain ?? [] } });
 const aps = (p: ReturnType<typeof planProposalPush>) => (p.skip === null ? p.payload.aps as { alert: { title: string; body: string }; category: string } : null);
 
 Deno.test("whenLabel: Seoul wall clock with Korean weekday; date-only without time", () => {
@@ -69,11 +71,12 @@ Deno.test("apnsP8: inline APNS_P8 wins, else APNS_P8_PATH file, else coded error
 
 // ── notify 잡: 가짜 기기·발송 ──
 const TOK = (c: string) => c.repeat(64);
-function deps(o: { proposal?: ProposalRow | null; devices?: Device[]; claimed?: Set<string>; inFlight?: Set<string>;
+function deps(o: { proposal?: ProposalRow | null; bundle?: ProposalRow[]; devices?: Device[]; claimed?: Set<string>; inFlight?: Set<string>;
   reply?: (token: string, env: ApnsEnv) => APNsResult | Error } = {}) {
   const calls = { sent: [] as [string, ApnsEnv, unknown][], finished: [] as [string, PushRecord][], listed: 0 };
   const d: NotifyDeps = {
     getProposal: async () => (o.proposal === undefined ? row() : o.proposal),
+    getBundle: async () => (o.bundle ?? (o.proposal === null ? [] : [o.proposal === undefined ? row() : o.proposal])),
     listDevices: async () => { calls.listed++; return o.devices ?? [{ device_id: "d1", apns_token: TOK("a"), apns_env: "production" }]; },
     claimPush: async (_u, _p, dev) => (o.claimed?.has(dev) ? "closed" : o.inFlight?.has(dev) ? "in_flight" : "claimed"),
     finishPush: async (_u, _p, dev, r) => { calls.finished.push([dev, r]); },
@@ -143,4 +146,75 @@ Deno.test("plan: every pushed payload carries the proposal version (§10 순서 
   const ev = planProposalPush({ ...base, action: "create_event", payload: { title: "합성 진료", start: "2026-10-03T15:00:00+09:00", uncertain: [] } }, now);
   const task = planProposalPush({ ...base, action: "create_reminder", payload: { title: "합성 납부", due: "2026-10-05" } }, now);
   assertEquals([ev.skip === null ? ev.payload.version : null, task.skip === null ? task.payload.version : null], [3, 3]);
+});
+
+Deno.test("bundle: one pushable → the existing single payload for that proposal", () => {
+  assertEquals(planBundlePush([ev("p1", "2026-10-02T15:30:00+09:00")], NOW), planProposalPush(ev("p1", "2026-10-02T15:30:00+09:00"), NOW));
+});
+
+Deno.test("bundle: two or more → EVENT_BUNDLE, earliest first, title/body counts, events carry per-event category", () => {
+  const p = planBundlePush([ev("p1", "2026-10-11T14:00:00+09:00"), ev("p2", "2026-10-04T14:00:00+09:00"), ev("p3", "2026-10-23")], NOW);
+  assertEquals(p.skip, null);
+  if (p.skip !== null) return;
+  assertEquals([p.category, aps(p)!.category, aps(p)!.alert.title, aps(p)!.alert.body],
+    [BUNDLE_CATEGORY, "EVENT_BUNDLE", "일정 제안 3건", "10월 4일(일) 14:00 · 합성 p2 외 2건"]);
+  assertEquals([p.payload.proposal_id, p.payload.start], ["p2", "2026-10-04T14:00:00+09:00"]);   // 입력 순서(순번)가 시작 순이 아니어도 시작 순
+  assertEquals(p.payload.events, [
+    { proposal_id: "p2", version: 1, title: "합성 p2", start: "2026-10-04T14:00:00+09:00", category: "ADD_EVENT" },
+    { proposal_id: "p1", version: 1, title: "합성 p1", start: "2026-10-11T14:00:00+09:00", category: "ADD_EVENT" },
+    { proposal_id: "p3", version: 1, title: "합성 p3", start: "2026-10-23", category: "REVIEW" },
+  ]);
+});
+
+// Review Focus 3: 지난 일정·무시한 제안은 빠지고, 하나만 남으면 단건(그 제안의 ADD_EVENT)
+Deno.test("bundle: past lead and dismissed siblings drop out; one left → single ADD_EVENT; none left → lead's skip", () => {
+  const past = ev("p1", "2026-09-29T09:00:00+09:00");
+  const one = planBundlePush([past, ev("p2", "2026-10-11T14:00:00+09:00"), ev("p3", "2026-10-12T14:00:00+09:00", { status: "dismissed" })], NOW);
+  assertEquals([one.skip === null && one.category, one.skip === null && one.payload.proposal_id], ["ADD_EVENT", "p2"]);
+  assertEquals(planBundlePush([past, ev("p2", "2026-09-28")], NOW).skip, "past");
+  const bf = { occurred_at: "2026-09-20T00:00:00Z", captured_at: "2026-09-29T05:00:00Z" };
+  assertEquals(planBundlePush([ev("p1", "2026-10-11T14:00:00+09:00", bf), ev("p2", "2026-10-12T14:00:00+09:00", bf)], NOW).skip, "backfill");
+});
+
+// T3 우려: worker_unpushed_proposals 는 대표가 이미 처리(무시)돼도 미처리 형제가 남으면 대표 id 를 돌려준다 —
+// 대표 status 가 proposed 가 아니라는 이유로 묶음 전체를 건너뛰지 않는다
+Deno.test("bundle: lead already dismissed → siblings still pushed (two → EVENT_BUNDLE, one → its single payload)", () => {
+  const lead = ev("p1", "2026-10-04T14:00:00+09:00", { status: "dismissed" });
+  const two = planBundlePush([lead, ev("p2", "2026-10-11T14:00:00+09:00"), ev("p3", "2026-10-18T14:00:00+09:00")], NOW);
+  assertEquals([two.skip, two.skip === null && two.category, two.skip === null && (two.payload.events as unknown[]).length], [null, BUNDLE_CATEGORY, 2]);
+  assertEquals(two.skip === null && two.payload.proposal_id, "p2");
+  assertEquals(planBundlePush([lead, ev("p2", "2026-10-11T14:00:00+09:00")], NOW), planProposalPush(ev("p2", "2026-10-11T14:00:00+09:00"), NOW));
+  assertEquals(planBundlePush([lead, ev("p2", "2026-10-11T14:00:00+09:00", { status: "accepted" })], NOW).skip, "not_proposed");
+  assertEquals(planBundlePush([], NOW).skip, "not_proposed");
+});
+
+// Review Focus 7: 5건 × 제목 40자(한글)에서도 APNs 4KB 미만
+Deno.test("bundle payload stays under 4KB at 5 events × 40-char Korean titles", () => {
+  const rows = Array.from({ length: 5 }, (_, i) => ev(crypto.randomUUID(), `2026-10-1${i}T14:00:00+09:00`, { title: "합".repeat(60), version: 12345 }));
+  const p = planBundlePush(rows, NOW);
+  assert(p.skip === null && p.category === BUNDLE_CATEGORY);
+  assert(new TextEncoder().encode(JSON.stringify(p.payload)).length < 4096);
+});
+
+Deno.test("notify worker: bundle of two → one push per device keyed on the job's lead id, payload EVENT_BUNDLE", async () => {
+  const { d, calls } = deps({ bundle: [ev("p1", "2026-10-04T14:00:00+09:00"), ev("p2", "2026-10-11T14:00:00+09:00")] });
+  const claimed: string[] = [];
+  const claim = d.claimPush;
+  d.claimPush = async (u, p, dev) => { claimed.push(p); return claim(u, p, dev); };
+  assertEquals(await notifyProposal(d, job()), "notified");
+  assertEquals([claimed, calls.sent.length], [["p1"], 1]);                     // 기기 1대, 기록 키 = 잡의 대표 id
+  assertEquals((calls.sent[0][2] as { aps: { category: string } }).aps.category, "EVENT_BUNDLE");
+});
+
+// T3 우려: 대표가 이미 무시됐어도 미처리 형제가 있으면 보낸다. 기록 키는 여전히 잡의 대표 id(재시도·복구가 같은 키를 본다)
+Deno.test("notify worker: dismissed lead with pending siblings → still notified, keyed on the lead id", async () => {
+  const { d, calls } = deps({ bundle: [ev("p1", "2026-10-04T14:00:00+09:00", { status: "dismissed" }), ev("p2", "2026-10-11T14:00:00+09:00"),
+    ev("p3", "2026-10-12T14:00:00+09:00")] });
+  const claimed: string[] = [];
+  const claim = d.claimPush;
+  d.claimPush = async (u, p, dev) => { claimed.push(p); return claim(u, p, dev); };
+  assertEquals(await notifyProposal(d, job()), "notified");
+  assertEquals(claimed, ["p1"]);
+  const sent = calls.sent[0][2] as { aps: { category: string }; events: { proposal_id: string }[] };
+  assertEquals([sent.aps.category, sent.events.map((e) => e.proposal_id)], ["EVENT_BUNDLE", ["p2", "p3"]]);
 });

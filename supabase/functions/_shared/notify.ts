@@ -2,12 +2,15 @@ import type { APNsResult } from "./apns.ts";
 import { seoulToday, WEEKDAYS_KO } from "./time.ts";
 
 // 제안 푸시 계획(스펙 §7 notify, §10 페이로드, 0b). 기존 iOS NotificationActions 계약: category ADD_EVENT + 최상위 proposal_id·version·title·start.
+// 묶음(2026-10-01): 한 항목의 푸시 가능한 일정이 2건 이상이면 category EVENT_BUNDLE(잠금화면 액션 없음) + 최상위 대표 키 + events[{proposal_id,version,title,start,category}].
 // 알림 문구는 추출 제목·일시만(원문 본문 금지, §12)
 export type ProposalRow = { id: string; action: string; payload: Record<string, unknown>; status: string; version: number;
   occurred_at: string | null; captured_at: string | null };
 export const BACKFILL_MS = 3 * 24 * 3600_000;
 type Skip = "not_proposed" | "backfill" | "past" | "unsupported";
-export type PushPlan = { skip: Skip } | { skip: null; category: "ADD_EVENT" | "REVIEW" | "ADD_REMINDER"; payload: Record<string, unknown> };
+export const BUNDLE_CATEGORY = "EVENT_BUNDLE";
+export type PushPlan = { skip: Skip }
+  | { skip: null; category: "ADD_EVENT" | "REVIEW" | "ADD_REMINDER" | typeof BUNDLE_CATEGORY; payload: Record<string, unknown> };
 
 const hasTime = (s: string) => /T\d{2}:\d{2}/.test(s);
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -49,6 +52,28 @@ export function planProposalPush(p: ProposalRow, now: Date): PushPlan {
       proposal_id: p.id, version: p.version, title, ...(due ? { due } : {}) } };
   }
   return { skip: "unsupported" };
+}
+
+const startMs = (iso: string) => Date.parse(hasTime(iso) ? iso : `${iso}T00:00:00+09:00`);
+
+// 묶음 알림(스펙 §7 notify·§10, 2026-10-01): 한 항목의 제안들 중 푸시할 수 있는 일정만. 0건 → 순번 0 의 건너뜀 사유,
+// 1건 → 기존 단건 페이로드 그대로(잠금화면 "캘린더에 추가" 유지), 2건 이상 → EVENT_BUNDLE 1건(액션 없음, 탭 → 시트 N장)
+export function planBundlePush(rows: ProposalRow[], now: Date): PushPlan {
+  const ready: { p: Extract<PushPlan, { skip: null }> }[] = [];
+  for (const r of rows) {
+    const p = planProposalPush(r, now);
+    if (p.skip === null) ready.push({ p });
+  }
+  if (ready.length === 0) return rows.length > 0 ? planProposalPush(rows[0], now) : { skip: "not_proposed" };
+  if (ready.length === 1 || ready.some((x) => x.p.category === "ADD_REMINDER")) return ready[0].p;
+  ready.sort((a, b) => startMs(String(a.p.payload.start)) - startMs(String(b.p.payload.start)));
+  const n = ready.length, first = ready[0].p.payload;
+  return { skip: null, category: BUNDLE_CATEGORY, payload: {
+    aps: { alert: { title: `일정 제안 ${n}건`, body: `${whenLabel(String(first.start))} · ${first.title} 외 ${n - 1}건` },
+      category: BUNDLE_CATEGORY, sound: "default" },
+    proposal_id: first.proposal_id, version: first.version, title: first.title, start: first.start,
+    events: ready.map(({ p }) => ({ proposal_id: p.payload.proposal_id, version: p.payload.version, title: p.payload.title,
+      start: p.payload.start, category: p.category })) } };
 }
 
 // 토큰·요청 자체가 틀린 응답은 다시 보내도 같다(Apple 문서 상태 코드). 429·5xx 는 일시 오류

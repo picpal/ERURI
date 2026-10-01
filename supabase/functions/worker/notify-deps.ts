@@ -11,6 +11,11 @@ export function notifyDeps(sb: SupabaseClient, o: Partial<Pick<NotifyDeps, "send
       if (error) throw new Error("worker_get_proposal " + error.code);
       return (data as ProposalRow[])[0] ?? null;
     },
+    async getBundle(userId, proposalId) {
+      const { data, error } = await sb.rpc("worker_get_proposal_bundle", { p_user: userId, p_proposal: proposalId });
+      if (error) throw new Error("worker_get_proposal_bundle " + error.code);
+      return data as ProposalRow[];
+    },
     async listDevices(userId) {
       const { data, error } = await sb.rpc("worker_list_devices", { p_user: userId });
       if (error) throw new Error("worker_list_devices " + error.code);

@@ -33,6 +33,16 @@ export function testUser(n = 1): Promise<TestUser> {
   return p;
 }
 
+// 게이트 도구용: 비밀번호를 바꾸지 않고 id 만 찾는다(testUser 는 호출마다 비밀번호를 바꿔 앱 refresh token 을 무효화한다 — 0.8.1 게이트 "주의")
+export async function testUserId(n = 1): Promise<string> {
+  const email = `poc-test-${n}@example.com`;
+  const { data, error } = await service.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (error) throw new Error("listUsers " + error.code);
+  const found = data.users.find((u) => u.email === email);
+  if (!found) throw new Error("no test user " + n);
+  return found.id;
+}
+
 // 이번 실행이 만든 잡만 지운다
 export async function deleteRunJobs(prefix = RUN) {
   const { error } = await service.from("jobs").delete().like("lease_key", prefix + "%");
