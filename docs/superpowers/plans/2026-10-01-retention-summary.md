@@ -43,7 +43,7 @@ U="$(grep '^ERURI_USER_ID=' supabase/.env | cut -d= -f2)"
 - **모델(AGENTS.md §3):** R-A1·R-A2·R-B1~R-B7·R-B9 `opus`/`high`(구현), R-B8 `opus`/`medium`(실측 판정), 실기기 확인 대기가 긴 세션은 `sonnet`/`medium`.
 - **`db push` 직렬(Fable N5):** 트랙 B의 DB 태스크(R-B1~R-B8)는 한 pane씩 차례로 한다 — pane들이 같은 작업 트리를 쓰고 `supabase db push`는 미적용 로컬 마이그레이션을 전부 올리므로, 병렬이면 다른 pane이 쓰는 중인 파일이 호스팅 DB에 올라가거나 번호 순서가 어긋난다. 각 `db push` 직전에 `git status --short supabase/migrations`로 **자기 태스크 파일만** 미적용 새 파일인지 확인한다. 적용된 마이그레이션은 고치지 않는다 — 바꿀 것이 있으면 다음 빈 번호로 새 파일(Codex #9).
 - **운영 호출 예외(Fable N6c):** AGENTS.md §7은 테스트가 실사용자(`ERURI_USER_ID`) 행을 만들거나 지우지 못하게 한다. R-B8 G6(실기기 알림)은 **테스트가 아닌 운영 확인 호출**이라 예외로 한다 — 실사용자 `jobs`에 `capacity-notify` 한 행을 넣고, 그 게이트가 만든 `capacity_pushes` 행(`window_key like 'gate-%'`)만 지운다. 그 밖의 실사용자 `items`·`item_summaries`·`jobs`는 만들거나 지우지 않는다.
-- **버전(AGENTS.md §8):** R-A2 = `MARKETING_VERSION 0.7.0`(수정 0.7.1). 0.8.0은 검색·캘린더 계획의 앱(기기 캘린더 표시·겹침 확인)이므로 **R-B9 = 0.9.0**(스펙 §11, 2026-10-01 검색·캘린더 결정 5). 메이저 금지. 빌드 번호는 `testflight.sh`가 `date +%Y%m%d%H%M`.
+- **버전(AGENTS.md §8):** R-A2 = `MARKETING_VERSION 0.7.0`(수정 0.7.1). 0.8.0은 검색·캘린더 계획의 앱(기기 캘린더 표시·겹침 확인)이므로 **R-B9 = 0.10.0**(스펙 §11, 2026-10-01 검색·캘린더 결정 5). 메이저 금지. 빌드 번호는 `testflight.sh`가 `date +%Y%m%d%H%M`.
 - **iOS 기준 커밋:** R-A2·R-B9는 `e895cae`(0.6.0 리뷰 수정 1회차 — `ArchiveView`의 `retryReset`·`generation`) 이후 main의 **최신 커밋** 위에서 시작한다. 계획의 코드는 그 파일에 **더하는** 방식이다(통째로 바꾸면 0.6.0 수정이 사라진다, Fable N2).
 - **기록:** `docs/superpowers/phase1/gates.md`에 행 `R-A1`·`R-A2`·`R-B1`~`R-B9`(상태는 통과·실패·대기만, "부분"은 마감 아님). 커밋 칸은 자기 SHA라 비우고 메인이 채운다. 수치가 스펙 추정과 30% 넘게 다르면 스펙 §8 "용량 보호" 추정을 고친다.
 - **Codex 재검토(Fable 권고):** 이 수정본의 R-B5·R-B6·R-B7(자동 삭제·암호화 경로)만 Codex(`gpt-6-astra`, `medium`, read-only)로 1회 재검토한 뒤 트랙 B를 시작한다(지시문 `.context/codex-review-retention-2.prompt.md`: 범위 = 이 세 태스크, 심각도 HIGH/MED/LOW, "먼저 바꿀 3가지"). HIGH가 나오면 계획을 고치고 트랙 B 착수. 나머지 태스크는 SDD 태스크별 리뷰로 충분하다. 트랙 A는 재검토를 기다리지 않는다.
@@ -94,7 +94,7 @@ ios/App/ChatView.swift                        # R-A2 "보관함에서 보기"
 ios/App/EruriApp.swift                        # R-A2 RootView 탭 전환
 ios/App/ItemDetailView.swift                  # R-B9 요약 절
 ios/App/ContentView.swift                     # R-B9 저장 공간 절
-ios/project.yml                               # R-A2 0.7.0 / R-B9 0.9.0
+ios/project.yml                               # R-A2 0.7.0 / R-B9 0.10.0
 supabase/migrations/0025_retention_summaries.sql   # R-B1
 supabase/migrations/0026_summary_search.sql        # R-B4
 supabase/migrations/0027_chunk_cool.sql            # R-B7(필수, R-B5 앞 — 리뷰 반영으로 번호 재배정)
@@ -990,6 +990,7 @@ git commit -m "feat(db): 3-year retention, encrypted item summaries, summary gra
 ---
 
 ### Task R-B2: 추출 호출이 요약을 내고 워커가 암호화해 저장한다
+> **다건 일정(2026-10-01 multi-event 계획)이 먼저 들어간다:** `max_output_tokens`는 800이 아니라 **2,200**(다건 2,048 + 요약), `TEXT_SCHEMA`는 `events` 배열판에 요약 필드를 더하고, 워커는 `textFacts`·`saveFacts`(배열)를 쓴다. 이 태스크의 800 단언·`saveFact` 코드는 실행 때 그에 맞춘다.
 
 **Files:**
 - Create: `supabase/functions/_shared/summary.ts`, `supabase/functions/_shared/summary-store.ts`
@@ -3158,7 +3159,7 @@ public enum CapacityStatus {
   }
 ```
 
-버전: `MARKETING_VERSION: 0.9.0`(0.8.0은 검색·캘린더 계획 C1·C2 — `git log --oneline -- ios/project.yml`로 0.8.0이 main에 있는지 확인하고, 없으면 메인에게 알린다).
+버전: `MARKETING_VERSION: 0.10.0`(0.8.0은 검색·캘린더 계획 C1·C2 — `git log --oneline -- ios/project.yml`로 0.8.0이 main에 있는지 확인하고, 없으면 메인에게 알린다).
 
 - [ ] **Step 4: 전체 테스트·빌드**
 
@@ -3193,7 +3194,7 @@ Codex·Fable 리뷰와 사용자에게 묻는 항목. 기본값으로 계획을 
 8. **요약 임베딩 지연**(원문 삭제 때 만든다): 용량(요약당 약 4KB)과 비우기의 OpenAI 독립성 때문. 대가는 삭제 직후 몇 분~다음 달(예산 소진 시)까지 요약은 키워드로만 찾힌다.
 9. **요약을 원문이 있는 동안에도 상세에 보인다**: 사용자가 무엇이 남을지 확인하게. 원문 만료 뒤에만 보이게 하려면 R-B9 한 줄.
 10. **요약 없는 원문의 만료 유예 7일 · 용량 2단계(요약 없는 원문, queued 포함)와 3단계(요약 삭제)는 유효 크기 95%에서만**: 보관 상한·읽기 전용 방지가 요약보다 우선한다는 판단. 85~95%에서 1단계 후보가 없으면 지우지 않고 `stuck` + 위험 알림(리뷰 반영, Codex #3·#5).
-11. **트랙 분리**: 채팅→보관함(0.7.0)을 먼저 내고, 보관·요약·용량은 Gmail 게이트 뒤(0.9.0 — 0.8.0은 검색·캘린더 계획). 한 번에 내려면 R-A2 업로드를 R-B8 뒤로 미루고 0.7.0에 합친다.
+11. **트랙 분리**: 채팅→보관함(0.7.0)을 먼저 내고, 보관·요약·용량은 Gmail 게이트 뒤(0.10.0 — 0.8.0은 검색·캘린더 계획). 한 번에 내려면 R-A2 업로드를 R-B8 뒤로 미루고 0.7.0에 합친다.
 12. **Gmail 측정 기간 중 DDL만 먼저 push**: 기본은 트랙 B 전체를 ③c2 뒤로. 사용자가 허락하면 R-B1·R-B4·R-B5·R-B6 마이그레이션(cron·기존 행 변경 없음)은 먼저 push해 DB 테스트를 앞당길 수 있다(운영 함수 `purge_expired`·`hybrid_search`·`chat_get_item` 동작이 바뀌지만 만료·요약 대상이 아직 없어 결과는 같다).
 13. **알림 빈도**: 경고·위험 주 1회(서울 ISO 주), 비우기는 회차마다. 한 주 안에 경고 뒤 위험으로 올라가면 두 번 간다.
 14. **정리 보관 기간**: `cron.job_run_details` 14일, done·dead 잡 30일, `capacity_log` 180일. `audit_log`는 줄이지 않는다(스펙 §8 "감사 로그의 사유 코드 유지", 연 약 10MB).

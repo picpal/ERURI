@@ -294,23 +294,33 @@ jobs 워커  (pg_cron 매분 + 잡 생성 직후 즉시 호출 → Edge: worker.
   → 추출 (gpt-6-luna, Responses API `text.format` json_schema strict. `store: false`)
       event: title, start, end, allDay, location, tz, evidence, uncertain[]  (예: year, ampm, end, tz, date, location)
       uncertain은 모델 판단이 아니라 서버가 정한다(0단계 PoC-8 실측: 모델의 uncertain 표시가 반복마다 흔들림). 스키마에 사실 플래그
-      (`year_in_text`, `lunar`)를 두고 서버가 year·date를 채운다. 연도 표기가 없으면 연도를 "오늘(서울) 이후 가장 가까운 해"로 서버가
+      (`year_in_text`, `lunar`)를 두고 서버가 year·date를 채운다. 이미지 경로는 연도 표기가 없으면 연도를 "오늘(서울) 이후 가장 가까운 해"로 서버가
       다시 계산한다(모델이 내년으로 채운 사례). 일시는 ISO 8601 +09:00로 정규화하고 해석 불가·종료 < 시작은 null + date/end.
       **음력 날짜는 확정하지 않는다**: 모델 환산이 하루씩 틀려(10-24 → 10-25) date를 넣어 REVIEW로 보낸다. 제품에서 자동 환산이 필요하면
       서버 음력 변환표(한국천문연구원 기준)로 한다. 종료 시각이 문서에 없으면 end는 null이고 uncertain에 넣지 않는다
       task: title, due, evidence, uncertain[]
       purchase: merchant, product[], ordered_at, amount, currency, order_no, status, recurrence?, evidence
-      텍스트 항목(0b, 2026-09-29): 한 항목에서 event·task·purchase 중 하나(없으면 none)를 고르는 단일 strict 스키마 `text_fact`.
+      텍스트 항목(0b, 2026-09-29 · 다건 일정 2026-10-01 사용자 결정): 한 항목에서 종류를 event·task·purchase 중 하나(없으면 none)로 고르는 단일 strict 스키마 `text_fact`.
+      **event는 `events` 배열에 최대 5개**: 날짜가 다른 별개 일정(1회차·2회차, 서로 다른 진료·공연)은 각각, 한 행사가 여러 날 이어지면 start~end 하나,
+      접수·신청 기간·마감·발표·변경 기한·준비 안내(금식 등) 같은 **부수 일시는 별개 일정이 아니다**(본 행사가 없고 마감만 있으면 task), '매주' 같은 반복 표현은
+      첫 회 하나(§10 반복 규칙). 일정이 5개를 넘으면 **시작이 이른 5개**(모델 지시 — 서버 정렬은 모델이 빠뜨린 일정을 되살리지 못한다). 서버가 시작 없는 항목을 버리고,
+      같은 시작·제목은 하나로, 시작 순으로 정렬해 앞 5개만 남긴다(모델이 더 내도). 지난 일정도 버리지 않는다(연도는 아래 기준일 문단 — 지난 일정은 제안으로 남고
+      푸시·제안 목록에서 빠진다, notify·§10). evidence는 일정마다 그 일정이 적힌 한 구절(80자 이내 지시,
+      서버 절단 300은 §8 그대로). task·purchase는 1개(최상위 필드). 출력 상한 512 → 2,048토큰(상한은 과금이 아니라 잘림 방지 — 잘리면 파서가 throw해 그 항목 전체가
+      일정 0개가 된다. 장문 5건 실측 최대 < 1,230, §16 평가).
       상대 날짜('내일'·'목요일')와 연도 없는 날짜의 기준일은 **받은 시각(occurred_at)의 서울 날짜**다(오프라인 큐·지연 처리로
-      처리 시각이 늦어도 날짜가 밀리지 않게). 연도 없는 날짜는 이 기준일 이후 가장 가까운 해로 결정적으로 정하므로 텍스트 경로에서는
-      uncertain에 year를 넣지 않는다(year는 이미지 경로 규칙 — 넣으면 연도 없는 문자 약속이 모두 REVIEW가 된다, 0b 최종 리뷰).
+      처리 시각이 늦어도 날짜가 밀리지 않게). 연도 없는 날짜는 **이 기준일의 해(받은 해)**로 결정적으로 정한다 — 단건·다건 모두, 지난 날짜여도 내년으로 넘기지 않는다
+      (2026-10-01 사용자 결정, 이전 규칙 "기준일 이후 가장 가까운 해"는 텍스트 경로에서 폐기). 단 원문에 연도 단서가 있으면 모델이 그 해로 쓰고 `year_in_text = true`로 낸다:
+      명시 연도, '작년·지난해'(전년)·'내년·다음 해'(다음 해), '내일·다음 주 금요일'처럼 기준일로 정해지는 상대 날짜, 12월→1월처럼 해를 넘어가는 나열의 뒤쪽(다음 해).
+      서버는 `year_in_text = false`인 날짜만 받은 해로 맞춘다(종료는 시작과 같은 햇수만큼). 지난 날짜가 된 일정은 제안으로 남고 푸시·제안 목록에서 빠진다(아래 notify, §10).
+      텍스트 경로에서는 uncertain에 year를 넣지 않는다(year는 이미지 경로 규칙 — 넣으면 연도 없는 문자 약속이 모두 REVIEW가 된다, 0b 최종 리뷰).
       모델 입력은 출처·앱 이름·제목·본문(4,000자에서 절단)이고 발신자 필드는 보내지 않는다. 단 메신저 알림은 제목이 발신자 표시 이름이라
       추출(OpenAI)에는 표시 이름이 제목으로 간다(분류 게이트 Jev에는 보내지 않는다, 위).
       event는 시작 일시가 없으면, task는 제목이 없으면, purchase는 가맹점·금액이 모두 없으면 none. evidence는 마스킹된 본문의 구절 ≤300자
       요약(2026-10-01, §16): 같은 `text_fact` 호출이 `summary`(원문 없이도 알아볼 수 있게 누가·무엇·언제·어디·금액, 한국어 200자 이내)와
       `keywords`(사람·기관·가게·상품·장소·금액·날짜 표기, 12개 이하)를 kind와 무관하게(none 포함) 함께 낸다. 워커가 요약을 사용자 데이터 키로
       암호화해 `item_summaries`(§8)에 넣는다 — `save_fact`·empty 처리 **전**에 넣고 재시도는 덮어쓴다. 모델이 빈 요약을 내면 마스킹 본문 앞
-      200자로 대신한다(요약 없는 항목이 매일 재요약되지 않게). 입력이 4,000자에서 잘리므로 긴 메일의 요약은 앞부분 기준이다. 출력 상한 512 → 800토큰.
+      200자로 대신한다(요약 없는 항목이 매일 재요약되지 않게). 입력이 4,000자에서 잘리므로 긴 메일의 요약은 앞부분 기준이다. 출력 상한은 다건 일정 2,048에 요약 약 150을 더해 2,200토큰(보관 계획 R-B2가 올린다).
       M1 기간 항목과 실패분은 `summarize` 잡(요약 전용 strict 스키마, 백필 레인, 월 예산 `extract`)이 채운다: 매일 cron `enqueue_summary_backlog`
       (사용자당 하루 200건). 게이트 폐기(격리 중)·규칙 폐기·처리 전(queued) 항목은 요약하지 않는다(복구되면 process가 만든다).
       이미지·PDF(vision) 요약은 2단계 파일 경로와 함께 한다
@@ -332,19 +342,25 @@ jobs 워커  (pg_cron 매분 + 잡 생성 직후 즉시 호출 → Edge: worker.
       요약 임베딩은 **원문·청크가 지워질 때** 만든다(지연, 2026-10-01): 원문 만료·용량 비우기(§8)가 청크를 지운 항목마다 embed 잡
       (`payload.summary = true`, 백필 레인, 월 예산 `embed`)이 요약을 복호화해 임베딩한다. 청크가 있는 동안 벡터를 두 벌 두지 않아 용량을 아끼고,
       비우기가 OpenAI 가용성·예산에 묶이지 않는다. 요약 키워드 검색은 삭제 즉시, 요약 의미 검색은 이 잡이 돈 뒤부터(예산 소진이면 다음 달)
-  → 저장(0b): 이미지(extract 잡)·텍스트(process 잡) 공용 `save_fact`(0013). fact 1건(같은 항목·같은 종류의 active fact는 1개) +
+  → 저장(0b · 다건 2026-10-01, `0025`): 텍스트(process 잡)는 `save_facts`가 한 항목의 fact 전부를 **한 트랜잭션**으로 넣는다(일부만 저장된 채
+      `extracted`가 되면 재시도가 나머지를 다시 뽑지 않으므로). 이미지(extract 잡)는 1건짜리 `save_fact`(같은 함수의 래퍼). 일정마다 fact 1건 —
+      `facts.ordinal`(0~4, 시작 순) — 같은 항목·같은 종류·같은 순번의 active fact는 1개, task·purchase는 순번 0 하나뿐 +
       event → `create_event`, task → `create_reminder` 제안(purchase는 제안 없음. 1단계까지는 `purchases` 테이블 없이 facts.payload, 테이블은 2단계),
-      items.status = `extracted`. 재시도는 새 행 없이 같은 fact·제안 id를 돌려주고 status만 `extracted`로 맞춘다
+      items.status = `extracted`. 재시도는 새 행 없이 같은 fact·제안 id를 돌려주고 status만 `extracted`로 맞춘다. 항목 수가 1~5 밖이거나 event가 아닌데 2개 이상이면 아무것도 저장하지 않고 오류
   → proposals INSERT (event/task). uncertain 비어 있을 때만 잠금화면 "추가" 버튼 노출,
       아니면 REVIEW 카테고리로 앱에서 확인 유도
   → 백필(occurred_at이 수집 시각보다 3일 이상 과거)에서 나온 제안은 푸시하지 않는다. 보관함과 앱 "제안" 탭(§10 제안 리뷰 대기 목록)에는 보인다
-  → jobs INSERT (kind = notify, lease `notify:<proposal_id>`. 텍스트·이미지 경로 모두, 제안이 있을 때마다 — 중복은 아래 기기별 1회가 막는다.
-      텍스트 process 잡이 재시도에서 이미 `extracted`인 항목을 만나면 푸시 기록이 없는 proposed 제안을 다시 넣는다(0016, save_fact 커밋 뒤 enqueue 전 종료 대비))
+  → jobs INSERT (kind = notify, lease `notify:<대표 proposal_id>`. **항목당 1개**(2026-10-01): 대표 = 그 항목에서 순번이 가장 작은 제안. 텍스트·이미지 경로 모두 —
+      중복은 아래 기기별 1회가 막는다. 텍스트 process 잡이 재시도에서 이미 `extracted`인 항목을 만나면 대표 제안에 푸시 기록이 없을 때 대표만 다시 넣는다
+      (0016 → 0025, save_facts 커밋 뒤 enqueue 전 종료 대비))
       → worker `notify`가 `_shared/apns.ts`로 사용자의 모든 기기(`devices`, 기기 환경·불일치 시 반대 환경 1회)에 발송(0b).
       기기별 1회(`proposal_pushes`, 0014): 400·403·404·410·413은 `rejected`(재시도 안 함), 429·5xx·연결 오류는 `failed`(잡 재시도 최대 5회).
       잡 임대(180초) 안의 `sending`은 `in_flight`로 보고 잡을 실패시켜 재시도한다. 임대가 지난 `sending`(발송 중 워커 종료)은 다시 가져간다(0016)
       푸시하지 않는 경우: 제안 status ≠ proposed, 백필(captured_at − occurred_at ≥ 3일), 시작·기한이 지난 제안
       (날짜만이면 오늘(서울)은 지나지 않은 것으로 본다)
+      묶음(2026-10-01): notify 잡은 대표 제안의 항목에 딸린 같은 종류의 최신 제안 전부(`worker_get_proposal_bundle`, 순번 순)를 읽어 위 조건으로 푸시할 수 있는
+      일정 제안만 남긴다. 0건이면 건너뛰고(사유는 순번 0의 것), 1건이면 지금과 같은 단건 푸시(그 제안의 id·카테고리), 2건 이상이면 묶음 푸시 1건(§10 `EVENT_BUNDLE`).
+      기기별 1회 기록(`proposal_pushes`)은 대표 제안 id에 남긴다(단건으로 남은 것이 대표가 아니어도)
 ```
 
 서버 규칙 필터와 source: `rules.ts`의 `applyRules`는 source·app_name으로 분기하지 않고 모든 항목에 같은 OTP·카드·계좌·`(광고)` 규칙을 적용한다. 따라서 알림 자동화로 온 문자(`source=NOTIFICATION, app_name=메시지`)도 `MESSAGES`와 같은 규칙을 받는다(2026-09-28 확인, 코드 변경 불필요). 2026-10-01부터 문자는 메시지 트리거로 `source=MESSAGES`로 들어오고 알림 자동화에서 메시지 앱을 뺀다(§5). 그래도 **`NOTIFICATION + app_name=메시지` 취급 규칙은 유지한다** — 09-28~10-01 알림 경로로 쌓인 기존 문자 항목이 있고, 사용자가 알림 자동화에 메시지 앱을 남겨 둘 수도 있다. 연락처 규칙은 기기에서 `title`(표시 이름)로도 비교하므로 알림 경로에서도 `discarded:contact`가 동작한다(실측). **1단계**: source로 문자를 구분하는 코드(분류·추출·검색 표시)는 `NOTIFICATION + app_name=메시지`를 `MESSAGES`와 같이 취급만 한다. 두 경로를 함께 켠 경우의 2건 중복(발신자 번호 ≠ 표시 이름이라 멱등 키가 다름)은 앱별 분리(알림 자동화에서 메시지 앱 제외)로 막고, 서버 중복 제거는 만들지 않는다(2026-10-01).
@@ -383,7 +399,7 @@ jobs 워커  (pg_cron 매분 + 잡 생성 직후 즉시 호출 → Edge: worker.
 | `item_summaries` | item_id(pk, items cascade), summary_enc bytea, keywords text, embedding vector(512) null, model, created_at | 항목별 요약(2026-10-01, §7). **본문과 같은 등급**: `summary_enc`는 사용자 데이터 키 AES-256-GCM(계정 삭제 = crypto-shred), 복호화는 worker·chat만, LLM 전송은 본문 규칙 그대로(OpenAI 추출 호출이 만들고 chat 답변 문서로만 간다, Jev에는 보내지 않는다), 출처·계정 삭제가 함께 지운다(cascade). `keywords`는 원문 삭제 뒤 키워드 검색용 평문(`facts.payload`와 같은 등급의 평문 파생물, §12 통제 1). 시간 만료 없음(영구) — 용량 비우기 3단계만 지운다. `embedding`은 원문·청크가 지워질 때 채운다(§7 지연 임베딩). 검색 대상은 평문 청크가 없는 항목뿐(§9). RLS 자기 행 읽기(앱은 직접 읽지 않고 `/chat/item`으로 받는다) |
 | `capacity_log` | at, scope(null = 운영, 테스트는 테스트 사용자 id), db_bytes, reusable_bytes, effective_bytes, limit_bytes, level(ok/warn/purge/hard), action(measure/purge/purge_hard/stuck/reclaim — stuck = 85~95%인데 1단계 후보 없음, reclaim = 보고 크기 90%), originals, summaries, freed_est, oldest_left, method(pgstattuple/fallback) | 용량 보호 기록(2026-10-01, 아래). 시스템 표(사용자 열 없음, service role 전용). 180일 보관 |
 | `capacity_pushes` | user_id, level(warn/purged/full), window_key, sent_at | 용량 알림 1회 기록(`reauth_pushes`와 같은 방식). warn·full은 7일 창, purged는 비우기 1회마다 |
-| `facts` | item_id, kind, payload jsonb, evidence(원문 인용 ≤300자), status(active/cancelled/superseded), supersedes_id | 추출 결과, 무기한(원문 만료 뒤에도 남는다). evidence가 만료 후 출처 역할. items 행이 지워지면(출처·전체 삭제) 함께 지워진다(`item_id` on delete cascade, 0020) |
+| `facts` | item_id, kind, ordinal(0~4, 2026-10-01), payload jsonb, evidence(원문 인용 ≤300자), status(active/cancelled/superseded), supersedes_id | 추출 결과, 무기한(원문 만료 뒤에도 남는다). evidence가 만료 후 출처 역할. items 행이 지워지면(출처·전체 삭제) 함께 지워진다(`item_id` on delete cascade, 0020). 한 항목에 event fact 최대 5개(순번), 부분 unique (item_id, kind, ordinal) where active(0025) |
 | `purchases` | fact_id, merchant, product[], ordered_at, amount, currency, order_no, status, delivery_status, recurrence | **2단계**(facts 백필 마이그레이션과 함께). 구매·구독. `purchase_evidence(purchase_id, item_id)`로 다대다. 1단계는 `facts(kind=purchase).payload` |
 | `proposals` | fact_id, action(create_event/update_event/create_reminder/complete_reminder), payload, version, status(proposed/confirmed/succeeded/failed/stale/dismissed), eventkit_id, idempotency_key | fact 변경 시 version 증가, 이전 제안은 stale. dismissed = 사용자가 "무시"(알림 액션·제안 시트·"제안" 탭, `dismiss_proposal`, 0021). 무시 뒤 다른 경로로 실제 추가해 보고되면 succeeded로 올린다(`report_execution`) |
 | `executions` | user_id, proposal_id(unique), device_id, eventkit_id, version, executed_at, reported_at | 기기가 쓰기 성공 직후 기록(로컬 SQLite), 서버는 `report_execution`으로 받는다. 보고 실패 복구·version 불일치(§10 순서 5) 판정용 |
@@ -435,7 +451,7 @@ jobs 워커  (pg_cron 매분 + 잡 생성 직후 즉시 호출 → Edge: worker.
         (date_range = 메일·문자를 받은/저장한 기간을 말할 때만. event_range = 질문이 가리키는 일정·기한의 날짜, 없으면 null — 2026-10-01)
      → facts SQL 우선 (구조화 질문. 1단계는 facts(kind=purchase).payload jsonb 조회, 2단계부터 purchases 테이블.
         date_range 는 항상 받은 시각(occurred_at), event_range 는 event·task 의 start·due 에만 — 둘 다 있으면 둘 다 건다.
-        event_range 가 있으면 일정 시작 순 상위 8, 없으면 받은 시각 역순 상위 5 — 0024)
+        event_range 가 있으면 일정 시작 순 상위 8, 없으면 받은 시각 역순 상위 5 — 0024. 상한은 fact 단위라 다건 항목 하나가 여러 칸을 쓴다. 같은 항목의 fact 문서는 한 문서로 합친다(2026-10-01 — 따로 두면 item_id 중복 제거가 두 번째 일정부터 버린다. 인용·👍👎 판정(0.8.3)은 원래 항목 단위라 그대로))
      → 하이브리드: tsvector(simple + pg_trgm) ∪ pgvector cosine, RRF 융합, 상위 12개(기간 필터로 0건이면 기간 없이 1회 더)
         (원문·청크가 지워진 항목은 요약 문서로 참여: 키워드 = item_summaries.keywords, 의미 = 요약 임베딩 — 2026-10-01)
      → memories(active만) 상위 5개 포함. utterances의 question/correction은 검색 풀에서 제외
@@ -475,15 +491,27 @@ jobs 워커  (pg_cron 매분 + 잡 생성 직후 즉시 호출 → Edge: worker.
 
 ## 10. 실행
 
-- 푸시 카테고리 `ADD_EVENT`, `ADD_REMINDER`, `REVIEW`. 액션 "추가"는 `authenticationRequired`, "무시", "앱에서 수정"은 `foreground`. `uncertain`이 있는 제안은 REVIEW로만 보낸다.
+- 푸시 카테고리 `ADD_EVENT`, `ADD_REMINDER`, `REVIEW`, `EVENT_BUNDLE`(2026-10-01, 앱 0.9.0). 액션 "추가"는 `authenticationRequired`, "무시", "앱에서 수정"은 `foreground`. `uncertain`이 있는 제안은 REVIEW로만 보낸다.
 - 제안 푸시 페이로드(0b): `aps.alert` 제목 `일정 제안`·`일정 확인 필요`·`할 일 제안`, 본문 `M월 D일(요) HH:mm · <추출 제목 ≤40자>`
   (원문 본문 금지, §12). `aps.category`: `ADD_EVENT`(시각 있는 시작 + uncertain 없음) · `REVIEW`(날짜만이거나 uncertain 있음) · `ADD_REMINDER`(할 일).
   최상위 키 `proposal_id`, `title`, `start`(`ADD_EVENT`면 항상 `YYYY-MM-DDTHH:mm:ss+09:00`) 또는 `due`. 1단계(M1-②b)부터 `version`(제안 버전 정수)도 싣는다 — 순서 5(오프라인 실행 후 보고 시 불일치 판정)에 쓴다.
+  **묶음 푸시(2026-10-01 사용자 결정, 앱 0.9.0)**: 한 항목에서 푸시할 일정 제안이 2건 이상이면(§7 notify) 알림 1건 — `aps.category` `EVENT_BUNDLE`,
+  `aps.alert` 제목 `일정 제안 N건`, 본문 `<가장 이른 일정의 M월 D일(요) HH:mm 또는 M월 D일(요)> · <그 제목 ≤40자> 외 N−1건`. 최상위 `proposal_id`·`version`·`title`·`start`는
+  가장 이른 일정의 값(하위 호환), `events`는 시작 순 배열(최대 5) — 원소마다 `proposal_id`·`version`·`title`(≤40자)·`start`·`category`(그 일정을 단건으로 보냈을 때의
+  `ADD_EVENT`·`REVIEW`). 5건·40자에서도 4KB 미만. **잠금화면 액션은 없다**(배너 탭 → 시트만): "모두 추가"는 순서 1·4의 마감(조회 5초 + 보고 5초)이 N배가 되어
+  백그라운드 실행 시간 안에 끝난다는 보장이 없고(PoC-5 — 완료 핸들러는 메인에서 정확히 1회), 겹치면 저장 대신 로컬 알림을 띄우는 잠금화면 겹침 규칙(아래)이 N건에서
+  일부 저장 + 겹침 알림 여러 개가 되며, 날짜 여러 개 공지는 회차 중 하나를 고르는 경우가 흔해 전부 넣기가 뜻이 아닐 수 있다. 1건이면 지금과 같다(`ADD_EVENT` 잠금화면
+  "캘린더에 추가" 유지). 0.8.3 이하 앱은 이 카테고리를 등록하지 않아 배너 탭이 앱만 연다 — ADD_EVENT 일정은 제안 탭에 보이지만 날짜만·확인 필요 일정은
+  보이지 않으므로 앱 0.9.0을 서버 배포보다 먼저 올린다
   0단계 앱은 `ADD_EVENT`만 등록하므로 `REVIEW`·`ADD_REMINDER`는 버튼 없는 알림으로 보인다. 제품 앱(1단계 M1)은 세 카테고리를 모두 등록하고
   `ADD_REMINDER`·`REVIEW`는 알림 액션 버튼이 없다(배너 탭은 아래 제안 리뷰의 시트). `ADD_EVENT`의 "무시"는 캘린더 권한이 없어도 남기고 "추가"만 숨긴다
 - 제안 리뷰(1단계, Ruling 8' 2026-09-30): 알림을 놓치거나 잠금화면에서 길게 누르지 않고 배너를 탭하면 등록 수단이 없던 공백을 메운다.
   - **배너 탭**(기본 동작, 제안 id가 있는 알림): 앱을 열고 그 제안의 시트(제목·시각·장소, "캘린더에 추가"·"무시")를 띄운다. 콜드 스타트에서도 대기 딥링크를 보관했다가 UI 준비 뒤 표시한다.
     `REVIEW`·`ADD_REMINDER` 알림의 시트는 "무시"만 둔다(시각을 확정할 수 없어 추가는 2단계 수정 화면).
+    `EVENT_BUNDLE` 알림은 시트 하나에 `events` 순서대로 카드 N장을 두고 카드마다 따로 추가·무시한다. 판정은 목록(50건 제한·ADD_EVENT 조건만)이 아니라 알림에 든
+    제안 id(≤5)의 상태를 직접 조회해서(`proposals?id=in.(…)&select=id,status`, 본인 행, 목록 조회와 같은 5초 마감으로 병렬): status ≠ proposed → "이미 처리됨"(REVIEW 포함),
+    proposed + 목록에 있음 → 서버 값, proposed + 목록에 없음 → 알림 값(안내 문구 없이), `REVIEW` 일정은 "무시"만, 상태 조회 실패 → 위 단건 판정 그대로(목록에 없으면
+    "이미 처리됨", 목록도 못 읽으면 알림 값). 카드마다 겹침 미리 판정·"겹쳐도 추가" 규칙(아래)이 그대로다. 캘린더 권한 안내는 시트 맨 위에 한 번
   - **"무시"**(알림 액션·시트·"제안" 탭 공통): 앱이 사용자 JWT로 `dismiss_proposal(p_proposal)` → `ok`(이미 dismissed여도 ok, 재전송 멱등)·`not_pending`(succeeded·stale 등)·`not_found`. 본인 `proposed` 제안만 `dismissed`가 된다.
   - **제안 탭 전체 무시**(0.5.0): 목록이 있을 때 "전체 무시" → 확인창("대기 중인 제안 N건을 모두 무시할까요?"). 서버 새 경로 없이 앱이 목록의 id마다 `dismiss_proposal`을 반복(동시 2, 요청당 8초 마감), 끝나면 "N건 무시, 실패 M건"을 보이고 새로고침한다. 실패한 행은 남는다.
   - **대기 목록** `list_pending_proposals()`: 본인·`proposed`·푸시 `ADD_EVENT` 조건(create_event, 시각·오프셋 있는 start, uncertain 없음)·start > 지금−1시간·생성 30일 이내, start 오름차순 최대 50행. 행 `{proposal_id, action='ADD_EVENT', title(푸시와 같이 ≤40자), start, end, location, version, created_at}`. 날짜만·확인 필요(REVIEW)·할 일은 목록에 없다(수정 화면은 2단계). 백필 제안(§7, 푸시 안 함)도 조건이 맞으면 목록에 나온다. start·end 는 캘린더상 불가능한 값이면 행 단위로 거른다(start 면 행 제외, end 면 null — 0022).
@@ -520,7 +548,7 @@ jobs 워커  (pg_cron 매분 + 잡 생성 직후 즉시 호출 → Edge: worker.
 
 1단계 제품 번들 ID 는 `com.picpal.eruri`, App Group `group.com.picpal.eruri` 로 새로 등록한다(0단계 PoC 는 이미 등록·TestFlight 배포된 `com.picpal.assistant.poc`·`group.com.picpal.assistant` 유지).
 
-1단계 앱 탭: **채팅 | 제안 | 보관함 | 설정**. "제안" 탭은 `list_pending_proposals` 목록에 행마다 "캘린더에 추가"·"무시", 당겨서·앱 활성화 때 새로고침, 캘린더 전체 접근이 없으면 추가 버튼 대신 권한 안내(§10 제안 리뷰, Ruling 8'). 보관함은 채팅 "보관함에서 보기"로 그 질문의 검색 후보만 보이는 범위 모드가 되고(§9), 항목 상세에 "요약" 절, 설정에 "저장 공간" 절(§8 용량 보호)을 둔다(2026-10-01. 채팅→보관함은 앱 0.7.0, 채팅 "기기 캘린더" 절·제안 카드 상태·겹침 확인(§9·§10)은 0.8.0("겹쳐도 추가" 확인창 생략은 0.8.1, 일정 답 카드는 0.8.2), 요약·저장 공간 화면은 서버 반영 뒤라 0.9.0). 캘린더 권한 문구(`NSCalendarsFullAccessUsageDescription`)는 "등록된 일정을 확인하고 제안된 일정을 추가합니다. 일정 내용은 기기 밖으로 보내지 않습니다."(0.8.0 — 전에는 추가만 적었다).
+1단계 앱 탭: **채팅 | 제안 | 보관함 | 설정**. "제안" 탭은 `list_pending_proposals` 목록에 행마다 "캘린더에 추가"·"무시", 당겨서·앱 활성화 때 새로고침, 캘린더 전체 접근이 없으면 추가 버튼 대신 권한 안내(§10 제안 리뷰, Ruling 8'). 보관함은 채팅 "보관함에서 보기"로 그 질문의 검색 후보만 보이는 범위 모드가 되고(§9), 항목 상세에 "요약" 절, 설정에 "저장 공간" 절(§8 용량 보호)을 둔다(2026-10-01. 채팅→보관함은 앱 0.7.0, 채팅 "기기 캘린더" 절·제안 카드 상태·겹침 확인(§9·§10)은 0.8.0("겹쳐도 추가" 확인창 생략은 0.8.1, 일정 답 카드는 0.8.2), 다건 일정 묶음 알림 시트는 0.9.0, 요약·저장 공간 화면은 서버 반영 뒤라 0.10.0). 캘린더 권한 문구(`NSCalendarsFullAccessUsageDescription`)는 "등록된 일정을 확인하고 제안된 일정을 추가합니다. 일정 내용은 기기 밖으로 보내지 않습니다."(0.8.0 — 전에는 추가만 적었다).
 
 **제품 분리 시점과 방식** (2026-09-30 결정): 1단계 Task 1(서버)·Task 2(앱)가 분리 자체다.
 
@@ -771,7 +799,7 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 | 2c | 필터에 `event_from/to` → facts를 일정 날짜로 거름(§9). 받은 기간과 일정 기간은 SQL 에서 분리(외부 리뷰 반영) | chat 함수 + `search_facts` 마이그레이션 0024(`fact_when`은 0019) | 불필요 |
 | 3 | **기기 안 결합**: 서버는 일정 기간(`schedule`)만 주고 앱이 EventKit을 읽어 답 아래에 표시. 캘린더 내용은 서버·LLM으로 가지 않는다(§9, §12 통제 2) | chat 응답 필드 1개 + 앱 0.8.0 | 불필요(등급 변화 없음) |
 | 4 | 겹침이면 저장하지 않는다. 앱 안은 확인창, 잠금화면은 로컬 알림으로 앱 확인 유도(§10). 0.8.1: 겹침을 보고 "겹쳐도 추가"를 누르면 확인창 없이 저장 | 앱 0.8.0·0.8.1 | 불필요 |
-| 5 | 버전: 서버 수정은 앱 버전 없음. 앱 0.8.0 = 캘린더 표시 + 겹침 확인, 요약·저장 공간 화면(보관 계획 R-B9)은 0.9.0(§11) | §11 | 불필요 |
+| 5 | 버전: 서버 수정은 앱 버전 없음. 앱 0.8.0 = 캘린더 표시 + 겹침 확인, 요약·저장 공간 화면(보관 계획 R-B9)은 0.10.0(0.9.0은 다건 일정, 2026-10-01)(§11) | §11 | 불필요 |
 
 - 캘린더 결합 방식 비교(Fable C): 앱이 모든 질문에 일정을 첨부(과수집, 기각) · 두 번 왕복해 LLM이 섞어 답함(UC-4로 보류) · 앱이 날짜 표현을 직접 해석(서버 필터와 어긋남, 기각) · **기기 안 결합(채택)**.
 - 보관 계획 트랙 B와의 관계: R-B4(요약 검색)는 `hybrid_search`를 다시 만들므로 2b의 숫자 어절 조건을, `deps.search` 교체본은 2의 상대 컷을 그대로 옮긴다(보관 계획 R-B4에 적었다). 마이그레이션 번호는 원장 Ruling M#대로 다음 빈 번호라 트랙 B 예정 번호가 두 칸 밀린다(이 계획이 0023·0024를 쓴다).
@@ -793,6 +821,26 @@ Outlook 커넥터 인터페이스는 만들지 않는다. 필요해지면 그때
 - **감수**: 문자마다 배너, 띄어쓰기 없는 짧은 문자("네" 등)는 조건에 안 걸려 미수집.
 - 기존 데이터: 09-28~10-01 알림 경로로 들어온 문자(`source=NOTIFICATION, app_name=메시지`)가 남아 있으므로 이 조합을 `MESSAGES`와 같이 취급하는 규칙(서버 규칙 필터·Jev 메신저 판정·`SourceLabel`·보관함 출처 탭, §7)은 **유지**한다.
 - 가이드 `docs/superpowers/reports/2026-09-27-shortcuts-setup-guide.html`을 자동화 2개 흐름으로 고쳤다. 앱 코드는 바꾸지 않는다(`CaptureIntent`의 `source` 파라미터에 사용자가 `MESSAGES`를 넣는다).
+
+### 2026-10-01 다건 일정·묶음 알림 (사용자 결정, 앱 0.9.0)
+
+실사용 문자 1건(날짜 여럿)이 일정 제안 1건만 만든 원인은 둘이었다(`.context/sms-multidate.report.md` — 원문 없이 길이·id·상태만): 수집에서 알림 트리거가 본문을 255자로 잘랐고(위 "수집 자동화 앱별 분리"로 해결 — 문자는 원문 전체), 그와 별개로 스키마(단일 객체)·지시문("하나를 골라")·`save_fact`(같은 항목·같은 종류 active fact 1개)가 모두 "항목당 하나"로 설계돼 있었다. 결정: event 최대 5개(별개 일정은 각각, 같은 행사 기간은 하나, 부수 일시는 일정 아님, 넘치면 시작이 이른 5개), 연도 없는 날짜는 받은 해(단건·다건, 지난 날짜여도 내년으로 넘기지 않음, 원문의 연도 단서는 따름 — 지난 일정은 제안만 남고 푸시 없음), 행사 나열 문자도 최대 5건(고르는 것은 사용자), task·purchase 1개, 알림은 항목당 1개 — 2건 이상이면 `EVENT_BUNDLE` 묶음(잠금화면 액션 없음, 배너 탭 → 시트 N장, 카드 판정은 제안 id 상태 직접 조회), 1건이면 그대로(§7·§10). 저장은 한 트랜잭션(`save_facts`, 0025). 기존 항목은 다시 추출하지 않는다. 앱 0.9.0을 서버 배포보다 먼저 올린다(0.8.3 이하는 묶음 속 확인 필요 일정을 보이지 못한다). 계획 `docs/superpowers/plans/2026-10-01-multi-event.md`. 영향: 출력 토큰 상한 512 → 2,048(상한은 잘림 방지 — 실사용량만 과금, 평균·최대 출력은 평가 기록 `MEV-eval`), 채팅 facts 상한(5·8)은 fact 단위라 다건 항목이 여러 칸을 쓴다, M2 검색 평가 ⑩b — 코퍼스가 고정이면 기준선은 같고, 배포 뒤 다건 항목이 facts 칸을 여러 개 쓰므로 ⑩b 기록에 실행 시각·배포 시각을 적는다. 회귀 위험은 공지형 문자 오분할·장문 출력 잘림 — 합성 공지 22종 × 3회 실제 모델 평가(`supabase/eval/run-multi-event-eval.ts`)로 게이트한다.
+
+### 외부 리뷰 반영 (다건 일정 계획, Codex gpt-6-astra · Fable, 2026-10-01)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| 1 | 묶음 카드 상태를 50건 제한 목록으로 판정(Codex 1) | 반영(경량) — 알림의 제안 id ≤5 상태를 REST 로 직접 조회, 새 RPC 없음(§10). "대기 51건"은 단위 테스트만 |
+| 2 | 서버 롤백 절차(Codex 2) | 반영(하향) — DB 는 되돌리지 않고 옛 워커 재배포·전진 수정 기준만(계획 T6). "다건 추출만 끄는 복구 버전"은 미반영(옛 워커 재배포가 그 역할) |
+| 3 | 장문·5건 출력 상한(Codex 3 · Fable N1) | 반영 — 상한 2,048, evidence 80자 지시, 장문 사례·`error` 코드 |
+| 4 | 날짜 접두 비교가 시각 환각 통과(Codex 4) | 반영 — 날짜만 기대는 완전 일치, 원인 코드 `time` |
+| 5 | 6개 이상일 때 고르는 5개(Codex 5) | 반영 — 지시문 "시작이 이른 5개" + 섞인 순서 사례 |
+| 6 | 시드·G1 불일치(Codex 6) | 반영 — 출력 디렉터리 생성, 시드를 시작 순으로 |
+| 7 | 연도 없는 지난 회차가 내년으로(Fable N2) | 사용자 결정으로 대체 — 버리지 않고 연도 없는 날짜는 받은 해(단건·다건, 연도 단서는 따름), 지난 일정은 푸시 없음 |
+| 8 | 전제 "입력 잘림 없음"이 §16 과 모순(Fable N3) | 반영 — 위 소절 문구 |
+| 9 | 게이트 재시드가 앱 세션을 끊음(Fable N4) | 반영 — 비밀번호 불변 `testUserId`, 시드 한 번에 두 항목 |
+| 10 | 내 일정이 아닌 행사 목록 증폭(Fable N5) | 반영 — 광고 라인업 `none`, 기관 월간 소식은 최대 5건(사용자 결정 — 고르는 것은 사용자, 불편하면 그때 수정) |
+| 11 | 배포 순서·실기기 최소화·`save_facts` payload 검증·시트 식별·grep 기대(Fable N6~N10) | 반영 |
 
 ### 플랜 B: 로컬 우선 구조 (미채택, 신뢰 문제 발생 시 전환)
 
