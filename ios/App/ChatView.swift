@@ -1,7 +1,7 @@
 import SwiftUI
 import EruriCore
 
-/// 채팅(스펙 §9): 질문 → 답변 + 출처(탭하면 원문) + 인용마다 👍/👎(eval_judgments, §9 평가 절차 4) + 인용 항목의 제안 카드(Ruling 8)
+/// 채팅(스펙 §9): 질문 → 답변 + 인용 항목의 제안 카드(Ruling 8) + 답 맨 아래 아이콘 막대(복사·👍·👎 — eval_judgments, §9 평가 절차 4, 0.8.3)
 /// + 일정 질문이면 "기기 캘린더" 절(§9 일정 질문과 기기 캘린더 — 기기 안에서만 읽는다)
 struct ChatView: View {
   struct Turn: Identifiable {
@@ -17,6 +17,8 @@ struct ChatView: View {
   @State private var busy = false
   @State private var judged: [String: Bool] = [:]      // "<answer_id>|<item_id>" → ok
   @State private var judging: Set<String> = []         // 기록 요청 중인 키 — 연타가 도착 순서 경합을 만들지 않게 막는다
+  @State private var judgeSheet: JudgeSheet.Model?     // 👎 시트: 인용 항목별 관련 있음/없음. 닫기만 하면 기록하지 않는다
+  @State private var copied: String?                   // 방금 복사한 answer_id — 잠깐 체크 아이콘으로 바꾼다
   @State private var adds: [String: AddState] = [:]    // 제안 id → 캘린더 추가 진행·결과
   struct ScrollRequest: Equatable { let id: UUID; let seq: Int }
   @State private var scrollRequest: ScrollRequest?     // 보낼 때·답이 올 때 그 질문이 보이게(턴이 화면보다 길면 맨 위, 0.8.2 — 카드가 입력 패널·키보드 뒤에 깔리지 않게)
@@ -44,6 +46,7 @@ struct ChatView: View {
         .scrollBounceBehavior(.always)   // 대화가 비었거나 짧아 넘치지 않아도 끌려서 아래로 쓸면 키보드가 내려간다
         .simultaneousGesture(TapGesture().onEnded { inputFocused = false })   // 목록 탭은 행 버튼·링크를 막지 않고 포커스만 푼다
         .safeAreaInset(edge: .bottom) { inputPanel }
+        .sheet(item: $judgeSheet) { m in JudgeSheet(model: m) { record(m.answerID, $0) } }
         .confirmationDialog(ProposalFlow.confirmTitle(confirm?.conflicts ?? []),
                             isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
                             titleVisibility: .visible, presenting: confirm) { c in
@@ -73,6 +76,17 @@ struct ChatView: View {
   private var inputPanel: some View {
     VStack(alignment: .leading, spacing: 10) {
       TextField("질문하기", text: $input, axis: .vertical).lineLimit(1...5).focused($inputFocused)
+        // 하드웨어 키보드 Return(0.8.3): 보내기, Shift+Return 줄바꿈, 한글 조합 중이면 확정만. onKeyPress 는 하드웨어 키만 받아 화면 키보드는 그대로다.
+        // 처리하지 않으면 세로 TextField 가 편집을 끝내 커서만 사라졌다(0.8.2 실기기)
+        .onKeyPress(.return, phases: .down) { press in
+          switch ChatInput.onReturn(shift: press.modifiers.contains(.shift), composing: TextInputBridge.isComposing, canSend: canSend) {
+          case .commit: TextInputBridge.commit()
+          case .newline: TextInputBridge.insertNewline()
+          case .send: send(keepFocus: true)              // 하드웨어 키보드면 화면 키보드가 없어 포커스를 남겨 이어 묻게 한다
+          case .ignore: break
+          }
+          return .handled
+        }
         .padding(.horizontal, 6).padding(.top, 4)
       if let n = dictation.state.notice { Text(n).font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 6) }
       HStack(spacing: 10) {
@@ -89,7 +103,7 @@ struct ChatView: View {
         .accessibilityLabel(dictation.recording ? "받아쓰기 멈춤" : "음성으로 입력")
         // 라이트 검정 원·흰 화살표, 다크 흰 원·검정 화살표. plain 스타일로 강조색(tint)을 막고, 글래스 안에서 primary 채움이
         // 비브런시로 옅은 회색이 되므로(시뮬레이터 스크린샷 확인) 모드별 검정·흰색을 직접 쓴다
-        Button(action: send) {
+        Button { send() } label: {
           roundIcon("arrow.up", fill: scheme == .dark ? Color.white : Color.black, tint: scheme == .dark ? Color.black : Color.white)
         }
           .buttonStyle(.plain).disabled(!canSend).opacity(canSend ? 1 : 0.3).accessibilityLabel("보내기")
@@ -110,21 +124,6 @@ struct ChatView: View {
   @ViewBuilder private func answerRows(_ t: Turn, _ a: ChatReply.Answer) -> some View {
     // 거절이어도 답 문구는 그대로(Codex #4). 기기 캘린더 절이 아래에서 "이 기간 일정 N건"을 따로 알린다
     Text(a.answer)
-    ForEach(a.citations) { c in
-      HStack {
-        NavigationLink {
-          ItemDetailView(itemID: c.item_id)
-        } label: {
-          VStack(alignment: .leading) {
-            Text(c.title ?? "(제목 없음)").font(.caption)
-            Text("\(SourceLabel.label(source: c.source, appName: c.app_name)) · \(ChatReply.seoulLabel(c.occurred_at))\(c.expired ? " · 원문 만료됨" : "")")
-              .font(.caption2).foregroundStyle(.secondary)
-          }
-        }
-        judgeButton(a.answer_id, c.item_id, true, "👍")
-        judgeButton(a.answer_id, c.item_id, false, "👎")
-      }
-    }
     // 스펙 §9 채팅 → 보관함 보기: 인용 ∪ 구별 facts ∪ 관련도 컷(서버 S1). 거절 답변·후보 없음이면 숨긴다(0.7.1)
     if let ids = a.archiveIDs {
       let scope = Archive.Scope(question: t.question, ids: ids)
@@ -136,6 +135,42 @@ struct ChatView: View {
     ForEach(Array(t.cards.enumerated()), id: \.element.pid) { pair in cardRows(t, pair.element, first: pair.offset == 0) }
     if t.cardsMore > 0 { Text(ScheduleCard.moreText(t.cardsMore)).font(.caption2).foregroundStyle(.secondary) }
     if a.schedule != nil, t.cards.isEmpty || t.calendar != nil { calendarRows(t, a) }
+    feedbackBar(a)
+  }
+
+  /// 답 맨 아래 아이콘 막대(§9, 0.8.3 — 근거 줄을 대신한다): 복사 · 👍 · 👎. 거절(인용 없음)이면 복사만.
+  /// 👍 = 인용 항목 전부 관련 있음, 👎 = 항목별 시트. 다시 누르면 바꾼다(merge-duplicates). 버튼은 borderless 로 행 탭이 아니라 자기 탭으로 눌린다
+  private func feedbackBar(_ a: ChatReply.Answer) -> some View {
+    let items = a.citations.map(\.item_id)
+    let verdict = ChatFeedback.verdict(answer: a.answer_id, items: items, judged: judged)
+    let busy = items.contains { judging.contains(ChatFeedback.key(answer: a.answer_id, item: $0)) }
+    return HStack(spacing: 4) {
+      barButton(copied == a.answer_id ? "checkmark" : "doc.on.doc", on: false, label: "답 복사") {
+        UIPasteboard.general.string = a.answer
+        copied = a.answer_id
+        Task { try? await Task.sleep(for: .seconds(1.5)); if copied == a.answer_id { copied = nil } }
+      }
+      if ChatFeedback.showsJudge(citationCount: items.count) {
+        barButton(verdict == .up ? "hand.thumbsup.fill" : "hand.thumbsup", on: verdict == .up, label: "좋은 답") {
+          record(a.answer_id, ChatFeedback.upMarks(items: items))
+        }
+        .disabled(busy)
+        barButton(verdict == .down ? "hand.thumbsdown.fill" : "hand.thumbsdown", on: verdict == .down, label: "근거 평가") {
+          judgeSheet = JudgeSheet.Model(answerID: a.answer_id, citations: a.citations,
+                                        marks: ChatFeedback.sheetDefaults(answer: a.answer_id, items: items, judged: judged))
+        }
+        .disabled(busy)
+      }
+      Spacer()
+    }
+  }
+
+  private func barButton(_ symbol: String, on: Bool, label: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Image(systemName: symbol).font(.footnote).foregroundStyle(on ? Color.accentColor : Color.secondary)
+        .frame(width: 32, height: 28).contentShape(Rectangle())
+    }
+    .buttonStyle(.borderless).accessibilityLabel(label)
   }
 
   /// "기기 캘린더" 절(§9 일정 질문과 기기 캘린더). 전체 접근이 없으면(추가만 허용 포함) 절 대신 안내 한 줄 — 허용하면 이 턴을 다시 읽는다
@@ -268,32 +303,33 @@ struct ChatView: View {
     }
   }
 
-  private func judgeButton(_ answer: String, _ item: String, _ ok: Bool, _ label: String) -> some View {
-    let key = "\(answer)|\(item)"
-    return Button(label) {
+  /// 인용 항목별 판정 기록(eval_judgments, 0018). 항목마다 요청하고, 실패한 항목만 표시를 되돌린다
+  private func record(_ answer: String, _ marks: [String: Bool]) {
+    for (item, ok) in marks {
+      let key = ChatFeedback.key(answer: answer, item: item)
+      guard !judging.contains(key) else { continue }
       let before = judged[key]
       judged[key] = ok
       judging.insert(key)
       Task {
         defer { judging.remove(key) }
-        // 같은 인용을 다시 누르면 바꾼다(unique user_id·question_id·item_id, merge-duplicates). 실패하면 표시를 되돌린다
+        // 같은 인용을 다시 고르면 바꾼다(unique user_id·question_id·item_id, merge-duplicates). 실패하면 표시를 되돌린다
         let r = await API.send("rest/v1/eval_judgments?on_conflict=user_id,question_id,item_id", method: "POST",
                                json: ["question_id": answer, "item_id": item, "ok": ok],
                                headers: ["Prefer": "resolution=merge-duplicates,return=minimal"])
         if !(200..<300).contains(r?.status ?? -1) { judged[key] = before }
       }
     }
-    .buttonStyle(.borderless).disabled(judging.contains(key)).opacity(judged[key] == nil || judged[key] == ok ? 1 : 0.3)
   }
 
-  private func send() {
+  private func send(keepFocus: Bool = false) {
     let q = input.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !q.isEmpty, !busy else { return }
     dictation.stopIfRecording()
     // 서버 한도(⑧b bad_question). 넘으면 입력을 지우지 않고 고칠 수 있게 둔다
     guard q.utf16.count <= 500 else { turns.append(Turn(question: q, error: ChatReply.errorMessage(status: 400))); return }
     input = ""
-    inputFocused = false                                   // 보내면 키보드를 내린다(답·카드가 키보드 뒤에 깔리지 않게, 0.8.2)
+    if !keepFocus { inputFocused = false }                 // 보내면 키보드를 내린다(답·카드가 키보드 뒤에 깔리지 않게, 0.8.2). 하드웨어 Return 은 남긴다
     turns.append(Turn(question: q))
     let idx = turns.count - 1
     scroll(to: turns[idx].id)
@@ -317,6 +353,40 @@ struct ChatView: View {
           turns[idx].error = ChatReply.errorMessage(status: r.status)
         }
         return
+      }
+    }
+  }
+}
+
+/// 👎 시트(§9, 0.8.3): 인용 항목마다 제목·출처·시각·원문 보기와 "관련 있음" 토글. 저장할 때만 항목별로 기록하고, 닫기만 하면 아무것도 기록하지 않는다
+struct JudgeSheet: View {
+  struct Model: Identifiable { var id: String { answerID }; let answerID: String; let citations: [ChatReply.Citation]; var marks: [String: Bool] }
+  @State var model: Model
+  let onSave: ([String: Bool]) -> Void
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    NavigationStack {
+      List {
+        ForEach(model.citations) { c in
+          Section {
+            NavigationLink {
+              ItemDetailView(itemID: c.item_id)
+            } label: {
+              VStack(alignment: .leading, spacing: 2) {
+                Text(c.title ?? "(제목 없음)").font(.subheadline)
+                Text("\(SourceLabel.label(source: c.source, appName: c.app_name)) · \(ChatReply.seoulLabel(c.occurred_at))\(c.expired ? " · 원문 만료됨" : "") · 원문 보기")
+                  .font(.caption2).foregroundStyle(.secondary)
+              }
+            }
+            Toggle("관련 있음", isOn: Binding(get: { model.marks[c.item_id] ?? false }, set: { model.marks[c.item_id] = $0 }))
+          }
+        }
+      }
+      .navigationTitle("근거 평가").navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) { Button("닫기") { dismiss() } }
+        ToolbarItem(placement: .confirmationAction) { Button("저장") { onSave(model.marks); dismiss() } }
       }
     }
   }
