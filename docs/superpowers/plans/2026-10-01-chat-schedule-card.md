@@ -12,7 +12,7 @@
 
 **출발점:** main `8ab7999` 위. 앱 0.8.1(`167653c`: "겹쳐도 추가" 확인창 생략), 서버는 S3(`cd18179`, `schedule`) 배포 상태. 0.8.1 시뮬레이터 게이트 결과 `.context/sim-gate-081.report.md`(채팅 카드 버튼·"설정에서 허용하기" 1회 탭 무반응), 실기기 확인 2026-10-01 12:31(카드 "겹쳐도 추가" 탭 무반응·텍스트처럼 보임).
 
-**리뷰·실행:** 설계안은 Fable 리뷰를 거쳤고 그 권장안을 기본으로 채택했다(끝 "Fable 리뷰 반영" 절). 계획 리뷰(Codex → Fable)를 더 돌릴지는 메인이 정한다. 실행은 SDD, 원장 `.superpowers/sdd/2026-10-01-chat-schedule-card/progress.md`(상위 원장 `.superpowers/sdd/2026-09-30-phase1/progress.md`의 Rulings 승계).
+**리뷰·실행:** 설계안은 Fable 리뷰를 거쳤고 그 권장안을 기본으로 채택했다(끝 "Fable 리뷰 반영" 절). 이 계획은 Codex(gpt-6-astra) → Fable 계획 리뷰를 거쳐 이 판에 반영했다(끝 "계획 리뷰 반영" 절 — 판정이 갈리면 Fable 판정을 따랐다. T0 Step 6이 스펙 §16에도 적는다). Fable 최종 권장대로 추가 리뷰 없이 SDD로 간다. 실행은 SDD, 원장 `.superpowers/sdd/2026-10-01-chat-schedule-card/progress.md`(상위 원장 `.superpowers/sdd/2026-09-30-phase1/progress.md`의 Rulings 승계).
 
 **태스크:** `T0` 스펙 → `T1` EruriCore `ScheduleCard`(TDD) → `T2` 앱 카드(조회·뷰·버튼 스타일·스크롤·권한 안내 버튼) → `T3` 0.8.2·시뮬레이터 게이트·업로드·실기기 게이트. 설계 초안의 T2(조회)·T3(뷰)·T4(권한 안내)는 **T2 하나로 합쳤다** — 조회만 바꾸면 `ChatView`가 옛 카드와 새 모델을 함께 들고 있어야 해 따로 검증할 산출물이 없고, 권한 안내 수정은 3줄이라 따로 리뷰할 단위가 아니다. 게이트(초안 T5)는 T3.
 
@@ -20,7 +20,7 @@
 
 - **범위: 앱만.** 서버(`supabase/**`) 코드·마이그레이션·배포 없음. chat 응답은 이미 `proposals`(인용 항목의 `proposed`·`succeeded`, 0017 `chat_proposals`)·`citations`(`item_id`·`source`·`app_name`·`occurred_at`)·`schedule`을 준다. "무시" 상태 카드(서버가 dismissed 를 주지 않음)는 0.8.2에서 하지 않는다(Fable #6).
 - **버전(AGENTS.md §8):** `MARKETING_VERSION: 0.8.2`(수정 = 패치), T3에서 올린다. 빌드 번호는 `testflight.sh` 기본값(`date +%Y%m%d%H%M`). 메이저 금지.
-- **개인정보(AGENTS.md §7, 스펙 §12 통제 2):** 기기 캘린더의 제목·시각·메모는 기기 밖으로 보내지 않는다 — chat 요청 본문은 `{"question": q}` 그대로, `Trace`·`device_traces`에 일정 없음, `DiagLog`에는 개수만(`CAL card n=… more=… access=…`). 0.8.2부터 **일정 질문이 아닌 답에도 그날 캘린더 제목이 화면에 뜬다** — 기기 안 화면 표시뿐이라 §12 등급 변화는 없지만 §9 문구가 바뀌므로 T0이 먼저다. 원문은 기존 "원문 보기" → `ItemDetailView`(`/chat/item`, 복호화 감사) 경로뿐, 새 감사 행·새 수신자 없음. 응답의 `sender`는 디코드하지 않는다. 테스트 픽스처·게이트 데이터는 합성 문구(`합성` 포함)만, 기준 날짜 **2026-10-04(일)**(Fable #11 — 설계안 예시의 "토"는 틀림).
+- **개인정보(AGENTS.md §7, 스펙 §12 통제 2):** 기기 캘린더의 제목·시각·메모는 기기 밖으로 보내지 않는다 — chat 요청 본문은 `{"question": q}` 그대로, `Trace`·`device_traces`에 일정 없음, `DiagLog`에는 개수와 기간 종류만(`CAL card n=… more=… access=… sched=none|day|wide`). 0.8.2부터 **일정 질문이 아닌 답에도 그날 캘린더 제목이 화면에 뜬다** — 기기 안 화면 표시뿐이라 §12 등급 변화는 없지만 §9 문구가 바뀌므로 T0이 먼저다. 원문은 기존 "원문 보기" → `ItemDetailView`(`/chat/item`, 복호화 감사) 경로뿐, 새 감사 행·새 수신자 없음. 응답의 `sender`는 디코드하지 않는다. 테스트 픽스처·게이트 데이터는 합성 문구(`합성` 포함)만, 기준 날짜 **2026-10-04(일)**(Fable #11 — 설계안 예시의 "토"는 틀림).
 - **Gmail 측정 창(Gmail 계획 Global Constraints):** T0 = **2026-10-01 14:00 KST**(③b2 시작) ~ ③b3 백필 완료 기록까지가 ③b2 창, ③c1 = T0+6일(≈10-07 14:00), ③c2 = T0+8일(≈10-09 14:00). 실제 시각은 게이트 전 메인이 `.superpowers/sdd/2026-09-30-phase1-gmail/progress.md`·`docs/superpowers/phase1/gates.md`로 확인한다.
   - 실기기 게이트(T3 D1·D2)는 실사용자 제안을 쓰거나(`send-phrases --only push`면 실사용자 `items`·`jobs`·`proposals`를 만든다) 실사용자 제안을 `succeeded`로 바꾼다 → **③b2 창 밖**, ③c1·③c2 측정 시각과 **30분 이상** 떨어뜨린다.
   - 시뮬레이터 게이트(T3 G1~G7)는 테스트 사용자만 쓰지만 시드 항목이 배포 워커 잡·LLM 슬롯을, 채팅 질문이 LLM 슬롯을 쓴다 → ③b2 창(백필 진행 중 지연 측정)에도 **겹치지 않게** 한다.
@@ -56,7 +56,9 @@
 3. **같은 예약의 재안내 문자**: 재안내 문자가 다른 제안(pid 다름, 제목 조금 다름)이 되어 첫 제안이 넣은 일정과 같은 시각에 걸린다. 사람은 "중복일 수 있다"는 신호를 기대한다 → 겹친 일정이 다른 ERURI 표식이고 시작(분)이 같으면 "(같은 일정일 수 있음)", 버튼은 남긴다(T1 `testStatus` `reNotice`).
 4. **자정을 걸친·여러 날·종일 일정, 기기 시간대가 서울이 아님**: 전날 23:00–01:00 일정을 "23:00–01:00"으로만 쓰면 오독한다. 해외에서 기기 시간대가 달라도 서울 날짜로 묶여야 한다 → 그날 안이면 `HH:mm–HH:mm`, 걸치면 `M/d HH:mm–M/d HH:mm`, 종일은 "종일"(겹침 아님), 모든 포매터는 서울 고정(T1 `testDayLines`·`testStatusText` `night`).
 5. **주간 질문의 기간 목록이 사라진다**: "다음 주 일정"에 카드가 붙었을 때 카드 하루만 보이면 0.8.0 C1-1(기간 목록)이 회귀한다. 하루 질문에서는 같은 목록이 두 번 보이면 안 된다 → 카드가 있고 `schedule`이 없거나 카드 날짜 하루면 카드만, 더 넓으면 카드 + "기기 캘린더" 절(T1 `testShowsRangeSection`, T3 G5).
-6. **키보드가 올라온 채 카드 버튼을 누른다**: 입력창을 다시 눌러 키보드가 올라온 상태에서 카드 버튼을 한 번 누른다. 0.8.1 은 여기서 이벤트가 없었다 → 한 번에 "추가하는 중…"이 떠야 한다(T3 G1a, 실기기 D1). 순수 함수로는 잴 수 없어 XCUITest·실기기로만 닫는다.
+6. **키보드가 올라온 채 카드 버튼을 누른다**: 입력창을 다시 눌러 키보드가 올라온 상태에서 카드 버튼을 한 번 누른다. 0.8.1 은 여기서 이벤트가 없었다 → 한 번에 "추가하는 중…"이 떠야 한다(T3 G1a, 실기기 D1 — 둘 다 탭 직전 키보드가 있었는지 기록). 순수 함수로는 잴 수 없어 XCUITest·실기기로만 닫는다.
+7. **매일 반복 일정과 겹침**: 매일 15:00 반복 일정이 제안과 겹친다. 반복 일정은 회차마다 id(`eventIdentifier`)가 같고 카드는 ±1일을 읽어, id 로만 겹침을 가리면 전날·당일·다음날 회차가 모두 주황 줄이 된다 → 겹친 당일 회차 한 줄만(T1 `testDayLines` daily — 겹침은 값 비교).
+8. **예전 예약과 새 예약이 같이 인용됨**: "합성의원 예약 언제야?"에 지난 예약 문자·90일 백필 메일이 같이 인용된다. 시작 순이면 지난 카드가 앞에 서고 4건째부터 추가할 수 있는 미래 카드가 "N건 더 있음"으로 밀린다 → 다가올 일정이 맨 위(시작 순), 지난 일정은 뒤(최근 것부터)(T1 `testPick` mixed).
 
 ---
 
@@ -90,7 +92,8 @@ docs/superpowers/phase1/gates.md                                       # T3 행 
 | 6 | T3-c 실기기 D1·D2 | 업로드 처리 끝 | 실기기(사용자 + `sonnet`) | ③b2 창 밖, ③c1·③c2와 30분 이상 |
 
 - T1·T2는 같은 pane에서 차례로(같은 시뮬레이터, `ChatView`는 T2만 편집). 서버 pane과 겹칠 일이 없다(서버 변경 없음).
-- G1이 실패하면 T3를 멈추고 메인이 T2 수정 태스크를 연다(T2 "예비 조치" 단계).
+- G1이 1회 탭에 실패하면 T3를 멈추고 메인이 T2 수정 태스크를 연다(T2 "예비 조치" 단계). G1b가 스크롤(버튼이 화면 밖)로만 실패하면 스크롤만 고치는 수정 태스크다(T3 Step 4).
+- G2·G3 스크린샷은 업로드 전에 사용자에게 먼저 보인다(T3 Step 5b) — D2에서 처음 보면 문구 수정이 빌드 하나를 더 낳는다.
 - 사용자 확인이 필요한 항목: 없음(개인정보 등급 변화 없음). D2(맥락이 읽히는지)는 사용자 판단 자체가 게이트다.
 
 ---
@@ -123,7 +126,7 @@ docs/superpowers/phase1/gates.md                                       # T3 행 
 - [ ] **Step 2: §9 새 항 "일정 답 카드" (469행 바로 아래에 한 줄로 추가)**
 
 ```
-- **일정 답 카드(2026-10-01 실기기 피드백, 앱 0.8.2)**: 답의 인용 항목에 일정 제안(`create_event`, 서버가 주는 `proposed`·`succeeded`)이 있으면 답 아래에 제안마다 카드 한 장을 둔다. 카드는 세 부분이다 — ① **찾은 곳**: "문자에서 찾은 일정"(출처는 같은 응답 `citations`에서 `item_id`로 찾은 `source`·`app_name` — 문자·메시지 앱 알림 "문자", Gmail "메일", 그 밖의 앱 알림 "<앱 이름> 알림", 공유 "공유한 내용", 못 찾으면 "저장된 정보"), 추출한 일정 "10/4(일) 15:30 제목"(날짜만이면 "시간 미정"), "10/1 받은 문자 · 원문 보기"(원문은 기존 `ItemDetailView`·`/chat/item` 경로) ② **"내 캘린더 · 10/4(일)"**: 제안 날짜의 서울 하루 일정 — **일정 질문이 아니어도(`schedule` 없음) 읽는다**. 겹치는 일정은 어느 캘린더든 맨 위(주황), 그다음 종일("종일 제목"), 그다음 시작 순. 생일·구독 캘린더와 취소된 일정은 뺀다(겹친 일정은 빼지 않는다). 그날 안이면 `HH:mm–HH:mm 제목`, 날짜를 걸치면 `M/d HH:mm–M/d HH:mm 제목`, 최대 4줄 + "외 N건", 없으면 "이 날 등록된 일정 없음" ③ **상태**: 아래 순서에서 처음 걸리는 하나. 1) 이 제안 표식 일정이 같은 시작(분) "✅ 캘린더에 등록됨" 2) 표식 일정의 시작이 다름 "✅ 캘린더에 등록됨 · 캘린더에서는 10/5(월) 10:00" 3) 표식 없이 시작(분)·제목이 같은 일정 "✅ 같은 일정이 캘린더에 있음" 4) 표식을 못 찾았는데 이 기기 실행 기록이 있거나 서버 상태가 `succeeded` "이전에 추가한 일정 · 이 날 캘린더에서는 찾지 못함(옮겼거나 지웠을 수 있음)" — 1~4는 버튼 없음 5) §10 겹침 "⚠️ 아직 캘린더에 없음 · 겹치는 일정 15:00–16:00 제목"(여러 건이면 " 외 N건", 겹친 일정이 다른 ERURI 제안 표식이고 시작(분)이 같으면 끝에 " (같은 일정일 수 있음)") + [겹쳐도 추가] 6) "아직 캘린더에 없음" + [캘린더에 추가]. 표식 판정은 카드 날짜 ±1일 범위, 취소된 일정은 없는 것으로 본다. 서버 `succeeded`만으로 "등록됨"이라 하지 않는다(캘린더에서 지웠거나 다른 기기에서 넣었을 수 있다). 시각 없는 제안은 버튼 없이 "날짜만 확인돼 바로 추가하지 않음", `uncertain`이 있으면 "내용 확인이 필요해 바로 추가하지 않음", 지난 일정(시각 < 지금, 날짜만은 그날이 끝남)은 "지난 일정". 무시한 제안은 서버가 주지 않아 카드가 없다. 제안이 여럿이면 `schedule`이 있을 때 그 기간 안에서 시작하는 것만, 시작 순(같으면 `succeeded` 먼저), 같은 시작(분)·제목은 한 장, 최대 3장 + "일정 제안 N건 더 있음". 카드가 있고 `schedule`이 없거나 카드 날짜 하루와 같으면 위 "기기 캘린더" 절을 따로 그리지 않고, 더 넓은 기간(주간 질문)이면 카드 아래에 절을 그대로 둔다. 카드 상태는 미리 보기이고 최종 판정은 저장 직전 §10 순서(`AddEventGate`)다. 답 문장의 시각과 카드의 추출 시각이 달라도 검출하지 않는다 — 두 값이 화면에 같이 보이고 원문 보기로 확인한다. 캘린더 전체 접근이 없으면 ①은 그대로, ② 자리에 첫 카드만 허용·설정 안내(이때 "기기 캘린더" 절의 안내는 생략), ③은 시각 없음·지난 일정 문구만 남고 버튼은 없다. 카드 버튼은 모양이 보이는 스타일(캘린더에 추가 = 강조 채움, 겹쳐도 추가 = 주황 테두리)이고 목록 행 탭이 아니라 버튼 자체 탭으로 눌린다(0.8.1 실기기에서 스타일 없는 카드 버튼이 텍스트처럼 보이고 눌리지 않았다). 성공하면 결과 문구 대신 상태가 "✅ 캘린더에 등록됨"으로 바뀌고, 실패 문구만 따로 보인다. 질문을 보내면 키보드를 내리고, 답이 오면 그 질문을 화면 맨 위로 올린다. 진단 로그에는 카드 수만 남긴다.
+- **일정 답 카드(2026-10-01 실기기 피드백, 앱 0.8.2)**: 답의 인용 항목에 일정 제안(`create_event`, 서버가 주는 `proposed`·`succeeded`)이 있으면 답 아래에 제안마다 카드 한 장을 둔다. 카드는 세 부분이다 — ① **찾은 곳**: "문자에서 찾은 일정"(출처는 같은 응답 `citations`에서 `item_id`로 찾은 `source`·`app_name` — 문자·메시지 앱 알림 "문자", Gmail "메일", 그 밖의 앱 알림 "<앱 이름> 알림", 공유 "공유한 내용", 못 찾으면 "저장된 정보"), 추출한 일정 "10/4(일) 15:30 제목"(날짜만이면 "시간 미정"), "10/1 받은 문자 · 원문 보기"(원문은 기존 `ItemDetailView`·`/chat/item` 경로) ② **"내 캘린더 · 10/4(일)"**: 제안 날짜의 서울 하루 일정 — **일정 질문이 아니어도(`schedule` 없음) 읽는다**. 겹치는 일정은 어느 캘린더든 맨 위(주황), 그다음 종일("종일 제목"), 그다음 시작 순. 생일·구독 캘린더와 취소된 일정은 뺀다(겹친 일정은 빼지 않는다). 그날 안이면 `HH:mm–HH:mm 제목`, 날짜를 걸치면 `M/d HH:mm–M/d HH:mm 제목`(다음 날 0시에 끝나는 일정은 그날 안으로 본다 — "23:00–00:00", 상태 문구도 같은 표기), 최대 4줄 + "외 N건", 없으면 "이 날 등록된 일정 없음" ③ **상태**: 아래 순서에서 처음 걸리는 하나. 1) 이 제안 표식 일정이 같은 시작(분) "✅ 캘린더에 등록됨" 2) 표식 일정의 시작이 다름 "✅ 캘린더에 등록됨 · 캘린더에서는 10/5(월) 10:00" 3) 표식 없이 시작(분)·제목이 같은 일정 "✅ 같은 일정이 캘린더에 있음" 4) 표식을 못 찾았는데 이 기기 실행 기록이 있거나 서버 상태가 `succeeded` "이전에 추가한 일정 · 이 날 캘린더에서는 찾지 못함(옮겼거나 지웠을 수 있음)" — 1~4는 버튼 없음 5) §10 겹침 "⚠️ 아직 캘린더에 없음 · 겹치는 일정 15:00–16:00 제목"(여러 건이면 " 외 N건", 겹친 일정이 다른 ERURI 제안 표식이고 시작(분)이 같으면 끝에 " (같은 일정일 수 있음)") + [겹쳐도 추가] 6) "아직 캘린더에 없음" + [캘린더에 추가]. 표식 판정은 카드 날짜 ±1일 범위, 취소된 일정은 없는 것으로 본다. 서버 `succeeded`만으로 "등록됨"이라 하지 않는다(캘린더에서 지웠거나 다른 기기에서 넣었을 수 있다). 시각 없는 제안은 버튼 없이 "날짜만 확인돼 바로 추가하지 않음", `uncertain`이 있으면 "내용 확인이 필요해 바로 추가하지 않음", 지난 일정(시각 < 지금, 날짜만은 그날이 끝남)은 "지난 일정". 무시한 제안은 서버가 주지 않아 카드가 없다. 제안이 여럿이면 `schedule`이 있을 때 그 기간 안에서 시작하는 것만, 다가올 일정을 시작 순으로 먼저, 지난 일정은 그 뒤에 최근 것부터. 같은 시작(분)·제목은 한 장(`succeeded`가 있으면 그것), 최대 3장 + "일정 제안 N건 더 있음". 카드가 있고 `schedule`이 없거나 카드 날짜 하루와 같으면 위 "기기 캘린더" 절을 따로 그리지 않고, 더 넓은 기간(주간 질문)이면 카드 아래에 절을 그대로 둔다. 카드 상태는 미리 보기이고 최종 판정은 저장 직전 §10 순서(`AddEventGate`)다. 답 문장의 시각과 카드의 추출 시각이 달라도 검출하지 않는다 — 두 값이 화면에 같이 보이고 원문 보기로 확인한다. 캘린더 전체 접근이 없으면 ①은 그대로, ② 자리에 첫 카드만 허용·설정 안내(이때 "기기 캘린더" 절의 안내는 생략), ③은 시각 없음·지난 일정 문구만 남고 버튼은 없다. 권한이 없어지면 화면에 남은 모든 턴의 카드에서 캘린더 줄·상태·버튼을 걷는다. 카드 버튼은 모양이 보이는 스타일(캘린더에 추가 = 강조 채움, 겹쳐도 추가 = 주황 테두리)이고 목록 행 탭이 아니라 버튼 자체 탭으로 눌린다(0.8.1 실기기에서 스타일 없는 카드 버튼이 텍스트처럼 보이고 눌리지 않았다). 성공하면 결과 문구 대신 상태가 "✅ 캘린더에 등록됨"으로 바뀌고, 실패 문구만 따로 보인다. 질문을 보내면 키보드를 내리고, 답이 오면 그 질문이 보이게 스크롤한다(그 턴이 화면보다 길면 질문이 맨 위에 오고 카드는 쓸어 올려 본다). 진단 로그에는 카드 수와 일정 기간 종류(없음·하루·넓음)만 남긴다.
 ```
 
 - [ ] **Step 3: §10 채팅 카드 줄 (492행 교체)**
@@ -149,9 +152,9 @@ docs/superpowers/phase1/gates.md                                       # T3 행 
 - [ ] **Step 6: §16 새 소절 — "외부 리뷰 반영 (검색·캘린더 계획 …)" 소절(709행) 바로 아래에 추가**
 
 ```
-### 외부 리뷰 반영 (채팅 일정 답 카드, Fable, 2026-10-01)
+### 외부 리뷰 반영 (채팅 일정 답 카드, Codex gpt-6-astra · Fable, 2026-10-01)
 
-2026-10-01 실기기 피드백("일정이 언제야?"에 알림 기준 판단·캘린더 내용·추가/겹침 여부가 같이 나와야 맥락이 읽힌다)과 0.8.1 실기기 확인(12:31, 채팅 카드 "겹쳐도 추가" 탭에 이벤트 없음·텍스트처럼 보임 — 시뮬레이터 게이트 C2-4 무반응과 같은 버그로 확정)에 대한 설계안(`.context/chat-card-design.md`)을 Fable이 검토(`.context/fable-review-chatcard.md`)했고 권장안을 채택했다. 반영: #1 카드 표시와 버튼 조건 분리·succeeded도 카드, #2 캘린더 줄은 제안 날짜 하루(일정 질문이 아니어도), #3 겹친 일정은 어느 캘린더든 줄 맨 위·상태 문구에 직접, #4 카드 버튼 스타일 명시·권한 안내 `Link` → 버튼·실패했던 XCUITest를 회귀 게이트로, #5 보내면 키보드 내림·답이 오면 그 질문을 맨 위로(권장 "턴 끝"을 "질문 맨 위"로 바꿔 카드가 위에서부터 읽히게), #7 주간 질문은 카드 + 기간 절, #8 출처 표기, #9 여러 제안 규칙(최대 3), #10 "(같은 일정일 수 있음)", #11 예시 요일(10/4 = 일), #12 추출 시각·원문 보기. 미반영: #6 "무시" 상태(서버가 dismissed 를 주지 않음 — 서버 변경 없음 유지). 문구 조정: 겹침 상태를 "'제목'과 시간이 겹침" 대신 "겹치는 일정 HH:mm–HH:mm 제목"(제목 끝 받침에 따라 조사가 틀린다), 넘친 카드를 "외 N건은 제안 탭에서" 대신 "일정 제안 N건 더 있음"(succeeded·지난 제안은 제안 탭에 없다). 개인정보 등급 변화 없음(캘린더는 기기 화면에만). 서버 변경 없음, 앱 0.8.2. 계획 `docs/superpowers/plans/2026-10-01-chat-schedule-card.md`.
+2026-10-01 실기기 피드백("일정이 언제야?"에 알림 기준 판단·캘린더 내용·추가/겹침 여부가 같이 나와야 맥락이 읽힌다)과 0.8.1 실기기 확인(12:31, 채팅 카드 "겹쳐도 추가" 탭에 이벤트 없음·텍스트처럼 보임 — 시뮬레이터 게이트 C2-4 무반응과 같은 버그로 확정)에 대한 설계안(`.context/chat-card-design.md`)을 Fable이 검토(`.context/fable-review-chatcard.md`)했고 권장안을 채택했다. 반영: #1 카드 표시와 버튼 조건 분리·succeeded도 카드, #2 캘린더 줄은 제안 날짜 하루(일정 질문이 아니어도), #3 겹친 일정은 어느 캘린더든 줄 맨 위·상태 문구에 직접, #4 카드 버튼 스타일 명시·권한 안내 `Link` → 버튼·실패했던 XCUITest를 회귀 게이트로, #5 보내면 키보드 내림·답이 오면 그 질문을 맨 위로(권장 "턴 끝"을 "질문 맨 위"로 바꿔 카드가 위에서부터 읽히게), #7 주간 질문은 카드 + 기간 절, #8 출처 표기, #9 여러 제안 규칙(최대 3), #10 "(같은 일정일 수 있음)", #11 예시 요일(10/4 = 일), #12 추출 시각·원문 보기. 미반영: #6 "무시" 상태(서버가 dismissed 를 주지 않음 — 서버 변경 없음 유지). 문구 조정: 겹침 상태를 "'제목'과 시간이 겹침" 대신 "겹치는 일정 HH:mm–HH:mm 제목"(제목 끝 받침에 따라 조사가 틀린다), 넘친 카드를 "외 N건은 제안 탭에서" 대신 "일정 제안 N건 더 있음"(succeeded·지난 제안은 제안 탭에 없다). 개인정보 등급 변화 없음(캘린더는 기기 화면에만). 서버 변경 없음, 앱 0.8.2. 계획 `docs/superpowers/plans/2026-10-01-chat-schedule-card.md`. 계획 리뷰(Codex gpt-6-astra · Fable, 2026-10-01): Codex #1 권한 가드(부분, MED로) · #2 대표 선택(반영) · #3 수용 기준 조정(부분) · #4 분기 로그(부분, 응답 주입 미채택) · #5 D1 키보드(반영) · #6 자정 끝 정책 고정(부분). Fable F1 반복 일정 겹침 줄 · F2 다가올 일정 먼저 · F3 스크롤 시점.
 ```
 
 - [ ] **Step 7: 확인**
@@ -165,7 +168,7 @@ Expected: 출력 없음(0.8.0 상태 문구가 남지 않음 — §16 역사 기
 
 ```bash
 git add docs/superpowers/specs/2026-09-22-assistant-design.md
-git commit -m "docs(spec): §9 schedule answer card — source, that day's calendar even without a schedule range, six-way status, button styles (0.8.2); §10·§11·§12 follow; §16 Fable review of the chat card" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "docs(spec): §9 schedule answer card — source, that day's calendar even without a schedule range, six-way status, button styles (0.8.2); §10·§11·§12 follow; §16 Fable design review and Codex·Fable plan reviews of the chat card" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -243,7 +246,8 @@ final class ScheduleCardTests: XCTestCase {
     XCTAssertEqual(ScheduleCard.card(prop("p", start: .string("2026-10-04T15:30:00+09:00"), title: "  "), now: now)?.title, "일정")
   }
 
-  /// 일정 기간이 있으면 그 안에서 시작하는 것만, 시작 순(같으면 succeeded 먼저), 같은 시작(분)·제목은 한 장, 최대 3 + 넘친 수
+  /// 일정 기간이 있으면 그 안에서 시작하는 것만, 다가올 일정 시작 순 → 지난 일정 최근 것부터,
+  /// 같은 시작(분)·제목은 한 장(succeeded 가 대표 — 초 차이·입력 순서 무관), 최대 3 + 넘친 수
   func testPick() {
     let ps = [
       prop("c", start: .string("2026-10-06T10:00:00+09:00"), title: "합성 셋"),
@@ -260,6 +264,15 @@ final class ScheduleCardTests: XCTestCase {
     XCTAssertEqual(inDay.cards.map(\.proposal.id), ["b"]); XCTAssertEqual(inDay.more, 0)
     XCTAssertTrue(ScheduleCard.pick(ps, schedule: DateInterval(start: d("2026-10-19T15:00:00Z"), duration: 86_399), now: now).cards.isEmpty)
     XCTAssertTrue(ScheduleCard.pick([], schedule: nil, now: now).cards.isEmpty)
+    // 같은 분·다른 초: succeeded 가 대표(입력 순서 무관, Codex #2)
+    let secs = [prop("s1", start: .string("2026-10-04T15:30:00+09:00")), prop("s2", start: .string("2026-10-04T15:30:30+09:00"), status: "succeeded")]
+    XCTAssertEqual(ScheduleCard.pick(secs, schedule: nil, now: now).cards.map(\.proposal.id), ["s2"])
+    XCTAssertEqual(ScheduleCard.pick(secs.reversed(), schedule: nil, now: now).cards.map(\.proposal.id), ["s2"])
+    // 지난 일정은 뒤로(최근 것부터) — 추가할 수 있는 카드가 잘리지 않는다(Fable F2)
+    let mixed = [prop("old1", start: .string("2026-08-01T10:00:00+09:00"), title: "합성 옛1"), prop("old2", start: .string("2026-09-01T10:00:00+09:00"), title: "합성 옛2"),
+                 prop("old3", start: .string("2026-09-20T10:00:00+09:00"), title: "합성 옛3"), prop("next", start: .string("2026-10-04T15:30:00+09:00"))]
+    let m = ScheduleCard.pick(mixed, schedule: nil, now: now)
+    XCTAssertEqual(m.cards.map(\.proposal.id), ["next", "old3", "old2"]); XCTAssertEqual(m.more, 1)
   }
 
   /// ① 찾은 곳: SourceLabel 과 같은 문자 판정, 메일·앱 알림·공유, 인용 없으면 "저장된 정보". 받은 날짜는 서울(소수 초 허용)
@@ -280,7 +293,8 @@ final class ScheduleCardTests: XCTestCase {
     XCTAssertNil(ScheduleCard.receivedLine(nil))
   }
 
-  /// ② 그날(서울) 줄: 겹친 일정(어느 캘린더든) → 종일 → 시작 순. 표시 대상 캘린더(listed)만·취소·다른 날 제외. 최대 4 + 넘친 수
+  /// ② 그날(서울) 줄: 겹친 일정(어느 캘린더든) → 종일 → 시작 순. 표시 대상 캘린더(listed)만·취소·다른 날 제외. 최대 4 + 넘친 수.
+  /// 겹침은 값 비교(반복 일정은 회차마다 id 가 같다), 다음 날 0시에 끝나면 그날 안
   func testDayLines() {
     let day = DateInterval(start: d("2026-10-03T15:00:00Z"), duration: 86_400)                     // 10/4(일)
     let sub = ev("sub", "2026-10-04T06:00:00Z", "2026-10-04T07:00:00Z", title: "합성 구독 경기", listed: false)   // 15:00–16:00, 구독 캘린더
@@ -302,6 +316,14 @@ final class ScheduleCardTests: XCTestCase {
     XCTAssertTrue(ScheduleCard.dayLines(day: day, events: [], conflicts: []).lines.isEmpty)
     XCTAssertEqual(ScheduleCard.dayLines(day: day, events: [ev("t", "2026-10-04T00:00:00Z", "2026-10-04T01:00:00Z", title: " ")], conflicts: []).lines.map(\.text),
                    ["09:00–10:00 (제목 없음)"])
+    // 매일 반복 일정: 회차마다 id 가 같다 — 겹친 당일 회차만 한 줄(Fable F1)
+    let daily = [ev("daily", "2026-10-03T06:00:00Z", "2026-10-03T07:00:00Z"), ev("daily", "2026-10-04T06:00:00Z", "2026-10-04T07:00:00Z"),
+                 ev("daily", "2026-10-05T06:00:00Z", "2026-10-05T07:00:00Z")]
+    let r = ScheduleCard.dayLines(day: day, events: daily, conflicts: [daily[1]])
+    XCTAssertEqual(r.lines.map(\.text), ["15:00–16:00 합성 daily"]); XCTAssertEqual(r.lines.map(\.conflict), [true])
+    // 다음 날 0시에 끝남 → 그날 안(§9, Codex #6)
+    let mid = ev("mid", "2026-10-04T14:00:00Z", "2026-10-04T15:00:00Z", title: "합성 심야")                // 10/4 23:00–10/5 00:00
+    XCTAssertEqual(ScheduleCard.dayLines(day: day, events: [mid], conflicts: []).lines.map(\.text), ["23:00–00:00 합성 심야"])
   }
 
   /// ③ 등록 판정(§9 상태 1~6): EventKit 표식이 1순위, 실행 기록·서버 succeeded 는 "넣은 적 있음" 보조 근거, 그다음 §10 겹침
@@ -341,6 +363,8 @@ final class ScheduleCardTests: XCTestCase {
     XCTAssertEqual(ScheduleCard.statusText(.conflict([o, o2], maybeSame: true)),
                    "⚠️ 아직 캘린더에 없음 · 겹치는 일정 15:00–16:00 합성 겹침 외 1건 (같은 일정일 수 있음)")
     XCTAssertEqual(ScheduleCard.statusText(.conflict([night], maybeSame: false)), "⚠️ 아직 캘린더에 없음 · 겹치는 일정 10/3 23:00–10/4 16:00 합성 야간")
+    let mid = ev("mid", "2026-10-04T14:00:00Z", "2026-10-04T15:00:00Z", title: "합성 심야")                // 줄과 같은 표기(자정 끝 = 그날 안)
+    XCTAssertEqual(ScheduleCard.statusText(.conflict([mid], maybeSame: false)), "⚠️ 아직 캘린더에 없음 · 겹치는 일정 23:00–00:00 합성 심야")
     XCTAssertEqual(ScheduleCard.statusText(.clear), "아직 캘린더에 없음")
   }
 
@@ -396,7 +420,7 @@ final class ScheduleCardTests: XCTestCase {
 - [ ] **Step 2: 실패 확인**
 
 Run: `vm_stat | grep -E 'free|compressor'; pgrep -x deno; cd ios && ./scripts/sim.sh gen && ./scripts/sim.sh test EruriCoreTests/ScheduleCardTests`
-Expected: FAIL(컴파일 오류 — `ScheduleCard` 없음, `CalendarEvent` init 에 `listed` 없음).
+Expected: FAIL — `error:` 줄(`ScheduleCard` 없음, `CalendarEvent` init 에 `listed` 없음). `sim.sh test`는 `Test Case|passed|failed|error:` 줄만 보인다.
 
 - [ ] **Step 3: `CalendarEvent.listed`**
 
@@ -451,13 +475,17 @@ public enum ScheduleCard {
     return Pick(proposal: p, kind: seoulDay(day).end <= now ? .past : uncertain ? .needsReview : .dateOnly, start: day, timed: false)
   }
 
-  /// 한 답의 카드: 일정 기간이 있으면 그 안에서 시작하는 것만(인용 항목의 무관한 일정 제외), 시작 순(같으면 succeeded 먼저),
-  /// 같은 시작(분)·제목은 한 장, 최대 3 + 넘친 수
+  /// 한 답의 카드: 일정 기간이 있으면 그 안에서 시작하는 것만(인용 항목의 무관한 일정 제외), 다가올 일정을 시작 순으로 먼저,
+  /// 지난 일정은 그 뒤에 최근 것부터(추가할 수 있는 카드가 "N건 더 있음"으로 밀리지 않게). 같은 시작(분)·제목은 한 장(succeeded 가 있으면 그것), 최대 3 + 넘친 수
   public static func pick(_ ps: [ChatReply.Proposal], schedule: DateInterval?, now: Date = Date()) -> (cards: [Pick], more: Int) {
     let rank = { (c: Pick) in c.proposal.status == "succeeded" ? 0 : 1 }
+    // 다가올 일정 먼저(시작 순), 지난 일정은 그 뒤(최근 것부터). 1순위가 분이라 같은 분·제목 묶음에서 succeeded 가 대표가 된다(초 차이 무시)
+    let key = { (c: Pick) -> (Int, Int, Int, String) in
+      c.kind == .past ? (1, -minute(c.start), rank(c), c.proposal.id) : (0, minute(c.start), rank(c), c.proposal.id)
+    }
     let sorted = ps.compactMap { card($0, now: now) }
       .filter { c in schedule.map { $0.start <= c.start && c.start <= $0.end } ?? true }
-      .sorted { (Int($0.start.timeIntervalSince1970), rank($0), $0.proposal.id) < (Int($1.start.timeIntervalSince1970), rank($1), $1.proposal.id) }
+      .sorted { key($0) < key($1) }
     var seen = Set<String>(), out: [Pick] = []
     for c in sorted where seen.insert("\(minute(c.start))|\(c.title)").inserted { out.append(c) }
     return (Array(out.prefix(maxCards)), max(0, out.count - maxCards))
@@ -494,13 +522,14 @@ public enum ScheduleCard {
   /// 그날(서울 하루) 줄: 겹친 일정(어느 캘린더든, 그날 밖이어도) → 종일 → 시작 순. 나머지는 표시 대상 캘린더(listed)만, 취소 제외. 최대 4 + 넘친 수
   public static func dayLines(day: DateInterval, events: [ProposalFlow.CalendarEvent],
                               conflicts: [ProposalFlow.CalendarEvent]) -> (lines: [DayLine], more: Int) {
-    let hit = Set(conflicts.map(\.id))
+    // id 만 보면 안 된다 — 반복 일정은 회차마다 id(eventIdentifier)가 같고 카드는 ±1일을 읽는다
+    let isHit = { (e: ProposalFlow.CalendarEvent) in conflicts.contains(e) }
     let shown = events.filter { e in
-      !e.canceled && (hit.contains(e.id) || (e.listed && e.start < day.end && (e.end > day.start || (e.start == e.end && e.start >= day.start))))
+      !e.canceled && (isHit(e) || (e.listed && e.start < day.end && (e.end > day.start || (e.start == e.end && e.start >= day.start))))
     }
-    let rank = { (e: ProposalFlow.CalendarEvent) in hit.contains(e.id) ? 0 : e.allDay ? 1 : 2 }
+    let rank = { (e: ProposalFlow.CalendarEvent) in isHit(e) ? 0 : e.allDay ? 1 : 2 }
     let lines = shown.sorted { (rank($0), $0.start, $0.id) < (rank($1), $1.start, $1.id) }
-      .map { DayLine(text: "\(span($0, within: day)) \(name($0))", conflict: hit.contains($0.id)) }
+      .map { DayLine(text: "\(span($0, within: day)) \(name($0))", conflict: isHit($0)) }
     return (Array(lines.prefix(maxLines)), max(0, lines.count - maxLines))
   }
 
@@ -610,10 +639,12 @@ public enum ScheduleCard {
     let t = trimmed(p.payload["title"]?.string ?? "")
     return t.isEmpty ? "일정" : t
   }
-  /// 종일이면 "종일". day 안에 다 들면 "HH:mm–HH:mm", 아니면 "M/d HH:mm–M/d HH:mm". day 없이 부르면 일정 자체의 시작·끝 날짜로 판단
+  /// 종일이면 "종일". day 안에 다 들면 "HH:mm–HH:mm", 아니면 "M/d HH:mm–M/d HH:mm". day 없이 부르면(상태 문구) 일정이 시작한 서울 하루로 판단 —
+  /// 다음 날 0시에 끝나면 그날 안("23:00–00:00", §9). 줄과 상태 문구가 같은 일정을 같은 표기로 쓴다
   static func span(_ e: ProposalFlow.CalendarEvent, within day: DateInterval? = nil) -> String {
     if e.allDay { return "종일" }
-    let inside = day.map { e.start >= $0.start && e.end <= $0.end } ?? (md.string(from: e.start) == md.string(from: e.end))
+    let d = day ?? seoulDay(e.start)
+    let inside = e.start >= d.start && e.end <= d.end
     let f = inside ? hm : mdhm
     return "\(f.string(from: e.start))–\(f.string(from: e.end))"
   }
@@ -641,12 +672,10 @@ public enum ScheduleCard {
 }
 ```
 
-메모: `pick`의 정렬 키는 `Int(start)`(초) — `Date` 튜플 비교도 되지만 같은 분 안의 초 차이로 succeeded 우선이 깨지지 않게 초로 맞췄다. 같은 분이면 dedupe 키(`minute|title`)가 하나로 모은다.
-
 - [ ] **Step 5: 통과 확인**
 
 Run: `cd ios && ./scripts/sim.sh test EruriCoreTests/ScheduleCardTests`
-Expected: `Executed 8 tests, with 0 failures`.
+Expected: `Test Case … passed` 8줄, `failed`·`error:` 0줄(`sim.sh test`는 `Test Case|passed|failed|error:` 줄만 보인다).
 Run: `cd ios && ./scripts/sim.sh test EruriCoreTests`
 Expected: 전체 통과(기존 `ProposalFlowTests`·`DeviceCalendarTests`는 `listed` 기본값으로 그대로 컴파일).
 
@@ -654,7 +683,7 @@ Expected: 전체 통과(기존 `ProposalFlowTests`·`DeviceCalendarTests`는 `li
 
 ```bash
 git add ios/Packages/EruriCore/Sources/EruriCore/ScheduleCard.swift ios/Packages/EruriCore/Sources/EruriCore/ProposalFlow.swift ios/Packages/EruriCore/Tests/EruriCoreTests/ScheduleCardTests.swift
-git commit -m "feat(core): schedule answer card — pick ≤3 in the schedule range, source and received lines, that day's lines with conflicts first, six-way calendar status and button (0.8.2, T1)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "feat(core): schedule answer card — pick ≤3 in the schedule range (upcoming first, succeeded represents a minute·title group), source and received lines, that day's lines with conflicts first (value match for recurring events), six-way calendar status and button (0.8.2, T1)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -745,12 +774,12 @@ struct CalendarAccessPrompt: View {
 
 ```swift
   struct ScrollRequest: Equatable { let id: UUID; let seq: Int }
-  @State private var scrollRequest: ScrollRequest?     // 보낼 때·답이 올 때 그 질문을 화면 맨 위로(0.8.2 — 카드가 입력 패널·키보드 뒤에 깔리지 않게)
+  @State private var scrollRequest: ScrollRequest?     // 보낼 때·답이 올 때 그 질문이 보이게(턴이 화면보다 길면 맨 위, 0.8.2 — 카드가 입력 패널·키보드 뒤에 깔리지 않게)
 ```
 
 - [ ] **Step 4: `ChatView.body` — List 를 `ScrollViewReader`로 감싼다**
 
-`body`를 다음으로 바꾼다(List 의 기존 수식어는 순서·내용 그대로 List 에 붙어 있고, 질문 행에 `.id(t.id)`와 마지막 `onChange(of: scrollRequest)`만 늘었다):
+`body`를 다음으로 바꾼다(List 의 기존 수식어는 순서·내용 그대로 List 에 붙어 있고, 질문 행에 `.id(t.id)`와 마지막 `onChange(of: scrollRequest)`만 늘었다). 스크롤은 다음 메인 턴으로 미룬다 — 답 행 삽입과 같은 갱신에서 `scrollTo`를 부르면 List 가 새 행을 배치하기 전 높이로 계산해 카드가 다시 패널 뒤에 남을 수 있다(추론, T3 G1b 가 앞 턴 2개를 쌓고 판정한다):
 
 ```swift
   var body: some View {
@@ -782,7 +811,11 @@ struct CalendarAccessPrompt: View {
         // 백그라운드·전화로 비활성이 되면 녹음을 끊고, 돌아오면 권한을 다시 읽는다(설정에서 허용하고 온 경우).
         // 캘린더 절·카드도 다시 읽는다(설정에서 캘린더 권한·캘린더 앱에서 일정을 바꾸고 온 경우, Codex #6)
         .onChange(of: scenePhase) { _, p in if p == .active { dictation.refresh(); refreshCalendars() } else { dictation.stopIfRecording() } }
-        .onChange(of: scrollRequest) { _, r in if let r { withAnimation { proxy.scrollTo(r.id, anchor: .top) } } }
+        // 새 행이 목록에 놓인 다음 턴에 스크롤한다 — 같은 갱신에서 부르면 옛 높이로 계산돼 카드가 패널 뒤에 남을 수 있다
+        .onChange(of: scrollRequest) { _, r in
+          guard let r else { return }
+          Task { @MainActor in withAnimation { proxy.scrollTo(r.id, anchor: .top) } }
+        }
       }
     }
   }
@@ -813,6 +846,8 @@ struct CalendarAccessPrompt: View {
   /// ③ 버튼은 스타일을 명시해 행 탭이 아니라 자기 제스처로 눌린다(0.8.1 실기기: 스타일 없는 카드 버튼이 텍스트처럼 보이고 눌리지 않았다)
   @ViewBuilder private func cardRows(_ t: Turn, _ c: ScheduleCard.Model, first: Bool) -> some View {
     let cite = t.answer?.citations.first(where: { $0.item_id == c.itemID })
+    // 권한은 그릴 때 다시 본다 — 턴에 남은 캘린더 줄·상태가 권한 철회 뒤에도 보이지 않게, 허용 뒤 낡은 안내가 남지 않게(권한 상태는 관찰되지 않는다)
+    let access = CalendarLookup.fullAccess
     NavigationLink {
       ItemDetailView(itemID: c.itemID)
     } label: {
@@ -823,7 +858,7 @@ struct CalendarAccessPrompt: View {
           .font(.caption2).foregroundStyle(.secondary)
       }
     }
-    if let lines = c.lines {
+    if access, let lines = c.lines {
       VStack(alignment: .leading, spacing: 2) {
         Text(ScheduleCard.dayHeader(c.day)).font(.caption).bold()
         if lines.isEmpty { Text(ScheduleCard.emptyDayText).font(.caption2).foregroundStyle(.secondary) }
@@ -832,16 +867,17 @@ struct CalendarAccessPrompt: View {
         }
         if c.moreLines > 0 { Text("외 \(c.moreLines)건").font(.caption2).foregroundStyle(.secondary) }
       }
-    } else if first {
+    } else if !access, first {
       CalendarAccessPrompt(message: DeviceCalendar.accessText) { recheck(t.id) }
     }
-    statusRow(c)
+    statusRow(c, access: access)
   }
 
   /// ③ 상태 줄 + 버튼(§9 상태 1~6·§10). 버튼은 "아직 캘린더에 없음"(캘린더에 추가, 강조 채움)·겹침(겹쳐도 추가, 주황 테두리 — 확인창 없이 저장)일 때만.
   /// 결과 문구는 실패이거나 버튼이 남아 있을 때만 — 성공하면 재조회로 상태가 "✅ 캘린더에 등록됨"으로 바뀌어 같은 말을 두 번 하지 않는다
-  @ViewBuilder private func statusRow(_ c: ScheduleCard.Model) -> some View {
-    let state = adds[c.pid], action = ScheduleCard.action(c), line = ScheduleCard.statusText(c)
+  @ViewBuilder private func statusRow(_ c: ScheduleCard.Model, access: Bool) -> some View {
+    let state = adds[c.pid], action = access ? ScheduleCard.action(c) : nil
+    let line = access || c.status == nil ? ScheduleCard.statusText(c) : nil      // 권한이 없으면 캘린더 대조 상태는 숨기고 종류 문구(시간 미정·지난 일정)만
     if line != nil || action != nil || state != nil {
       VStack(alignment: .leading, spacing: 6) {
         if let line { Text(line).font(.caption).foregroundStyle(ScheduleCard.isWarning(c) ? Color.orange : Color.secondary) }
@@ -879,34 +915,41 @@ struct CalendarAccessPrompt: View {
   private func readCalendar(_ idx: Int, _ a: ChatReply.Answer) {
     let range = a.schedule?.interval
     let picked = ScheduleCard.pick(a.proposals, schedule: range)
-    turns[idx].cards = picked.cards.map { ScheduleCard.model($0, events: CalendarLookup.cardEvents(day: $0.day), executed: executed($0.proposal.id)) }
+    let ex = try? Executions.shared()                     // 카드마다 SQLite 를 새로 열지 않는다(활성화마다 최대 5턴 × 3장)
+    turns[idx].cards = picked.cards.map { ScheduleCard.model($0, events: CalendarLookup.cardEvents(day: $0.day), executed: executed(ex, $0.proposal.id)) }
     turns[idx].cardsMore = picked.more
-    let wide = CalendarLookup.fullAccess && ScheduleCard.showsRangeSection(schedule: range, cardDays: picked.cards.map(\.day))
+    // 기간 종류는 진단 로그에도 남긴다(T3 G5 가 분기를 가른다) — 일정 내용은 아니다
+    let sched = range == nil ? "none" : ScheduleCard.showsRangeSection(schedule: range, cardDays: picked.cards.map(\.day)) ? "wide" : "day"
+    let wide = CalendarLookup.fullAccess && sched == "wide"
     turns[idx].calendar = wide ? range.map { CalendarLookup.scheduleEvents($0) } : nil
-    if !picked.cards.isEmpty { DiagLog.append("CAL card n=\(picked.cards.count) more=\(picked.more) access=\(CalendarLookup.fullAccess ? 1 : 0)") }
+    if !picked.cards.isEmpty { DiagLog.append("CAL card n=\(picked.cards.count) more=\(picked.more) access=\(CalendarLookup.fullAccess ? 1 : 0) sched=\(sched)") }
   }
 
-  /// 앱 활성화(설정에서 권한을 바꾸고 돌아옴·캘린더 앱에서 일정을 바꿈)·카드 추가 성공 뒤(Codex #6): 마지막 5개 턴만 다시 읽는다.
-  /// EventKit 변경 알림은 구독하지 않는다
+  /// 앱 활성화(설정에서 권한을 바꾸고 돌아옴·캘린더 앱에서 일정을 바꿈)·카드 추가 성공 뒤(Codex #6): 마지막 5개 턴만 다시 읽는다(EventKit 조회 비용).
+  /// 전체 접근이 없으면 조회가 없으므로 모든 턴에서 캘린더 줄·상태·버튼을 걷는다. EventKit 변경 알림은 구독하지 않는다
   private func refreshCalendars() {
-    for i in turns.indices.suffix(5) { if let a = turns[i].answer { readCalendar(i, a) } }
+    let idx = CalendarLookup.fullAccess ? Array(turns.indices.suffix(5)) : Array(turns.indices)
+    for i in idx { if let a = turns[i].answer { readCalendar(i, a) } }
   }
 
-  /// 권한 안내에서 허용·거부한 뒤 그 턴만 다시 읽는다(권한 상태는 관찰되지 않는다 — 다시 그려 "설정에서 허용하기"로 바뀌게)
+  /// 권한 안내에서 허용·거부한 뒤 다시 읽는다(권한 상태는 관찰되지 않는다 — 다시 그려 "설정에서 허용하기"로 바뀌게).
+  /// 마지막 5개 턴과 같이 그 턴도 — 5개 밖이어도 안내를 누른 턴은 바로 바뀐다
   private func recheck(_ id: UUID) {
-    if let i = turns.firstIndex(where: { $0.id == id }), let a = turns[i].answer { readCalendar(i, a) }
+    refreshCalendars()
+    if let i = turns.firstIndex(where: { $0.id == id }), i < turns.count - 5, let a = turns[i].answer { readCalendar(i, a) }
   }
 
   /// 이 기기에서 넣은 적 있는 제안(§10 실행 기록). 등록 판정의 보조 근거 — 캘린더에서 지웠으면 "이전에 추가한 일정"
-  private func executed(_ pid: String) -> Bool {
-    guard let ex = try? Executions.shared() else { return false }
-    return (try? ex.existing(proposalId: pid)) != nil
+  private func executed(_ ex: Executions?, _ pid: String) -> Bool {
+    (try? ex?.existing(proposalId: pid)) != nil
   }
 ```
 
-(`try? ex.existing(...)`는 `String?`로 평탄화된다 — 기록 없음·오류 모두 nil.)
+(`try? ex?.existing(...)`는 `String?`로 평탄화된다 — 기록 없음·오류·`Executions` 열기 실패 모두 nil. `refreshCalendars`가 권한 없을 때 모든 턴을 도는 것은 EventKit 조회가 없어 싸다.)
 
-`runAdd`의 마지막 줄 주석을 `// 추가 뒤 카드 상태가 "✅ 캘린더에 등록됨"으로·절이 바로 바뀐다(Codex #6)`로 바꾼다(코드는 그대로).
+`runAdd`를 두 곳 고친다(나머지는 그대로):
+- 마지막 줄 주석을 `// 추가 뒤 카드 상태가 "✅ 캘린더에 등록됨"으로·절이 바로 바뀐다(Codex #6)`로(코드는 그대로).
+- `needsConfirm` 분기에서 `confirm = ConfirmAdd(…)` 다음 줄(`return` 앞)에 `refreshCalendars()` — 확인창을 닫은 뒤 카드가 "아직 캘린더에 없음"으로 남지 않고 새 겹침 상태·"겹쳐도 추가"로 바뀐다(제안 탭 `refreshConflicts()`와 같은 동작, Fable F7).
 
 - [ ] **Step 8: `send` — 키보드 내림·스크롤**
 
@@ -946,10 +989,12 @@ Expected: `** BUILD SUCCEEDED **`, EruriCoreTests 전체 통과(경고에 새 Se
 
 ```bash
 git add ios/App/CalendarLookup.swift ios/App/ChatView.swift ios/App/ProposalsView.swift ios/Packages/EruriCore/Sources/EruriCore/DeviceCalendar.swift ios/Packages/EruriCore/Sources/EruriCore/ChatReply.swift ios/Packages/EruriCore/Tests/EruriCoreTests/DeviceCalendarTests.swift ios/Packages/EruriCore/Tests/EruriCoreTests/ChatReplyTests.swift
-git commit -m "feat(ios): chat schedule answer card — source and original link, that day's calendar with conflicts first, six-way status; card buttons styled so a single tap fires; settings prompt is a button; question scrolls to top on answer (0.8.2, T2)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "feat(ios): chat schedule answer card — source and original link, that day's calendar with conflicts first, six-way status; card buttons styled so a single tap fires; settings prompt is a button; answered question scrolls into view on the next main turn; card calendar content gated on current access (0.8.2, T2)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-- [ ] **예비 조치(실행하지 않는다 — T3 G1이 실패했을 때만 메인이 수정 태스크로 연다):** 스타일 명시 뒤에도 G1(1회 탭)이 실패하면 원인은 List 수준 `simultaneousGesture(TapGesture)`다(Fable §4 조치 3). `body`에서 `.simultaneousGesture(TapGesture().onEnded { inputFocused = false })` 한 줄만 지운다 — 보내기 시 `inputFocused = false`(Step 8)와 `.scrollDismissesKeyboard(.interactively)`가 키보드 내리기를 맡는다. 처음부터 같이 지우지 않는 이유: 스타일만으로 통과하는지 봐야 원인이 갈리고, 빈 곳 탭으로 키보드 내리기(0.7.1)를 불필요하게 잃지 않는다. 지운 뒤 G1부터 다시 돈다.
+- [ ] **T2 리뷰어 확인 항목(게이트 아님):** 권한이 없을 때 `cardRows`·`statusRow`가 캐시된 캘린더 줄·상태·버튼을 그리지 않고, `refreshCalendars`가 그때 모든 턴을 다시 읽는다(Codex #1 — 설정에서 권한을 바꾸면 앱이 종료돼 시뮬레이터로 재현할 수 없고, 주입하려면 디버그 훅이 필요해 테스트로 두지 않는다).
+
+- [ ] **예비 조치(실행하지 않는다 — T3 G1 또는 실기기 D1의 1회 탭이 실패했을 때만 메인이 수정 태스크로 연다):** 스타일 명시 뒤에도 G1(또는 실기기 D1)의 1회 탭이 실패하면 다음 후보는 List 수준 `simultaneousGesture(TapGesture)`다(추론 — Fable §4 조치 3). 지운 뒤 G1이 통과하는지로 확인한다. `body`에서 `.simultaneousGesture(TapGesture().onEnded { inputFocused = false })` 한 줄만 지운다 — 보내기 시 `inputFocused = false`(Step 8)와 `.scrollDismissesKeyboard(.interactively)`가 키보드 내리기를 맡는다. 처음부터 같이 지우지 않는 이유: 스타일만으로 통과하는지 봐야 원인이 갈리고, 빈 곳 탭으로 키보드 내리기(0.7.1)를 불필요하게 잃지 않는다. 지운 뒤 G1부터 다시 돈다.
 
 ---
 
@@ -961,7 +1006,7 @@ git commit -m "feat(ios): chat schedule answer card — source and original link
 - 임시(커밋하지 않음, 끝나면 삭제): `ios/project.gate082.yml`, `ios/EruriGate.xcodeproj`, 게이트 테스트 소스(`ios/GateTests/…` 등 임시 경로), 시드 스크립트(`.context/` 아래), 스크린샷 `.context/sim-gate-082-shots/`, 보고 `.context/sim-gate-082.report.md`
 
 **Interfaces:**
-- Consumes: T2의 화면 문구("캘린더에 추가"·"겹쳐도 추가"·"추가하는 중…"·"✅ 캘린더에 등록됨"·"⚠️ 아직 캘린더에 없음 · 겹치는 일정"·"내 캘린더 · "·"문자에서 찾은 일정"·"설정에서 허용하기"), 접근성 식별자 `scheduleCard.add`, `DiagLog` `ADD <result> <pid>`·`CAL card n=…`, 0.8.1 하네스(F11).
+- Consumes: T2의 화면 문구("캘린더에 추가"·"겹쳐도 추가"·"추가하는 중…"·"✅ 캘린더에 등록됨"·"⚠️ 아직 캘린더에 없음 · 겹치는 일정"·"내 캘린더 · "·"문자에서 찾은 일정"·"설정에서 허용하기"), 접근성 식별자 `scheduleCard.add`, `DiagLog` `ADD <result> <pid>`·`CAL card n=… sched=none|day|wide`, 0.8.1 하네스(F11).
 - Produces: `gates.md` 행, `.context/sim-gate-082.report.md`, TestFlight 0.8.2 빌드.
 
 **게이트 원칙(사용자 지시):** 시뮬레이터로 확인할 수 있는 것은 전부 시뮬레이터 pane 에서 닫고, 실기기는 **실기기에서 실패가 확인된 항목(카드 버튼 1회 탭)과 사용자 판단(D2)만** 한다. 실기기 고유 동작(잠금화면·Face ID·실제 푸시)은 이번 변경과 무관해 다시 재지 않는다.
@@ -987,14 +1032,14 @@ git commit -m "feat(ios): chat schedule answer card — source and original link
 
 | 단계 | 조작 | 통과 기준 |
 |---|---|---|
-| G1a 겹침 카드 1회 탭(키보드 올림) — **0.8.1 실패 XCUITest 회귀** | 러너가 D 15:00–16:00 `합성 겹침` 저장 → 채팅 "합성의원 진료 예약 언제야?" → 답 도착 뒤 입력창을 눌러 키보드를 올린 채 `app.buttons.matching(NSPredicate(format: "label BEGINSWITH '겹쳐도 추가'")).firstMatch`를 **`tap()` 한 번만**(0.8.1 하네스의 `press` 재시도 없이) | 1초 안에 "추가하는 중…" 또는 결과, 확인창 없음, 캘린더 D 15:30 ERURI 일정 +1, `DiagLog` `ADD ok <P1>`, 서버 P1 `succeeded`. 카드 ①에 "문자에서 찾은 일정"(또는 시드 출처에 맞는 표기)·"<D> 15:30 합성의원 진료 예약"·"받은 … · 원문 보기" |
-| G1b 추가 카드 1회 탭(키보드 내림) + 스크롤 | 채팅 "합성치과 예약 언제야?" → 답 도착 직후(스와이프 없이) `scheduleCard.add` 버튼이 `isHittable`인지 기록 → `tap()` 한 번 | 답 도착 직후 상태 줄·버튼이 화면 안(입력 패널 위), 1회 탭 → "추가하는 중…" → 캘린더 E 14:00 +1, `ADD ok <P2>` |
+| G1a 겹침 카드 1회 탭(키보드 올림) — **0.8.1 실패 XCUITest 회귀** | 러너가 D 15:00–16:00 `합성 겹침` 저장 → 채팅 "합성의원 진료 예약 언제야?" → 답 도착 뒤 입력창을 눌러 키보드를 올린 채 `app.buttons.matching(NSPredicate(format: "label BEGINSWITH '겹쳐도 추가'")).firstMatch`를 **`tap()` 한 번만**(0.8.1 하네스의 `press` 재시도 없이). 탭 직전 `app.keyboards.count ≥ 1`과 버튼 `isHittable`을 기록한다. 키보드가 버튼을 가리면 목록을 쓸지 말고(키보드가 내려간다) 앞 턴 없이 새로 띄운 화면에서 다시 한다 | 탭 직전 키보드 있음, 1초 안에 "추가하는 중…" 또는 결과, 확인창 없음, 캘린더 D 15:30 ERURI 일정 +1, `DiagLog` `ADD ok <P1>`, 서버 P1 `succeeded`. 카드 ①에 "문자에서 찾은 일정"(또는 시드 출처에 맞는 표기)·"<D> 15:30 합성의원 진료 예약"·"받은 … · 원문 보기" |
+| G1b 추가 카드 1회 탭(키보드 내림) + 스크롤 | 앱을 새로 띄우고 같은 실행(앱 재실행 없이)에서 일정과 무관한 다른 질문 2개를 먼저 보내 목록이 화면보다 길어진 뒤 → 채팅 "합성치과 예약 언제야?" → 답 도착 직후(스와이프 없이) 마지막 턴의 `scheduleCard.add` 버튼(앞 턴에 카드가 있으면 그 버튼과 섞이지 않게 라벨 "캘린더에 추가"·마지막 요소로 고른다)이 `isHittable`인지 기록 → `tap()` 한 번 | 답 도착 직후 상태 줄·버튼이 화면 안(입력 패널 위)(이 시드의 짧은 답 기준. 화면보다 긴 답은 질문이 맨 위에 오면 통과 — 스펙 §9), 1회 탭 → "추가하는 중…" → 캘린더 E 14:00 +1, `ADD ok <P2>` |
 | G2 겹침 카드 표시 | G1a 탭 전 스크린샷 | ② "내 캘린더 · <D>(<요일>)" 첫 줄 `15:00–16:00 합성 겹침`, ③ "⚠️ 아직 캘린더에 없음 · 겹치는 일정 15:00–16:00 합성 겹침", 버튼 "겹쳐도 추가"(테두리) |
-| G2b 미리 판정 뒤 겹침(C2-5 회귀) | (G1b 전에) 채팅 "합성치과 예약 언제야?" → 카드가 "아직 캘린더에 없음"·"캘린더에 추가"인 채로 러너가 E 13:30–14:30 `합성 겹침2` 저장(앱은 전경 그대로) → 버튼 1회 탭 | 저장 안 됨, 확인창 "같은 시간에 '합성 겹침2' 일정이 있습니다. 그래도 추가할까요?"(iOS 26 팝오버 — 바깥 탭으로 닫음, F12) → 캘린더 +0, `ADD conflict:1`, P2 `proposed` 유지. 그 뒤 러너가 `합성 겹침2`를 지우고 G1b 진행 |
+| G2b 미리 판정 뒤 겹침(C2-5 회귀) | (G1b 전에) 채팅 "합성치과 예약 언제야?" → 카드가 "아직 캘린더에 없음"·"캘린더에 추가"인 채로 러너가 E 13:30–14:30 `합성 겹침2` 저장(앱은 전경 그대로) → 버튼 1회 탭 | 저장 안 됨, 확인창 "같은 시간에 '합성 겹침2' 일정이 있습니다. 그래도 추가할까요?"(iOS 26 팝오버 — 바깥 탭으로 닫음, F12) → 캘린더 +0, `ADD conflict:1`, P2 `proposed` 유지. 닫은 뒤 카드가 겹침 상태("⚠️ … 겹치는 일정 13:30–14:30 합성 겹침2")·"겹쳐도 추가"로 바뀜(Fable F7). 그 뒤 러너가 `합성 겹침2`를 지우고 G1b 진행 |
 | G3 등록 상태 | G1a 직후 같은 턴, 이어 같은 질문을 새로 보냄 | 같은 턴 ③ "✅ 캘린더에 등록됨", 버튼 없음, "캘린더에 추가했습니다" 문구 없음. 새 턴(서버 `succeeded`)도 카드가 있고 "✅ 캘린더에 등록됨" |
 | G4 옮김·지움 | 러너가 P1 일정(url `assistant://proposal/<P1>`)을 D 16:30으로 옮김 → 앱 백그라운드·복귀(`XCUIDevice.shared.press(.home)` → `app.activate()`) → 이어 그 일정을 지움 → 백그라운드·복귀 | 옮김 "✅ 캘린더에 등록됨 · 캘린더에서는 <D>(<요일>) 16:30", 지움 "이전에 추가한 일정 · 이 날 캘린더에서는 찾지 못함(옮겼거나 지웠을 수 있음)", 둘 다 버튼 없음 |
-| G5 절 규칙(C1 회귀 포함) | ⓐ "합성의원 진료 예약 언제야?"(schedule 없음 예상) ⓑ "<D월 D일> 합성의원 예약 몇 시야?"(하루) ⓒ "<D월 D일>부터 <D+2>일까지 합성 일정 있어?"(넓은 기간) ⓓ 0.8.1 C1-1~3(러너 일정 D+5 둘 → "<D+5> 일정 있어?" / D+20 → "일정 없음" / "<D+5> 합성 화성 탐사 일정 있어?" 거절) | ⓐ 카드 ②에 그날 줄(일정 질문이 아니어도) ⓑ 카드만, "기기 캘린더" 절 머리 없음 ⓒ 카드 + "기기 캘린더 · 이 기간 일정 N건" ⓓ 0.8.1 C1-1~3과 같은 결과(절 2줄 / "이 기간에 등록된 일정 없음" / 거절 문구 그대로 + 절, "보관함에서 보기" 없음). 질문 문구에 따라 서버 `schedule`이 예상과 다르면 DiagLog `CAL schedule n=`·`CAL card n=` 유무로 실제 경로를 적고 판정한다 |
-| G6 추가만 허용 + 설정 버튼 1회 탭 | 설정 → 앱 → ERURI → 캘린더 "이벤트 추가만" → "합성의원 진료 예약 언제야?" → "설정에서 허용하기"를 `tap()` 한 번 | 카드 ①은 보임, ② 자리에 "캘린더 접근을 허용하면 등록된 일정도 함께 확인합니다" + "설정에서 허용하기"(첫 카드만), 버튼 없음, 절 안내 중복 없음. 1회 탭에 설정 앱이 전경(`settings.state == .runningForeground`, 5초 안). 전체 접근으로 되돌린 뒤 앱이 재시작되면 그 사실만 기록(0.8.1 관찰) |
+| G5 절 규칙(C1 회귀 포함) | ⓐ "합성의원 진료 예약 언제야?"(schedule 없음 예상) ⓑ "<D월 D일> 합성의원 예약 몇 시야?"(하루) ⓒ "<D월 D일>부터 <D+2>일까지 합성 일정 있어?"(넓은 기간) ⓓ 0.8.1 C1-1~3(러너 일정 D+5 둘 → "<D+5> 일정 있어?" / D+20 → "일정 없음" / "<D+5> 합성 화성 탐사 일정 있어?" 거절) | ⓐ 카드 ②에 그날 줄(일정 질문이 아니어도) ⓑ 카드만, "기기 캘린더" 절 머리 없음 ⓒ 카드 + "기기 캘린더 · 이 기간 일정 N건" ⓓ 0.8.1 C1-1~3과 같은 결과(절 2줄 / "이 기간에 등록된 일정 없음" / 거절 문구 그대로 + 절, "보관함에서 보기" 없음). ⓐⓑⓒ는 DiagLog `CAL card … sched=none` / `day` / `wide`가 각각 한 번 이상 찍혀야 한다. 예상 분기가 안 나오면 질문 문구를 바꿔 다시 하고(최대 3회), 그래도 없으면 그 분기는 "미실행" — G5는 통과가 아니다(응답 주입 대체는 쓰지 않는다, AGENTS §5-8) |
+| G6 추가만 허용 + 설정 버튼 1회 탭 | 설정 → 앱 → ERURI → 캘린더 "이벤트 추가만" → "합성의원 진료 예약 언제야?" → "설정에서 허용하기"를 `tap()` 한 번. 관찰(판정 아님): 같은 권한 상태에서 제안 탭 `CalendarAccessSection`의 "설정에서 허용하기"도 1회 탭해 열리는지 기록 — 안 열리면 0.8.3 후보 | 카드 ①은 보임, ② 자리에 "캘린더 접근을 허용하면 등록된 일정도 함께 확인합니다" + "설정에서 허용하기"(첫 카드만), 버튼 없음, 절 안내 중복 없음. 1회 탭에 설정 앱이 전경(`settings.state == .runningForeground`, 5초 안). 전체 접근으로 되돌린 뒤 앱이 재시작되면 그 사실만 기록(0.8.1 관찰) |
 | G7 개인정보 | `grep -n 'functions/v1/chat' ios/App/ChatView.swift`, 앱 `eruri.log`(`sim.sh log 200`), `device_traces` 최근 1시간 | 요청 본문 `["question": q]`뿐. 로그의 `CAL`·`ADD` 줄에 일정 제목·`합성` 0건(개수·id·결과만). `device_traces` 1시간 내 `%합성%` 0건 |
 
 실행 순서: G2 → G1a → G3 → G4 → G2b → G1b → G5 → G6 → G7(G1a·G3·G4는 P1, G2b·G1b는 P2를 쓴다 — 한 제안은 한 번만 저장된다).
@@ -1003,7 +1048,7 @@ git commit -m "feat(ios): chat schedule answer card — source and original link
 
 - [ ] **Step 4: G1 실패 시**
 
-G1a 또는 G1b가 1회 탭에 실패하면 여기서 멈추고 메인에 보고한다. 메인이 T2 "예비 조치"를 수정 태스크로 열고, 반영 뒤 G1부터 다시 돈다. 시뮬레이터에서 통과하지 못한 채 업로드하지 않는다.
+G1a 또는 G1b가 1회 탭에 실패하면 여기서 멈추고 메인에 보고한다. 메인이 T2 "예비 조치"를 수정 태스크로 열고, 반영 뒤 G1부터 다시 돈다. G1b가 1회 탭은 되는데 답 도착 직후 버튼이 화면 밖(스크롤)으로만 실패하면 예비 조치가 아니라 스크롤만 고치는 수정 태스크로 연다(T2 Step 4 `onChange(of: scrollRequest)`). 시뮬레이터에서 통과하지 못한 채 업로드하지 않는다.
 
 - [ ] **Step 5: G1~G7 판정 기록**
 
@@ -1012,6 +1057,10 @@ G1a 또는 G1b가 1회 탭에 실패하면 여기서 멈추고 메인에 보고�
 ```
 | C3-sim | 0.8.2 채팅 일정 답 카드 시뮬레이터 게이트 G1a·G1b(카드 버튼 1회 탭 — 키보드 올림/내림, 0.8.1 실패 XCUITest 회귀)·G2·G2b·G3·G4·G5(C1-1~3 회귀)·G6(설정 버튼 1회 탭 — 0.8.1 C1-4 "부분" 해소)·G7 | <통과|실패> | <단계별 관찰: 문구·개수·DiagLog·trace, 스크린샷 경로> | | <날짜> |
 ```
+
+- [ ] **Step 5b: 업로드 전 화면 미리 확인 (메인 + 사용자)**
+
+메인이 G2·G3 스크린샷(`.context/sim-gate-082-shots/`)을 사용자에게 보여 문구·구성에 걸리는 점이 있는지 먼저 묻는다(Fable F5 — D2에서 처음 보면 문구 수정이 빌드 하나를 더 낳는다). 고칠 점이 있으면 업로드 전에 T2 수정 태스크로 반영하고 해당 G 단계를 다시 돈다. 최종 D2 판정은 실기기에서 한다(이 확인으로 D2를 닫지 않는다).
 
 - [ ] **Step 6: 실기기 게이트 시각 확인 (메인)**
 
@@ -1027,19 +1076,19 @@ Expected: 업로드 성공 로그, 빌드 번호 `date +%Y%m%d%H%M`, 버전 0.8.
 준비 데이터(실사용자 계정 — 실기기는 제품 로그인):
 1. 먼저 기존 합성 제안을 쓴다: `proposals`에서 `user_id = ERURI_USER_ID`, `status = 'proposed'`, `payload->>'title' like '%합성%'`, `payload->>'start'`가 미래인 행의 **개수와 id 만** 조회(제목·본문 출력 금지). 있으면 그 제안의 일정 질문("합성의원 진료 예약 언제야?")을 쓴다 — 새 `items`·`jobs`를 만들지 않는다.
 2. 없으면 `send-phrases --only push` **1회**(합성 문구, 실사용자 `items`·`jobs`·`proposals` 생성 — Step 6의 시각 조건 필수).
-3. 사용자가 캘린더 앱에서 그 제안 시각에 `합성 겹침`(30분~1시간)을 직접 만든다.
+3. 그 제안 시각에 겹치는 일정이 캘린더에 이미 있으면 그대로 쓴다. 없으면 만들지 않는다 — 카드 버튼은 "캘린더에 추가"가 되고 D1은 그 버튼으로 닫는다(두 버튼 스타일은 G1a·G1b가 시뮬레이터에서 닫았다, Fable F4).
 
 | 단계 | 조작(사용자) | 통과 기준 |
 |---|---|---|
-| D1 카드 버튼 | 0.8.2 앱 채팅에서 질문 → 카드가 ①·②·③으로 보이는지, "겹쳐도 추가"가 **버튼 모양**(테두리)인지 확인 → **한 번** 누름 | 한 번에 "추가하는 중…" → ③ "✅ 캘린더에 등록됨", 캘린더에 그 일정 +1. 메인이 `device_traces`의 `action.handled` `result=ok`(그 제안 id)·제안 `succeeded`로 확인. 실기기에서 실패가 확인된 항목이라 시뮬레이터 통과만으로 닫지 않는다 |
+| D1 카드 버튼(키보드 올림) | 0.8.2 앱 채팅에서 질문 → 답이 오면 카드 ①·②·③과 버튼 모양(채움 "캘린더에 추가" 또는 테두리 "겹쳐도 추가") 확인 → **입력창을 눌러 키보드를 올린다** → 키보드 위에 보이는 카드 버튼을 **한 번** 누른다(가려져 있으면 키보드를 내리고 누르고 그 사실을 기록) | 한 번에 "추가하는 중…" → ③ "✅ 캘린더에 등록됨", 캘린더에 그 일정 +1. 메인이 `device_traces`의 `action.handled` `result=ok`(그 제안 id)·제안 `succeeded`로 확인. 탭 순간 키보드가 있었는지 기록. 실기기에서 실패가 확인된 항목이라 시뮬레이터 통과만으로 닫지 않는다. 실패하면 메인이 T2 "예비 조치"를 수정 태스크로 연다 |
 | D2 맥락 | 같은 화면을 사용자가 읽는다 | 사용자 판단: "알림 기준 판단·캘린더 내용·추가/겹침 여부"가 한눈에 읽히는가(원래 피드백의 수용 기준). 고칠 점이 나오면 그대로 적고 0.8.3 후보로 넘긴다(판정은 사용자 말 그대로) |
 
-정리: 사용자가 캘린더에서 `합성의원 진료 예약`·`합성 겹침`을 지운다. 남은 합성 제안은 제목에 `합성`이 든 것만 제안 탭에서 **한 건씩** "무시"(**"전체 무시" 금지**). `succeeded`가 된 제안은 그대로 둔다.
+정리: 사용자가 캘린더에서 D1이 넣은 `합성의원 진료 예약`을 지운다(겹침 일정은 원래 있던 것이면 그대로). 남은 합성 제안은 제목에 `합성`이 든 것만 제안 탭에서 **한 건씩** "무시"(**"전체 무시" 금지**). `succeeded`가 된 제안은 그대로 둔다.
 
 `gates.md`에 행을 추가한다:
 
 ```
-| C3-device | 0.8.2 실기기: D1 채팅 카드 "겹쳐도 추가" 버튼 모양 + 1회 탭 저장(0.8.1 12:31 무반응 해소), D2 사용자 맥락 판단 | <통과|실패|대기> | <제안 id 출처(기존/send-phrases), trace result·elapsed_ms, 사용자 판단 원문, Gmail 창과의 간격> | | <날짜> |
+| C3-device | 0.8.2 실기기: D1 채팅 카드 버튼 모양 + 키보드 올린 상태 1회 탭 저장(0.8.1 12:31 무반응 해소), D2 사용자 맥락 판단 | <통과|실패|대기> | <제안 id 출처(기존/send-phrases), trace result·elapsed_ms, 사용자 판단 원문, Gmail 창과의 간격> | | <날짜> |
 ```
 
 - [ ] **Step 9: 커밋**
@@ -1055,10 +1104,10 @@ git commit -m "chore(ios): 0.8.2; docs(gates): C3 chat schedule card — simulat
 
 ## Self-Review
 
-- **스펙(T0 후 §9 "일정 답 카드") 대조:** ① 찾은 곳(출처 표기 5종·받은 날짜·원문 보기) → T1 `sourceLine`·`receivedLine`, T2 `cardRows` ① / ② 그날 줄(일정 질문 아니어도, 겹침 먼저·종일·시작 순, 생일·구독·취소 제외, 걸침 표기, 최대 4, 빈 날 문구) → T1 `dayLines`, T2 `cardEvents`·`listed` / ③ 상태 6종·순서·succeeded 단독 불가 → T1 `status` / 시각 없음·확인 필요·지난 일정 → T1 `card`·`statusText(Model)` / 여러 제안 규칙 → T1 `pick` / 절 동시 표시 → T1 `showsRangeSection`, T2 `readCalendar`·`answerRows` / 권한 없음 → T1 `model(events: nil)`, T2 첫 카드 안내 / 버튼 스타일·1회 탭 → T2 `statusRow`, T3 G1·D1 / 성공 시 결과 문구 숨김 → T2 `statusRow` / 스크롤·키보드 → T2 Step 4·8, T3 G1b / 진단 로그 개수만 → T2 `readCalendar`, T3 G7 / §10 버튼 규칙 → T2 `addButton`(`tapConfirmed`), T3 G2b.
+- **스펙(T0 후 §9 "일정 답 카드") 대조:** ① 찾은 곳(출처 표기 5종·받은 날짜·원문 보기) → T1 `sourceLine`·`receivedLine`, T2 `cardRows` ① / ② 그날 줄(일정 질문 아니어도, 겹침 먼저·종일·시작 순, 생일·구독·취소 제외, 걸침 표기, 최대 4, 빈 날 문구) → T1 `dayLines`, T2 `cardEvents`·`listed` / ③ 상태 6종·순서·succeeded 단독 불가 → T1 `status` / 시각 없음·확인 필요·지난 일정 → T1 `card`·`statusText(Model)` / 여러 제안 규칙 → T1 `pick` / 절 동시 표시 → T1 `showsRangeSection`, T2 `readCalendar`·`answerRows` / 권한 없음 → T1 `model(events: nil)`, T2 첫 카드 안내 / 권한이 없어지면 모든 턴에서 걷음 → T2 `cardRows`·`statusRow`(`access`)·`refreshCalendars`(리뷰어 확인 항목) / 버튼 스타일·1회 탭 → T2 `statusRow`, T3 G1·D1 / 성공 시 결과 문구 숨김 → T2 `statusRow` / 스크롤·키보드 → T2 Step 4·8, T3 G1b / 진단 로그 개수·기간 종류만 → T2 `readCalendar`(`sched=`), T3 G5·G7 / §10 버튼 규칙 → T2 `addButton`(`tapConfirmed`), T3 G2b.
 - **자리표시 검사:** "TBD"·"적절히" 없음. 게이트 하네스는 0.8.1 하네스 파일 경로와 바뀌는 단계를 명시했다(임시 파일이라 저장소에 코드를 남기지 않는다).
 - **타입 일관성:** `ScheduleCard.Pick`(T1) → `model(_:events:executed:)`(T1) → `Turn.cards: [ScheduleCard.Model]`(T2). `CalendarLookup.cardEvents(day:) -> [CalendarEvent]?`의 nil 이 `model(events: nil)`의 "전체 접근 없음"과 맞물린다. `Model.startText`가 `handleAdd`의 `start`로 간다(같은 `ISO8601DateFormatter`). `action == .addAnyway` → `tapConfirmed(conflictsShown: true)`.
-- **Review Focus:** 1·2·3·4·5는 T1 테스트에, 6은 T3 G1a·D1에 있다.
+- **Review Focus:** 1·2·3·4·5·7·8은 T1 테스트에, 6은 T3 G1a·D1에 있다.
 
 ## Fable 리뷰 반영 (2026-10-01, `.context/fable-review-chatcard.md`)
 
@@ -1068,7 +1117,7 @@ git commit -m "chore(ios): 0.8.2; docs(gates): C3 chat schedule card — simulat
 | 2 | HIGH | 반영 — 캘린더 줄은 제안 날짜 서울 하루, 스펙 먼저 | T0 Step 1·2·5, T1 `dayLines`, T2 `cardEvents` |
 | 3 | HIGH | 반영 — 겹친 일정은 어느 캘린더든 맨 위·상태 문구에 직접 | T1 `dayLines`(`listed`)·`statusText` |
 | 4 | HIGH | 반영 — 버튼 스타일 명시, `Link` → `Button`+`openURL`, 실패 XCUITest 회귀, 조치 3은 예비 | T2 Step 2·6·예비, T3 G1·G6·D1 |
-| 5 | MED | 반영(조정) — 보내면 키보드 내림, 답이 오면 **질문을 맨 위로**(권장 "턴 끝" 대신: 카드가 위에서부터 읽히고 List 행 id 로 안정적으로 스크롤) | T2 Step 4·8, T3 G1b |
+| 5 | MED | 반영(조정) — 보내면 키보드 내림, 답이 오면 **질문으로 스크롤**(권장 "턴 끝" 대신: 카드가 위에서부터 읽히고 List 행 id 로 안정적으로 스크롤). 계획 리뷰에서 수용 기준·시점 보완(Codex #3·Fable F3) | T2 Step 4·8, T3 G1b |
 | 6 | MED | **미반영** — "무시" 상태는 서버가 dismissed 를 주지 않아 0.8.2 제외(서버 변경 없음 유지, 메인 지시) | — |
 | 7 | MED | 반영 | T1 `showsRangeSection`, T3 G5 |
 | 8 | MED | 반영 | T1 `sourceLine`·`receivedLine` |
@@ -1078,3 +1127,38 @@ git commit -m "chore(ios): 0.8.2; docs(gates): C3 chat schedule card — simulat
 | 12 | LOW | 반영 — 검출하지 않고 추출 시각·원문 보기 | T0 §9, T2 `cardRows` ① |
 
 문구 조정: 겹침 상태를 Fable 안 "'제목'과 시간이 겹침" 대신 "겹치는 일정 HH:mm–HH:mm 제목" — 제목 끝 받침에 따라 "과/와"가 틀린다. Fable §2의 `eventkit_id`로 옮긴 일정 직접 조회는 Fable 자신이 0.8.2 범위 밖으로 둔 것이라 넣지 않았다.
+
+## 계획 리뷰 반영 (2026-10-01, Codex gpt-6-astra · Fable)
+
+원문: `.context/codex-review-chatcard.out.md`(Codex, HEAD `950c575`), `.context/fable-review-chatcard-plan.md`(Fable 판정·§3 수정 지시·최종 권장). 판정이 갈리면 Fable 판정을 따랐다. 구조(T0→T1→T2→T3)·인터페이스·서버 변경 없음 전제·게이트의 시뮬레이터/실기기 분류는 그대로다. 개인정보 등급 변화 없음 — 사용자 확인 불필요. 스펙 쪽 반영은 T0 Step 2·6 텍스트에 넣었다(스펙 파일은 T0 실행 때 고친다).
+
+### Codex 6건
+
+| # | Codex(심각도) | Fable 판정 | 반영 | 바뀐 곳 |
+|---|---|---|---|---|
+| 1 | 권한 철회 뒤 낡은 카드의 캘린더 내용·버튼이 남음(HIGH) | 부분동의(MED) | **반영(축소)** — 그릴 때 `CalendarLookup.fullAccess`로 다시 가름(권한 없으면 캐시된 줄·상태·버튼 숨김, 반대로 허용 뒤 낡은 안내도 안 남음), 권한 없으면 `refreshCalendars`가 모든 턴, `recheck`는 5개 밖 턴도. "6턴 보존 후 권한 전환 주입" 테스트는 **미반영** — 권한 변경 시 앱이 종료돼(0.8.1 관찰) 시뮬레이터로 재현 불가, 주입은 디버그 훅 필요. T2 리뷰어 확인 항목으로 | T0 Step 2(§9 "모든 턴에서 걷는다"), T2 Step 6 `cardRows`·`statusRow(access:)`, Step 7 `refreshCalendars`·`recheck`, T2 리뷰어 확인 항목, Self-Review |
+| 2 | 분 단위 중복 제거가 succeeded 를 버림(MED) | 동의 | **반영** — 정렬 1순위를 분으로(같은 분·제목 묶음에서 succeeded 대표), 옛 "메모"(초 단위 설명) 삭제, 테스트 같은 분·다른 초 정·역순. 실행 기록을 대표 선택에 반영하는 것은 **미반영**(Fable: 과함 — succeeded 대표면 충분) | T0 Step 2, T1 Step 1 `testPick`·Step 4 `pick` |
+| 3 | 질문 맨 위 스크롤이 버튼 노출을 보장 못 함(MED) | 부분동의(MED) | **반영(변형)** — 새 스크롤 기제(카드 행으로 스크롤)는 **미반영**(List anchor 없는 `scrollTo` 미검증). 수용 기준을 고침: "질문이 보이게, 턴이 화면보다 길면 질문이 맨 위·카드는 쓸어 올려 본다". G1b 통과 기준에 "짧은 답 기준, 긴 답은 질문 맨 위면 통과" | T0 Step 2, T2 Step 3·4 주석, T3 G1b·Step 4 |
+| 4 | G5가 schedule 분기를 고정하지 않음(MED) | 부분동의(MED) | **반영(변형)** — 합성 응답 주입은 **미반영**(제품 앱에 테스트 경로, 대체는 "부분"이지 통과 아님 — AGENTS §5-8). `CAL card … sched=none/day/wide` 로그로 분기를 가르고, 예상 분기가 3회 시도에도 안 나오면 "미실행" = G5 통과 아님 | T0 Step 2(진단 로그 문장), Global Constraints, T2 Step 7 `readCalendar`, T3 Interfaces·G5 |
+| 5 | 실기기 D1에 키보드 올린 상태가 없음(MED) | 동의 | **반영** — D1 조작에 "입력창을 눌러 키보드를 올린다 → 키보드 위 카드 버튼 1회 탭"(가려지면 내리고 누르고 기록), 탭 순간 키보드 유무 기록, `gates.md` C3-device 설명에 "키보드 올린 상태" | T3 Step 8 D1·C3-device 행, Review Focus 6 |
+| 6 | 자정에 끝나는 일정 날짜 표기가 규칙과 다름(LOW) | 부분동의(LOW) | **반영(변형)** — 표기는 바꾸지 않고 정책 고정: "다음 날 0시에 끝나면 그날 안(23:00–00:00)". Fable 추가 지적(줄과 상태 문구가 다르게 찍힘)도 `span`의 day 없는 경로를 시작한 서울 하루로 바꿔 맞춤. 테스트 `testDayLines`·`testStatusText`에 `mid` | T0 Step 2, T1 Step 1·Step 4 `span` |
+
+Codex "먼저 바꿀 3가지": ① 권한 철회 무효화 → #1(렌더 가드 + 전체 턴 갱신, 주입 테스트 제외) ② succeeded 근거 보존 → #2 ③ UI 수용 기준 고정 → #3(수용 기준 조정)·#4(분기 로그)·#5(D1 키보드).
+
+### Fable 추가 지적 (번호는 리뷰 원문 — 위 "이 계획이 기대는 사실"의 F 번호와 다르다)
+
+| # | 심각도 | 반영 | 바뀐 곳 |
+|---|---|---|---|
+| F1 | HIGH | **반영** — 겹침 판별을 id 대신 값 비교(`conflicts.contains(e)`) — 매일 반복 일정의 ±1일 회차가 겹침 줄 3개로 나오던 결함. 테스트 `daily` | T1 Step 1 `testDayLines`·Step 4 `dayLines`, Review Focus 7 |
+| F2 | MED | **반영** — 다가올 일정 먼저(시작 순), 지난 일정은 뒤(최근 것부터). Codex #2와 같은 정렬 키. 테스트 `mixed` | T0 Step 2, T1 `testPick`·`pick`, Review Focus 8 |
+| F3 | MED | **반영** — 스크롤을 다음 메인 턴으로(`Task { @MainActor in … }`). G1b 앞에 같은 실행에서 다른 질문 2개를 쌓음(0.8.1 하네스는 메서드마다 `launch()`라 턴 하나로는 못 잰다) | T2 Step 4, T3 G1b |
+| F4 | MED | **반영** — 실기기 준비에서 사용자가 겹침 일정을 만들지 않음(있으면 쓰고 없으면 "캘린더에 추가"로 D1). 두 버튼 스타일은 G1a·G1b가 닫음 | T3 Step 8 준비 3·정리 |
+| F5 | LOW | **반영** — 업로드 전 G2·G3 스크린샷을 사용자에게 먼저(D2 최종 판정은 실기기 유지) | T3 Step 5b, 실행 순서 |
+| F6 | LOW | **반영** — G1a 탭 직전 `keyboards.count`·`isHittable` 기록, 키보드가 가리면 쓸지 말고 새 화면에서 다시 | T3 G1a |
+| F7 | LOW | **반영** — `runAdd` 확인 분기에서 `refreshCalendars()`, G2b 통과 기준에 "닫은 뒤 겹침 상태·겹쳐도 추가" | T2 Step 7, T3 G2b |
+| F8 | LOW | **반영** — 기대 출력을 `sim.sh test` grep(`Test Case`·`passed`·`failed`·`error:` 줄만)에 맞춤 | T1 Step 2·5 |
+| F9 | LOW | **반영** — 예비 조치는 "다음 후보(추론)", 발동 조건에 실기기 D1 실패 포함, D1 실패 시 예비 조치 명시 | T2 예비 조치, T3 D1 |
+| F10 | LOW | **반영** — `readCalendar`에서 `Executions.shared()` 한 번, `executed(ex, pid)` | T2 Step 7 |
+| F11 | LOW | **반영** — 이 절, 머리 "리뷰·실행", T0 Step 6 §16 문단·소절 제목 | 머리, T0 Step 6·8, 이 절 |
+
+Fable §2 게이트 분류 표의 관찰 항목(제안 탭 `CalendarAccessSection` "설정에서 허용하기" 1회 탭)은 G6 관찰로 넣었다(판정 아님 — 안 열리면 0.8.3 후보). G1b 버튼 선택(마지막 턴 "캘린더에 추가")은 턴을 쌓으면서 앞 턴 카드 버튼과 섞일 수 있어 이 판에서 더한 보완이다. Fable 최종 권장대로 반영 뒤 추가 리뷰 없이 SDD로 넘어간다. 버튼 1회 탭이 실제로 고쳐지는지는 여전히 미검증이고 G1a·G1b·D1이 닫는다.
