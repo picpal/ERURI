@@ -27,12 +27,35 @@ Deno.test("plan: timed event without uncertain → ADD_EVENT with iOS contract k
   assertEquals([p.payload.proposal_id, p.payload.version, p.payload.title, p.payload.start], ["p1", 1, "합성 치과", "2026-10-02T15:30:00+09:00"]);
 });
 
-// Review Focus 2: 날짜만·uncertain 일정은 버튼 없는 REVIEW
-Deno.test("plan: date-only or uncertain event → REVIEW", () => {
-  const d = planProposalPush(row({ payload: { title: "합성 행사", start: "2026-10-24", uncertain: [] } }), NOW);
-  assertEquals([d.skip === null && d.category, aps(d)!.alert.title, aps(d)!.alert.body], ["REVIEW", "일정 확인 필요", "10월 24일(토) · 합성 행사"]);
+// Review Focus 2: uncertain 일정은 버튼 없는 REVIEW. 날짜만(uncertain 없음)은 종일 일정으로 ADD_EVENT(0.9.1, 2026-10-01 사용자 결정 A)
+Deno.test("plan: uncertain event → REVIEW (timed or date-only)", () => {
   const u = planProposalPush(row({ payload: { title: "합성", start: "2026-10-02T15:30:00+09:00", uncertain: ["ampm"] } }), NOW);
   assertEquals(u.skip === null && u.category, "REVIEW");
+  const d = planProposalPush(row({ payload: { title: "합성 행사", start: "2026-10-24", uncertain: ["year"] } }), NOW);
+  assertEquals([d.skip === null && d.category, aps(d)!.alert.title, aps(d)!.alert.body], ["REVIEW", "일정 확인 필요", "10월 24일(토) · 합성 행사"]);
+});
+
+Deno.test("plan: date-only event without uncertain → ADD_EVENT all-day; start stays YYYY-MM-DD, no end key for one day", () => {
+  const d = planProposalPush(row({ payload: { title: "합성 행사", start: "2026-10-24", end: null, uncertain: [] } }), NOW);
+  assertEquals([d.skip === null && d.category, aps(d)!.category, aps(d)!.alert.title, aps(d)!.alert.body],
+    ["ADD_EVENT", "ADD_EVENT", "일정 제안", "10월 24일(토) · 합성 행사"]);
+  assertEquals(d.skip === null && d.payload.start, "2026-10-24");
+  assertEquals(d.skip === null && "end" in d.payload, false);
+  const same = planProposalPush(row({ payload: { title: "합성 행사", start: "2026-10-24", end: "2026-10-24", uncertain: [] } }), NOW);
+  assertEquals(same.skip === null && "end" in same.payload, false);
+  // 오늘(서울)은 지나지 않은 것으로 본다(종일)
+  assertEquals(planProposalPush(row({ payload: { title: "합성", start: "2026-09-29", uncertain: [] } }), NOW).skip, null);
+});
+
+Deno.test("plan: date-only multi-day → end is the last day (YYYY-MM-DD, Seoul) when after start; timed end stays out of the payload", () => {
+  const span = planProposalPush(row({ payload: { title: "합성 축제", start: "2026-10-24", end: "2026-10-26", uncertain: [] } }), NOW);
+  assertEquals(span.skip === null && span.payload.end, "2026-10-26");
+  const timedEnd = planProposalPush(row({ payload: { title: "합성 축제", start: "2026-10-24", end: "2026-10-25T18:00:00+09:00", uncertain: [] } }), NOW);
+  assertEquals(timedEnd.skip === null && timedEnd.payload.end, "2026-10-25");
+  const before = planProposalPush(row({ payload: { title: "합성 축제", start: "2026-10-24", end: "2026-10-20", uncertain: [] } }), NOW);
+  assertEquals(before.skip === null && "end" in before.payload, false);
+  const timed = planProposalPush(row({ payload: { title: "합성 치과", start: "2026-10-02T15:30:00+09:00", end: "2026-10-02T16:30:00+09:00", uncertain: [] } }), NOW);
+  assertEquals(timed.skip === null && "end" in timed.payload, false);           // 시각 있는 일정은 지금처럼 1시간(§10)
 });
 
 // Review Focus 3: 백필·지난 일정·지난 기한은 푸시 안 함
@@ -162,8 +185,21 @@ Deno.test("bundle: two or more → EVENT_BUNDLE, earliest first, title/body coun
   assertEquals(p.payload.events, [
     { proposal_id: "p2", version: 1, title: "합성 p2", start: "2026-10-04T14:00:00+09:00", category: "ADD_EVENT" },
     { proposal_id: "p1", version: 1, title: "합성 p1", start: "2026-10-11T14:00:00+09:00", category: "ADD_EVENT" },
-    { proposal_id: "p3", version: 1, title: "합성 p3", start: "2026-10-23", category: "REVIEW" },
+    { proposal_id: "p3", version: 1, title: "합성 p3", start: "2026-10-23", category: "ADD_EVENT" },   // 날짜만 = 종일(0.9.1)
   ]);
+});
+
+Deno.test("bundle: date-only events sort as Seoul midnight; a multi-day one carries its end date, uncertain stays REVIEW", () => {
+  const span = row({ id: "p2", payload: { title: "합성 축제", start: "2026-10-04", end: "2026-10-06", uncertain: [] } });
+  const p = planBundlePush([ev("p1", "2026-10-04T09:00:00+09:00"), span, ev("p3", "2026-10-05", { uncertain: ["date"] })], NOW);
+  assert(p.skip === null);
+  if (p.skip !== null) return;
+  assertEquals(p.payload.events, [
+    { proposal_id: "p2", version: 1, title: "합성 축제", start: "2026-10-04", end: "2026-10-06", category: "ADD_EVENT" },
+    { proposal_id: "p1", version: 1, title: "합성 p1", start: "2026-10-04T09:00:00+09:00", category: "ADD_EVENT" },
+    { proposal_id: "p3", version: 1, title: "합성 p3", start: "2026-10-05", category: "REVIEW" },
+  ]);
+  assertEquals(aps(p)!.alert.body, "10월 4일(일) · 합성 축제 외 2건");
 });
 
 // Review Focus 3: 지난 일정·무시한 제안은 빠지고, 하나만 남으면 단건(그 제안의 ADD_EVENT)
@@ -194,6 +230,12 @@ Deno.test("bundle payload stays under 4KB at 5 events × 40-char Korean titles",
   const p = planBundlePush(rows, NOW);
   assert(p.skip === null && p.category === BUNDLE_CATEGORY);
   assert(new TextEncoder().encode(JSON.stringify(p.payload)).length < 4096);
+  // 종일 여러 날(end 키가 붙는 가장 긴 원소)이어도
+  const spans = Array.from({ length: 5 }, (_, i) => row({ id: crypto.randomUUID(), version: 12345,
+    payload: { title: "합".repeat(60), start: `2026-10-1${i}`, end: `2026-10-2${i}`, uncertain: [] } }));
+  const q = planBundlePush(spans, NOW);
+  assert(q.skip === null && q.category === BUNDLE_CATEGORY);
+  assert(new TextEncoder().encode(JSON.stringify(q.payload)).length < 4096);
 });
 
 Deno.test("notify worker: bundle of two → one push per device keyed on the job's lead id, payload EVENT_BUNDLE", async () => {

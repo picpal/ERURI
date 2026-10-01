@@ -3,6 +3,7 @@ import { seoulToday, WEEKDAYS_KO } from "./time.ts";
 
 // 제안 푸시 계획(스펙 §7 notify, §10 페이로드, 0b). 기존 iOS NotificationActions 계약: category ADD_EVENT + 최상위 proposal_id·version·title·start.
 // 묶음(2026-10-01): 한 항목의 푸시 가능한 일정이 2건 이상이면 category EVENT_BUNDLE(잠금화면 액션 없음) + 최상위 대표 키 + events[{proposal_id,version,title,start,category}].
+// 종일(0.9.1, 사용자 결정 A): 날짜만인 start(YYYY-MM-DD)도 uncertain 이 없으면 ADD_EVENT — start 는 날짜 그대로, 여러 날이면 end(마지막 날, 서울 YYYY-MM-DD)를 싣는다.
 // 알림 문구는 추출 제목·일시만(원문 본문 금지, §12)
 export type ProposalRow = { id: string; action: string; payload: Record<string, unknown>; status: string; version: number;
   occurred_at: string | null; captured_at: string | null };
@@ -13,6 +14,7 @@ export type PushPlan = { skip: Skip }
   | { skip: null; category: "ADD_EVENT" | "REVIEW" | "ADD_REMINDER" | typeof BUNDLE_CATEGORY; payload: Record<string, unknown> };
 
 const hasTime = (s: string) => /T\d{2}:\d{2}/.test(s);
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
@@ -28,6 +30,14 @@ function isPast(iso: string, now: Date): boolean {
   return hasTime(iso) ? Date.parse(iso) < now.getTime() : iso.slice(0, 10) < seoulToday(now);
 }
 
+// 종일 일정의 마지막 날(서울 YYYY-MM-DD). 시작 다음 날 이후일 때만 — 하루짜리·거꾸로·해석 불가는 null(앱은 그날 하루로 넣는다).
+// 추출 값은 +09:00 으로 정규화돼 있어(§7) 시각 있는 end 도 앞 10자가 서울 날짜다
+function allDayEnd(start: string, end: string | null): string | null {
+  if (end === null) return null;
+  const day = DATE_ONLY.test(end) ? end : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?\+09:00$/.test(end) ? end.slice(0, 10) : null;
+  return day !== null && day > start && Number.isFinite(Date.parse(`${day}T00:00:00+09:00`)) ? day : null;
+}
+
 export function planProposalPush(p: ProposalRow, now: Date): PushPlan {
   if (p.status !== "proposed") return { skip: "not_proposed" };
   if (p.occurred_at && p.captured_at && Date.parse(p.captured_at) - Date.parse(p.occurred_at) >= BACKFILL_MS) return { skip: "backfill" };
@@ -38,10 +48,12 @@ export function planProposalPush(p: ProposalRow, now: Date): PushPlan {
     if (isPast(start, now)) return { skip: "past" };
     const title = clip(str(pl.title) ?? "일정", 40);
     const uncertain = Array.isArray(pl.uncertain) ? pl.uncertain : [];
-    const category = uncertain.length === 0 && hasTime(start) ? "ADD_EVENT" : "REVIEW";
+    const allDay = DATE_ONLY.test(start);
+    const category = uncertain.length === 0 && (hasTime(start) || allDay) ? "ADD_EVENT" : "REVIEW";
+    const end = category === "ADD_EVENT" && allDay ? allDayEnd(start, str(pl.end)) : null;
     return { skip: null, category, payload: {
       aps: { alert: { title: category === "ADD_EVENT" ? "일정 제안" : "일정 확인 필요", body: `${whenLabel(start)} · ${title}` }, category, sound: "default" },
-      proposal_id: p.id, version: p.version, title, start } };
+      proposal_id: p.id, version: p.version, title, start, ...(end ? { end } : {}) } };
   }
   if (p.action === "create_reminder") {
     const due = str(pl.due);
@@ -73,7 +85,7 @@ export function planBundlePush(rows: ProposalRow[], now: Date): PushPlan {
       category: BUNDLE_CATEGORY, sound: "default" },
     proposal_id: first.proposal_id, version: first.version, title: first.title, start: first.start,
     events: ready.map(({ p }) => ({ proposal_id: p.payload.proposal_id, version: p.payload.version, title: p.payload.title,
-      start: p.payload.start, category: p.category })) } };
+      start: p.payload.start, ...(p.payload.end ? { end: p.payload.end } : {}), category: p.category })) } };
 }
 
 // 토큰·요청 자체가 틀린 응답은 다시 보내도 같다(Apple 문서 상태 코드). 429·5xx 는 일시 오류

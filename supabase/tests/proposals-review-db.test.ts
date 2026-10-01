@@ -25,7 +25,7 @@ async function cleanup(user: string, items: string[]) {
 
 const ids = (rows: Row[] | null) => (rows ?? []).map((r) => r.proposal_id);
 
-Deno.test("list_pending_proposals: own proposed ADD_EVENT only, excludes past·old·uncertain·date-only·reminder·other statuses, start ascending", async () => {
+Deno.test("list_pending_proposals: own proposed ADD_EVENT only, excludes past·old·uncertain·past date-only·reminder·other statuses, start ascending", async () => {
   const { u, c } = await userClient(1);
   const { c: c2 } = await userClient(2);
   const s = [
@@ -35,7 +35,8 @@ Deno.test("list_pending_proposals: own proposed ADD_EVENT only, excludes past·o
     await seed(u.id, "past", { title: "합성 지난 일정", start: at(-2 * HOUR), uncertain: [] }),
     await seed(u.id, "old", { title: "합성 오래된 제안", start: at(24 * HOUR), uncertain: [] }),                // created_at 31일 전
     await seed(u.id, "unc", { title: "합성 확인 필요", start: at(24 * HOUR), uncertain: ["ampm"] }),             // REVIEW
-    await seed(u.id, "date", { title: "합성 날짜만", start: at(72 * HOUR).slice(0, 10), uncertain: [] }),      // REVIEW
+    // 날짜만은 0026 부터 종일로 목록에 나온다(proposals-allday-db) — 여기서는 0022·0026 둘 다에서 빠지는 어제(서울) 날짜만
+    await seed(u.id, "date", { title: "합성 어제 날짜만", start: new Date(T0 + 9 * HOUR - 24 * HOUR).toISOString().slice(0, 10), uncertain: [] }),
     await seed(u.id, "rem", { title: "합성 할 일", due: at(24 * HOUR) }, "create_reminder"),
     await seed(u.id, "done", { title: "합성 이미 추가", start: at(24 * HOUR), uncertain: [] }),
     await seed(u.id, "stale", { title: "합성 바뀐 제안", start: at(24 * HOUR), uncertain: [] }),
