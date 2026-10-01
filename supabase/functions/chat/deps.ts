@@ -10,6 +10,8 @@ import { extractFilters, type Filters } from "./filters.ts";
 // 모델 문서는 상위 12 청크. "보관함에서 보기" 후보는 같은 한 번의 검색의 융합 목록(의미 40 ∪ 키워드 40) 중 관련도 컷을 통과한 행(스펙 §9)
 export const DOC_CHUNKS = 12;
 export const CANDIDATE_CHUNKS = 80;
+// facts 문서 수(스펙 §9): 기본 받은 시각 역순 5, 일정 기간이 있으면 시작 순 8(모델 문서 상한 12 안 — 가까운 일정이 늦게 받았다고 빠지지 않게, Fable N2)
+export const FACTS_LIMIT = 5, FACTS_EVENT_LIMIT = 8;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -44,7 +46,10 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
     authUser: async (t) => { const { data, error } = await sb.auth.getUser(t); return error ? null : data.user?.id ?? null; },
     filters: (q, today) => extractFilters(q, today),
     async facts(u, f: Filters) {
-      const rows = (await rpc("search_facts", { p_user: u, p_from: f.date_from, p_to: f.date_to, p_kinds: f.kinds, p_merchant: f.merchant })) as
+      // 받은 기간은 늘 받은 시각, 일정 기간은 event·task 의 start·due 에만(0024, §9)
+      const scheduled = f.event_from !== null || f.event_to !== null;
+      const rows = (await rpc("search_facts", { p_user: u, p_from: f.date_from, p_to: f.date_to, p_kinds: f.kinds, p_merchant: f.merchant,
+        p_limit: scheduled ? FACTS_EVENT_LIMIT : FACTS_LIMIT, p_event_from: f.event_from, p_event_to: f.event_to })) as
         { item_id: string; kind: string; payload: Record<string, unknown>; evidence: string | null; occurred_at: string }[];
       return rows.map((r) => ({ item_id: r.item_id, occurred_at: r.occurred_at, text: factText(r) }));
     },

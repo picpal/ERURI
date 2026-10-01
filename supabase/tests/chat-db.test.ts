@@ -49,8 +49,8 @@ Deno.test("search_facts (merchant/kind), hybrid_search p_sources, chat_item_meta
   }
 });
 
-// Ruling D: 9/10 에 받은 10/20 일정. 필터 기간이 일정 날짜(10/20)로 채워져도 facts(start)와 하이브리드 폴백이 그 항목을 찾는다
-Deno.test("search_facts filters event/task by start/due (else received time); merchant is a plain substring", async () => {
+// 0024: 일정 기간(p_event_from/to)은 event·task 의 start/due(없거나 달력에 없으면 받은 시각)에, 받은 기간(p_from/to)은 늘 받은 시각에 건다
+Deno.test("search_facts: schedule range filters event/task by start/due (else received time), received range stays on occurred_at; merchant is a plain substring", async () => {
   const e = await seed("GMAIL", "fe", "합성 초대", "합성 현장 미팅 10월 20일"), t = await seed("GMAIL", "ft", "합성 고지", "합성 관리비 납부"),
     d = await seed("GMAIL", "fd", "합성 공지", "합성 워크숍"), p = await seed("NOTIFICATION", "fp", "합성상점", "합성커피 결제");
   try {
@@ -59,15 +59,18 @@ Deno.test("search_facts filters event/task by start/due (else received time); me
       [p, "purchase", { merchant: "합성커피", amount: 6500 }]] as const) {
       assertEquals((await sb.rpc("save_fact", { p_user: USER, p_item: item, p_kind: kind, p_payload: payload, p_evidence: "합성", p_action: null })).error, null);
     }
-    const ids = async (from: string | null, to: string | null, kinds: string[], merchant: string | null = null) => {
-      const { data, error } = await sb.rpc("search_facts", { p_user: USER, p_from: from, p_to: to, p_kinds: kinds, p_merchant: merchant, p_limit: 20 });
+    const ids = async (from: string | null, to: string | null, kinds: string[], merchant: string | null = null, received = false) => {
+      const range = received ? { p_from: from, p_to: to } : { p_from: null, p_to: null, p_event_from: from, p_event_to: to };
+      const { data, error } = await sb.rpc("search_facts", { p_user: USER, ...range, p_kinds: kinds, p_merchant: merchant, p_limit: 20 });
       assertEquals(error, null);
       return new Set((data as { item_id: string }[]).map((r) => r.item_id));
     };
     assertEquals(await ids("2026-10-20T00:00:00+09:00", "2026-10-20T23:59:59+09:00", ["event"]), new Set([e]));       // 일정 날짜로 찾음
     assertEquals(await ids("2026-09-10T00:00:00+09:00", "2026-09-10T23:59:59+09:00", ["event"]), new Set([d]));       // 받은 날로는 안 잡힘(start 가 없는 날짜 2/30 이면 수신일)
     assertEquals(await ids("2026-10-25T00:00:00+09:00", "2026-10-25T23:59:59+09:00", ["task"]), new Set([t]));        // 날짜만 = 서울 0시
-    assertEquals(await ids("2026-09-10T00:00:00+09:00", "2026-09-10T23:59:59+09:00", ["purchase"]), new Set([p]));    // 구매는 받은 시각
+    assertEquals(await ids("2026-09-10T00:00:00+09:00", "2026-09-10T23:59:59+09:00", ["purchase"], null, true), new Set([p]));   // 구매는 받은 시각
+    assertEquals(await ids("2026-10-20T00:00:00+09:00", "2026-10-20T23:59:59+09:00", ["purchase"]), new Set([p]));    // 일정 기간은 구매에 안 걸린다
+    assertEquals(await ids("2026-09-10T00:00:00+09:00", "2026-09-10T23:59:59+09:00", ["event"], null, true), new Set([e, d]));   // 받은 기간은 일정도 받은 시각
     assertEquals(await ids(null, null, [], "합성%"), new Set());                                                         // % 는 글자
     assertEquals(await ids(null, null, [], "커피"), new Set([p]));
   } finally {
@@ -76,7 +79,7 @@ Deno.test("search_facts filters event/task by start/due (else received time); me
   }
 });
 
-Deno.test("chat pipeline (real facts/hybrid RPCs): mail received 9/10 about a 10/20 meeting is found via facts start and via the undated hybrid retry", async () => {
+Deno.test("chat pipeline (real facts/hybrid RPCs): mail received 9/10 about a 10/20 meeting is found via the facts schedule range and via the undated hybrid retry", async () => {
   const text = "합성 현장 미팅 안내: 10월 20일 오전 10시 합성빌딩 3층 회의실";
   const id = await seed("GMAIL", "cp", "합성 미팅 초대", text);
   try {
@@ -88,13 +91,14 @@ Deno.test("chat pipeline (real facts/hybrid RPCs): mail received 9/10 about a 10
     const run = async (f: Partial<Filters>) => {
       const searches: { from: string | null }[] = [];
       const d: ChatDeps = { ...real, budget, audit: async () => {},
-        filters: async () => ({ filters: { date_from: "2026-10-20T00:00:00+09:00", date_to: "2026-10-20T23:59:59+09:00", sources: [], kinds: [], merchant: null, ...f } }),
+        filters: async () => ({ filters: { date_from: "2026-10-20T00:00:00+09:00", date_to: "2026-10-20T23:59:59+09:00", event_from: null, event_to: null, sources: [], kinds: [], merchant: null, ...f } }),
         search: async (u, q) => { searches.push({ from: q.from }); return await real.search(u, q); },
         answer: async (x) => ({ answer: "합성빌딩", source_item_ids: x.documents.map((doc) => doc.item_id), refused: false, model: "gpt-6-sol" }) };
       return { r: await answerQuestion(USER, "10월 20일 합성 현장 미팅 어디야", d), searches };
     };
-    const viaFacts = await run({ kinds: ["event"] });
-    assertEquals([viaFacts.r.hits, viaFacts.r.refused], [[id], false]);
+    // 필터가 일정 날짜를 event_from/to 에 낸 경우(S3): facts 는 start 로, 하이브리드는 기간 없이 한 번
+    const viaFacts = await run({ kinds: ["event"], date_from: null, date_to: null, event_from: "2026-10-20T00:00:00+09:00", event_to: "2026-10-20T23:59:59+09:00" });
+    assertEquals([viaFacts.r.hits, viaFacts.r.refused, viaFacts.searches.map((s) => s.from)], [[id], false, [null]]);
     const viaRetry = await run({});                                                        // facts 경로 없음 → 하이브리드 폴백만
     assertEquals([viaRetry.r.hits, viaRetry.searches.map((s) => s.from)], [[id], ["2026-10-20T00:00:00+09:00", null]]);
   } finally {
@@ -179,5 +183,35 @@ Deno.test("chatDeps.search: documents ≤ 12 from the fused list; candidates kee
     assert(weak.every((id) => !s.candidates.includes(id)));
   } finally {
     await sb.from("items").delete().eq("user_id", USER).in("id", [...strong, ...weak]);   // chunks cascade
+  }
+});
+
+// 2026-10-01 검색·캘린더 S3(0024, Codex #1·Fable N2): 받은 기간은 항상 받은 시각, 일정 기간은 event·task 의 start·due 에만, 둘 다 함께도. 일정 기간이면 시작 순
+Deno.test("chatDeps.facts: received range on occurred_at, schedule range on start only, both together; schedule range sorts by start", async () => {
+  const late = await seed("GMAIL", "ev-late", "합성 초대", "합성 현장 미팅 10월 20일");     // 9/20 에 받은 10/20 일정
+  const early = await seed("GMAIL", "ev-early", "합성 초대 2", "합성 점검 10월 5일");       // 9/10 에 받은 10/5 일정
+  try {
+    for (const [id, at, start, title] of [[late, "2026-09-20T09:00:00+09:00", "2026-10-20T10:00:00+09:00", "합성 현장 미팅"],
+      [early, "2026-09-10T09:00:00+09:00", "2026-10-05T10:00:00+09:00", "합성 점검"]] as const) {
+      assertEquals((await sb.from("items").update({ occurred_at: at }).eq("user_id", USER).eq("id", id)).error, null);
+      assertEquals((await sb.rpc("save_fact", { p_user: USER, p_item: id, p_kind: "event", p_payload: { title, start },
+        p_evidence: title, p_action: null })).error, null);
+    }
+    const f = (o: Partial<Filters>): Filters => ({ date_from: null, date_to: null, event_from: null, event_to: null, sources: [], kinds: ["event"], merchant: null, ...o });
+    const ids = async (o: Partial<Filters>) => (await chatDeps(sb).facts(USER, f(o))).map((h) => h.item_id).filter((x) => x === late || x === early);
+    const SEP = { date_from: "2026-09-01T00:00:00+09:00", date_to: "2026-09-30T23:59:59+09:00" };
+    const OCT20 = { event_from: "2026-10-20T00:00:00+09:00", event_to: "2026-10-20T23:59:59+09:00" };
+    // "9월에 받은 예약": 받은 시각으로 둘 다(0019 는 이 기간을 start 에 걸어 둘 다 놓쳤다)
+    assertEquals(new Set(await ids(SEP)), new Set([late, early]));
+    assertEquals(await ids(OCT20), [late]);
+    // 두 조건 함께: 10월에 받은 것 중 10/20 일정 → 없음, 9월에 받은 것 중 → late
+    assertEquals(await ids({ date_from: "2026-10-01T00:00:00+09:00", date_to: "2026-10-31T23:59:59+09:00", ...OCT20 }), []);
+    assertEquals(await ids({ ...SEP, ...OCT20 }), [late]);
+    // 일정 기간이면 시작 순(받은 순이면 late 가 먼저)
+    assertEquals(await ids({ event_from: "2026-10-01T00:00:00+09:00", event_to: "2026-10-31T23:59:59+09:00" }), [early, late]);
+    assertEquals(await ids({}), [late, early]);
+  } finally {
+    await sb.from("facts").delete().eq("user_id", USER).in("item_id", [late, early]);
+    await sb.from("items").delete().eq("user_id", USER).in("id", [late, early]);
   }
 });

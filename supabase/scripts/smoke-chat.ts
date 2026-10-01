@@ -1,5 +1,5 @@
 // 배포된 chat 의 후보(스펙 §9, 2026-10-01 검색·캘린더 S1) 스모크. 전용 테스트 사용자·합성 문구만, 출력은 상태·개수·불리언만(AGENTS.md §7)
-// 근거 있는 질문: 답함·후보 ≤ 20·인용 ⊆ 후보·근거 3건 모두 후보·무관 12건은 후보 아님. 근거 없는 질문: 거절·후보 0
+// 근거 있는 질문: 답함·후보 ≤ 20·인용 ⊆ 후보·근거 3건 모두 후보·무관 12건은 후보 아님. 근거 없는 질문: 거절·후보 0 일정 질문: schedule = 그날 하루(서울).
 // 사용: deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/smoke-chat.ts
 import { encrypt, toBytea } from "../functions/_shared/crypto.ts";
 import { RUN, service as sb, userClient } from "../tests/_testenv.ts";
@@ -33,10 +33,14 @@ try {
   const a = await ask("합성스모크치과 스케일링 예약 언제야");
   const ac = a.j.candidates ?? [];
   const b = await ask("합성스모크치과 화성 탐사선 발사 일정");
+  const dated = await ask("2026년 10월 7일 합성스모크치과 일정 있어?");
   console.log(JSON.stringify({
     answered: { status: a.status, refused: a.j.refused, candidates: ac.length, relevant: relevant.filter((id) => ac.includes(id)).length,
-      noise: ac.filter((id) => !relevant.includes(id)).length, cited_subset: (a.j.source_item_ids ?? []).every((id) => ac.includes(id)) },
+      noise: ac.filter((id) => !relevant.includes(id)).length, cited_subset: (a.j.source_item_ids ?? []).every((id) => ac.includes(id)),
+      schedule_null: a.j.schedule === null },
     unanswered: { status: b.status, refused: b.j.refused, candidates: (b.j.candidates ?? []).length },
+    dated: { status: dated.status, schedule_ok: JSON.stringify(dated.j.schedule) ===
+      JSON.stringify({ from: "2026-10-07T00:00:00+09:00", to: "2026-10-07T23:59:59+09:00" }) },
   }));
 } finally {
   await sb.from("items").delete().eq("user_id", u.id).in("id", ids);                  // chunks cascade

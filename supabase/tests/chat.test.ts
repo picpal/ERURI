@@ -1,7 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import type { BudgetDeps } from "../functions/_shared/budget.ts";
-import { answerQuestion, type ChatDeps, type ChatHit, type Filters, formatDocuments, handleChat, REFUSAL, relevantItems, validateAnswer } from "../functions/chat/handler.ts";
-import { extractFilters, FILTER_SCHEMA, FILTER_SYSTEM, normalizeFilters } from "../functions/chat/filters.ts";
+import { answerQuestion, type ChatDeps, type ChatHit, type Filters, factsDistinct, formatDocuments, handleChat, REFUSAL, relevantItems, validateAnswer } from "../functions/chat/handler.ts";
+import { extractFilters, FILTER_SCHEMA, FILTER_SYSTEM, normalizeFilters, scheduleOf } from "../functions/chat/filters.ts";
 
 const hits: ChatHit[] = [
   { item_id: "i1", occurred_at: "2026-07-03T12:14:00Z", text: "[쿠팡] 에어팟 프로 2세대 주문 329,000원" },
@@ -38,7 +38,7 @@ function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; searches?: ChatHit[][]; 
     acquire: async () => (slots.length ? slots.shift()! : 1), release: async () => {}, now: () => new Date("2026-10-01T00:00:00Z") };
   const d: ChatDeps = {
     authUser: async (t) => (t === "good" ? "user-1" : null),
-    filters: async () => ({ filters: { date_from: null, date_to: null, sources: [], kinds: [], merchant: null, ...o.filters } }),
+    filters: async () => ({ filters: { date_from: null, date_to: null, event_from: null, event_to: null, sources: [], kinds: [], merchant: null, ...o.filters } }),
     facts: async () => o.facts ?? [],
     search: async (_u, q) => {
       seen.search.push(q);
@@ -105,23 +105,36 @@ Deno.test("answerQuestion: audit covers every item the server read, not only the
   assertEquals([seen.answer[0].docs.length, seen.audit[0].length], [12, 14]);
 });
 
-Deno.test("filter prompt: dates mean when mail/texts were received or saved; schedule and deadline dates stay null (Ruling D)", () => {
+Deno.test("filter prompt: received dates only in date_from/to; schedule and deadline dates go to event_from/to (Ruling D, 2026-10-01)", () => {
   for (const k of ["date_from", "date_to"] as const) {
     const desc = FILTER_SCHEMA.properties[k].description;
     assert(desc.includes("받은/저장한 기간을 말할 때만"), desc);
     assert(desc.includes("일정·약속·기한의 날짜") && desc.includes("10월 20일 미팅") && desc.includes("null"), desc);
   }
-  assert(FILTER_SYSTEM.includes("받은/저장한 시각") && FILTER_SYSTEM.includes("날짜는 null"));
+  for (const k of ["event_from", "event_to"] as const) {
+    const desc = FILTER_SCHEMA.properties[k].description;
+    assert(desc.includes("일정·약속·예약·기한의 날짜") && desc.includes("다음 주 → 그 주 월요일~일요일"), desc);
+  }
+  assert(FILTER_SCHEMA.required.includes("event_from") && FILTER_SCHEMA.required.includes("event_to"));
+  assert(FILTER_SYSTEM.includes("받은/저장한 시각") && FILTER_SYSTEM.includes("event_from·event_to 에") && FILTER_SYSTEM.includes("둘 다 채운다"));
 });
 
-// 실제 gpt-6-luna 호출(합성 질문만, 약 0.1원/건). LIVE_LLM=1 일 때만
-Deno.test({ name: "extractFilters (live): schedule date → no date filter; 'received last month' → date filter", ignore: Deno.env.get("LIVE_LLM") !== "1", fn: async () => {
+// 실제 gpt-6-luna 호출(합성 질문만, 약 0.1원/건). LIVE_LLM=1 일 때만. 2026-10-01(목) 기준: 이번 주 토요일 10-03, 다음 주 10-05~10-11
+Deno.test({ name: "extractFilters (live): schedule dates → event_from/to, not date_from/to; received period → date_from/to", ignore: Deno.env.get("LIVE_LLM") !== "1", fn: async () => {
   const meeting = (await extractFilters("10월 20일 미팅 어디야?", "2026-10-01")).filters;
   assertEquals([meeting.date_from, meeting.date_to, meeting.kinds.includes("event")], [null, null, true]);
+  assertEquals([meeting.event_from, meeting.event_to], ["2026-10-20T00:00:00+09:00", "2026-10-20T23:59:59+09:00"]);
   const plan = (await extractFilters("다음 주 약속 뭐 있어?", "2026-10-01")).filters;
-  assertEquals([plan.date_from, plan.date_to], [null, null]);
+  assertEquals([plan.date_from, plan.date_to, plan.event_from, plan.event_to], [null, null, "2026-10-05T00:00:00+09:00", "2026-10-11T23:59:59+09:00"]);
+  const sat = (await extractFilters("이번 주 토요일 약속 뭐 있지", "2026-10-01")).filters;
+  assertEquals([sat.event_from, sat.event_to], ["2026-10-03T00:00:00+09:00", "2026-10-03T23:59:59+09:00"]);
   const mail = (await extractFilters("지난달 받은 견적 메일 찾아줘", "2026-10-01")).filters;
-  assertEquals([mail.date_from, mail.date_to, mail.sources], ["2026-09-01T00:00:00+09:00", "2026-09-30T23:59:59+09:00", ["GMAIL"]]);
+  assertEquals([mail.date_from, mail.date_to, mail.sources, mail.event_from, mail.event_to],
+    ["2026-09-01T00:00:00+09:00", "2026-09-30T23:59:59+09:00", ["GMAIL"], null, null]);
+  // 받은 기간과 일정 날짜가 함께(Codex #1): 둘 다 채운다
+  const both = (await extractFilters("지난달 받은 메일 중에 10월 20일 미팅 있어?", "2026-10-01")).filters;
+  assertEquals([both.date_from, both.date_to, both.event_from, both.event_to],
+    ["2026-09-01T00:00:00+09:00", "2026-09-30T23:59:59+09:00", "2026-10-20T00:00:00+09:00", "2026-10-20T23:59:59+09:00"]);
 } });
 
 Deno.test("answerQuestion: citations follow the answer's citation order, not the meta row order", async () => {
@@ -162,9 +175,9 @@ Deno.test("handleChat /chat/item: owner's original; unknown → 404", async () =
 });
 
 Deno.test("normalizeFilters: Seoul day bounds; anything but YYYY-MM-DD becomes null", () => {
-  const f = normalizeFilters({ date_from: "2026-09-01", date_to: "2026-09-30", sources: ["GMAIL"], kinds: [], merchant: null });
+  const f = normalizeFilters({ date_from: "2026-09-01", date_to: "2026-09-30", event_from: null, event_to: null, sources: ["GMAIL"], kinds: [], merchant: null });
   assertEquals([f.date_from, f.date_to, f.sources], ["2026-09-01T00:00:00+09:00", "2026-09-30T23:59:59+09:00", ["GMAIL"]]);
-  const bad = normalizeFilters({ date_from: "지난달", date_to: "2026-9-3", sources: [], kinds: [], merchant: null });
+  const bad = normalizeFilters({ date_from: "지난달", date_to: "2026-9-3", event_from: null, event_to: null, sources: [], kinds: [], merchant: null });
   assertEquals([bad.date_from, bad.date_to], [null, null]);
 });
 
@@ -223,4 +236,59 @@ Deno.test("POST /chat returns candidates next to hits", async () => {
   const res = await handleChat(req("chat", { question: "에어팟 어디서 샀지" }), d);
   const j = await res.json();
   assertEquals([res.status, j.hits, j.candidates], [200, ["i1", "i2"], ["i1", "i2", "i7"]]);
+});
+
+// 2026-10-01 검색·캘린더 S3: 일정 날짜 정규화 — 서울 날짜 경계, 달력에 없는 날짜·거꾸로 된 범위는 null(Postgres timestamptz 오류·엉뚱한 범위 방지)
+Deno.test("normalizeFilters: event dates get Seoul day bounds; impossible dates and reversed ranges are dropped", () => {
+  const f = normalizeFilters({ date_from: null, date_to: null, event_from: "2026-10-05", event_to: "2026-10-11", sources: [], kinds: ["event"], merchant: null });
+  assertEquals([f.event_from, f.event_to], ["2026-10-05T00:00:00+09:00", "2026-10-11T23:59:59+09:00"]);
+  const bad = normalizeFilters({ date_from: "2026-02-30", date_to: null, event_from: "2026-10-11", event_to: "2026-10-05", sources: [], kinds: ["event"], merchant: null });
+  assertEquals([bad.date_from, bad.event_from, bad.event_to], [null, null, null]);
+  const one = normalizeFilters({ date_from: null, date_to: null, event_from: "2026-10-03", event_to: null, sources: [], kinds: ["event"], merchant: null });
+  assertEquals([one.event_from, one.event_to], ["2026-10-03T00:00:00+09:00", null]);
+});
+
+// facts 가 후보가 되는 구별 조건: 가맹점 ∨ 받은 기간 ∨ (일정 기간 ∧ kinds ∋ event·task) — 일정 기간은 event·task 행에만 걸리므로(0024)
+Deno.test("factsDistinct: merchant, received range, or a schedule range on event/task kinds", () => {
+  const base = { date_from: null, date_to: null, event_from: null, event_to: null, sources: [], kinds: ["event"], merchant: null };
+  assertEquals(factsDistinct(base), false);
+  assertEquals(factsDistinct({ ...base, event_from: "E0" }), true);
+  assertEquals(factsDistinct({ ...base, kinds: ["purchase"], event_from: "E0" }), false);
+  assertEquals(factsDistinct({ ...base, date_to: "R1" }), true);
+  assertEquals(factsDistinct({ ...base, merchant: "합성상점" }), true);
+});
+
+// schedule: 일정 질문(kinds ∋ event) · 양 끝 · 31일 이하일 때만 — 앱이 1년치 캘린더를 읽지 않게
+Deno.test("scheduleOf: only event questions with both schedule bounds and at most 31 days", () => {
+  const d = { date_from: null, date_to: null, event_from: "2026-10-03T00:00:00+09:00", event_to: "2026-10-03T23:59:59+09:00", sources: [], merchant: null };
+  assertEquals(scheduleOf({ ...d, kinds: ["event"] }), { from: d.event_from, to: d.event_to });
+  assertEquals(scheduleOf({ ...d, kinds: ["event"], event_to: "2026-11-02T23:59:59+09:00" }), { from: d.event_from, to: "2026-11-02T23:59:59+09:00" });
+  assertEquals(scheduleOf({ ...d, kinds: ["task"] }), null);
+  assertEquals(scheduleOf({ ...d, kinds: ["event"], event_to: null }), null);
+  assertEquals(scheduleOf({ ...d, kinds: ["event"], event_to: "2026-12-31T23:59:59+09:00" }), null);
+});
+
+// schedule 은 거절·문서 0건에도 싣는다(앱이 캘린더만으로 보인다). 일정 날짜로 걸러진 facts 는 후보(구별 조건)
+Deno.test("answerQuestion: schedule rides along even when refused or nothing found; schedule-dated facts become candidates", async () => {
+  const f = { kinds: ["event"], event_from: "2026-10-03T00:00:00+09:00", event_to: "2026-10-03T23:59:59+09:00" };
+  const sched = { from: f.event_from, to: f.event_to };
+  const { d } = deps({ filters: f, facts: [{ item_id: "f3", occurred_at: "2026-09-20T00:00:00Z", text: "[event] 합성 모임 · 2026-10-03T19:00:00+09:00" }],
+    raw: { answer: "합성 모임", source_item_ids: ["f3"], refused: false } });
+  const r = await answerQuestion("user-1", "10월 3일 일정 있어?", d);
+  assertEquals([r.schedule, r.candidates[0]], [sched, "f3"]);
+  const refused = await answerQuestion("user-1", "10월 3일 일정 있어?", deps({ filters: f, raw: { answer: "", source_item_ids: [], refused: true } }).d);
+  assertEquals([refused.refused, refused.candidates, refused.schedule], [true, [], sched]);
+  const empty = await answerQuestion("user-1", "10월 3일 일정 있어?", deps({ filters: f, hits: [] }).d);
+  assertEquals([empty.refused, empty.schedule], [true, sched]);
+  const plain = await answerQuestion("user-1", "에어팟 어디서 샀지", deps().d);
+  assertEquals(plain.schedule, null);
+});
+
+Deno.test("POST /chat returns schedule next to candidates (null when not a dated event question)", async () => {
+  const res = await handleChat(req("chat", { question: "에어팟 어디서 샀지" }), deps().d);
+  const j = await res.json();
+  assertEquals([res.status, j.schedule], [200, null]);
+  const dated = await handleChat(req("chat", { question: "10월 3일 일정 있어?" }),
+    deps({ filters: { kinds: ["event"], event_from: "2026-10-03T00:00:00+09:00", event_to: "2026-10-03T23:59:59+09:00" } }).d);
+  assertEquals((await dated.json()).schedule, { from: "2026-10-03T00:00:00+09:00", to: "2026-10-03T23:59:59+09:00" });
 });

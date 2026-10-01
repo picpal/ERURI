@@ -1,9 +1,9 @@
 import { type BudgetDeps, type BudgetLevel, costKrw, Deferred, guarded } from "../_shared/budget.ts";
-import type { Filters } from "./filters.ts";
-export type { Filters } from "./filters.ts";
+import { type Filters, type Schedule, scheduleOf } from "./filters.ts";
+export type { Filters, Schedule } from "./filters.ts";
 
 // 채팅(스펙 §9): 필터 추출 → facts SQL(구조화 조건이 있을 때) → 하이브리드 상위 12(기간 필터로 0건이면 기간 없이 1회 더) → gpt-6-sol 답변(예산 80% 이상이면 gpt-6-luna, §13)
-// → 서버 인용 검증(이번 문서 집합에 없는 id 제거, 근거 0개면 거절) → 출처 메타·제안 카드·보관함 후보(인용 ∪ 구별 facts ∪ 관련도 컷, 거절이면 없음). 수집 문서 안의 지시는 데이터(<document> 블록).
+// → 서버 인용 검증(이번 문서 집합에 없는 id 제거, 근거 0개면 거절) → 출처 메타·제안 카드·보관함 후보(인용 ∪ 구별 facts ∪ 관련도 컷, 거절이면 없음) · 일정 질문이면 schedule(기간만, 앱이 기기 캘린더를 읽는다). 수집 문서 안의 지시는 데이터(<document> 블록).
 // 로그에 질문·문서·답변 본문을 남기지 않는다. 문서로 읽은 item_id 목록은 감사(read)
 export type ChatHit = { item_id: string; text: string; occurred_at: string };
 export type RawAnswer = { answer: string; source_item_ids: string[]; refused: boolean };
@@ -28,7 +28,7 @@ export type ChatDeps = {
   sleep?(ms: number): Promise<void>;
 };
 export type ChatResult = RawAnswer & { forced_refusal: boolean; dropped_ids: number; hits: string[]; candidates: string[]; citations: Meta[];
-  proposals: ProposalCard[]; model: string | null };
+  proposals: ProposalCard[]; model: string | null; schedule: Schedule | null };
 
 export const REFUSAL = "저장된 정보에서 확인되지 않음";
 
@@ -55,7 +55,7 @@ export function formatDocuments(docs: ChatHit[]): string {
   return docs.map((d) => `<document id="${d.item_id}" date="${d.occurred_at}">${d.text.replace(/</g, "‹").replace(/>/g, "›")}</document>`).join("\n");
 }
 
-export function validateAnswer(raw: RawAnswer, hits: ChatHit[]): Omit<ChatResult, "hits" | "candidates" | "citations" | "proposals" | "model"> {
+export function validateAnswer(raw: RawAnswer, hits: ChatHit[]): Omit<ChatResult, "hits" | "candidates" | "citations" | "proposals" | "model" | "schedule"> {
   const allowed = new Set(hits.map((h) => h.item_id));
   const ids = [...new Set(raw.source_item_ids)].filter((id) => allowed.has(id));
   const dropped = new Set(raw.source_item_ids).size - ids.length;
@@ -81,9 +81,10 @@ export function relevantItems(rows: ScoredRow[]): string[] {
   return [...new Set(rows.filter(pass).map((r) => r.item_id))];
 }
 
-// facts 가 후보가 되는 것은 가맹점·기간처럼 대상을 가려내는 조건으로 나왔을 때뿐. 종류만으로 나온 "최근 5건"은 모델 문서로만 쓴다
+// facts 가 후보가 되는 것은 가맹점·받은 기간·일정 기간(event·task 질문)처럼 대상을 가려내는 조건으로 나왔을 때뿐. 종류만으로 나온 "최근 5건"은 모델 문서로만 쓴다
 export function factsDistinct(f: Filters): boolean {
-  return f.merchant !== null || f.date_from !== null || f.date_to !== null;
+  const scheduled = (f.event_from !== null || f.event_to !== null) && (f.kinds.includes("event") || f.kinds.includes("task"));
+  return f.merchant !== null || f.date_from !== null || f.date_to !== null || scheduled;
 }
 
 // 불변식: 인용 ⊆ 후보 ⊆ facts ∪ 융합 80, 거절 ⇒ 후보 없음
@@ -104,6 +105,7 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps): Pro
   const today = deps.today();
   const { value } = await guarded(deps.budget, userId, "chat", CHAT_EST_KRW, crypto.randomUUID(), async (level) => {
     const { filters, usage: fu } = await deps.filters(question, today);
+    const schedule = scheduleOf(filters);          // 일정 질문이면 앱이 이 기간의 기기 캘린더를 읽는다(§9) — 거절·문서 0건이어도 싣는다
     const factDocs = await deps.facts(userId, filters);
     const q = { question, from: filters.date_from, to: filters.date_to, sources: filters.sources };
     let s = await deps.search(userId, q);
@@ -113,7 +115,7 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps): Pro
     const docs = read.slice(0, 12);
     if (docs.length === 0) {
       return { value: { answer: REFUSAL, source_item_ids: [], refused: true, forced_refusal: false, dropped_ids: 0, hits: [], candidates: [],
-        citations: [], proposals: [], model: null } as ChatResult, actualKrw: spent(null, undefined, fu) };
+        citations: [], proposals: [], model: null, schedule } as ChatResult, actualKrw: spent(null, undefined, fu) };
     }
     await deps.audit(userId, read.map((d) => d.item_id));                // 모델에 넣지 않고 버린 것까지 서버가 읽은 전부(§12 통제 4)
     const raw = await deps.answer({ question, today, documents: docs }, level);
@@ -124,7 +126,7 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps): Pro
       : await Promise.all([deps.meta(userId, v.source_item_ids), deps.proposals(userId, v.source_item_ids)]);
     const byId = new Map(meta.map((m) => [m.item_id, m]));
     const citations = v.source_item_ids.map((id) => byId.get(id)).filter((m): m is Meta => m !== undefined);   // 답변의 인용 순서
-    return { value: { ...v, hits: docs.map((d) => d.item_id), candidates, citations, proposals, model: raw.model }, actualKrw: spent(raw.model, raw.usage, fu) };
+    return { value: { ...v, hits: docs.map((d) => d.item_id), candidates, citations, proposals, model: raw.model, schedule }, actualKrw: spent(raw.model, raw.usage, fu) };
   });
   return value;
 }
@@ -158,9 +160,9 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
   try {
     const r = await answerQuestion(user, b.question, deps);
     console.log(JSON.stringify({ chat: r.refused ? "refused" : "answered", forced: r.forced_refusal, cited: r.source_item_ids.length,
-      dropped: r.dropped_ids, hits: r.hits.length, candidates: r.candidates.length, model: r.model }));   // id 목록은 로그에 넣지 않는다
+      dropped: r.dropped_ids, hits: r.hits.length, candidates: r.candidates.length, schedule: r.schedule !== null, model: r.model }));   // id 목록·날짜는 로그에 넣지 않는다
     return Response.json({ answer_id: crypto.randomUUID(), answer: r.answer, refused: r.refused, source_item_ids: r.source_item_ids,
-      citations: r.citations, proposals: r.proposals, hits: r.hits, candidates: r.candidates });
+      citations: r.citations, proposals: r.proposals, hits: r.hits, candidates: r.candidates, schedule: r.schedule });
   } catch (e) {
     if (e instanceof Deferred) {
       console.log(JSON.stringify({ chat: e.message }));
