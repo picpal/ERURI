@@ -36,31 +36,6 @@ final class ChatReplyTests: XCTestCase {
     XCTAssertNil(ChatReply.decode(Data(#"{"error":"llm_busy"}"#.utf8)))
   }
 
-  /// 푸시 ADD_EVENT 와 같은 조건(notify.ts planProposalPush): create_event · proposed · 시각 있는 start · uncertain 없음 · 지나지 않음
-  func testCalendarStartOnlyForTimedCertainProposed() throws {
-    func p(_ payload: String, action: String = "create_event", status: String = "proposed") throws -> ChatReply.Proposal {
-      try JSONDecoder().decode(ChatReply.Proposal.self, from: Data(#"{"id":"p","item_id":"i","action":"\#(action)","status":"\#(status)","payload":\#(payload)}"#.utf8))
-    }
-    let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-01T09:00:00+09:00"))
-    XCTAssertEqual(ChatReply.calendarStart(try p(#"{"start":"2026-10-02T15:30:00+09:00","uncertain":[]}"#), now: now), "2026-10-02T15:30:00+09:00")
-    XCTAssertEqual(ChatReply.calendarStart(try p(#"{"start":"2026-10-02T15:30:00+09:00"}"#), now: now), "2026-10-02T15:30:00+09:00")
-    XCTAssertNil(ChatReply.calendarStart(try p(#"{"start":"2026-10-02","uncertain":[]}"#), now: now))                       // 날짜만
-    XCTAssertNil(ChatReply.calendarStart(try p(#"{"start":"2026-10-02T15:30:00+09:00","uncertain":["year"]}"#), now: now))   // 확인 필요
-    XCTAssertNil(ChatReply.calendarStart(try p(#"{"start":"2026-10-02T15:30:00+09:00"}"#, status: "succeeded"), now: now))
-    XCTAssertNil(ChatReply.calendarStart(try p(#"{"due":"2026-10-02T15:30:00+09:00"}"#, action: "create_reminder"), now: now))
-    XCTAssertNil(ChatReply.calendarStart(try p(#"{"start":null}"#), now: now))
-    XCTAssertNil(ChatReply.calendarStart(try p(#"{"start":"2026-10-02T15:30"}"#), now: now))                              // 오프셋 없음 → handleAdd 가 못 읽음
-  }
-
-  /// 지난 일정(백필 제안은 푸시만 skip past 하고 proposed 로 남는다)은 버튼 없음. 경계: start == now 는 지나지 않음(notify.ts start < now)
-  func testCalendarStartSkipsPast() throws {
-    let p = try JSONDecoder().decode(ChatReply.Proposal.self, from: Data(#"{"id":"p","item_id":"i","action":"create_event","status":"proposed","payload":{"start":"2026-10-01T09:00:00+09:00"}}"#.utf8))
-    let at = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-01T00:00:00Z"))   // = 09:00 서울
-    XCTAssertEqual(ChatReply.calendarStart(p, now: at), "2026-10-01T09:00:00+09:00")
-    XCTAssertNil(ChatReply.calendarStart(p, now: at.addingTimeInterval(1)))
-    XCTAssertNil(ChatReply.calendarStart(p, now: at.addingTimeInterval(86_400 * 90)))
-  }
-
   /// handleAdd 결과 → 카드 문구·재시도 가능 여부. 실패만 버튼을 다시 켠다(dup·skip 은 다시 눌러도 같은 결과)
   func testAddFeedback() {
     XCTAssertEqual(ChatReply.addFeedback("ok").text, "캘린더에 추가했습니다")

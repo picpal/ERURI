@@ -29,16 +29,4 @@ final class DeviceCalendarTests: XCTestCase {
                    "기기 캘린더 · 이 기간 일정 2건")
     XCTAssertEqual(DeviceCalendar.header(0), "기기 캘린더")
   }
-
-  /// 같은 표식이거나 시작(분)·제목이 같으면 이미 있음, 아니면 §10 겹침이면 겹침, 맞닿음은 없음
-  func testCardStatus() {
-    XCTAssertEqual(DeviceCalendar.cardStatus(pid: "p-1", title: "합성 회의", start: t, events: [ev("m", 0, url: ProposalFlow.marker("p-1"))]), .inCalendar)
-    XCTAssertEqual(DeviceCalendar.cardStatus(pid: "p-1", title: "합성 회의", start: t, events: [ev("same", 0, title: " 합성 회의 ")]), .inCalendar)
-    XCTAssertEqual(DeviceCalendar.cardStatus(pid: "p-1", title: "합성 회의", start: t, events: [ev("o", 1800, title: "합성 다른 일")]), .conflict)
-    XCTAssertEqual(DeviceCalendar.cardStatus(pid: "p-1", title: "합성 회의", start: t, events: [ev("late", 3600)]), .clear)
-    XCTAssertEqual(DeviceCalendar.cardStatus(pid: "p-1", title: "합성 회의", start: t, events: []), .clear)
-    XCTAssertEqual(DeviceCalendar.statusText(.inCalendar), "이미 캘린더에 있음")
-    XCTAssertEqual(DeviceCalendar.statusText(.conflict), "같은 시간에 일정 있음")
-    XCTAssertNil(DeviceCalendar.statusText(.clear))
-  }
 }

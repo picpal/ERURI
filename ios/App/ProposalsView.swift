@@ -196,6 +196,7 @@ struct ProposalActionsView: View {
 struct CalendarAccessPrompt: View {
   let message: String
   let onChange: () -> Void
+  @Environment(\.openURL) private var openURL
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
       Text(message).font(.caption).foregroundStyle(.secondary)
@@ -208,7 +209,9 @@ struct CalendarAccessPrompt: View {
           }
         }.buttonStyle(.borderless).font(.caption)
       } else if let url = URL(string: UIApplication.openSettingsURLString) {
-        Link("설정에서 허용하기", destination: url).font(.caption)
+        // Link 는 List 행 안에서 행 탭 경로로 동작해 채팅 목록의 탭 제스처와 겹치면 1회 탭이 먹지 않았다(0.8.1 게이트 C1-4: 3회째에 열림).
+        // 자기 제스처를 갖는 borderless 버튼으로 연다
+        Button("설정에서 허용하기") { openURL(url) }.buttonStyle(.borderless).font(.caption)
       }
     }
   }

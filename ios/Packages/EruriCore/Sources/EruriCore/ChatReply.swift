@@ -33,17 +33,6 @@ public enum ChatReply {
 
   public static func decode(_ data: Data) -> Answer? { try? JSONDecoder().decode(Answer.self, from: data) }
 
-  /// 캘린더 추가 버튼을 보일 제안이면 start(Ruling 8·§10): 푸시 ADD_EVENT 와 같은 조건 — create_event · proposed · 시각 있는 start · uncertain 없음 ·
-  /// 지나지 않음(notify.ts skip past. 백필 제안은 푸시만 건너뛰고 proposed 로 남아 90일 메일 인용에 자주 붙는다).
-  /// handleAdd 가 읽지 못할 start(오프셋 없음 등)도 버튼 없음. 날짜만이거나 확인 필요는 버튼 없음(제안 리뷰 화면은 2단계)
-  public static func calendarStart(_ p: Proposal, now: Date = Date()) -> String? {
-    guard p.action == "create_event", p.status == "proposed", let start = p.payload["start"]?.string,
-          start.range(of: #"T\d{2}:\d{2}"#, options: .regularExpression) != nil,
-          let at = iso.date(from: start), at >= now else { return nil }
-    if case .array(let u)? = p.payload["uncertain"], !u.isEmpty { return nil }
-    return start
-  }
-
   /// 제안 카드 결과 문구(handleAdd 반환: ok·recovered·dup·conflict:<n>·skip_<status>·fail:<코드>·invalid_payload).
   /// retry 는 실패일 때만 — 버튼을 다시 켠다. dup·skip 은 다시 눌러도 같은 결과
   public static func addFeedback(_ outcome: String) -> (text: String, retry: Bool) {
