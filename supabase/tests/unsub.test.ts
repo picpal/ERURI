@@ -336,3 +336,35 @@ Deno.test("dkim: strict grammar on 10k-char adversarial AR finishes fast and nev
     assertEquals([ar.length, performance.now() - t < 50], [ar.length, true]);
   }
 });
+
+// Ruling U1 hardening(재리뷰3 잔여 위험, QP 해제 가정): Gmail 이 운반 서명 i= 의 =3B=20 을 풀어 header.i 에 찍으면 문법에 맞는 dkim=pass 를 통째로 넣을 수 있다.
+// 방어 — 특정된 서명을 가리키는 dkim 결과가 구간 안에 정확히 1개, dkim 결과 수 ≤ DKIM-Signature 수
+Deno.test("dkim: QP-decoded injection (carrier + forged signature) → unverified (U1 hardening)", () => {
+  const base = { From: FROM, "List-Unsubscribe": LU, "List-Unsubscribe-Post": LUP };
+  const carrier = "v=1; d=evil.example.net; i=x@evil.example.net=3B=20dkim=3Dpass=20header.i=3D@example.com=20header.s=3Devil=20header.b=3DEVIL1234=3B=20dkim=3Dneutral=20header.i=3Dy@evil.example.net; s=e1; h=From; b=OwnSig12rest";
+  const forged = "v=1; d=example.com; s=evil; h=From:List-Unsubscribe:List-Unsubscribe-Post; b=EVIL1234rest";
+  // rr3 7번: 운반 서명 결과에 주입 pass(→ 위조 서명)가 끼고, 위조 서명에 대한 Gmail 의 진짜 fail 이 같은 서명을 가리킨다
+  const rr3 = "mx.google.com; dkim=pass header.i=x@evil.example.net; dkim=pass header.i=@example.com header.s=evil header.b=EVIL1234; " +
+    "dkim=neutral header.i=y@evil.example.net header.s=e1 header.b=OwnSig12; dkim=fail header.i=@example.com header.s=evil header.b=EVIL1234; spf=pass";
+  // 결과 수 ≤ 서명 수는 지키지만(서명 3개) 위조 서명을 가리키는 결과가 2개
+  const dup = "mx.google.com; dkim=pass header.i=@example.com header.s=evil header.b=EVIL1234; dkim=fail header.i=@example.com header.s=evil header.b=EVIL1234; dkim=pass header.i=@example.com header.s=s1 header.b=AbC+d/Ef";
+  // 가리키는 결과는 1개씩이지만 결과(3) > 서명(2) — s·b 없는 결과도 센다
+  const over = "mx.google.com; dkim=neutral header.i=x@evil.example.net; dkim=pass header.i=@example.com header.s=evil header.b=EVIL1234; dkim=neutral header.i=y@evil.example.net header.s=e1 header.b=OwnSig12";
+  const cases: [string, string[]][] = [[rr3, [carrier, forged]], [dup, [carrier, forged, SIG.replace("h=From:Subject:List-Unsubscribe:List-Unsubscribe-Post:Date", "h=From")]], [over, [carrier, forged]]];
+  for (const [i, [ar, sigs]] of cases.entries()) {
+    const m = msg({ ...base, "Authentication-Results": ar, "DKIM-Signature": sigs });
+    assertEquals([i, unsubMeta(m)?.method, unsubMeta(m)?.url, dkimCovers(m, "mail.example.com")], [i, "unverified", null, false]);
+  }
+  // 대조: 같은 서명들에 Gmail 이 서명마다 결과 1개씩 찍었고 위조가 pass 라면(가리키는 결과 1개) 여전히 one_click — 방어가 겨누는 것은 중복·초과뿐
+  const clean = "mx.google.com; dkim=neutral header.i=x@evil.example.net header.s=e1 header.b=OwnSig12; dkim=pass header.i=@example.com header.s=evil header.b=EVIL1234";
+  assertEquals(unsubMeta(msg({ ...base, "Authentication-Results": clean, "DKIM-Signature": [carrier, forged] }))?.method, "one_click");
+});
+
+Deno.test("dkim: normal Gmail AR (2 dkim results, 2 signatures) stays one_click; fewer results than signatures too (U1 hardening)", () => {
+  const esp = "v=1; d=esp.example.net; s=e1; h=From:Subject; b=XyZ12345more";
+  const two = "mx.google.com;\r\n       dkim=pass header.i=@esp.example.net header.s=e1 header.b=XyZ12345;\r\n" +
+    "       dkim=pass (2048-bit key) header.i=@example.com header.s=s1 header.b=AbC+d/Ef;\r\n       spf=pass smtp.mailfrom=b@example.com";
+  for (const [ar, sigs] of [[two, [esp, SIG]], [AR_PASS, [esp, SIG]]] as [string, string[]][]) {
+    assertEquals(unsubMeta(msg({ From: FROM, "List-Unsubscribe": LU, "List-Unsubscribe-Post": LUP, "Authentication-Results": ar, "DKIM-Signature": sigs }))?.method, "one_click");
+  }
+});

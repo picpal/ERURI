@@ -44,7 +44,7 @@ function sigTags(v: string): Sig {
   return { d: (t.d ?? "").toLowerCase(), s: (t.s ?? "").toLowerCase(), b: t.b ?? "", h: (t.h ?? "").toLowerCase().split(":").filter(Boolean) };
 }
 
-type Pass = { d: string; exact: boolean; s: string; b: string };
+type DkimResult = { pass: boolean; d: string; exact: boolean; s: string; b: string };
 
 // dkim 구간은 엄격 형식만 인정한다(재리뷰 2 I2, Ruling U1 fix3). header.i·s·b 는 서명의 i=·s=·b= 를 그대로 찍는 칸이라 발신자가 정한다 —
 // RFC 8601 렉서처럼 주석·따옴표를 해석하면 그 칸의 '(' 가 주석을 열어 resinfo 경계를 넘는다. 해석하지 않고 화이트리스트로만 받는다.
@@ -63,10 +63,10 @@ const DKIM_COMMENT = /\([\x20\x21\x23-\x27\x2A-\x3A\x3C-\x5B\x5D-\x7E]{1,64}\)/y
 // 그 뒤의 SPF 주석·smtp.mailfrom·header.from 은 발신자가 정하는 칸을 이스케이프 없이 찍으므로 읽지 않는다.
 // dkim 결과 하나 = dkim=<결과> [공백 주석 1개] (공백 header.{i,d,s,b,a}=<값>)* — 속성은 각 1번, 공백(접힌 줄 포함)으로만 나뉜다.
 // 하나라도 어긋나면 AR 전체를 버린다(실패 쪽 → unverified). Gmail 이 dkim 을 뒤에 찍는 메일도 unverified(안전 쪽).
-// 각 dkim=pass: 서명 도메인·selector·서명값 앞부분(Gmail 은 header.b 에 앞 8자).
+// 각 dkim 결과(pass 외 포함 — 특정 서명을 가리키는 결과 수를 센다): 서명 도메인·selector·서명값 앞부분(Gmail 은 header.b 에 앞 8자).
 // exact = header.d 로 얻은 도메인(서명 d= 와 정확히 같아야 한다). header.i 의 도메인은 d= 와 같거나 그 하위(리뷰 Minor 3)
-function arDkimPass(ar: string): Pass[] {
-  const n = ar.length, out: Pass[] = [];
+function arDkim(ar: string): DkimResult[] {
+  const n = ar.length, out: DkimResult[] = [];
   let i = 0;
   const ws = (): boolean => {   // 공백·접힌 줄. 건너뛴 게 있으면 true
     const st = i;
@@ -106,11 +106,10 @@ function arDkimPass(ar: string): Pass[] {
       t.set(k, v.replace(/^"|"$/g, ""));
       sp = ws();
     }
-    if (result.toLowerCase() !== "pass") continue;
     const hd = (t.get("header.d") ?? "").toLowerCase(), hi = t.get("header.i") ?? "";
     const d = hd || hi.slice(hi.indexOf("@") + 1).toLowerCase();
     const s = (t.get("header.s") ?? "").toLowerCase(), b = t.get("header.b") ?? "";
-    if (d && s && b) out.push({ d, exact: hd !== "", s, b });
+    out.push({ pass: result.toLowerCase() === "pass", d, exact: hd !== "", s, b });
   }
   return out;
 }
@@ -118,14 +117,23 @@ function arDkimPass(ar: string): Pass[] {
 // RFC 8058 §3: **유효한** DKIM 서명이 List-Unsubscribe·List-Unsubscribe-Post 를 덮어야 한다(리뷰 H1).
 // 맨 위 Authentication-Results 가 Gmail(mx.google.com)의 것이어야 한다(수신 서버가 맨 위에 붙인다 — 원문에 끼워 넣은 AR 은 아래에 온다).
 // 그 안의 dkim=pass 가 (d, selector, b= 앞부분)으로 특정하는 DKIM-Signature 가 정확히 1개이고, 그 서명의 h= 가 두 헤더를 모두 포함할 때만 true.
+// 그 서명을 가리키는 dkim 결과(pass 외 포함)가 구간 안에 정확히 1개, dkim 결과 수 ≤ DKIM-Signature 수여야 한다(Ruling U1 hardening).
 // 서명 도메인 D 가 From 도메인과 같거나 그 상위여야 한다 — RFC 가 아니라 제품 정책(외부 발송 대행 서명은 unverified). 역방향(D 가 From 의 하위)은 받지 않는다
 export function dkimCovers(msg: Msg, fromDomain: string): boolean {
   const ar = allHeaders(msg, "Authentication-Results")[0];
   if (!ar) return false;
   const sigs = allHeaders(msg, "DKIM-Signature").map(sigTags);
-  return arDkimPass(ar).some((p) => {
-    const hit = sigs.filter((s) => s.d !== "" && (s.d === p.d || (!p.exact && p.d.endsWith("." + s.d))) && s.s === p.s && s.b.startsWith(p.b));
+  const results = arDkim(ar);
+  // Ruling U1 hardening(QP 해제 가정 경로): Gmail 은 서명마다 결과를 하나씩 찍는다 — 결과가 서명보다 많으면 주입된 것이 섞였다
+  if (results.length > sigs.length) return false;
+  const points = (r: DkimResult, s: Sig): boolean =>
+    r.d !== "" && r.s !== "" && r.b !== "" && s.d !== "" && (s.d === r.d || (!r.exact && r.d.endsWith("." + s.d))) && s.s === r.s && s.b.startsWith(r.b);
+  return results.some((p) => {
+    if (!p.pass) return false;
+    const hit = sigs.filter((s) => points(p, s));
     if (hit.length !== 1) return false;
+    // 같은 서명을 가리키는 결과가 둘 이상이면(진짜 fail + 주입 pass) 버린다
+    if (results.filter((r) => points(r, hit[0])).length !== 1) return false;
     const d = hit[0].d;   // 정렬 판정은 서명의 d=
     return (fromDomain === d || fromDomain.endsWith("." + d)) && hit[0].h.includes("list-unsubscribe") && hit[0].h.includes("list-unsubscribe-post");
   });
