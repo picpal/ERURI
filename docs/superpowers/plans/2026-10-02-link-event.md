@@ -1617,7 +1617,7 @@ final class LinkCaptureTextTests: XCTestCase {
 
   func testReasonsCarryNoAddress() {
     for code in ["blocked_scheme", "blocked_host", "redirects", "unsupported", "timeout", "empty", "web_process", "cancelled", "http_500",
-                 "load_failed", "insecure", "queue", "bad_url"] {
+                 "load_failed", "insecure", "queue", "queue_admit", "bad_url"] {
       XCTAssertFalse(LinkCaptureText.reason(code).isEmpty, code)
       XCTAssertFalse(LinkCaptureText.reason(code).contains("http:"), code)
     }
@@ -1828,7 +1828,7 @@ public enum LinkFlow {
     case handedOff(String)
     /// 앱: 행을 남겨 다시 읽는다(retryCodes 는 백오프, cancelled 는 바로)
     case retry(String)
-    /// 끝(사유 코드). 대기 행도 지웠다(queue = 큐 쓰기 실패)
+    /// 끝(사유 코드). 대기 행도 지웠다 — 단 queue(finish 의 큐 쓰기 실패)는 행을 남겨 앱이 이어받고, queue_admit(관문의 대기 행 쓰기 실패)은 행이 없다
     case failed(String)
   }
 
@@ -1845,7 +1845,7 @@ public enum LinkFlow {
       case .pass(let m): l.note = m
       }
     }
-    do { try queue.enqueueLink(l, lease: lease, now: now) } catch { return .stop(.failed("queue")) }
+    do { try queue.enqueueLink(l, lease: lease, now: now) } catch { return .stop(.failed("queue_admit")) }   // 행 없음 — 앱이 이어받지 않는다(L5 메인 판정 1)
     return .go(l)
   }
 
@@ -1897,6 +1897,14 @@ public enum LinkFlow {
     guard result == "queued" else { return .discarded(String(result.dropFirst("discarded:".count))) }
     try? queue.markLinkSeen(captureID: link.captureID)
     return .queued(captureID: link.captureID, chars: c.text.count, ocr: page.ocrText != nil, timedOut: page.timedOut)
+  }
+
+  /// 공유 확장의 텍스트 폴백(스펙 §6, D8): 확정 실패만 원래 공유 글을 텍스트 항목으로 넣는다. failed("queue") 는 뺀다 —
+  /// finish 의 큐 쓰기 실패는 대기 행이 남아 앱이 이어받는다(폴백하면 항목 두 개). admit 의 실패 failed("queue_admit")는 행이 없어 폴백한다
+  /// (잠금이 잠깐이었으면 원래 글이 남고, 큐 파일이 망가졌으면 폴백도 실패해 일반 실패 문구 — L5 메인 판정 1)
+  public static func fallsBackToText(_ o: Outcome) -> Bool {
+    if case .failed(let code) = o { return code != "queue" }
+    return false
   }
 
   /// 로그 한 단어(DiagLog): queued · duplicate · discarded:<r> · handed_off:<r> · retry:<r> · failed:<r>
@@ -2008,6 +2016,7 @@ public enum LinkCaptureText {
     case "web_process": return "페이지가 너무 무거워요"
     case "cancelled": return "취소했어요"
     case "queue": return "기기에 저장하지 못했어요"
+    case "queue_admit": return "읽기를 시작하지 못했어요"                       // 대기 행을 못 남겼다 — 앱이 이어받지 않는다(L5 메인 판정 1)
     case let c where c.hasPrefix("http_"): return "페이지 오류 \(c.dropFirst(5))"
     default: return "연결할 수 없어요"
     }
@@ -3359,7 +3368,7 @@ final class ShareViewController: UIViewController {
     let begun = Date(), link = PendingLink(url: url, note: note, origin: "share")
     let renderer = LinkRenderer(host: view, allowLoopback: Self.allowLoopback)
     let work = Task { @MainActor () -> LinkFlow.Outcome in
-      guard let q = try? CaptureQueue.shared() else { return .failed("queue") }
+      guard let q = try? CaptureQueue.shared() else { return .failed("queue_admit") }   // 대기 행 없음 — 앱이 이어받지 않는다(L5 메인 판정 1)
       return await LinkFlow.share(link, renderer: renderer, queue: q)
     }
     status.onClose = { work.cancel() }
@@ -3374,7 +3383,9 @@ final class ShareViewController: UIViewController {
     DiagLog.append("ShareExtension link \(LinkFlow.code(o))")
     var text = LinkCaptureText.share(o), saved = false
     if case .queued = o { saved = true }
-    if case .failed(let code) = o, handleText(original, collected, started) == "queued" { text = LinkCaptureText.shareFallback(code) }
+    // 확정 실패만 폴백(LinkFlow.fallsBackToText) — failed("queue") 는 대기 행이 남아 앱이 이어받으므로 폴백하면 항목이 두 개다(메인 판정).
+    // failed("queue_admit")는 행이 없어 폴백한다(L5 메인 판정 1)
+    if case .failed(let code) = o, LinkFlow.fallsBackToText(o), handleText(original, collected, started) == "queued" { text = LinkCaptureText.shareFallback(code) }
     status.show(text, note: saved ? LinkCaptureText.storageNote : nil, done: true)
     await status.waitClose(seconds: 1.5)
   }
@@ -3502,6 +3513,7 @@ import EruriCore
 
 /// 앱의 링크·사진 읽기(스펙 §6 "확장과 앱의 이어받기"·§9 "채팅 링크 붙여넣기"·"채팅 사진 첨부"). 렌더 호스트는 키 창(다른 화면 밑).
 /// 백그라운드에서는 WebKit 이 멈추므로(F13) foreground 에서만 읽고, 활성 상태를 벗어나면 읽던 것을 취소해 행을 돌려놓는다(Fable C4).
+/// 같은 링크는 한 번에 한 곳만 읽는다(LinkReads — 채팅 붙여넣기와 이어받기가 겹치면 채팅은 결과만 받는다, L2 교차 확인 b).
 /// 로그·trace 에 주소·제목·OCR 글 없음
 @MainActor final class LinkCapture {
   static let shared = LinkCapture()
@@ -3510,8 +3522,8 @@ import EruriCore
   #else
   static let allowLoopback = false
   #endif
-  private var drainTask: Task<Void, Never>?
-  private var running: [UUID: Task<LinkFlow.Outcome, Never>] = [:]
+  private let drain = RestartableTask()
+  private let reads = LinkReads()
 
   struct ChatRead: Sendable { let text: String; let captureID: String? }
 
@@ -3523,16 +3535,16 @@ import EruriCore
 
   private static func ms(since d: Date) -> Int { Int(Date().timeIntervalSince(d) * 1000) }
 
-  /// foreground(EruriApp .active): 이어받기를 띄운다(이미 돌고 있으면 그대로)
+  /// foreground(EruriApp .active): 이어받기를 띄운다(돌고 있으면 그대로). 취소된 이어받기가 아직 풀리는 중이어도(flush 대기) 새로 띄운다 —
+  /// 비활성 → 곧바로 활성(제어 센터·권한 알림창)에도 돌려놓은 행을 다시 읽는다(L5 리뷰 I1)
   func startDrain() {
-    guard drainTask == nil else { return }
-    drainTask = Task { await self.drainPending(); self.drainTask = nil }
+    drain.start { await self.drainPending() }
   }
 
   /// 활성 상태를 벗어남(EruriApp): 이어받기·채팅 읽기를 취소한다 — LinkFlow.app 이 cancelled 로 행을 돌려놓는다(시도로 세지 않는다)
   func suspend() {
-    drainTask?.cancel()
-    for t in running.values { t.cancel() }
+    drain.cancel()
+    reads.cancelAll()
   }
 
   /// 확장이 넘긴(또는 확장이 죽어 lease 가 끝난) 대기 행을 5건씩 읽는다. 다 비면 끝, 2분 안에 시도할 행(확장 lease·재시도 백오프)이 남았으면
@@ -3546,7 +3558,7 @@ import EruriCore
     guard let host, let q = try? CaptureQueue.shared() else { return }
     var queued = false
     while !Task.isCancelled {
-      let links = (try? q.claimLinks(limit: 5)) ?? []
+      let claimedAt = Date(), links = (try? q.claimLinks(limit: 5)) ?? []
       if links.isEmpty {
         guard let next = try? q.nextLinkAttempt(), next.timeIntervalSinceNow < 120 else { break }
         try? await Task.sleep(for: .seconds(max(1, next.timeIntervalSinceNow)))
@@ -3554,7 +3566,8 @@ import EruriCore
       }
       for link in links {
         if Task.isCancelled { try? q.releaseLink(id: link.id); continue }   // 잡아 둔 나머지는 돌려놓는다
-        let o = await read(link, origin: "drain", host: host, queue: q)
+        // 잡은 뒤 채팅이 같은 링크를 끝냈거나 읽는 중이면 건너뛴다 — 그쪽이 행을 지우거나 백오프로 다시 건다(취소였으면 이쪽이 읽는다, LinkReads)
+        guard let o = await reads.drain(link, claimedAt: claimedAt, read: { await self.read($0, origin: "drain", host: host, queue: q) }) else { continue }
         if case .queued = o { queued = true }
         if case .failed(let code) = o, code != "queue" {
           await ExecutionReporter.notice(title: LinkCaptureText.drainFailedTitle, body: LinkCaptureText.drainFailedBody(code))
@@ -3564,31 +3577,29 @@ import EruriCore
     if queued { await Uploader.shared.flush(trigger: .foreground) }
   }
 
-  /// 읽기 하나를 취소 가능한 작업으로 돌린다(suspend 가 취소). trace `share.link`·DiagLog `link <origin> <code>` 는 코드만
+  /// 읽기 하나(LinkReads 가 취소 가능한 작업으로 돌린다 — suspend 가 취소). trace `share.link`·DiagLog `link <origin> <code>` 는 코드만
   private func read(_ link: PendingLink, origin: String, host: UIWindow, queue: CaptureQueue) async -> LinkFlow.Outcome {
-    let key = UUID(), started = Date(), r = LinkRenderer(host: host, allowLoopback: Self.allowLoopback)
-    let t = Task { @MainActor in await LinkFlow.app(link, renderer: r, queue: queue) }
-    running[key] = t
-    let o = await t.value
-    running[key] = nil
+    let started = Date(), r = LinkRenderer(host: host, allowLoopback: Self.allowLoopback)
+    let o = await LinkFlow.app(link, renderer: r, queue: queue)
     Trace.log("share.link", LinkFlow.traceFields(o, origin: origin, elapsedMs: Self.ms(since: started), blockedNav: r.blockedNavigations))
     DiagLog.append("link \(origin) \(LinkFlow.code(o))")
     return o
   }
 
-  /// 채팅 붙여넣기 1단계(스펙 §9): 관문(읽은 링크면 중복, 메모 OTP면 폐기 — 행 없음) → 대기 행(앱이 죽어도 다음 foreground 가 이어받게, lease 600초)
-  /// → 읽기(15초 + OCR) → 큐 → 업로드. 다시 해 볼 실패면 이어받기가 백오프 뒤 다시 읽는다
+  /// 채팅 붙여넣기 1단계(스펙 §9): 이어받기가 같은 링크를 읽는 중이면 그 결과만 받는다. 아니면 관문(읽은 링크면 중복, 메모 OTP면 폐기 — 행 없음)
+  /// → 대기 행(앱이 죽어도 다음 foreground 가 이어받게, lease 600초) → 읽기(15초 + OCR) → 큐 → 업로드. 다시 해 볼 실패면 이어받기가 백오프 뒤 다시 읽는다
   func chatRead(url: URL, note: String?) async -> ChatRead {
-    guard let host = hostWindow(), let q = try? CaptureQueue.shared() else { return ChatRead(text: LinkCaptureText.chat(.failed("no_host")), captureID: nil) }
-    let link: PendingLink
-    switch LinkFlow.admit(PendingLink(url: url, note: note, origin: "chat"), queue: q, lease: CaptureQueue.lease) {
-    case .stop(let o):
+    guard let host = hostWindow() else { return ChatRead(text: LinkCaptureText.chat(.failed("no_host")), captureID: nil) }
+    guard let q = try? CaptureQueue.shared() else { return ChatRead(text: LinkCaptureText.chat(.failed("queue_admit")), captureID: nil) }   // 대기 행 없음
+    let r = await reads.chat(PendingLink(url: url, note: note, origin: "chat"), queue: q) { await self.read($0, origin: "chat", host: host, queue: q) }
+    let o = r.outcome
+    switch r {
+    case .stopped:
       Trace.log("share.link", LinkFlow.traceFields(o, origin: "chat", elapsedMs: 0))
       DiagLog.append("link chat \(LinkFlow.code(o))")
-      return ChatRead(text: LinkCaptureText.chat(o), captureID: nil)
-    case .go(let admitted): link = admitted
+    case .joined: DiagLog.append("link chat joined \(LinkFlow.code(o))")   // trace 는 읽은 쪽(이어받기)이 남겼다
+    case .read: break
     }
-    let o = await read(link, origin: "chat", host: host, queue: q)
     if case .retry(let code) = o, code != "cancelled" { startDrain() }       // cancelled 는 다음 .active 가 이어받는다
     guard case .queued(let id, _, _, _) = o else { return ChatRead(text: LinkCaptureText.chat(o), captureID: nil) }
     await Uploader.shared.flush(trigger: .foreground)        // 직접 요청 우선(8초), 응답이 없으면 background 세션(스펙 §6 업로더)
@@ -3633,6 +3644,126 @@ import EruriCore
     }
     return LinkCaptureText.chatResult(status: status, gateLabel: row["gate_label"] as? String, kinds: kinds, subject: subject)
   }
+}
+```
+
+같은 링크 앱 안 읽기 1회(L2 교차 확인 b — 메인 판정)와 이어받기 재시작(L5 리뷰 I1)은 EruriCore 로 뺀다(테스트 `LinkReadsTests`·`RestartableTaskTests`).
+
+`ios/Packages/EruriCore/Sources/EruriCore/LinkReads.swift`:
+
+```swift
+import Foundation
+
+/// 앱 안 링크 읽기 조율(스펙 §6 "확장과 앱의 이어받기", L2 교차 확인 b — 메인 판정): 같은 링크(captureID)는 한 번에 한 곳만 렌더링한다.
+/// 채팅 붙여넣기는 관문(admit — 행을 lease 600초로 다시 걸고 attempts 를 0 으로) 전에 이어받기가 같은 링크를 읽고 있는지 보고, 읽는 중이면
+/// 새로 읽지 않고 그 결과만 받는다. 이어받기는 채팅이 읽고 있는 링크를 건너뛴다(채팅 lease 가 claim 을 막지만, 행이 풀린 틈에도 겹치지 않게).
+/// 메인 액터라 확인과 등록 사이에 끼어들 수 없다. 다른 프로세스(공유 확장)와는 대기 행 lease 로 나뉜다
+@MainActor public final class LinkReads {
+  public enum ChatOutcome: Equatable, Sendable {
+    /// 관문이 멈췄다(duplicate · discarded · failed("queue_admit")) — 렌더링 없음
+    case stopped(LinkFlow.Outcome)
+    /// 이어받기가 같은 링크를 읽고 있었다 — 새로 읽지 않고 그 결과
+    case joined(LinkFlow.Outcome)
+    /// 채팅이 읽었다
+    case read(LinkFlow.Outcome)
+
+    public var outcome: LinkFlow.Outcome {
+      switch self { case .stopped(let o), .joined(let o), .read(let o): return o }
+    }
+  }
+
+  public typealias Read = @MainActor (PendingLink) async -> LinkFlow.Outcome
+
+  private var reading: [String: Task<LinkFlow.Outcome, Never>] = [:]
+  /// 취소가 아닌 결과로 끝난 읽기의 끝난 시각(captureID) — 이어받기가 잡아 둔 배치의 낡은 행을 거른다(L5 리뷰 Minor 1). lease 동안만 둔다
+  private var finished: [String: Date] = [:]
+  #if DEBUG
+  /// 테스트: 다른 쪽 읽기에 붙은 채팅 수
+  private(set) var joins = 0
+  #endif
+
+  public init() {}
+
+  public func isReading(_ captureID: String) -> Bool { reading[captureID] != nil }
+
+  /// 이어받기(claimedAt 에 claimLinks 로 잡은 행). nil = 읽지 않았다(행은 다른 쪽이 지웠거나 백오프로 다시 걸었다):
+  /// - 잡은 뒤 다른 쪽(채팅)이 같은 링크를 끝냈으면 건너뛴다 — 배치에 든 낡은 행(큐에 넣음·백오프)을 다시 읽지 않는다
+  /// - 다른 쪽이 읽는 중이면 끝나기를 기다린다. 행이 claim 될 수 있었다 = 그쪽이 취소돼 행을 돌려놓았다(채팅·claim lease 600초가 그 전에는 막는다).
+  ///   그쪽 결과가 취소면 이 claim 이 행을 쥐고 있으니 직접 읽고(건너뛰면 lease 600초 동안 아무도 읽지 않는다 — 비활성 → 곧바로 활성, L5 리뷰 I1),
+  ///   아니면 건너뛴다
+  public func drain(_ link: PendingLink, claimedAt: Date? = nil, read: @escaping Read) async -> LinkFlow.Outcome? {
+    if let t = reading[link.captureID] {
+      guard await t.value == .retry("cancelled"), reading[link.captureID].map({ $0 == t }) ?? true else { return nil }   // 그 사이 또 다른 읽기가 시작됐으면 건너뛴다
+    } else if let c = claimedAt, let f = finished[link.captureID], f >= c {
+      return nil
+    }
+    return await run(link, read)
+  }
+
+  /// 채팅 붙여넣기: 같은 링크를 읽는 중이면 그 결과(joined), 아니면 관문(lease 600초) → 읽기
+  public func chat(_ link: PendingLink, queue: CaptureQueue, now: Date = Date(), read: @escaping Read) async -> ChatOutcome {
+    if let t = reading[link.captureID] {
+      #if DEBUG
+      joins += 1
+      #endif
+      return .joined(await t.value)                                             // 채팅 메모는 이어받기 쪽 행의 메모(확장이 넣은 것)로 저장된다 — 수용(L5 리뷰 Minor 2)
+    }
+    switch LinkFlow.admit(link, queue: queue, lease: CaptureQueue.lease, now: now) {
+    case .stop(let o): return .stopped(o)
+    case .go(let admitted): return .read(await run(admitted, read))
+    }
+  }
+
+  /// 앱이 활성 상태를 벗어남: 읽던 것을 모두 취소한다(LinkFlow.app 이 cancelled 로 행을 돌려놓는다). 붙어 있던 채팅도 그 결과를 받는다
+  public func cancelAll() { for t in reading.values { t.cancel() } }
+
+  /// 부른 쪽이 이미 취소됐으면(취소된 이어받기) 읽기도 바로 취소한다 — LinkFlow.app 이 cancelled 로 행을 돌려놓는다(비활성 상태에서 렌더링하지 않는다)
+  private func run(_ link: PendingLink, _ read: @escaping Read) async -> LinkFlow.Outcome {
+    let t = Task { @MainActor in await read(link) }
+    reading[link.captureID] = t
+    if Task.isCancelled { t.cancel() }
+    let o = await t.value
+    if reading[link.captureID] == t { reading[link.captureID] = nil }          // 끝난 뒤 이어받기가 먼저 깨어나 같은 링크를 다시 읽기 시작했을 수 있다
+    if o != .retry("cancelled") {
+      let now = Date()
+      finished = finished.filter { now.timeIntervalSince($0.value) < CaptureQueue.lease }
+      finished[link.captureID] = now
+    }
+    return o
+  }
+}
+```
+
+`ios/Packages/EruriCore/Sources/EruriCore/RestartableTask.swift`:
+
+```swift
+import Foundation
+
+/// 취소한 뒤 곧바로 다시 띄울 수 있는 작업 하나(앱 이어받기 drain — L5 리뷰 I1). 취소된 작업이 await(업로드 flush·알림)에서 풀리는 동안
+/// 다시 시작하면 기다리지 않고 새 작업을 띄우고, 늦게 끝난 옛 작업은 세대가 달라 새 작업 자리를 비우지 않는다.
+/// 두 작업이 잠시 겹쳐도 같은 행은 claim lease 와 LinkReads 가 한 번만 읽게 한다
+@MainActor public final class RestartableTask {
+  private var task: Task<Void, Never>?
+  private var gen = 0
+
+  public init() {}
+
+  /// 취소되지 않은 작업이 돌고 있다
+  public var isRunning: Bool { task.map { !$0.isCancelled } ?? false }
+
+  /// 돌고 있으면(취소되지 않았으면) 그대로 두고 false
+  @discardableResult public func start(_ work: @escaping @MainActor () async -> Void) -> Bool {
+    if isRunning { return false }
+    gen += 1
+    let g = gen
+    task = Task { @MainActor [weak self] in
+      await work()
+      if let self, self.gen == g { self.task = nil }
+    }
+    return true
+  }
+
+  public func cancel() { task?.cancel() }
 }
 ```
 
@@ -3737,6 +3868,7 @@ import EruriCore
 
   /// 사진 턴(§9 채팅 사진 첨부): 입력창 글은 메모. OCR·업로드 동안 보내기를 막고, 서버 결과(최대 60초)는 따로 기다린다
   private func sendImages(_ items: [PhotosPickerItem]) {
+    guard !busy else { return }                              // 피커를 연 사이 다른 턴이 시작됐으면 겹치지 않게(L5 리뷰 Minor 5)
     let note = input.trimmingCharacters(in: .whitespacesAndNewlines)
     input = ""
     inputFocused = false
