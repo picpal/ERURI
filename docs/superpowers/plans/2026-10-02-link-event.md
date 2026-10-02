@@ -1210,7 +1210,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: L1 `LinkText.compose`·`hasDateCandidate`·`captureID(for:)`·`appName`, `LinkPage`, `ImageText.compose`·`appName`.
 - Produces:
   - `struct PendingLink: Codable, Equatable, Sendable { id ("link:<captureID>"), captureID (= LinkText.captureID(for: url)), url: String, note: String?, origin: String, capturedAt: Date, attempts: Int; init(url: URL, note: String?, origin: String, capturedAt: Date = Date()) }`
-  - `CaptureQueue.linkMaxAge = 7일`·`linkSeenFor = 30일` · `enqueueLink(_:lease:now:) throws`(같은 id면 lease·payload만 갱신) · `releaseLink(id:now:) throws` · `claimLinks(limit:now:) throws -> [PendingLink]`(7일 지난 행 삭제, attempts 채움) · `nextLinkAttempt() throws -> Date?` · `linkCount() throws -> Int` · `markLinkSeen(captureID:now:) throws` · `isLinkSeen(captureID:now:) throws -> Bool` (삭제는 기존 `markSent(id:)`, 백오프는 기존 `markFailed(id:)`)
+  - `CaptureQueue.linkMaxAge = 7일`·`linkSeenFor = 30일` · `enqueueLink(_:lease:now:) throws`(같은 id면 payload·lease·created_at 갱신, attempts 0 — 재공유는 새 시도. 7일 지난 행도 지움) · `releaseLink(id:now:) throws` · `claimLinks(limit:now:) throws -> [PendingLink]`(7일 지난 행 삭제, attempts 채움) · `nextLinkAttempt() throws -> Date?` · `linkCount() throws -> Int` · `markLinkSeen(captureID:now:) throws` · `isLinkSeen(captureID:now:) throws -> Bool` (삭제는 기존 `markSent(id:)`, 백오프는 기존 `markFailed(id:)`)
   - `CapturePipeline.handleRead(id: String, appName: String, title: String?, text: String, capturedAt: Date) throws -> String` ("queued" | "discarded:<reason>")
   - `enum LinkRenderOutcome: Equatable, Sendable { case page(LinkPage, elapsedMs: Int), failed(String) }`
   - `@MainActor protocol LinkRendering: AnyObject { func render(_ url: URL, budget: TimeInterval, ocr: Bool) async -> LinkRenderOutcome }`
@@ -1375,6 +1375,36 @@ final class LinkFlowTests: XCTestCase {
     XCTAssertEqual(try q.linkCount(), 1)
     XCTAssertEqual(try q.claimLinks(limit: 10, now: t0.addingTimeInterval(30)).count, 0)
     XCTAssertEqual(try q.claimLinks(limit: 10, now: t0.addingTimeInterval(66)).first?.note, "다시")
+  }
+
+  /// 7일 가까이 남은 행을 다시 공유하면 새로 건 것으로 본다 — 만료가 재공유를 지우지 않는다(L2 리뷰 I1)
+  func testReShareRestartsExpiry() throws {
+    let q = try makeQueue(), t0 = Date(), day: TimeInterval = 86_400
+    try q.enqueueLink(PendingLink(url: url, note: nil, origin: "share", capturedAt: t0), lease: 0, now: t0)
+    let t1 = t0.addingTimeInterval(7 * day + 3600)
+    try q.enqueueLink(PendingLink(url: url, note: nil, origin: "share", capturedAt: t1), lease: 0, now: t1)
+    XCTAssertEqual(try q.claimLinks(limit: 10, now: t0.addingTimeInterval(7 * day + 7200)).count, 1)
+  }
+
+  /// 2회 실패한 행을 다시 공유하면 시도 수가 0부터(앱 기회 3회)
+  func testReShareResetsAttempts() throws {
+    let q = try makeQueue(), t = Date()
+    try q.enqueueLink(PendingLink(url: url, note: nil, origin: "share"), lease: 0, now: t)
+    try q.markFailed(id: PendingLink(url: url, note: nil, origin: "share").id)
+    try q.markFailed(id: PendingLink(url: url, note: nil, origin: "share").id)
+    XCTAssertEqual(try q.claimLinks(limit: 1, now: t.addingTimeInterval(3600)).first?.attempts, 2)
+    let t1 = t.addingTimeInterval(4000)
+    try q.enqueueLink(PendingLink(url: url, note: nil, origin: "share", capturedAt: t1), lease: 0, now: t1)
+    XCTAssertEqual(try q.claimLinks(limit: 1, now: t1).first?.attempts, 0)
+  }
+
+  /// 7일 지난 행은 enqueue 때도 지운다(앱이 열리지 않아도)
+  func testEnqueueDropsExpiredLinkRows() throws {
+    let q = try makeQueue(), t0 = Date()
+    try q.enqueueLink(PendingLink(url: url, note: "청첩장", origin: "share", capturedAt: t0), lease: 0, now: t0)
+    let t1 = t0.addingTimeInterval(CaptureQueue.linkMaxAge + 60)
+    try q.enqueueLink(PendingLink(url: url2, note: nil, origin: "share", capturedAt: t1), lease: 0, now: t1)
+    XCTAssertEqual(try q.linkCount(), 1)
   }
 
   func testUnreadableLinkRowIsDropped() throws {
@@ -1614,12 +1644,15 @@ Expected: 컴파일 실패(`cannot find 'PendingLink' in scope`).
   // MARK: - 링크 대기 행 (kind = 'link', payload = PendingLink JSON, 스펙 §6 "확장과 앱의 이어받기")
 
   /// 렌더링 전에 남긴다. lease 동안은 앱이 가져가지 않는다(확장이 죽으면 lease 뒤 앱이 이어받는다). 캡처 claim·pending 은 kind = 'capture' 만 본다.
-  /// 같은 주소 = 같은 id(D14) — 행이 이미 있으면(확장이 죽어 남은 행을 다시 공유) lease·payload 만 새로 건다(attempts·created_at 은 그대로)
+  /// 같은 주소 = 같은 id(D14) — 행이 이미 있으면(확장이 죽어 남은 행을 다시 공유) 사용자가 다시 시도한 것이라 새 행처럼 건다(payload·lease·created_at 갱신, attempts 0 — 7일 만료가 재공유를 지우지 않게, L2 리뷰 I1).
+  /// 7일 지난 행은 이때도 지운다(앱이 열리지 않아도 주소·메모가 7일을 넘겨 남지 않게)
   public func enqueueLink(_ l: PendingLink, lease: TimeInterval, now: Date = Date()) throws {
     let data = try enc.encode(l)
+    try deleteExpiredLinks(now: now)
     try run("""
       INSERT INTO queue(id,payload,attempts,created_at,next_attempt_at,kind) VALUES(?1,?2,0,?3,?4,'link')
-      ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, next_attempt_at = excluded.next_attempt_at
+      ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, next_attempt_at = excluded.next_attempt_at,
+        created_at = excluded.created_at, attempts = 0
       """) { s in
       sqlite3_bind_text(s, 1, l.id, -1, Self.transient)
       data.withUnsafeBytes { sqlite3_bind_blob(s, 2, $0.baseAddress, Int32(data.count), Self.transient) }
@@ -1635,7 +1668,7 @@ Expected: 컴파일 실패(`cannot find 'PendingLink' in scope`).
   }
   /// 앱(foreground): 처리할 링크를 캡처와 같은 lease(600초)로 가져온다. 7일 지난 행·읽을 수 없는 행은 지운다(큐를 막지 않게). attempts 는 열에서 채운다
   public func claimLinks(limit: Int, now: Date = Date()) throws -> [PendingLink] {
-    try run("DELETE FROM queue WHERE kind = 'link' AND created_at < ?") { sqlite3_bind_double($0, 1, now.timeIntervalSince1970 - Self.linkMaxAge) }
+    try deleteExpiredLinks(now: now)
     var s: OpaquePointer?
     let sql = """
       UPDATE queue SET next_attempt_at = ?1
@@ -1660,6 +1693,9 @@ Expected: 컴파일 실패(`cannot find 'PendingLink' in scope`).
     if let err { throw Error.sqlite(err) }
     for id in poison { try markSent(id: id) }
     return out.sorted { $0.capturedAt < $1.capturedAt }                          // RETURNING 순서는 보장되지 않는다
+  }
+  private func deleteExpiredLinks(now: Date) throws {
+    try run("DELETE FROM queue WHERE kind = 'link' AND created_at < ?") { sqlite3_bind_double($0, 1, now.timeIntervalSince1970 - Self.linkMaxAge) }
   }
   /// 남은 링크 행 중 가장 이른 다음 시도 시각(lease·백오프). 없으면 nil — 앱이 활성 상태에서 다시 볼 때를 정한다
   public func nextLinkAttempt() throws -> Date? {
@@ -2026,7 +2062,7 @@ public enum LinkCaptureText {
 - [ ] **Step 7: 통과 확인**
 
 Run: `cd ios && ./scripts/sim.sh gen && ./scripts/sim.sh test EruriCoreTests/LinkFlowTests && ./scripts/sim.sh test EruriCoreTests/LinkCaptureTextTests`
-Expected: `LinkFlowTests` 23개·`LinkCaptureTextTests` 5개 통과. `testQueryDigitsDoNotDiscard`의 대조 단언(`discarded:otp`)이 깨지면 고치지 말고 멈춰 메인에게 알린다(D3·UQ2의 근거가 달라진다). `enqueueLink`의 `ON CONFLICT … DO UPDATE`가 기기 SQLite에서 문법 오류면(3.24 미만은 없음 — iOS 26은 해당 없음) 보고한다.
+Expected: `LinkFlowTests` 26개·`LinkCaptureTextTests` 5개 통과. `testQueryDigitsDoNotDiscard`의 대조 단언(`discarded:otp`)이 깨지면 고치지 말고 멈춰 메인에게 알린다(D3·UQ2의 근거가 달라진다). `enqueueLink`의 `ON CONFLICT … DO UPDATE`가 기기 SQLite에서 문법 오류면(3.24 미만은 없음 — iOS 26은 해당 없음) 보고한다.
 
 - [ ] **Step 8: 회귀**
 
