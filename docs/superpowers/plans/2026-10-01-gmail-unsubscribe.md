@@ -2722,10 +2722,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `docs/superpowers/phase1/gates.md` (행 `UNS-server` 대기 → 통과)
+- Move: `supabase/migrations-pending/0029_unsub_gap_scan.sql` → `supabase/migrations/` (Step 3b, `git mv`), `supabase/tests/unsub-gap-db.test.ts` 경로 되돌림
 - Apply: `supabase/migrations/0029_unsub_gap_scan.sql` (호스팅 DB, 워커 배포 뒤)
 
 **Interfaces:**
-- Consumes: U4 커밋(워커 기록·스캔·재동기화 훅·잡 로컬 차단기, `0029_unsub_gap_scan.sql` 파일 — 미적용), U6a(배포된 `unsubscribe`·`UNSUB_SINK_KEY`), U8·U9(0.10.0 앱, 시뮬레이터 게이트 통과), U5 `unsub-stats.ts`.
+- Consumes: U4 커밋(워커 기록·스캔·재동기화 훅·잡 로컬 차단기, `0029_unsub_gap_scan.sql` 파일 — 미적용, 다른 계획의 `db push`에 딸려 올라가지 않게 `supabase/migrations-pending/`에 둠(최종 리뷰 I3)), U6a(배포된 `unsubscribe`·`UNSUB_SINK_KEY`), U8·U9(0.10.0 앱, 시뮬레이터 게이트 통과), U5 `unsub-stats.ts`.
 - Produces: 배포된 `worker`, 실사용자 30일 스캔 결과(집계만), **원클릭 비율 판정(D11)**, TestFlight 0.10.0.
 
 **왜 ③c2 뒤인가(D10):** 워커 재배포는 잡 처리 시간을 바꿔 Gmail 7일 측정(지연·재시도·후속 저장)에 영향을 줄 수 있다. 30일 스캔이 배포 전 광고를 채우므로 일찍 배포해 얻는 것이 거의 없다.
@@ -2744,7 +2745,10 @@ Expected: 0 실패(ignored 수는 직전 기록과 같음), 무오류. 실패가
 
 - [ ] **Step 3: 워커 배포·회귀**
 
-Run: `git log --oneline -1 && supabase functions deploy worker`
+Run: `git log --oneline -1 && git diff --stat <gates.md에 기록된 마지막 worker 배포 HEAD>..HEAD -- supabase/functions/_shared supabase/functions/worker`
+Expected: 이 계획의 커밋(U1·U2·U4 등)만 보인다. 이 계획 밖의 서버 변경이 함께 배포되면 멈추고 메인에게 알린다(최종 리뷰 권고).
+
+Run: `supabase functions deploy worker`
 Expected: 배포 성공. 배포 시각(KST)·HEAD를 적어 둔다.
 
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/smoke-gate.ts`
@@ -2755,31 +2759,52 @@ Expected: dead `gmail-fetch` 0, 연결 `active`(Gmail 게이트 원장의 직전
 
 - [ ] **Step 3b: 0029 적용 (일일 공백 스캔 cron, U4 리뷰 I2)**
 
-워커 배포·회귀 뒤에만 적용한다 — 먼저 적용하면 배포 전 워커가 `gmail-unsub-scan`을 모르는 잡으로 받아 dead가 된다.
+워커 배포·회귀 뒤에만 적용한다 — 먼저 적용하면 배포 전 워커가 `gmail-unsub-scan`을 모르는 잡으로 받아 dead가 된다. 그때까지 파일은 `supabase/migrations-pending/`에 있다(최종 리뷰 I3 — `supabase/migrations/`에 두면 다른 계획의 `db push`가 함께 적용한다).
+
+Run: `git mv supabase/migrations-pending/0029_unsub_gap_scan.sql supabase/migrations/ && sed -i '' 's#"../migrations-pending/0029_unsub_gap_scan.sql"#"../migrations/0029_unsub_gap_scan.sql"#' supabase/tests/unsub-gap-db.test.ts && rmdir supabase/migrations-pending 2>/dev/null; git status --short`
+Expected: `R  …/0029_unsub_gap_scan.sql`·`M supabase/tests/unsub-gap-db.test.ts`만. 다른 미적용 마이그레이션 파일이 `supabase/migrations-pending/`에 남아 있으면 `rmdir`이 실패하고 디렉터리가 남는다 — 그대로 둔다.
 
 Run: `supabase db push --dry-run`
-Expected: 적용 대상이 `0029_unsub_gap_scan.sql` 하나뿐.
+Expected: 적용 대상 목록이 `0029_unsub_gap_scan.sql` **하나뿐**. 다른 파일이 함께 보이면(다른 계획의 미적용 마이그레이션) push하지 않고 멈춰 메인에게 알린다.
 
 Run: `supabase db push --yes && deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/unsub-gap-db.test.ts supabase/tests/unsub-db.test.ts`
-Expected: 적용 성공, 테스트 전부 통과(`unsub-gap-db`는 배포본을 그대로 쓰고 롤백). `cron.job`에 `unsub-gap-scan-daily`(`27 19 * * *`)가 있다. 첫 실행(다음 KST 04:27) 뒤 `unsub-stats.ts`의 `jobs`에 `gmail-unsub-scan:done`이 늘었는지·dead 0인지 Step 4의 확인과 함께 본다.
+Expected: 적용 성공, 테스트 전부 통과(`unsub-gap-db`는 배포본을 그대로 쓰고 롤백). `cron.job`에 `unsub-gap-scan-daily`(`27 19 * * *`)가 있다. cron을 수동으로 돌리지 않는다 — 돌리면 8일 공백 스캔이 대기에 걸려 Step 4가 `enqueued: 0`을 낸다(최종 리뷰 Minor 5). 첫 실행(다음 KST 04:27) 뒤 `unsub-stats.ts`의 `jobs`에 `gmail-unsub-scan:done`이 늘었는지·dead 0인지 Step 4의 확인과 함께 본다.
+
+```bash
+git add supabase/migrations/0029_unsub_gap_scan.sql supabase/tests/unsub-gap-db.test.ts
+git commit -m "chore(db): move 0029 gap-scan migration back into supabase/migrations/ and apply it after the worker deploy (U6b Step 3b)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
 
 - [ ] **Step 4: 30일 스캔**
 
+Step 3b 직후 바로 실행한다(KST 04:27 cron 전에).
+
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/unsub-stats.ts --enqueue-scan`
-Expected: `{"enqueued":1,"since":"<ISO>"}` 뒤 집계 한 줄. `since` 값을 적어 둔다. `enqueued: 0`이면 일일 공백 스캔(0029)이 대기·실행 중이다(같은 lease 대기 중 검사) — 그 잡이 done 된 뒤 다시 실행한다.
+Expected: `{"enqueued":1,"since":"<ISO>"}` 뒤 집계 한 줄. `since` 값을 적어 둔다. `enqueued`는 활성 Gmail 연결 수(1인 1계정이라 1)다. `enqueued: 0`이면 둘 중 하나다 — (a) 같은 lease(`backfill:<user>`)에 대기·실행 중인 `gmail-unsub-scan`이 있다(Step 3b 뒤 04:27 cron의 8일 공백 스캔): `unsub-stats.ts`의 `jobs`에서 `gmail-unsub-scan:queued`·`running`이 0이 된 뒤 다시 실행한다(8일 공백 스캔이 끝나도 30일 스캔은 따로 필요하다). (b) 연결이 `active`가 아니다(주간 재인증 공백): `gmail-gate.ts status`의 연결 상태를 보고, 사용자가 재연결한 뒤 실행한다. 두 경우 모두 다시 실행한 쪽의 `since`를 쓴다.
 
 10분 간격으로(최대 1시간) `unsub-stats.ts --since <위 since>`를 다시 실행해 `jobs`에 `gmail-unsub-scan:done`이 있고 `gmail-unsub-fetch:*`가 모두 `done`(queued·running 0, **dead 0**)인지 본다. 같은 시점에 `gmail-gate.ts status`로 실시간 sync dead 0도 본다(스캔은 `backfill:<user>` lease라 sync를 막지 않는다). dead가 있으면 `jobs.last_error` 코드만 조회해 적는다 — 스캔 fetch의 기록 실패는 잡 실패로 남으므로(U4) dead 0이 완료 조건이다.
+
+**429 확인(U4 파킹 M1·M2, 기록만 — 게이트 아님):** 스캔 fetch(분당 약 3,000 units)와 실시간 fetch가 겹치면 사용자당 분당 6,000 units를 넘을 수 있다. 429는 잡 재시도(백오프)로 회복되면 dead에 남지 않으므로 dead 0만으로는 보이지 않는다. 스캔 잡이 다 끝난 뒤 한 번 실행한다(개수만, 행 내용 없음 — `done` 잡도 마지막 `last_error`를 지우지 않으므로 재시도 뒤 성공한 잡도 잡힌다. 잡마다 마지막 오류만 남아 하한이다):
+
+Run: `deno eval --env-file=supabase/.env 'import { createClient } from "npm:@supabase/supabase-js@2"; const sb = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false } }); const [since] = Deno.args; const out = {}; for (const k of ["gmail-fetch", "gmail-unsub-fetch"]) { const q = () => sb.from("jobs").select("id", { count: "exact", head: true }).eq("user_id", Deno.env.get("ERURI_USER_ID")).eq("kind", k).gte("updated_at", since); const a = await q().like("last_error", "% 429"); const b = await q().gt("attempts", 1); out[k] = { last_error_429: a.error ? a.error.code : a.count, retried: b.error ? b.error.code : b.count }; } console.log(JSON.stringify(out));' <위 since>`
+Expected: `{"gmail-fetch":{"last_error_429":<n>,"retried":<n>},"gmail-unsub-fetch":{…}}` 한 줄을 적는다. 판정에 쓰지 않는다. `gmail-fetch` 쪽 `last_error_429 ≥ 1`이면(실시간 수집이 스캔과 겹쳐 밀림) 메인에게 보고에 적는다 — 스캔 fetch 간격(400ms)을 늘릴지 후속 판단.
 
 - [ ] **Step 5: 원클릭 비율 판정 (D11, TestFlight 전)**
 
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/unsub-stats.ts --since <위 since>`
-Expected: `senders_with_ads_30d ≥ 1`, `ads_30d ≥ 1`. `method_of_senders_with_ads`(예: `{"one_click": a, "link_only": b, "mailto": c, "unverified": d, "none": e}`)를 적는다 — 주소 없음.
+Expected: `senders_with_ads_30d ≥ 1`, `ads_30d ≥ 1`. `method_of_senders_with_ads`(예: `{"one_click": a, "link_only": b, "mailto": c, "unverified": d, "none": e}`)를 적는다 — 주소 없음. `status`에 `requesting`·`requested`·`failed`가 없다(실사용자 해지 요청 0건 — 아래 동치의 전제).
+
+**판정 기준(D11, 최종 리뷰 I1 — 계획 U10 Step 1과 같은 문장):** `method_of_senders_with_ads.one_click ≥ 1` **그리고** `senders_with_ads_30d ≤ 100`이면 진행한다. 이것은 앱과 같은 `unsub_list` 반환 행(상위 100) 중 `can_request && method = 'one_click'` ≥ 1(원장 Ruling U6b)과 같다 — U6b 시점에는 실사용자 요청이 0건이라 `attempts`가 모두 0(`can_request` 모두 참)이고, `unsub_list` 행은 곧 30일 광고가 있는 발신자 상위 100이며 방법은 `unsub_stats`와 같은 `unsub_best`다. `unsub_list`는 `auth.uid()`로 사용자를 정해 service role 운영자 도구로는 부를 수 없으므로(실사용자 JWT 없음) 직접 부르지 않는다. `senders_with_ads_30d > 100`이면 **멈춘다** — 상위 100 밖의 원클릭 발신자가 섞여 동치가 깨진다. 메인이 `unsub_stats`에 `listed_requestable_one_click`(`unsub_list`와 같은 필터·정렬·`limit 100`·`attempts < 5`를 `p_user`로 계산)을 더하는 소태스크를 만든다(0029는 이미 적용됐으므로 새 마이그레이션). 그 값으로 다시 판정한다.
 
 판정:
-- `one_click ≥ 1` → 진행(Step 6).
+- `one_click ≥ 1` 그리고 `senders_with_ads_30d ≤ 100` → 진행(Step 6).
 - `one_click = 0` → **멈춘다.** `UNS-server` 비고에 분포를 적고, 메인이 사용자에게 "앱에서 바로 해지할 수 있는 발신자가 0곳입니다. 웹 페이지 열기(사용자 브라우저)로 바꿀까요?"를 묻는다. `UNS-real`은 "실패(대안 채택)" 후보이며 대안이 정해지면 스펙 §7·§16과 계획을 고친 뒤 다시 판정한다. TestFlight는 올리지 않는다.
 - `unverified`가 광고 발신자의 절반을 넘으면(원클릭 헤더는 있는데 확인 실패) U1의 "맨 위 AR이 Gmail 것" 가정을 의심한다 — 메인에게 보고하고, 합성 헤더가 아니라 실사용자 메일의 **헤더 이름 순서만**(값 없이) 1통 확인하는 조사 태스크를 제안한다(값·주소를 보지 않는다).
-- `senders_with_ads_30d = 0`이면 F2/스캔 경로 문제다 — 실패로 적고 원인 조사 태스크를 만든다.
+- `senders_with_ads_30d = 0`이면 30일 스캔 경로 문제다 — 실패로 적고 원인 조사 태스크를 만든다.
+
+**F2 관찰(게이트 아님, 원장 Ruling F2·U4-I2 · 최종 리뷰 I2):** 실시간 경로(history로 오는 광고)가 동작하는지는 `unsub_mail`로 가를 수 없다 — 출처 열이 없고, 30일·일일 공백 스캔이 같은 `msg_key`를 다시 쓴다. 대안(일 1회 공백 스캔)은 0029로 이미 들어가 있으므로 판정하지 않는다. 관찰만 한다: Step 7 기록 시점에 Supabase 대시보드 Edge Functions › `worker` 로그에서 Step 3 배포 뒤 `gmail_discard`의 `promotion` 줄 개수(개수만 — 줄에는 connection_id·사유 코드만 있다)를 적는다. 0이어도 실패가 아니다(공백 스캔이 메운다).
 
 - [ ] **Step 6: TestFlight 0.10.0**
 
@@ -2791,8 +2816,10 @@ Expected: `none` 뒤 0.10.0(빌드 번호 `YYYYMMDDHHMM`) 업로드 성공, App 
 `docs/superpowers/phase1/gates.md`의 `UNS-server` 행 상태를 **통과**로 바꾸고 비고 끝에 붙인다:
 
 ```
-U6b <KST>(worker v<n>), HEAD <sha>. smoke-gate <JSON 한 줄>. gmail-gate status dead 0. 스캔 since <ISO> jobs <집계>(dead 0). unsub-stats senders_with_ads_30d <n>·ads_30d <n>·방법 <JSON>(주소 없음) → 원클릭 <a>곳 ≥1 진행. 전체 deno <n> 통과·0 실패·<n> ignored. TestFlight 0.10.0 (<빌드>) VALID
+U6b <KST>(worker v<n>), HEAD <sha>. smoke-gate <JSON 한 줄>. gmail-gate status dead 0. 0029 적용 <KST>(cron unsub-gap-scan-daily). 스캔 since <ISO> jobs <집계>(dead 0). 429 <JSON 한 줄>(기록만). unsub-stats senders_with_ads_30d <n>(≤100)·ads_30d <n>·방법 <JSON>(주소 없음) → 원클릭 <a>곳 ≥1 진행(unsub_list 기준과 동치, 요청 0건). F2 관찰 gmail_discard promotion <n>줄. 전체 deno <n> 통과·0 실패·<n> ignored. TestFlight 0.10.0 (<빌드>) VALID
 ```
+
+스펙 §7 "광고 구독 해지"의 m1 문구(일일 공백 스캔은 라벨·제목에 광고 표기가 있는 메일만 메운다 — 본문·발신자 이름에만 `(광고)`가 있는 규칙 광고는 잡 로컬 차단기로 빠지면 메우지 못한다)는 2026-10-02 최종 리뷰 수정에서 이미 고쳤다. 확인만 하고, U6b에서 바뀐 사실(예: 429로 스캔 간격 조정)이 있을 때만 스펙을 함께 고친다.
 
 ```bash
 git add docs/superpowers/phase1/gates.md
@@ -2824,7 +2851,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 `docs/superpowers/phase1/gates.md`의 `UNS-server`가 **통과**(U6b — 원클릭 발신자 ≥1, TestFlight VALID)인지 본다. 대기거나 원클릭 0곳으로 멈췄으면 이 태스크는 성립하지 않는다(메모리 "테스트 시나리오는 인과관계·필요성 먼저") — 멈추고 메인에게 보고한다.
 
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/unsub-stats.ts`
-Expected: `senders_with_ads_30d ≥ 1`, `method_of_senders_with_ads.one_click ≥ 1`. 값(개수만)을 적어 둔다.
+Expected: `senders_with_ads_30d ≥ 1`, 그리고 U6b Step 5와 같은 판정 기준 — `method_of_senders_with_ads.one_click ≥ 1` **그리고** `senders_with_ads_30d ≤ 100`이면 앱의 `unsub_list` 반환 행(상위 100) 중 `can_request && method = 'one_click'` ≥ 1과 같다(요청 0건이라 `can_request` 모두 참 — `status`에 `requesting`·`requested`·`failed`가 없는지 함께 본다). `senders_with_ads_30d > 100`이면 U6b Step 5처럼 `listed_requestable_one_click` 값으로 본다. 값(개수만)을 적어 둔다.
 
 - [ ] **Step 2: 사용자 확인 D1·D2 (한 번의 요청)**
 
