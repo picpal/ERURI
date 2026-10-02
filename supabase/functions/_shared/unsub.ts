@@ -46,74 +46,71 @@ function sigTags(v: string): Sig {
 
 type Pass = { d: string; exact: boolean; s: string; b: string };
 
+// dkim 구간은 엄격 형식만 인정한다(재리뷰 2 I2, Ruling U1 fix3). header.i·s·b 는 서명의 i=·s=·b= 를 그대로 찍는 칸이라 발신자가 정한다 —
+// RFC 8601 렉서처럼 주석·따옴표를 해석하면 그 칸의 '(' 가 주석을 열어 resinfo 경계를 넘는다. 해석하지 않고 화이트리스트로만 받는다.
+const DOMAIN = "[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*";
+const DKIM_PROP = new Map<string, RegExp>([
+  ["header.i", new RegExp(`^[A-Za-z0-9._%+-]*@${DOMAIN}$`)],
+  ["header.d", new RegExp(`^${DOMAIN}$`)],
+  ["header.s", new RegExp(`^${DOMAIN}$`)],
+  ["header.b", /^(?:[A-Za-z0-9+/=]+|"[A-Za-z0-9+/=]+")$/],   // 따옴표는 b 값에만(Codex 재확인 MED 1)
+  ["header.a", /^[A-Za-z0-9-]+$/],
+]);
+// 결과 바로 뒤 주석 1개: 괄호·따옴표·세미콜론·역슬래시 없는 64자 이하 출력 가능 ASCII — (2048-bit key)·(body hash did not verify) 등
+const DKIM_COMMENT = /\([\x20\x21\x23-\x27\x2A-\x3A\x3C-\x5B\x5D-\x7E]{1,64}\)/y;
+
 // 맨 위 Gmail AR 에서 authserv-id 바로 뒤에 이어지는 dkim= 결과만 읽고, 첫 비-dkim 메서드(arc=/spf=/dmarc=/기타)에서 멈춘다(재리뷰 I2).
-// 그 뒤의 SPF 주석·smtp.mailfrom·header.from 은 발신자가 정하는 칸을 이스케이프 없이 찍으므로 문법으로 해석할 수 없다 — 아예 읽지 않는다.
-// dkim 구간은 RFC 8601 렉서로 읽는다: 주석 ( … )(중첩, \ 이스케이프, 안의 " 는 일반 문자), 값의 quoted-string 해제("…", \ 이스케이프).
-// 닫히지 않은 주석·따옴표나 문법 밖 문자는 전부 버린다(실패 쪽). Gmail 이 dkim 을 뒤에 찍는 메일은 unverified 가 된다(안전 쪽).
+// 그 뒤의 SPF 주석·smtp.mailfrom·header.from 은 발신자가 정하는 칸을 이스케이프 없이 찍으므로 읽지 않는다.
+// dkim 결과 하나 = dkim=<결과> [공백 주석 1개] (공백 header.{i,d,s,b,a}=<값>)* — 속성은 각 1번, 공백(접힌 줄 포함)으로만 나뉜다.
+// 하나라도 어긋나면 AR 전체를 버린다(실패 쪽 → unverified). Gmail 이 dkim 을 뒤에 찍는 메일도 unverified(안전 쪽).
 // 각 dkim=pass: 서명 도메인·selector·서명값 앞부분(Gmail 은 header.b 에 앞 8자).
 // exact = header.d 로 얻은 도메인(서명 d= 와 정확히 같아야 한다). header.i 의 도메인은 d= 와 같거나 그 하위(리뷰 Minor 3)
 function arDkimPass(ar: string): Pass[] {
   const n = ar.length, out: Pass[] = [];
   let i = 0;
-  const cfws = (): boolean => {   // 공백·주석 건너뛰기. 닫히지 않은 주석이면 false
-    while (i < n) {
-      const c = ar[i];
-      if (c === " " || c === "\t" || c === "\r" || c === "\n") { i++; continue; }
-      if (c !== "(") return true;
-      let depth = 0;
-      for (; i < n; i++) {
-        const x = ar[i];
-        if (x === "\\") i++;
-        else if (x === "(") depth++;
-        else if (x === ")" && --depth === 0) break;
-      }
-      if (i >= n) return false;
-      i++;
-    }
-    return true;
-  };
-  const DELIM = " \t\r\n()\";=";
-  const word = (): string => {   // 메서드·결과·속성 이름(= 에서 멈춘다)
+  const ws = (): boolean => {   // 공백·접힌 줄. 건너뛴 게 있으면 true
     const st = i;
-    while (i < n && !DELIM.includes(ar[i])) i++;
+    while (i < n && " \t\r\n".includes(ar[i])) i++;
+    return i > st;
+  };
+  const tok = (): string => {   // 공백·';' 까지
+    const st = i;
+    while (i < n && !" \t\r\n;".includes(ar[i])) i++;
     return ar.slice(st, i);
   };
-  const value = (): string | null => {   // token(= 포함 허용) 또는 quoted-string, 뒤에 붙은 @domain 까지. 닫히지 않은 따옴표면 null
-    let v = "";
-    if (ar[i] === '"') {
-      for (i++; i < n && ar[i] !== '"'; i++) v += ar[i] === "\\" ? ar[++i] ?? "" : ar[i];
-      if (i >= n) return null;
-      i++;
-    }
-    const st = i;
-    while (i < n && !" \t\r\n()\";".includes(ar[i])) i++;
-    return v + ar.slice(st, i);
-  };
-  if (!cfws() || word().toLowerCase() !== "mx.google.com" || !cfws() || ar[i] !== ";") return [];
+  ws();
+  if (tok().toLowerCase() !== "mx.google.com") return [];
+  ws();
   while (i < n && ar[i] === ";") {
     i++;
-    if (!cfws() || word().toLowerCase() !== "dkim") break;   // 첫 비-dkim 메서드에서 멈춘다
-    if (!cfws() || ar[i] !== "=") return [];
+    ws();
+    const st = i;
+    while (i < n && /[A-Za-z0-9-]/.test(ar[i])) i++;
+    if (ar.slice(st, i).toLowerCase() !== "dkim") break;   // 첫 비-dkim 메서드에서 멈춘다
+    if (ar[i] !== "=") return [];   // dkim =pass·dkim(…)=pass
     i++;
-    if (!cfws()) return [];
-    const result = word().toLowerCase();
-    const t = new Map<string, string>();
-    for (;;) {
-      if (!cfws()) return [];
-      if (i >= n || ar[i] === ";") break;
-      const k = word().toLowerCase();
-      if (!k || !cfws() || ar[i] !== "=" || t.has(k)) return [];   // 같은 속성 두 번 → 모호, 버린다
-      i++;
-      if (!cfws()) return [];
-      const v = value();
-      if (v === null) return [];
-      t.set(k, v);
+    const result = tok();
+    if (!/^[A-Za-z]+$/.test(result)) return [];
+    let sp = ws();
+    if (sp && ar[i] === "(") {
+      DKIM_COMMENT.lastIndex = i;
+      if (!DKIM_COMMENT.test(ar)) return [];
+      i = DKIM_COMMENT.lastIndex;
+      sp = ws();
     }
-    if (result !== "pass") continue;
+    const t = new Map<string, string>();
+    while (i < n && ar[i] !== ";") {
+      if (!sp) return [];   // 공백 없이 붙은 글자(주석 뒤 등)
+      const p = tok(), eq = p.indexOf("="), k = p.slice(0, eq).toLowerCase(), v = p.slice(eq + 1);
+      if (eq < 0 || !DKIM_PROP.get(k)?.test(v) || t.has(k)) return [];   // 화이트리스트 밖·같은 속성 두 번 → 버린다
+      t.set(k, v.replace(/^"|"$/g, ""));
+      sp = ws();
+    }
+    if (result.toLowerCase() !== "pass") continue;
     const hd = (t.get("header.d") ?? "").toLowerCase(), hi = t.get("header.i") ?? "";
-    const d = hd || hi.slice(hi.lastIndexOf("@") + 1).toLowerCase();
+    const d = hd || hi.slice(hi.indexOf("@") + 1).toLowerCase();
     const s = (t.get("header.s") ?? "").toLowerCase(), b = t.get("header.b") ?? "";
-    if (d && s && /^[A-Za-z0-9+/=]+$/.test(b)) out.push({ d, exact: hd !== "", s, b });
+    if (d && s && b) out.push({ d, exact: hd !== "", s, b });
   }
   return out;
 }
