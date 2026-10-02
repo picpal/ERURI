@@ -9,15 +9,17 @@ type Msg = Pick<GmailMessage, "payload">;
 const MAX_URL = 2048;
 const MAX_FROM = 1000;
 
-// From 은 발신자가 정한다 — 겹치는 수량자 없이 해석하고 길이를 묶는다(리뷰 I1: 세제곱 역추적이 gmail-fetch CPU 한도를 넘겼다)
+// From 은 발신자가 정한다 — 정규식 역추적 없이 해석하고 길이를 묶는다(리뷰 I1: 세제곱 역추적이 gmail-fetch CPU 한도를 넘겼다).
+// 표시 이름에 '<' 가 있을 수 있다("a<b" <x@…>) — 마지막 '<…>' 가 주소
 export function parseFrom(v: string | null): { address: string; name: string | null } | null {
   if (!v) return null;
   const s = v.trim();
   if (s.length > MAX_FROM) return null;
-  const m = s.match(/^([^<]*)<([^<>\s]+)>$/);
-  const address = (m ? m[2] : s).toLowerCase();
+  const lt = s.lastIndexOf("<");
+  const angle = lt >= 0 && s.endsWith(">");
+  const address = (angle ? s.slice(lt + 1, -1) : s).toLowerCase();
   if (!/^[^@\s<>"]+@[^@\s<>"]+\.[^@\s<>"]+$/.test(address)) return null;
-  const name = (m?.[1] ?? "").trim().replace(/^"+|"+$/g, "").trim();
+  const name = (angle ? s.slice(0, lt) : "").trim().replace(/^"+|"+$/g, "").trim();
   return { address, name: name ? name.slice(0, 60) : null };
 }
 
@@ -42,32 +44,75 @@ function sigTags(v: string): Sig {
   return { d: (t.d ?? "").toLowerCase(), s: (t.s ?? "").toLowerCase(), b: t.b ?? "", h: (t.h ?? "").toLowerCase().split(":").filter(Boolean) };
 }
 
-// RFC 8601 주석 ( … )(중첩·이스케이프 포함)과 따옴표 문자열 "…" 을 공백으로 바꾼다. 닫히지 않으면 끝까지 버린다(실패 쪽)
-function stripCommentsAndQuotes(v: string): string {
-  let out = "", depth = 0, quoted = false;
-  for (let i = 0; i < v.length; i++) {
-    const c = v[i];
-    if ((depth > 0 || quoted) && c === "\\") { i++; continue; }
-    if (quoted) { if (c === '"') { quoted = false; out += " "; } continue; }
-    if (c === "(") { depth++; continue; }
-    if (depth > 0) { if (c === ")" && --depth === 0) out += " "; continue; }
-    if (c === '"') { quoted = true; continue; }
-    out += c;
-  }
-  return out;
-}
+type Pass = { d: string; exact: boolean; s: string; b: string };
 
-// Authentication-Results 의 dkim=pass 결과마다 서명 도메인·selector·서명값 앞부분(Gmail 은 header.b 에 앞 8자).
-// 주석·따옴표 안은 공격자가 정할 수 있다(SPF 주석의 봉투 발신자, smtp.mailfrom 의 따옴표 local-part) — 지운 뒤에 ; 로 자른다(리뷰 I2).
+// 맨 위 Gmail AR 에서 authserv-id 바로 뒤에 이어지는 dkim= 결과만 읽고, 첫 비-dkim 메서드(arc=/spf=/dmarc=/기타)에서 멈춘다(재리뷰 I2).
+// 그 뒤의 SPF 주석·smtp.mailfrom·header.from 은 발신자가 정하는 칸을 이스케이프 없이 찍으므로 문법으로 해석할 수 없다 — 아예 읽지 않는다.
+// dkim 구간은 RFC 8601 렉서로 읽는다: 주석 ( … )(중첩, \ 이스케이프, 안의 " 는 일반 문자), 값의 quoted-string 해제("…", \ 이스케이프).
+// 닫히지 않은 주석·따옴표나 문법 밖 문자는 전부 버린다(실패 쪽). Gmail 이 dkim 을 뒤에 찍는 메일은 unverified 가 된다(안전 쪽).
+// 각 dkim=pass: 서명 도메인·selector·서명값 앞부분(Gmail 은 header.b 에 앞 8자).
 // exact = header.d 로 얻은 도메인(서명 d= 와 정확히 같아야 한다). header.i 의 도메인은 d= 와 같거나 그 하위(리뷰 Minor 3)
-function arDkimPass(ar: string): { d: string; exact: boolean; s: string; b: string }[] {
-  const out: { d: string; exact: boolean; s: string; b: string }[] = [];
-  for (const part of stripCommentsAndQuotes(ar).split(";").slice(1)) {
-    if (!/^\s*dkim=pass\b/i.test(part)) continue;
-    const tag = (k: string) => part.match(new RegExp(`\\bheader\\.${k}=([^\\s;]+)`, "i"))?.[1] ?? "";
-    const hd = tag("d").toLowerCase();
-    const d = hd || tag("i").replace(/^[^@]*@/, "").toLowerCase();
-    const s = tag("s").toLowerCase(), b = tag("b");
+function arDkimPass(ar: string): Pass[] {
+  const n = ar.length, out: Pass[] = [];
+  let i = 0;
+  const cfws = (): boolean => {   // 공백·주석 건너뛰기. 닫히지 않은 주석이면 false
+    while (i < n) {
+      const c = ar[i];
+      if (c === " " || c === "\t" || c === "\r" || c === "\n") { i++; continue; }
+      if (c !== "(") return true;
+      let depth = 0;
+      for (; i < n; i++) {
+        const x = ar[i];
+        if (x === "\\") i++;
+        else if (x === "(") depth++;
+        else if (x === ")" && --depth === 0) break;
+      }
+      if (i >= n) return false;
+      i++;
+    }
+    return true;
+  };
+  const DELIM = " \t\r\n()\";=";
+  const word = (): string => {   // 메서드·결과·속성 이름(= 에서 멈춘다)
+    const st = i;
+    while (i < n && !DELIM.includes(ar[i])) i++;
+    return ar.slice(st, i);
+  };
+  const value = (): string | null => {   // token(= 포함 허용) 또는 quoted-string, 뒤에 붙은 @domain 까지. 닫히지 않은 따옴표면 null
+    let v = "";
+    if (ar[i] === '"') {
+      for (i++; i < n && ar[i] !== '"'; i++) v += ar[i] === "\\" ? ar[++i] ?? "" : ar[i];
+      if (i >= n) return null;
+      i++;
+    }
+    const st = i;
+    while (i < n && !" \t\r\n()\";".includes(ar[i])) i++;
+    return v + ar.slice(st, i);
+  };
+  if (!cfws() || word().toLowerCase() !== "mx.google.com" || !cfws() || ar[i] !== ";") return [];
+  while (i < n && ar[i] === ";") {
+    i++;
+    if (!cfws() || word().toLowerCase() !== "dkim") break;   // 첫 비-dkim 메서드에서 멈춘다
+    if (!cfws() || ar[i] !== "=") return [];
+    i++;
+    if (!cfws()) return [];
+    const result = word().toLowerCase();
+    const t = new Map<string, string>();
+    for (;;) {
+      if (!cfws()) return [];
+      if (i >= n || ar[i] === ";") break;
+      const k = word().toLowerCase();
+      if (!k || !cfws() || ar[i] !== "=" || t.has(k)) return [];   // 같은 속성 두 번 → 모호, 버린다
+      i++;
+      if (!cfws()) return [];
+      const v = value();
+      if (v === null) return [];
+      t.set(k, v);
+    }
+    if (result !== "pass") continue;
+    const hd = (t.get("header.d") ?? "").toLowerCase(), hi = t.get("header.i") ?? "";
+    const d = hd || hi.slice(hi.lastIndexOf("@") + 1).toLowerCase();
+    const s = (t.get("header.s") ?? "").toLowerCase(), b = t.get("header.b") ?? "";
     if (d && s && /^[A-Za-z0-9+/=]+$/.test(b)) out.push({ d, exact: hd !== "", s, b });
   }
   return out;
@@ -79,7 +124,7 @@ function arDkimPass(ar: string): { d: string; exact: boolean; s: string; b: stri
 // 서명 도메인 D 가 From 도메인과 같거나 그 상위여야 한다 — RFC 가 아니라 제품 정책(외부 발송 대행 서명은 unverified). 역방향(D 가 From 의 하위)은 받지 않는다
 export function dkimCovers(msg: Msg, fromDomain: string): boolean {
   const ar = allHeaders(msg, "Authentication-Results")[0];
-  if (!ar || !/^\s*mx\.google\.com\s*;/i.test(ar)) return false;
+  if (!ar) return false;
   const sigs = allHeaders(msg, "DKIM-Signature").map(sigTags);
   return arDkimPass(ar).some((p) => {
     const hit = sigs.filter((s) => s.d !== "" && (s.d === p.d || (!p.exact && p.d.endsWith("." + s.d))) && s.s === p.s && s.b.startsWith(p.b));

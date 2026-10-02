@@ -158,3 +158,78 @@ Deno.test("dkim: header.i in a subdomain of the signing domain pins the signatur
 Deno.test("listUnsubUris: whitespace inside angle brackets is removed", () => {
   assertEquals(listUnsubUris("<https://u.example.com/a\r\n b?t=1 2>, <mailto:u@example.com>"), ["https://u.example.com/ab?t=12", "mailto:u@example.com"]);
 });
+
+// 재리뷰 I2(fix2): 주석 안 따옴표 local-part 의 ')' 로 SPF 주석을 일찍 닫는 주입 — dkim 앞구간만 읽으므로 막힌다
+Deno.test("dkim: ')' inside a quoted local-part in the SPF comment cannot inject dkim=pass", () => {
+  const base = { From: FROM, "List-Unsubscribe": LU, "List-Unsubscribe-Post": LUP };
+  const lp = "a); dkim=pass header.i=@example.com header.s=evil header.b=EVIL1234 ; x";
+  const forged = "v=1; d=example.com; s=evil; h=From:List-Unsubscribe:List-Unsubscribe-Post; b=EVIL1234rest";
+  const real = "mx.google.com; dkim=fail header.i=@example.com header.s=s1 header.b=AbC+d/Ef; spf=pass";
+  const ars = [
+    `${real} (google.com: domain of "${lp}"@evil.example.net designates 192.0.2.1 as permitted sender) smtp.mailfrom="${lp}"@evil.example.net`,
+    `${real} (google.com: domain of "${lp}"@evil.example.net designates 192.0.2.1 as permitted sender) smtp.mailfrom=a@evil.example.net`,
+  ];
+  for (const [i, ar] of ars.entries()) {
+    const m = msg({ ...base, "Authentication-Results": ar, "DKIM-Signature": [SIG, forged] });
+    assertEquals([i, unsubMeta(m)?.method, unsubMeta(m)?.url], [i, "unverified", null]);
+  }
+});
+
+// Codex 재확인 [MED] 1: RFC 8601 값은 quoted-string 일 수 있다
+Deno.test("dkim: quoted header.b / header.i values are unquoted (RFC 8601 §2.2)", () => {
+  const base = { From: FROM, "List-Unsubscribe": LU, "List-Unsubscribe-Post": LUP, "DKIM-Signature": SIG };
+  for (const ar of [
+    'mx.google.com; dkim=pass header.i=@example.com header.s=s1 header.b="AbC+d/Ef"',
+    'mx.google.com; dkim=pass header.i="@example.com" header.s="s1" header.b="AbC+d/Ef"; spf=pass',
+    'mx.google.com; dkim=pass header.i="news.team"@example.com header.s=s1 header.b=AbC+d/Ef',
+  ]) assertEquals([ar, unsubMeta(msg({ ...base, "Authentication-Results": ar }))?.method], [ar, "one_click"]);
+});
+
+// 정상 Gmail AR: 접힌 줄, dkim 2개(ESP + 정렬 서명), arc·spf·dmarc 주석, 따옴표 smtp.mailfrom
+Deno.test("dkim: realistic Gmail AR (two dkim, arc/spf/dmarc comments, quoted mailfrom) → one_click", () => {
+  const esp = "v=1; d=esp.example.net; s=e1; h=From:Subject; b=XyZ12345more";
+  const ar = "mx.google.com;\r\n       dkim=pass header.i=@esp.example.net header.s=e1 header.b=XyZ12345;\r\n" +
+    "       dkim=pass (2048-bit key) header.i=@example.com header.s=s1 header.b=AbC+d/Ef;\r\n" +
+    "       arc=pass (i=1 spf=pass spfdomain=example.com dkim=pass dkdomain=example.com dmarc=pass fromdomain=example.com);\r\n" +
+    '       spf=pass (google.com: domain of "b.o"bounce@mail.example.com designates 192.0.2.1 as permitted sender) smtp.mailfrom="b.o"bounce@mail.example.com;\r\n' +
+    "       dmarc=pass (p=NONE sp=NONE dis=NONE) header.from=example.com";
+  const m = msg({ From: FROM, "List-Unsubscribe": LU, "List-Unsubscribe-Post": LUP, "Authentication-Results": ar, "DKIM-Signature": [esp, SIG] });
+  assertEquals(unsubMeta(m)?.method, "one_click");
+});
+
+// dkim 결과는 authserv-id 바로 뒤 앞구간만 — 첫 비-dkim 메서드 뒤의 dkim= 은 읽지 않는다
+Deno.test("dkim: dkim=pass only after spf/arc/dmarc → unverified", () => {
+  const base = { From: FROM, "List-Unsubscribe": LU, "List-Unsubscribe-Post": LUP, "DKIM-Signature": SIG };
+  const pass = "dkim=pass header.i=@example.com header.s=s1 header.b=AbC+d/Ef";
+  for (const ar of [
+    `mx.google.com; spf=pass smtp.mailfrom=b@example.com; ${pass}`,
+    `mx.google.com; arc=pass; ${pass}`,
+    `mx.google.com; dkim=fail header.i=@example.com header.s=s0 header.b=Zz; dmarc=pass header.from=example.com; ${pass}`,
+    `mx.google.com; ${pass} (unclosed`,                                    // 닫히지 않은 주석 → 실패 쪽
+    `mx.google.com; ${pass} reason="unclosed`,                             // 닫히지 않은 따옴표 → 실패 쪽
+  ]) assertEquals([ar, unsubMeta(msg({ ...base, "Authentication-Results": ar }))?.method], [ar, "unverified"]);
+});
+
+// 재리뷰 Minor: 표시 이름에 '<' 가 있어도 마지막 '<…>' 가 주소
+Deno.test("parseFrom: '<' inside the display name; last <…> is the address", () => {
+  assertEquals(parseFrom('"a<b" <x@example.com>'), { address: "x@example.com", name: "a<b" });
+  assertEquals(parseFrom('"합성 <공지>" <News@Example.com>'), { address: "news@example.com", name: "합성 <공지>" });
+  assertEquals(parseFrom("a <b <x@example.com"), null);
+  assertEquals(parseFrom("<a b@example.com>"), null);
+  const t = performance.now();
+  parseFrom("<".repeat(990) + "a@example.net>");
+  parseFrom("a<".repeat(495) + ">");
+  assertEquals(performance.now() - t < 50, true);
+});
+
+// AR 렉서는 한 번만 훑는다 — 긴·병적인 AR 도 빨리 끝난다
+Deno.test("dkim: long or adversarial AR finishes fast", () => {
+  const base = { From: FROM, "List-Unsubscribe": LU, "List-Unsubscribe-Post": LUP, "DKIM-Signature": SIG };
+  const pass = "dkim=pass header.i=@example.com header.s=s1 header.b=AbC+d/Ef";
+  for (const ar of [`mx.google.com; ${pass} ` + "(".repeat(50000), `mx.google.com; ${pass} reason="` + "\\a".repeat(50000),
+    `mx.google.com; ${"dkim=fail header.s=x; ".repeat(5000)}${pass}`, `mx.google.com; ${pass} ` + "x=y ".repeat(20000)]) {
+    const t = performance.now();
+    unsubMeta(msg({ ...base, "Authentication-Results": ar }));
+    assertEquals([ar.length, performance.now() - t < 50], [ar.length, true]);
+  }
+});
