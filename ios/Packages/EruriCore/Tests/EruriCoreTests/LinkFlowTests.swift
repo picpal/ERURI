@@ -152,6 +152,36 @@ final class LinkFlowTests: XCTestCase {
     XCTAssertEqual(try q.claimLinks(limit: 10, now: t0.addingTimeInterval(66)).first?.note, "다시")
   }
 
+  /// 7일 가까이 남은 행을 다시 공유하면 새로 건 것으로 본다 — 만료가 재공유를 지우지 않는다(L2 리뷰 I1)
+  func testReShareRestartsExpiry() throws {
+    let q = try makeQueue(), t0 = Date(), day: TimeInterval = 86_400
+    try q.enqueueLink(PendingLink(url: url, note: nil, origin: "share", capturedAt: t0), lease: 0, now: t0)
+    let t1 = t0.addingTimeInterval(7 * day + 3600)
+    try q.enqueueLink(PendingLink(url: url, note: nil, origin: "share", capturedAt: t1), lease: 0, now: t1)
+    XCTAssertEqual(try q.claimLinks(limit: 10, now: t0.addingTimeInterval(7 * day + 7200)).count, 1)
+  }
+
+  /// 2회 실패한 행을 다시 공유하면 시도 수가 0부터(앱 기회 3회)
+  func testReShareResetsAttempts() throws {
+    let q = try makeQueue(), t = Date()
+    try q.enqueueLink(PendingLink(url: url, note: nil, origin: "share"), lease: 0, now: t)
+    try q.markFailed(id: PendingLink(url: url, note: nil, origin: "share").id)
+    try q.markFailed(id: PendingLink(url: url, note: nil, origin: "share").id)
+    XCTAssertEqual(try q.claimLinks(limit: 1, now: t.addingTimeInterval(3600)).first?.attempts, 2)
+    let t1 = t.addingTimeInterval(4000)
+    try q.enqueueLink(PendingLink(url: url, note: nil, origin: "share", capturedAt: t1), lease: 0, now: t1)
+    XCTAssertEqual(try q.claimLinks(limit: 1, now: t1).first?.attempts, 0)
+  }
+
+  /// 7일 지난 행은 enqueue 때도 지운다(앱이 열리지 않아도)
+  func testEnqueueDropsExpiredLinkRows() throws {
+    let q = try makeQueue(), t0 = Date()
+    try q.enqueueLink(PendingLink(url: url, note: "청첩장", origin: "share", capturedAt: t0), lease: 0, now: t0)
+    let t1 = t0.addingTimeInterval(CaptureQueue.linkMaxAge + 60)
+    try q.enqueueLink(PendingLink(url: url2, note: nil, origin: "share", capturedAt: t1), lease: 0, now: t1)
+    XCTAssertEqual(try q.linkCount(), 1)
+  }
+
   func testUnreadableLinkRowIsDropped() throws {
     let q = try makeQueue()
     try q.enqueueLink(PendingLink(url: url, note: nil, origin: "share"), lease: 0)
