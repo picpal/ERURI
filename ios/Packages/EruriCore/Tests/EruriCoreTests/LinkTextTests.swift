@@ -17,6 +17,13 @@ final class LinkTextTests: XCTestCase {
                    .link(URL(string: "https://a.example.com/1")!, note: "다시"))               // 같은 주소 두 번은 하나
     // 주소에 한글이 붙어 있다 — 첫 비 ASCII 글자에서 주소가 끝난다(NSDataDetector 경계를 고정)
     XCTAssertEqual(LinkText.chatIntent("https://a.example.com/1이에요"), .link(URL(string: "https://a.example.com/1")!, note: "이에요"))
+    // 끝 ?·: 는 주소가 아니다(리뷰 Minor 3), 영숫자·한글 없는 메모는 없음(Minor 4)
+    let one = URL(string: "https://a.example.com/1")!
+    XCTAssertEqual(LinkText.chatIntent("https://a.example.com/1?"), .link(one, note: nil))
+    XCTAssertEqual(LinkText.chatIntent("https://a.example.com/1:"), .link(one, note: nil))
+    XCTAssertEqual(LinkText.chatIntent("여기 https://a.example.com/1?"), .link(one, note: "여기 ?"))
+    XCTAssertEqual(LinkText.chatIntent("(https://a.example.com/1)"), .link(one, note: nil))
+    XCTAssertEqual(LinkText.chatIntent("\"https://a.example.com/1\"."), .link(one, note: nil))
   }
 
   /// 공유(스펙 §6): ShareText.compose 결과에 주소가 정확히 하나 + 짧은 메모일 때만 링크. 나머지는 지금처럼 텍스트 공유
@@ -55,6 +62,13 @@ final class LinkTextTests: XCTestCase {
               "http://intranet/", "http://svc.internal/", "http://[::1]/", "http://[fe80::1]/", "http://[fd00::1]/", "http://[2001:db8::1]/"] {
       XCTAssertEqual(c(h), .host, h)
     }
+    // WebKit(WHATWG)이 IPv4 로 정규화하는 변형(리뷰 Minor 2): 끝 점·축약·16진·8진(앞 0) — 엄격한 10진 4부가 아니면 막는다
+    for h in ["http://127.0.0.1./", "http://192.168.0.1./", "http://127.1/", "http://0x7f.0.0.1/", "http://0177.0.0.1/",
+              "http://012.0.0.1/", "http://2130706433/", "http://[2002:c0a8:1::1]/"] {
+      XCTAssertEqual(c(h), .host, h)
+    }
+    XCTAssertNil(c("http://93.184.216.34./"))
+    XCTAssertNil(c("https://a1.example.com/"))
     XCTAssertNil(c("http://127.0.0.1:8765/link-wedding.html", loop: true))
     XCTAssertNil(c("http://localhost:8765/link-wedding.html", loop: true))
     XCTAssertEqual(c("http://10.0.0.1/", loop: true), .host)                                   // 루프백만 풀린다
@@ -79,6 +93,8 @@ final class LinkTextTests: XCTestCase {
     XCTAssertNotEqual(a, c)
     XCTAssertNotNil(UUID(uuidString: a))
     XCTAssertEqual(a, LinkText.captureID(for: URL(string: "https://invite.example.com/m/abc?code=1")!))   // 실행마다 같다
+    XCTAssertEqual(LinkText.captureID(for: URL(string: "https://a.example.com")!),
+                   LinkText.captureID(for: URL(string: "https://a.example.com/")!))            // 빈 경로 = "/"(리뷰 Minor 3)
   }
 
   func testDateCandidates() {
@@ -86,9 +102,22 @@ final class LinkTextTests: XCTestCase {
               "Nov 14, 2026", "December 5"] {
       XCTAssertTrue(LinkText.hasDateCandidate(s), s)
     }
-    for s in ["오후 1시 30분", "합성웨딩홀 3층", "010-1234-5678", "터치하면 음악이 재생됩니다", "축의금 50,000원"] {
+    for s in ["오후 1시 30분", "합성웨딩홀 3층", "010-1234-5678", "터치하면 음악이 재생됩니다", "축의금 50,000원",
+              "market 5", "decent 3", "Junior 2", "Marathon 10"] {
       XCTAssertFalse(LinkText.hasDateCandidate(s), s)
     }
+    for s in ["11 . 14 . ( 토", "11.14.\n(토)", "Sept 5", "March 3", "Dec. 24"] { XCTAssertTrue(LinkText.hasDateCandidate(s), s) }
+  }
+
+  /// 날짜 후보는 정리 전 원문(숨은 글 200,000자까지)에 돈다 — "1.1" + 공백 5만 자가 2차 백트래킹으로 수십 초 걸리지 않는다(리뷰 I1).
+  /// 고치기 전 실측 4만 자 27초. 상한은 스왑 포화를 감안한 5초(계획 "기계")
+  func testDateCandidateWhitespaceFloodIsFast() {
+    let flood = "1.1" + String(repeating: " \n", count: 25_000)
+    let t0 = Date()
+    XCTAssertFalse(LinkText.hasDateCandidate(flood))
+    let p = LinkPage(host: "x.example.com", visibleText: "합성", allText: flood)
+    _ = p.body; _ = p.isEmpty
+    XCTAssertLessThan(Date().timeIntervalSince(t0), 5)
   }
 
   /// "터치해서 열기" 덮개(스펙 §6): 보이는 글에 날짜가 없고 숨은 글에 있으면 숨은 글
@@ -186,13 +215,25 @@ final class LinkTextTests: XCTestCase {
     var g = LinkSettle(budget: 10)
     for t in [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5] { XCTAssertEqual(g.observe(length: 80, finished: false, elapsed: t), .wait) }
     XCTAssertEqual(g.observe(length: 80, finished: false, elapsed: 4.0), .done)
+    // didFinish 전 샘플은 "3번 같음"에 들지 않는다(스펙 §6 "didFinish 뒤 … 3번") — HTML 의 고정 "로딩 중…" 글에서 바로 끝내지 않는다
+    var h = LinkSettle(budget: 10)
+    XCTAssertEqual(h.observe(length: 120, finished: false, elapsed: 0.5), .wait)
+    XCTAssertEqual(h.observe(length: 120, finished: false, elapsed: 1.0), .wait)
+    XCTAssertEqual(h.observe(length: 120, finished: true, elapsed: 1.5), .wait)
+    XCTAssertEqual(h.observe(length: 120, finished: true, elapsed: 2.0), .wait)
+    XCTAssertEqual(h.observe(length: 120, finished: true, elapsed: 2.5), .done)
   }
 
-  /// 글 0자(Codex 1 — 순수 이미지 페이지): didFinish 가 왔고 4초가 지나야 완료(SPA 가 그릴 시간). didFinish 전 0자는 계속 기다린다
+  /// 글 0자(Codex 1 — 순수 이미지 페이지): didFinish **뒤** 4초가 지나야 완료(스펙 §6 "대기" — SPA 가 그릴 시간). didFinish 전 0자는 계속 기다린다
   func testSettleEmptyPage() {
     var e = LinkSettle(budget: 10)
-    for t in [1.0, 1.5, 2.0, 2.5, 3.0, 3.5] { XCTAssertEqual(e.observe(length: 0, finished: true, elapsed: t), .wait) }
-    XCTAssertEqual(e.observe(length: 0, finished: true, elapsed: 4.0), .done)
+    for t in stride(from: 1.0, through: 4.5, by: 0.5) { XCTAssertEqual(e.observe(length: 0, finished: true, elapsed: t), .wait, "\(t)") }
+    XCTAssertEqual(e.observe(length: 0, finished: true, elapsed: 5.0), .done)
+    // 늦은 didFinish(느린 망, 5초): 로드 시작 기준이 아니라 didFinish 기준 4초 — 9초에 완료
+    var l = LinkSettle(budget: 10)
+    for t in stride(from: 0.5, through: 4.5, by: 0.5) { XCTAssertEqual(l.observe(length: 0, finished: false, elapsed: t), .wait, "\(t)") }
+    for t in stride(from: 5.0, through: 8.5, by: 0.5) { XCTAssertEqual(l.observe(length: 0, finished: true, elapsed: t), .wait, "\(t)") }
+    XCTAssertEqual(l.observe(length: 0, finished: true, elapsed: 9.0), .done)
     var n = LinkSettle(budget: 10)
     for t in stride(from: 0.5, through: 9.5, by: 0.5) { XCTAssertEqual(n.observe(length: 0, finished: false, elapsed: t), .wait) }
     XCTAssertEqual(n.observe(length: 0, finished: false, elapsed: 10), .deadline)

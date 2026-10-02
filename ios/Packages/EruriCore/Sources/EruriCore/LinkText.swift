@@ -22,7 +22,8 @@ public enum LinkText {
   private static let detector = try! NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 
   /// 글 안에서 `http://`·`https://` 로 적힌 주소(호스트 있음)의 모든 자리. 스킴 없는 도메인("naver.com")은 링크가 아니다.
-  /// 주소 바로 뒤에 붙은 비 ASCII 글자("…/1이에요")는 주소가 아니다 — 첫 비 ASCII·공백 글자에서 자른다(한글 경로 주소는 링크로 보지 않는 대가)
+  /// 주소 바로 뒤에 붙은 비 ASCII 글자("…/1이에요")는 주소가 아니다 — 첫 비 ASCII·공백 글자에서 자른다(한글 경로 주소는 링크로 보지 않는 대가).
+  /// 끝의 `?`·`:` 도 문장 부호로 본다("…/1?" 가 다른 캡처 id·다른 경로가 되지 않게)
   static func matches(_ text: String) -> [(url: URL, range: NSRange)] {
     let ns = text as NSString
     return detector.matches(in: text, range: NSRange(location: 0, length: ns.length)).compactMap { (m: NSTextCheckingResult) -> (url: URL, range: NSRange)? in
@@ -31,6 +32,7 @@ public enum LinkText {
         guard u.isASCII, !u.properties.isWhitespace else { break }
         scalars.append(u)
       }
+      while let l = scalars.last, l == "?" || l == ":" { scalars.removeLast() }
       let s = String(scalars)
       guard s.lowercased().hasPrefix("http"), let u = URL(string: s), let scheme = u.scheme?.lowercased(),
             scheme == "http" || scheme == "https", u.host() != nil else { return nil }
@@ -70,7 +72,9 @@ public enum LinkText {
     case 1:
       let r = rest(text, removing: matches(text).map { $0.range })
       if r.count > noteMaxChars || hasDateCandidate(r) { return .text }
-      return .link(urls[0], note: r.isEmpty ? nil : r)
+      // 주소를 둘렀던 괄호·따옴표·마침표만 남은 메모("( )")는 없음
+      let hasWord = r.unicodeScalars.contains { CharacterSet.alphanumerics.contains($0) }
+      return .link(urls[0], note: hasWord ? r : nil)
     default: return .tooMany(urls.count)
     }
   }
@@ -103,9 +107,12 @@ public enum LinkText {
     guard var h = url.host(percentEncoded: false)?.lowercased(), !h.isEmpty else { return .host }
     if h.hasPrefix("["), h.hasSuffix("]") { h = String(h.dropFirst().dropLast()) }
     if h == "localhost" || h == "127.0.0.1" || h == "::1" { return allowLoopback ? nil : .host }
-    if let v4 = ipv4(h) { return publicV4(v4) ? nil : .host }
     if h.contains(":") { return publicV6(h) ? nil : .host }
     let bare = h.hasSuffix(".") ? String(h.dropLast()) : h
+    if let v4 = ipv4(bare) { return publicV4(v4) ? nil : .host }
+    // 마지막 라벨이 숫자·0x… 면 WebKit(WHATWG "ends in a number")이 IPv4 로 읽는다("127.1"·"0x7f.0.0.1"·"0177.0.0.1"·"2130706433").
+    // 엄격한 10진 4부(위)가 아니면 어느 주소로 풀릴지 따지지 않고 막는다
+    if let last = bare.split(separator: ".").last, last.hasPrefix("0x") || last.allSatisfy({ $0.isASCII && $0.isNumber }) { return .host }
     if !bare.contains(".") { return .host }                                       // 점 없는 이름(사내 호스트)
     for suffix in [".local", ".localhost", ".internal", ".home.arpa"] where bare.hasSuffix(suffix) { return .host }
     return nil
@@ -133,6 +140,7 @@ public enum LinkText {
       if c.port == 80 || c.port == 443 { c.port = nil }
       let host = c.percentEncodedHost?.lowercased()
       c.percentEncodedHost = host                                                  // IPv6 괄호를 그대로 둔다
+      if c.percentEncodedPath.isEmpty { c.percentEncodedPath = "/" }               // "https://a.example.com" = "…/"
       key = c.string ?? key
     }
     var b = Array(SHA256.hash(data: Data(("link:" + key).utf8)).prefix(16))
@@ -141,9 +149,12 @@ public enum LinkText {
     return UUID(uuid: (b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15])).uuidString
   }
 
+  /// 엄격한 10진 4부 IPv4. 앞 0("012")은 WebKit 이 8진으로 읽으므로 아니다(check 가 막는다)
   static func ipv4(_ h: String) -> [Int]? {
     let p = h.split(separator: ".", omittingEmptySubsequences: false)
-    guard p.count == 4, p.allSatisfy({ part in !part.isEmpty && part.count <= 3 && part.allSatisfy { $0.isASCII && $0.isNumber } }) else { return nil }
+    guard p.count == 4, p.allSatisfy({ part in
+      !part.isEmpty && part.count <= 3 && !(part.count > 1 && part.first == "0") && part.allSatisfy { $0.isASCII && $0.isNumber }
+    }) else { return nil }
     let n = p.compactMap { Int($0) }
     return n.allSatisfy { (0...255).contains($0) } ? n : nil
   }
@@ -161,10 +172,10 @@ public enum LinkText {
     }
   }
 
-  /// IPv6 리터럴: 전역 유니캐스트(2000::/3)이고 문서용(2001:db8::/32)이 아닐 때만
+  /// IPv6 리터럴: 전역 유니캐스트(2000::/3)이고 문서용(2001:db8::/32)·6to4(2002::/16 — 사설 IPv4 를 품을 수 있다)가 아닐 때만
   static func publicV6(_ h: String) -> Bool {
     guard let f = h.first, f == "2" || f == "3" else { return false }
-    return !h.hasPrefix("2001:db8")
+    return !h.hasPrefix("2001:db8") && !h.hasPrefix("2002:")
   }
 
   // MARK: 날짜 후보·일시 장소 줄
@@ -172,9 +183,9 @@ public enum LinkText {
   private static let datePatterns: [NSRegularExpression] = [
     #"\d{1,2}\s*월\s*\d{1,2}\s*일"#,
     #"(?:19|20)\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]\s*\d{1,2}"#,
-    #"(?<![\d.])\d{1,2}\s*[./]\s*\d{1,2}\s*\.?\s*\(\s*[월화수목금토일]"#,
+    #"(?<![\d.])\d{1,2}\s{0,3}[./]\s{0,3}\d{1,2}\s{0,3}\.?\s{0,3}\(\s{0,3}[월화수목금토일]"#,   // \s* 는 "1.1" + 긴 공백에서 2차 백트래킹(리뷰 I1)
     #"(?<![\d/.,])\d{1,2}/\d{1,2}(?![\d/])"#,
-    #"(?i)\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?!\d)"#,
+    #"(?i)\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?\s+\d{1,2}(?!\d)"#,
   ].map { try! NSRegularExpression(pattern: $0) }
   private static let timePattern = try! NSRegularExpression(pattern: #"(?:오전|오후|낮|저녁|밤)\s*\d{1,2}\s*시|(?<!\d)\d{1,2}:\d{2}(?!\d)|(?i)\b(?:am|pm)\s*\d{1,2}"#)
   private static let placeWords = try! NSRegularExpression(pattern: #"일시|장소|예식|식장|웨딩|홀|층|오시는\s*길|주소|위치|시작|입장|개최|행사|시간"#)
@@ -183,8 +194,12 @@ public enum LinkText {
     r.firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length)) != nil
   }
 
-  /// 날짜 후보(스펙 §6 "이미지 전용 페이지"·"입력"): "11월 14일"·"2026.11.14"·"2026-11-14"·"11/14"·"11. 14.(토)"·영문 월 + 일. 시각만은 아니다
-  public static func hasDateCandidate(_ s: String) -> Bool { datePatterns.contains { found($0, s) } }
+  /// 날짜 후보(스펙 §6 "이미지 전용 페이지"·"입력"): "11월 14일"·"2026.11.14"·"2026-11-14"·"11/14"·"11. 14.(토)"·영문 월 + 일. 시각만은 아니다.
+  /// 정리 전 원문(숨은 글 200,000자까지)에도 돌므로 공백을 먼저 접는다 — 패턴의 \s 는 줄바꿈도 받으므로 판정은 같다(리뷰 I1)
+  public static func hasDateCandidate(_ s: String) -> Bool {
+    let t = oneLine(s)
+    return datePatterns.contains { found($0, t) }
+  }
 
   /// 본문에서 앞으로 끌어올릴 줄: 날짜·시각·장소 단어
   static func isKeyLine(_ l: String) -> Bool { hasDateCandidate(l) || found(timePattern, l) || found(placeWords, l) }
@@ -302,19 +317,27 @@ public struct LinkPage: Equatable, Sendable {
 public struct LinkSettle: Sendable {
   public static let pollInterval: Duration = .milliseconds(500)
   public static let stableSamples = 3
-  /// didFinish 가 오지 않아도(긴 폴링·끝없는 하위 리소스) 이 시간 뒤에는 길이만 보고 끝낸다. 글 0자는 didFinish + 이 시간이 지나야 끝낸다
+  /// didFinish 가 오지 않아도(긴 폴링·끝없는 하위 리소스) 로드 시작 뒤 이 시간이 지나면 길이만 보고 끝낸다. 글 0자는 **didFinish 뒤** 이 시간이 지나야 끝낸다
   public static let finishGrace: TimeInterval = 4
   public enum Decision: Equatable, Sendable { case wait, done, deadline }
   public let budget: TimeInterval
   private var last = -1, same = 0
+  /// didFinish 를 처음 본 elapsed(스펙 §6 "대기"의 기준 시각 — 로드 시작이 아니다)
+  private var finishedAt: TimeInterval?
   public init(budget: TimeInterval) { self.budget = budget }
 
   public mutating func observe(length: Int, finished: Bool, elapsed: TimeInterval) -> Decision {
     if elapsed >= budget { return .deadline }
+    // didFinish 전 샘플은 "3번 같음"에 넣지 않는다 — HTML 의 고정 "로딩 중…" 글만 읽고 끝내지 않게(리뷰 I2)
+    if finished, finishedAt == nil { finishedAt = elapsed; last = -1 }
     if length == last { same += 1 } else { last = length; same = 1 }
     guard same >= Self.stableSamples else { return .wait }
-    // 글 0자(순수 이미지 페이지, Codex 1): 페이지가 섰고(didFinish) SPA 가 그릴 시간(4초)이 지났을 때만 완료 — 렌더러가 OCR 로 간다
-    if length == 0 { return finished && elapsed >= Self.finishGrace ? .done : .wait }
-    return finished || elapsed >= Self.finishGrace ? .done : .wait
+    // 글 0자(순수 이미지 페이지, Codex 1): didFinish 뒤 SPA 가 그릴 시간(4초)이 지났을 때만 완료 — 렌더러가 OCR 로 간다.
+    // 느린 망에서 didFinish 가 늦게 와도 그 뒤 4초를 준다
+    if length == 0 {
+      guard let f = finishedAt else { return .wait }
+      return elapsed - f >= Self.finishGrace ? .done : .wait
+    }
+    return finishedAt != nil || elapsed >= Self.finishGrace ? .done : .wait
   }
 }
