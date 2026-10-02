@@ -34,9 +34,14 @@ export async function handleUnsubscribe(req: Request, deps: UnsubDeps, sinkCfg: 
   const sender = typeof b?.sender_id === "string" && UUID.test(b.sender_id) ? b.sender_id : null;
   if (!sender) return Response.json({ error: "bad_sender" }, { status: 400 });
   const begin = await deps.begin(user, sender);
-  if (begin.result !== "ok" || !begin.url_enc) {
+  if (begin.result !== "ok") {
     console.log(JSON.stringify({ unsubscribe: begin.result }));
     return Response.json({ result: begin.result });
+  }
+  if (!begin.url_enc) {                                                  // requesting 에 남기지 않고 마감
+    await deps.finish(user, sender, "no_url");
+    console.log(JSON.stringify({ unsubscribe: "failed", code: "no_url" }));
+    return Response.json({ result: "failed", code: "no_url" });
   }
   let code: string;
   try { code = (await deps.post(await deps.decrypt(user, begin.url_enc))).code; }

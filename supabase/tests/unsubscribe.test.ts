@@ -45,6 +45,14 @@ Deno.test("begin refusals pass through without decrypt/post/finish", async () =>
   }
 });
 
+// begin 이 ok 인데 URL 이 없으면 requesting 에 남지 않게 no_url 로 마감한다
+Deno.test("begin ok without url_enc: finish(no_url), failed, no decrypt/post", async () => {
+  const { d, log } = deps({ begin: async () => ({ result: "ok" }), decrypt: () => { throw new Error("must not decrypt"); } });
+  const r = await handleUnsubscribe(req({ sender_id: SID }), d, SINK);
+  assertEquals([r.status, await r.json()], [200, { result: "failed", code: "no_url" }]);
+  assertEquals(log, [`finish:${SID}:no_url`]);
+});
+
 Deno.test("post failure, redirect and decrypt failure are recorded as failed with a code", async () => {
   for (const code of ["blocked_private", "redirect_307"]) {                                   // 3xx 는 접수가 아니다(리뷰 M1)
     const { d, log } = deps({ post: async () => ({ ok: false, code }) });
