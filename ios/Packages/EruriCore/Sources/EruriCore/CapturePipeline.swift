@@ -41,6 +41,19 @@ public struct CapturePipeline {
     }
   }
 
+  /// 링크·사진 → 일정(스펙 §6 "링크·이미지 읽기"): 기기가 읽은 제목·본문을 규칙에 통과시켜 SHARE 항목(`app_name` = "웹 링크" | "이미지")으로 넣는다.
+  /// 링크의 id = 주소에서 정해진 캡처 id — 확장이 죽은 뒤 앱이 다시 읽어도 큐(INSERT OR IGNORE)·서버 멱등 키(SHARE:<id>)가 한 건.
+  /// 연락처 규칙은 쓰지 않는다(호출 쪽이 RuleFilter() — 사용자가 고른 링크·사진). 반환: "queued" 또는 "discarded:<reason>"
+  public func handleRead(id: String, appName: String, title: String?, text: String, capturedAt: Date) throws -> String {
+    switch filter.apply(title: title, text: text, sender: nil) {
+    case .discard(let r): return "discarded:\(r)"
+    case .pass(let maskedTitle, let masked):
+      try queue.enqueue(CaptureItem(id: id, source: "SHARE", appName: appName, sender: nil, title: maskedTitle,
+                                    text: masked, localFile: nil, ocrText: nil, capturedAt: capturedAt, attempts: 0))
+      return "queued"
+    }
+  }
+
   /// 반환: 큐 항목 id(= 서버 idempotency_key 의 external_id). 인텐트가 진단 trace 의 queue_id 로 남긴다
   @discardableResult
   public func enqueue(source: String, appName: String?, title: String?, sender: String?, masked: String, deviceFilter: String? = nil) throws -> String {
