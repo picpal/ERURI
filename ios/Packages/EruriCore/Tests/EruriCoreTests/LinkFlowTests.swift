@@ -1,4 +1,5 @@
 import XCTest
+import SQLite3
 @testable import EruriCore
 
 /// 링크 대기 행·흐름(스펙 §6 "확장과 앱의 이어받기"·"같은 링크")과 사진 흐름(ImageFlow). 렌더러는 가짜 — WebKit 은 LinkRendererTests
@@ -272,6 +273,54 @@ final class LinkFlowTests: XCTestCase {
     try q.enqueueLink(link, lease: 0)
     _ = LinkFlow.finish(link, page: page, queue: q)
     XCTAssertEqual(try q.claim(limit: 10).map(\.id), [link.captureID])
+  }
+
+  /// 확장의 텍스트 폴백(스펙 §6, D8): 확정 실패만 원래 공유 글을 텍스트 항목으로. failed("queue") 는 폴백하지 않는다 —
+  /// finish 의 큐 쓰기 실패는 대기 행이 남아 앱이 이어받으므로 폴백하면 항목이 두 개, admit 의 실패는 텍스트도 같은 큐라 못 넣는다(메인 판정, L2 교차 확인 c)
+  func testTextFallbackOnlyForFinalRenderFailures() {
+    for code in ["http_404", "blocked_scheme", "blocked_host", "unsupported", "redirects", "insecure"] {
+      XCTAssertTrue(LinkFlow.fallsBackToText(.failed(code)), code)
+    }
+    XCTAssertFalse(LinkFlow.fallsBackToText(.failed("queue")))
+    for o: LinkFlow.Outcome in [.queued(captureID: "c", chars: 1, ocr: false, timedOut: false), .duplicate, .discarded("otp"),
+                                .handedOff("timeout"), .handedOff("no_date"), .retry("timeout")] {
+      XCTAssertFalse(LinkFlow.fallsBackToText(o), "\(o)")
+    }
+  }
+
+  /// 렌더링 중 다른 연결이 큐 파일을 잠근다(다른 프로세스의 긴 쓰기 흉내) — finish 의 큐 쓰기가 busy_timeout 뒤 실패
+  @MainActor final class LockingRenderer: LinkRendering {
+    let path: String, outcome: LinkRenderOutcome
+    var db: OpaquePointer?
+    init(path: String, _ o: LinkRenderOutcome) { self.path = path; outcome = o }
+    func lock() { sqlite3_open(path, &db); sqlite3_exec(db, "BEGIN EXCLUSIVE", nil, nil, nil) }
+    func unlock() { sqlite3_exec(db, "ROLLBACK", nil, nil, nil); sqlite3_close(db); db = nil }
+    func render(_ url: URL, budget: TimeInterval, ocr: Bool) async -> LinkRenderOutcome { lock(); return outcome }
+  }
+
+  /// finish 의 큐 쓰기 실패 = failed("queue") + 대기 행이 남는다(lease 뒤 앱이 이어받는다) → 확장은 텍스트 폴백하지 않는다
+  @MainActor func testShareQueueFailureAfterRenderKeepsRowAndNoFallback() async throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("link-\(UUID().uuidString).sqlite")
+    let q = try CaptureQueue(url: file), r = LockingRenderer(path: file.path, .page(page, elapsedMs: 900))
+    let link = PendingLink(url: url, note: nil, origin: "share")
+    let o = await LinkFlow.share(link, renderer: r, queue: q)
+    r.unlock()
+    XCTAssertEqual(o, .failed("queue"))
+    XCTAssertFalse(LinkFlow.fallsBackToText(o))
+    XCTAssertEqual(try q.claimLinks(limit: 10, now: Date().addingTimeInterval(LinkFlow.shareLease + 1)).map(\.id), [link.id])
+    XCTAssertEqual(try q.claim(limit: 10), [])
+  }
+
+  /// admit 의 큐 쓰기 실패 = failed("queue") + 행 없음(렌더링도 없음) → 폴백하지 않는다(텍스트도 같은 큐 파일이다)
+  @MainActor func testShareQueueFailureAtAdmitHasNoRowAndNoFallback() async throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("link-\(UUID().uuidString).sqlite")
+    let q = try CaptureQueue(url: file), r = LockingRenderer(path: file.path, .page(page, elapsedMs: 900))
+    r.lock()
+    let o = await LinkFlow.share(PendingLink(url: url, note: nil, origin: "share"), renderer: r, queue: q)
+    r.unlock()
+    XCTAssertEqual(o, .failed("queue"))
+    XCTAssertFalse(LinkFlow.fallsBackToText(o))
+    XCTAssertEqual(try q.claimLinks(limit: 10, now: Date().addingTimeInterval(LinkFlow.shareLease + 1)), [])
   }
 
   func testTraceFieldsHaveNoURLOrText() {

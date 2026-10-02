@@ -129,6 +129,13 @@ public enum LinkFlow {
     return .queued(captureID: link.captureID, chars: c.text.count, ocr: page.ocrText != nil, timedOut: page.timedOut)
   }
 
+  /// 공유 확장의 텍스트 폴백(스펙 §6, D8): 확정 실패만 원래 공유 글을 텍스트 항목으로 넣는다. failed("queue") 는 뺀다 —
+  /// finish 의 큐 쓰기 실패는 대기 행이 남아 앱이 이어받고(폴백하면 항목 두 개), admit 의 실패는 텍스트도 같은 큐 파일이라 넣지 못한다
+  public static func fallsBackToText(_ o: Outcome) -> Bool {
+    if case .failed(let code) = o { return code != "queue" }
+    return false
+  }
+
   /// 로그 한 단어(DiagLog): queued · duplicate · discarded:<r> · handed_off:<r> · retry:<r> · failed:<r>
   public static func code(_ o: Outcome) -> String {
     switch o {
