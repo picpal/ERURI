@@ -394,3 +394,6 @@ verify_jwt = false
 
 [functions.apns-send]
 verify_jwt = false
+
+[functions.unsubscribe]
+verify_jwt = false
