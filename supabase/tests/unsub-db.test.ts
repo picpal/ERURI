@@ -195,7 +195,7 @@ Deno.test("scan targets, scan enqueue (test prefix, backfill lease, once), stats
   const { u, c, conn } = await setup();
   try {
     const promo = await item(u.id, "p4", "promo");
-    await rec(u.id, conn, { addr: A("t"), key: "t1", at: iso(day) });
+    const t = await rec(u.id, conn, { addr: A("t"), key: "t1", at: iso(day) });
     const targets = async () => (await sb.rpc("unsub_scan_targets", { p_user: u.id, p_since: iso(30 * day) })).data;
     const mineT = async () => ((await targets()) ?? []).filter((t: { item_id: string }) => t.item_id === promo);
     assertEquals(await mineT(), []);                      // 테스트 키 'test:<run>:gmail:p4' 는 'gmail:%' 가 아니다 — 운영 키 형식만 고른다
@@ -225,15 +225,28 @@ Deno.test("scan targets, scan enqueue (test prefix, backfill lease, once), stats
     assertEquals(p, { mail: 1, senders: 1 });
     assertEquals((await sb.from("unsub_senders").select("id").eq("user_id", u.id).eq("address", A("old"))).data, []);
     assertEquals((await sb.from("unsub_senders").select("id").eq("user_id", u.id).eq("address", A("t"))).data!.length, 1);
-    // 권한
+    // 권한(리뷰 U3 Important 1): 함수마다 전체 인자·범위 인자(이번 실행 연결·sender·RUN 접두)로 부르고 42501(실행 권한 없음)을 단언한다.
+    // 42501 은 PostgREST 가 이름·인자로 함수를 찾은 뒤 실행에서 나오므로 인자 오타(PGRST202)는 실패한다. 회수가 깨져도
+    // 전역 purge·운영 lease 잡은 생기지 않고, 생긴 행은 이번 연결·sender 범위라 아래 cascade·감사 정리로 지워진다
     const anon = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, SERVER_AUTH);
-    for (const [fn, args] of [["worker_record_unsub", {}], ["unsub_begin", { p_user: u.id, p_sender: conn }], ["purge_unsub", {}],
-                              ["gmail_enqueue_unsub_scan", { p_user: u.id }], ["unsub_stats", { p_user: u.id }],
-                              ["unsub_best", { p_user: u.id, p_sender: conn }], ["unsub_ad_mail", { p_user: u.id }]] as const) {
-      assert((await c.rpc(fn, args)).error !== null, fn);
-      assert((await anon.rpc(fn, args)).error !== null, fn);
+    const probes: [string, Record<string, unknown>][] = [
+      ["worker_record_unsub", { p_user: u.id, p_connection: conn, p_address: A("perm"), p_name: "합성 발신자", p_method: "mailto",
+        p_url_enc: null, p_msg_key: `${RUN}:perm`, p_occurred_at: iso(day), p_item: null }],
+      ["unsub_scan_targets", { p_user: u.id, p_since: iso(30 * day) }],
+      ["gmail_enqueue_unsub_scan", { p_user: u.id, p_lease_prefix: RUN + ":" }],
+      ["unsub_begin", { p_user: u.id, p_sender: t }],
+      ["unsub_finish", { p_user: u.id, p_sender: t, p_code: "perm_probe" }],
+      ["purge_unsub", { p_user: u.id, p_connection: conn }],
+      ["unsub_stats", { p_user: u.id, p_jobs_since: iso(60_000) }],
+      ["unsub_best", { p_user: u.id, p_sender: t }],
+      ["unsub_ad_mail", { p_user: u.id }],
+    ];
+    for (const [fn, args] of probes) {
+      assertEquals((await c.rpc(fn, args)).error?.code, "42501", `authenticated ${fn}`);
+      assertEquals((await anon.rpc(fn, args)).error?.code, "42501", `anon ${fn}`);
     }
-    assert((await anon.rpc("unsub_list")).error !== null);                                       // anon 실행 회수
+    assertEquals((await anon.rpc("unsub_list")).error?.code, "42501");                          // anon 실행 회수
+    assertEquals((await sb.from("audit_log").select("id").eq("user_id", u.id).like("target", `unsub:${t}%`)).data, []);   // 탐침이 실행되지 않았다
     // 연결 삭제(출처 삭제 경로) → unsub_* cascade
     const { data: ids } = await sb.from("unsub_senders").select("id").eq("connection_id", conn);
     for (const s of ids ?? []) await sb.from("audit_log").delete().eq("user_id", u.id).like("target", `unsub:${s.id}%`);
