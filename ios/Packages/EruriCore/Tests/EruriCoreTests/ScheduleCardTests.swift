@@ -218,6 +218,19 @@ final class ScheduleCardTests: XCTestCase {
     XCTAssertEqual(ScheduleCard.addFields(m), ["proposal_id": "p-5", "title": "합성 축제", "start": "2026-10-05", "end": "2026-10-07"])
   }
 
+  /// 일정 위치(스펙 §10, 0.11.0): 제안 payload 의 location → 카드 추가 필드. 없으면 키도 없다
+  func testCardAddFieldsCarryLocation() throws {
+    var p = prop("p-loc", start: .string("2026-10-05T05:00:00+00:00"), title: "합성 결혼식")
+    p = ChatReply.Proposal(id: p.id, item_id: p.item_id, action: p.action, status: p.status,
+                           payload: p.payload.merging(["location": .string("합성웨딩홀 3층")]) { _, n in n })
+    let m = ScheduleCard.model(try XCTUnwrap(ScheduleCard.card(p, now: now)), events: [], executed: false)
+    XCTAssertEqual(m.location, "합성웨딩홀 3층")
+    XCTAssertEqual(ScheduleCard.addFields(m)["location"], "합성웨딩홀 3층")
+    let plain = ScheduleCard.model(try XCTUnwrap(ScheduleCard.card(prop("p-2", start: .string("2026-10-05T05:00:00+00:00")), now: now)),
+                                   events: [], executed: false)
+    XCTAssertNil(ScheduleCard.addFields(plain)["location"])
+  }
+
   func testStatusText() {
     let o = ev("o", "2026-10-04T06:00:00Z", "2026-10-04T07:00:00Z", title: "합성 겹침")
     let o2 = ev("o2", "2026-10-04T06:45:00Z", "2026-10-04T07:15:00Z")

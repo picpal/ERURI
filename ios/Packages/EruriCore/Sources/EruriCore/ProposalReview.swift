@@ -22,8 +22,16 @@ public enum ProposalReview {
     /// 못 읽으면 nil(버튼 없음)
     public var addFields: [String: String]? {
       guard let t = timing else { return nil }
-      return t.fieldValues.merging(["proposal_id": proposal_id, "title": title, "version": String(version)]) { a, _ in a }
+      var f = t.fieldValues.merging(["proposal_id": proposal_id, "title": title, "version": String(version)]) { a, _ in a }
+      if let l = ProposalReview.place(location) { f["location"] = l }          // 일정 위치(스펙 §10, 0.11.0)
+      return f
     }
+  }
+
+  /// 일정 위치(스펙 §10, 0.11.0): 제안의 장소·주소 그대로, 앞뒤 공백만 뗀다. 비면 nil(EventKit 에 넣지 않는다)
+  public static func place(_ s: String?) -> String? {
+    guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+    return t
   }
 
   public static func decodeList(_ data: Data) -> [Pending]? { try? JSONDecoder().decode([Pending].self, from: data) }

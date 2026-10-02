@@ -45,7 +45,7 @@ enum NotificationActions {
     // 기록·보고 version 은 실제로 넣은 내용(푸시 페이로드)의 것. 서버가 더 새 version 이면 보고 결과 changed 로 알린다(순서 5)
     let version = Int(f["version"] ?? "") ?? server?.version ?? 1
     // 2~3. 확인 → 표식 조회 → 겹침 → 저장 → 기록(한 actor 구간, await 없음)
-    let outcome = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, timing: timing, version: version, confirmed: confirmed))
+    let outcome = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, timing: timing, version: version, confirmed: confirmed, location: ProposalReview.place(f["location"])))
     let held = ProposalFlow.heldCount(outcome)                          // 겹침·비슷한 일정(0.9.2) — 저장하지 않았다
     // 잠금화면이 겹침·비슷한 일정으로 멈추면 앱 확인을 유도하는 로컬 알림(§10). 결과를 action.handled 에 같이 남기려고 trace 앞에서
     var notice: String? = nil
@@ -134,7 +134,7 @@ enum NotificationActions {
   }
 }
 
-struct AddEventRequest: Sendable { let pid: String; let title: String; let timing: ProposalTiming; let version: Int; var confirmed = false }
+struct AddEventRequest: Sendable { let pid: String; let title: String; let timing: ProposalTiming; let version: Int; var confirmed = false; var location: String? = nil }
 
 /// 확인 → 표식 조회 → 겹침·비슷한 일정 판정 → 저장 → 기록을 await 없이 한 actor 안에서 처리한다(스펙 §10 순서 2~3, PoC-5 실측: 동시 두 번 탭 +1).
 /// 반환: "ok" · "recovered"(저장 후 기록 전 종료 복구) · "dup" · "conflict:<n>"(겹침, 저장 안 함) · "similar:<n>"(비슷한 일정, 저장 안 함) · "fail:<코드>"
@@ -167,6 +167,7 @@ actor AddEventGate {
       // 시각: [start, +1시간). 종일(0.9.1): isAllDay + 서울 날짜를 기기 달력의 같은 날 0시로(하루면 시작 = 끝, 여러 날이면 마지막 날 0시)
       let span = r.timing.eventSpan(deviceZone: .current)
       ev.title = r.title; ev.isAllDay = r.timing.isAllDay; ev.startDate = span.start; ev.endDate = span.end
+      ev.location = r.location                                       // 일정 위치(스펙 §10, 0.11.0). 잠금화면 경로는 nil
       ev.calendar = cal
       ev.url = ProposalFlow.marker(r.pid)
       try store.save(ev, span: .thisEvent, commit: true)

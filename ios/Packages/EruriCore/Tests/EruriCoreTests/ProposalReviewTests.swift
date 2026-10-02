@@ -39,6 +39,18 @@ final class ProposalReviewTests: XCTestCase {
     XCTAssertNil(bad.addFields)                                             // 읽지 못할 시각이면 추가 버튼 없음
   }
 
+  /// 일정 위치(스펙 §10, 0.11.0): 목록 행의 location 을 handleAdd 입력으로. 공백뿐이면 넣지 않는다
+  func testAddFieldsCarryLocation() throws {
+    let row = try XCTUnwrap(ProposalReview.decodeList(listJSON())?.first)
+    XCTAssertEqual(row.addFields?["location"], "합성 회의실")
+    let blank = try XCTUnwrap(ProposalReview.decodeList(Data("""
+      [{"proposal_id":"\(pid)","action":"ADD_EVENT","title":"t","start":"2026-10-02T06:30:00+00:00","end":null,"location":"  ","version":1,"created_at":"x"}]
+      """.utf8))?.first)
+    XCTAssertNil(blank.addFields?["location"])
+    XCTAssertEqual(ProposalReview.place("  합성웨딩홀 3층 \n"), "합성웨딩홀 3층")
+    XCTAssertNil(ProposalReview.place(nil))
+  }
+
   /// 0026 종일 행(0.9.1): start·end 는 YYYY-MM-DD, all_day = true. 표시 "10/8(목) · 종일", 추가 필드는 날짜 그대로(여러 날이면 end).
   /// 0026 의 시각 있는 행(+09:00 text)은 그대로 읽힌다. all_day 와 start 형식이 어긋나면 추가 버튼 없음
   func testAllDayRows() throws {
