@@ -61,7 +61,7 @@
 | D4 | 이미지 전용 청첩장(링크) | **앱 OCR**: 앱이 읽은 글(제목·설명·본문)에 날짜 후보가 없거나 **글이 0자**면 웹뷰 화면을 최대 3화면 스냅샷(너비 390pt — 3배율 기기 1,170px) → Vision(ko-KR·en-US, accurate) → `이미지 속 글자:` 블록(1,500자). 글 0자 페이지도 `didFinish` 뒤 4초가 지나면 완료로 보고 OCR로 간다. 확장에서는 OCR하지 않고(메모리 한도 미확인, U3) 앱에 넘긴다. 서버 vision 경로는 쓰지 않는다 | 제품에는 서버 이미지 수집 경로가 없다(F2, 스펙 §15 2단계). 순수 이미지 페이지가 OCR 전에 `empty`로 끝나 지워지면 핵심 사례를 놓친다(Codex 1) |
 | D5 | 링크 판정 | 공유 본문·채팅 입력에 `http://`·`https://`로 적힌 주소가 **정확히 1개**이고, 주소를 뺀 나머지 글이 **200자 이하이며 날짜 후보가 없을 때만** 링크(나머지 글은 메모). 그 밖은 지금처럼 텍스트 공유(공유)·질문(채팅). 주소가 **2개 이상**이면 공유는 텍스트, 채팅은 "링크는 한 번에 하나씩 보내 주세요". 스킴 없는 도메인("naver.com")은 링크가 아니다. 주소 바로 뒤에 붙은 비 ASCII 글자("…/1이에요")는 주소에서 뗀다(한글 경로 주소는 링크로 보지 않는 대가). 클립보드를 앱이 읽지 않는다 | 주소 1개가 든 긴 공지·일정 문자를 링크로 바꾸면 본문이 200자 메모로 잘리고 페이지 실패 시 통째로 사라진다(Fable F1 — 기존 기능 회귀). 서버 chat은 URL을 읽지 못하므로 짧은 "청첩장 https://…"는 수집이 맞다. 프로그램으로 붙여넣기를 읽으면 iOS 16+가 허용 창을 띄운다(F14) |
 | D6 | 렌더링 대기 | `didFinish`(오지 않으면 로드 시작 4초) 뒤 `innerText` 길이를 0.5초마다 재서 **3번 같으면 완료** — `didFinish` 전 샘플은 세지 않는다(고정 "로딩 중…" 글에서 끝내지 않게). 글 0자는 **`didFinish` 뒤** 4초가 지났을 때만 완료(SPA가 그릴 시간, 늦은 `didFinish`도 그 뒤 4초 — 스펙 §6 "대기", L0L1 리뷰 I2). 예산(확장 10초·앱 15초)이 끝나면 그때까지 읽은 글로 진행(`timedOut`) — 0자여도 추출(OG 메타)·OCR로 간다. 커밋도 못 했으면 `timeout` | WebKit에 network idle API가 없고 `didFinish`는 XHR·fetch 완료를 뜻하지 않는다(F15) |
-| D7 | 웹뷰 설정 | 비영속 저장소(쿠키·로그인 없음), 미디어 자동 재생 금지, 새 창·앱 스킴 이동 차단(읽기는 계속), 메인 프레임 이동 6회(리다이렉트 5회) 초과·`NSURLErrorHTTPTooManyRedirects`는 `redirects`, 다운로드 취소, HTTP 4xx·5xx·표시 불가 MIME 실패. 주소 검사(메인·**하위 프레임** 모두): http(s)만, 사설·루프백·링크로컬·CGNAT IP 리터럴·`.local`·점 없는 호스트 거부. **하위 리소스(img·fetch·XHR·iframe)는 `WKContentRuleList`로 사설 IP 리터럴·`localhost`·`.local` 요청을 막는다**(DEBUG 빌드만 루프백 허용 — 시뮬레이터 게이트). 공개 이름이 사설 주소로 풀리는 경우는 막지 않는다. **`http://`는 `https://`로 올려 연다**(앱·확장에 ATS 예외가 없어 공개 http 로드는 막힌다 — F24). 올린 https가 TLS·연결 거부로 실패하면 `insecure`("보안 연결(https)이 안 되는 페이지예요"). ATS 예외는 넣지 않는다. 웹뷰는 실제 화면 크기(390×844pt)로 **창 안, 다른 화면 밑**에 붙인다 | 로컬 네트워크 권한 창·내부 기기 접근을 피한다(서버 SSRF가 아니라 기기 위생). 위임 메서드는 하위 리소스를 거치지 않아(Codex 6) 콘텐츠 규칙이 필요하다. 평문 로드를 열 이유가 약하다(Fable F3) |
+| D7 | 웹뷰 설정 | 비영속 저장소(쿠키·로그인 없음), 미디어 자동 재생 금지, 새 창·앱 스킴 이동 차단(읽기는 계속), **페이지가 서기 전**(첫 문서 커밋 전) 메인 프레임 이동 6회(리다이렉트 5회) 초과·`NSURLErrorHTTPTooManyRedirects`는 `redirects`, 다운로드 취소, 서기 전 HTTP 4xx·5xx·표시 불가 MIME 실패, 서기 전 리다이렉트가 앱 스킴·사설 주소면 바로 `blocked_*`. 선 뒤의 이동(JS 이동·같은 문서 해시 이동)은 세지 않고, 막히거나 실패해도 선 페이지를 계속 읽는다(L3 리뷰 I2·M1). 카메라·마이크 권한 요청은 거절. 주소 검사(메인·**하위 프레임** 모두): http(s)만, 사설·루프백·링크로컬·CGNAT IP 리터럴·`.local`·점 없는 호스트 거부. **하위 리소스(img·fetch·XHR·iframe)는 `WKContentRuleList`로 사설 IP 리터럴·`localhost`·`.local` 요청을 막는다**(사용자 정보 `u@`가 붙은 주소 포함)(DEBUG 빌드만 루프백 허용 — 시뮬레이터 게이트). 공개 이름이 사설 주소로 풀리는 경우는 막지 않는다. **`http://`는 `https://`로 올려 연다**(앱·확장에 ATS 예외가 없어 공개 http 로드는 막힌다 — F24). 올린 https가 TLS·연결 거부로 실패하면 `insecure`("보안 연결(https)이 안 되는 페이지예요"). ATS 예외는 넣지 않는다. 웹뷰는 실제 화면 크기(390×844pt)로 **창 안, 다른 화면 밑**에 붙인다 | 로컬 네트워크 권한 창·내부 기기 접근을 피한다(서버 SSRF가 아니라 기기 위생). 위임 메서드는 하위 리소스를 거치지 않아(Codex 6) 콘텐츠 규칙이 필요하다. 평문 로드를 열 이유가 약하다(Fable F3) |
 | D8 | 결과를 사용자에게 | 확장: 시트 안 문구(읽는 중 → 결과 + 저장 범위 한 줄, 1.5초 뒤 닫힘 또는 [닫기] — **[닫기]는 결과를 기다리지 않고 즉시 닫는다**). 채팅: 링크 턴 문구 → 직접 업로드 → 처리 결과 폴링(3초 간격, 60초). 앱 이어받기 **확정 실패·3회 실패**만 로컬 알림 1건(주소·제목 없이, foreground 배너 — F25). 확장에서 링크가 확정 실패하면 **원래 공유 글을 지금처럼 텍스트 항목으로 넣는다**(주소만 공유했으면 주소 문자열 항목 — 0.10.0과 같다) | 확장·채팅은 사용자가 보고 있다. 이어받기는 사용자가 다른 화면에 있을 수 있다. 확정 실패로 공유 자체가 사라지면 안 된다(Fable F1) |
 | D9 | 일정 위치 | 제안 payload `location`(추출 결과, F11) → EventKit `location`(문자열). 경로: 제안 탭 행·배너 탭 시트(목록 값)·채팅 카드. **잠금화면 "캘린더에 추가"는 푸시에 location이 없어 장소 없이** 저장한다(서버 notify 변경은 이 계획 범위 밖 — 0.11.0은 서버 무변경) | §15 후보 "장소는 주소 그대로 일정 위치에". 지금은 모든 경로가 위치 없이 저장한다(F10) |
 | D10 | 버전 | **이 기능 = 0.11.0**, 보관 계획 R-B9(요약·저장 공간)는 **0.12.0**(L0이 스펙 §11·§15·§16·보관 계획을 고친다). 실행 때 `git log --oneline -- ios/project.yml`로 0.11.0이 이미 main에 있으면(R-B9가 먼저) 이 기능이 다음 빈 마이너를 쓰고 스펙·두 계획을 같은 커밋에서 맞춘다. 메이저 금지 | 이 기능은 서버를 바꾸지 않아 ③c2를 기다리지 않는 R-B9보다 먼저 준비된다 |
@@ -69,7 +69,7 @@
 | D12 | 여행 글 후보와의 관계 | §15 "여행 글 → 일정 초안" 후보의 "서버가 본문 가져오기"를 **기기 렌더러 공유**로 바꿔 적는다(이번 구현 없음) | 링크 가져오기 계층을 공유한다는 후보 문구(§15)를 방식 A와 맞춘다 |
 | D13 | 이미지 입력(LD4·MR3) | 사진 → 기기 Vision OCR → `[이미지] 사진 N장` + `메모:` + (넘치면 `일시·장소 줄:`) + `이미지 속 글자:`(전체 4,000자) → 기기 규칙 → SHARE 큐(`app_name = "이미지"`). **이미지 파일·축소본을 App Group·디스크에 저장하지 않는다** — 확장·앱이 `loadDataRepresentation`/`loadTransferable`로 메모리에 받아 한 장씩 그 자리에서 OCR하고 버린다(대기 행 없음 — 확장이 죽으면 그 공유는 사라지고 다시 공유하면 된다). 한 번에 **최대 3장**, 한 항목으로 합친다. 디코딩은 `CGImageSourceCreateThumbnailAtIndex`(긴 변 2,048px, EXIF 방향 반영). OCR 글이 합쳐 10자 미만이면 "사진에서 글자를 찾지 못했어요"(큐에 아무것도 넣지 않음). 공유에 웹 주소 1개(D5 조건)와 이미지가 같이 오면 링크(Safari 미리보기 그림). 채팅은 "+" 메뉴(지금 비활성 "2단계 예정", F26)에 `PhotosPicker`(이미지, 최대 3장 — 사진 권한 창 없음), 입력창 글은 메모. 파일 업로드·서버 vision·PDF는 그대로 2단계 | 사용자 요구(서버 업로드 없음). 스펙 §6 "규칙 통과 전 영속화 없음"과 맞다. 48MP 원본을 통째로 풀지 않는다(확장 메모리, U10). 기존 `VNImageRequestHandler(cgImage:)`는 방향을 모른다 |
 | D14 | 같은 링크(MR2) | 캡처 id = `LinkText.captureID(for:)` — 조각(`#…`)을 떼고 스킴을 https로 맞춘 주소의 SHA-256 앞 16바이트(UUID 모양). 대기 행 id `link:<captureID>`. 큐 항목이 들어가면(`queued`) 기기 `link_seen`(App Group 큐 파일의 표, captureID와 만료 시각만 — 주소 없음)에 30일 남긴다. 관문이 기록을 찾으면 렌더링·행 없이 `duplicate` → "이미 읽은 링크예요. 제안 탭에서 확인해 주세요". 기록이 없어도(재설치) 서버 멱등 키(`SHARE:<id>`)가 같아 항목은 한 건이다. 확장이 죽어 남은 같은 주소의 대기 행은 다시 공유하면 lease만 새로 걸고 다시 읽는다. 규칙 폐기·실패는 기록하지 않는다(다시 해 볼 수 있게) | 같은 청첩장을 공유·채팅으로 두 번 넣으면 같은 일정이 두 번 제안된다(Fable F6). 읽은 링크 기록에 주소를 두지 않는다 |
-| D15 | 절대 상한·취소 | 렌더러는 내부 작업(로드·대기·추출·스냅샷·OCR)과 **독립 기한(예산 + 추출 2초 + OCR 8초)·취소**를 경주시켜 먼저 끝난 쪽으로 돌아오고 웹뷰를 뗀다. 늦게 온 결과는 버린다. WebContent가 바쁜 루프에 걸려 JS 호출이 돌아오지 않아도 기한에 `timeout`으로 끝난다 | 기한 검사가 JS 반환 뒤에만 있으면 멈춘 페이지에서 공유 시트가 갇힌다(Codex 2) |
+| D15 | 절대 상한·취소 | 렌더러는 내부 작업(로드·대기·추출·스냅샷·OCR)과 **독립 기한(예산 + 추출 2초 + OCR 8초)·취소**를 경주시켜 먼저 끝난 쪽으로 돌아오고 웹뷰를 뗀다. 늦게 온 결과는 버린다. WebContent가 바쁜 루프에 걸려 JS 호출이 돌아오지 않아도 기한에 `timeout`으로 끝난다. 기한은 `render` 진입부터 잰다. 돌아올 때 웹뷰를 놓는다 — 내부 작업은 웹뷰를 약하게만 잡고 JS·스냅샷은 완료 핸들러를 상자(`Reply`)로 기다려, 멈춘 페이지의 웹뷰·WebContent도 바로 풀린다(L3 리뷰 I1) | 기한 검사가 JS 반환 뒤에만 있으면 멈춘 페이지에서 공유 시트가 갇힌다(Codex 2) |
 
 ## 사용자 결정 필요 (기본값으로 구현하고, 다르게 고르면 표의 영향만 바꾼다)
 
@@ -627,6 +627,15 @@ final class LinkTextTests: XCTestCase {
     XCTAssertTrue(LinkPage(host: "x.example.com").isEmpty)
   }
 
+  /// 빈 페이지 판정은 날짜 판정 없이 — 제목·설명·보이는 글·숨은 글·OCR 이 모두 공백이면 빈 페이지(searchable 판정과 같다).
+  /// 본문(body)을 다시 계산하면 200,000자 페이지에서 날짜 판정이 두 번 더 돈다(L3 리뷰 M4)
+  func testIsEmptyMatchesSearchable() {
+    let pages = [LinkPage(host: "x"), LinkPage(host: "x", title: " \n"), LinkPage(host: "x", title: "합성"), LinkPage(host: "x", description: "설명"),
+                 LinkPage(host: "x", visibleText: "  ", allText: "숨은 글"), LinkPage(host: "x", visibleText: "보이는 글"),
+                 LinkPage(host: "x", visibleText: " ", allText: "\n\t"), LinkPage(host: "x", ocrText: "OCR"), LinkPage(host: "x", ocrText: "  ")]
+    for p in pages { XCTAssertEqual(p.isEmpty, p.searchable.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "\(p)") }
+  }
+
   func testDecode() {
     let json = #"{"title":"문서 제목","ogTitle":"합성신랑 ♥ 합성신부","ogDescription":"11월 14일","text":"보이는 글","all":"전체 글"}"#
     let p = LinkPage.decode(json: json, host: "invite.example.com")
@@ -1100,7 +1109,10 @@ public struct LinkPage: Equatable, Sendable {
 
   /// 날짜 후보 판단 대상: 제목·설명·본문·OCR
   public var searchable: String { [title, description, body, ocrText ?? ""].joined(separator: "\n") }
-  public var isEmpty: Bool { searchable.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+  /// 빈 페이지 = searchable 이 공백. 본문은 보이는 글이나 숨은 글이라 다섯 필드가 모두 공백인지로 같게 판정한다 — 날짜 판정(본문 계산)을 다시 돌리지 않게
+  public var isEmpty: Bool {
+    [title, description, visibleText, allText, ocrText ?? ""].allSatisfy { $0.unicodeScalars.allSatisfy(CharacterSet.whitespacesAndNewlines.contains) }
+  }
 
   /// 추출 JS 결과(JSON 문자열, `LinkScript.extract`) → LinkPage. 형식이 다르면 nil
   public static func decode(json: String, host: String) -> LinkPage? {
@@ -1180,7 +1192,7 @@ public enum ImageText {
 - [ ] **Step 5: 통과 확인**
 
 Run: `cd ios && ./scripts/sim.sh test EruriCoreTests/LinkTextTests && ./scripts/sim.sh test EruriCoreTests/ImageTextTests`
-Expected: `LinkTextTests` 18개·`ImageTextTests` 3개 통과. `testDateCandidates`의 음성 사례가 실패하면 정규식을 고치고(사례를 빼지 않는다), `testCheck`의 IPv6 사례에서 `URL.host(percentEncoded:)`가 괄호를 남기는지에 따라 `check`의 괄호 제거가 동작하는지 본다. `testChatIntent`의 한글 붙은 주소 사례가 실패하면 `NSDataDetector`가 그 입력에서 주소를 아예 못 찾는 것인지(`matches`가 빈 배열) 확인해 보고한다(사례를 빼지 않는다).
+Expected: `LinkTextTests` 19개·`ImageTextTests` 3개 통과. `testDateCandidates`의 음성 사례가 실패하면 정규식을 고치고(사례를 빼지 않는다), `testCheck`의 IPv6 사례에서 `URL.host(percentEncoded:)`가 괄호를 남기는지에 따라 `check`의 괄호 제거가 동작하는지 본다. `testChatIntent`의 한글 붙은 주소 사례가 실패하면 `NSDataDetector`가 그 입력에서 주소를 아예 못 찾는 것인지(`matches`가 빈 배열) 확인해 보고한다(사례를 빼지 않는다).
 
 - [ ] **Step 6: 회귀**
 
@@ -2095,7 +2107,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `OCR.recognize(image: UIImage) async throws -> String` · `OCR.recognize(data: Data, maxPixel: Int = 2048) async throws -> String` · `OCR.thumbnail(_:maxPixel:) -> CGImage?`(LI2)
   - `enum ShareImages { @MainActor static count(_ items: [NSExtensionItem]) -> Int; @MainActor static ocr(_ items: [NSExtensionItem], max: Int = 3) async -> (texts: [String], images: Int) }`(LI4 전반 — 확장이 쓴다)
 
-설계 메모(구현자가 알아야 할 WebKit 사실): 네트워크 idle API 없음(F15) → `LinkSettle`로 길이 안정 판정. 웹뷰는 `host`(창 안에 있는 뷰)의 **맨 아래 서브뷰**로 붙여 다른 화면에 가려지게 한다 — WebKit은 창 안·foreground일 때만 보이는 뷰로 다룬다(F16, 화면 밖·창 밖은 미확인 U2). JS는 `callAsyncJavaScript(_:arguments:in:contentWorld:)`(반환 `Any?` — `evaluateJavaScript` async 판은 결과가 없으면 문제를 일으킨 적이 있어 쓰지 않는다)와 격리 세계 `.defaultClient`(DOM은 공유, 페이지 스크립트는 우리 함수를 못 바꾼다). 위임 메서드는 async 판(`decidePolicyFor … async -> WKNavigationActionPolicy`)만 구현한다(같은 선택자의 완료 핸들러 판과 함께 두면 모호하다). **JS 호출은 페이지 스크립트가 멈추면 돌아오지 않는다** — 그래서 `render`는 내부 작업과 독립 기한·취소를 경주시키고(D15), 내부 작업의 늦은 결과는 버린다. 위임 메서드는 위임 객체를 다시 쓰는 다음 렌더링과 섞이지 않게 `webView === current`일 때만 상태를 바꾼다. 하위 리소스(img·fetch·XHR)는 위임 메서드를 거치지 않으므로(F17) `WKContentRuleList`로 막는다 — WebKit 콘텐츠 규칙의 `url-filter`는 `|`·`{n}`을 지원하지 않아 규칙을 나눠 적는다.
+설계 메모(구현자가 알아야 할 WebKit 사실): 네트워크 idle API 없음(F15) → `LinkSettle`로 길이 안정 판정. 웹뷰는 `host`(창 안에 있는 뷰)의 **맨 아래 서브뷰**로 붙여 다른 화면에 가려지게 한다 — WebKit은 창 안·foreground일 때만 보이는 뷰로 다룬다(F16, 화면 밖·창 밖은 미확인 U2). JS는 완료 핸들러 판 `callAsyncJavaScript(_:arguments:in:in:completionHandler:)`(`evaluateJavaScript`는 결과가 없으면 문제를 일으킨 적이 있어 쓰지 않는다)를 `Reply` 상자로 기다리고, 격리 세계 `.defaultClient`(DOM은 공유, 페이지 스크립트는 우리 함수를 못 바꾼다)에서 돈다. async 판은 기다리는 동안 웹뷰를 강하게 잡아, 멈춘 페이지에서 경주에 진 뒤에도 웹뷰와 무한 루프 WebContent가 남았다(L3 리뷰 I1) — 내부 작업은 웹뷰를 `WebViewRef`(약참조)로만 쥐고, 핸들러는 상자만 잡으며, 취소되면 핸들러를 기다리지 않는다. 스냅샷도 같다. 위임 메서드는 async 판(`decidePolicyFor … async -> WKNavigationActionPolicy`)만 구현한다(같은 선택자의 완료 핸들러 판과 함께 두면 모호하다). **JS 호출은 페이지 스크립트가 멈추면 돌아오지 않는다** — 그래서 `render`는 내부 작업과 독립 기한·취소를 경주시키고(D15), 내부 작업의 늦은 결과는 버린다. 위임 메서드는 위임 객체를 다시 쓰는 다음 렌더링과 섞이지 않게 `webView === current`일 때만 상태를 바꾼다. WebKit은 같은 문서 해시 이동에도 `decidePolicyFor`를 부르므로 리다이렉트 수는 커밋 전 이동만 센다(L3 리뷰 I2 — 해시를 바꾸는 갤러리가 `redirects`로 버려졌다). 하위 리소스(img·fetch·XHR)는 위임 메서드를 거치지 않으므로(F17) `WKContentRuleList`로 막는다 — WebKit 콘텐츠 규칙의 `url-filter`는 `|`·`{n}`을 지원하지 않아 규칙을 나눠 적는다.
 
 - [ ] **Step 1: 실패하는 테스트**
 
@@ -2105,6 +2117,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 import XCTest
 import UIKit
 import Network
+import WebKit
 @testable import EruriCore
 
 /// WKWebView 렌더러(스펙 §6 "링크·이미지 읽기"): 합성 HTML 을 네트워크 없이(loadHTMLString, 기준 주소 = 공유 주소) 창 안 다른 화면 밑에서 읽고,
@@ -2139,6 +2152,27 @@ final class LinkRendererTests: XCTestCase {
     throw Failed(outcome: "\(o)")
   }
 
+  /// 렌더링 중 host 맨 아래에 붙은 웹뷰를 약하게 잡는다(해제 판정용)
+  @MainActor final class WeakView { weak var view: WKWebView?; var grabbed = false }
+
+  /// render 가 돌아온 뒤 웹뷰가 within 초 안에 풀리는지 본다(L3 리뷰 P1) — 렌더링 중 host 맨 아래 웹뷰를 약하게 잡아 둔다
+  @MainActor private func renderAndRelease(_ html: String, budget: TimeInterval, within: TimeInterval = 5) async throws -> (LinkRenderOutcome, Bool) {
+    let w = try window()
+    defer { w.isHidden = true }
+    let box = WeakView()
+    let grab = Task { @MainActor in
+      for _ in 0..<500 {
+        if let v = w.subviews.first as? WKWebView { box.view = v; box.grabbed = true; return }
+        try? await Task.sleep(for: .milliseconds(10))
+      }
+    }
+    let o = await LinkRenderer(host: w, allowLoopback: false, html: html).render(base, budget: budget, ocr: false)
+    await grab.value
+    let returned = Date()
+    while box.view != nil, Date().timeIntervalSince(returned) < within { try await Task.sleep(for: .milliseconds(200)) }
+    return (o, box.grabbed && box.view == nil)
+  }
+
   /// 루프백 서버 주소를 DEBUG 게이트처럼(allowLoopback) 연다
   @MainActor private func load(_ path: String, port: UInt16, budget: TimeInterval = 5) async throws -> LinkRenderOutcome {
     let w = try window()
@@ -2161,6 +2195,7 @@ final class LinkRendererTests: XCTestCase {
     XCTAssertFalse(c.websiteDataStore.isPersistent)
     XCTAssertEqual(c.mediaTypesRequiringUserActionForPlayback, .all)
     XCTAssertFalse(c.preferences.javaScriptCanOpenWindowsAutomatically)
+    XCTAssertTrue(c.allowsInlineMediaPlayback)          // 재생이 어떻게든 시작돼도 전체 화면 플레이어가 사용자 화면을 덮지 않게(L3 리뷰 M9)
   }
 
   /// 하위 리소스 차단 규칙(Codex 6, D7): JSON 이 맞고, 릴리스는 루프백까지 막는다
@@ -2170,9 +2205,12 @@ final class LinkRendererTests: XCTestCase {
       XCTAssertEqual(rules.count, loop ? 14 : 16)
       let filters = rules.compactMap { ($0["trigger"] as? [String: Any])?["url-filter"] as? String }
       XCTAssertEqual(filters.contains { $0.contains("127") }, !loop)
-      XCTAssertTrue(filters.contains(#"^[a-z]+://192\.168\."#))
+      XCTAssertTrue(filters.contains(#"^[a-z]+://([^/]*@)?192\.168\."#))     // 사용자 정보(u@)가 붙은 주소도(L3 리뷰 M2)
       XCTAssertTrue(rules.allSatisfy { ($0["action"] as? [String: Any])?["type"] as? String == "block" })
     }
+    // 컴파일된 목록은 디스크에 남아 다음 실행이 찾아 쓴다 — 식별자가 규칙 내용을 따라가야 바뀐 규칙이 옛 목록에 가리지 않는다(L3 리뷰 M7)
+    XCTAssertNotEqual(LinkRenderer.ruleIdentifier(allowLoopback: false), LinkRenderer.ruleIdentifier(allowLoopback: true))
+    XCTAssertEqual(LinkRenderer.ruleIdentifier(allowLoopback: false), LinkRenderer.ruleIdentifier(allowLoopback: false))
   }
 
   @MainActor func testRuleListCompiles() async {
@@ -2237,6 +2275,35 @@ final class LinkRendererTests: XCTestCase {
       """, budget: 5)
     XCTAssertTrue(o == .failed("timeout") || o == .failed("web_process"), "\(o)")
     XCTAssertLessThan(Date().timeIntervalSince(started), 5 + LinkRenderer.extractAllowance + 5)
+  }
+
+  /// 멈춘 페이지가 기한에 진 뒤 웹뷰가 풀린다(L3 리뷰 I1·P1b) — 내부 작업이 돌아오지 않는 JS 호출을 기다리며 웹뷰를 붙잡으면
+  /// 무한 루프 WebContent 가 앱이 멈출 때까지 남는다(앱은 timeout 을 다시 시도한다). 대조: 정상 페이지는 0.5초 안에 풀린다(리뷰 P1a)
+  @MainActor func testStuckPageReleasesWebView() async throws {
+    let (o, released) = try await renderAndRelease("""
+      <html><body><p>2026년 11월 14일 합성 행사</p><script>setTimeout(() => { for (;;) {} }, 300);</script></body></html>
+      """, budget: 5)
+    XCTAssertTrue(o == .failed("timeout") || o == .failed("web_process"), "\(o)")
+    XCTAssertTrue(released, "render 반환 5초 뒤에도 멈춘 페이지의 웹뷰가 살아 있다")
+  }
+
+  /// 같은 문서 해시 이동(갤러리·슬라이드의 hashNavigation)은 리다이렉트로 세지 않는다(L3 리뷰 I2·P2, D7 "첫 로드 + 리다이렉트 5회")
+  @MainActor func testHashChangesAreNotRedirects() async throws {
+    let (o, _) = try await read("""
+      <html><body><p>2026년 11월 14일 합성웨딩홀</p><script>
+      let i = 0; const t = setInterval(() => { location.hash = 's' + (++i); if (i >= 8) clearInterval(t); }, 100);
+      </script></body></html>
+      """)
+    XCTAssertTrue(try page(o).body.contains("11월 14일"))
+  }
+
+  /// 제목·설명도 자른다(2,000자 — 확장 메모리, L3 리뷰 M3). 본문은 200,000자
+  @MainActor func testMetaFieldsAreCapped() async throws {
+    let long = String(repeating: "가", count: 5000)
+    let (o, _) = try await read("<html><head><title>\(long)</title><meta name=\"description\" content=\"\(long)\"></head><body><p>합성</p></body></html>")
+    let p = try page(o)
+    XCTAssertEqual(p.title.count, 2000)
+    XCTAssertEqual(p.description.count, 2000)
   }
 
   /// 취소(앱이 비활성 — L5): 기다리지 않고 바로 cancelled
@@ -2307,6 +2374,10 @@ final class LinkRendererTests: XCTestCase {
     let detached = UIView(frame: CGRect(origin: .zero, size: LinkRenderer.viewport))
     let o = await LinkRenderer(host: detached, allowLoopback: false).render(base, budget: 5, ocr: false)
     XCTAssertEqual(o, .failed("no_host"))
+    let hidden = try window()                    // 숨은 창은 보이는 뷰가 아니다 — 타이머가 조절돼 기한까지 끌지 않고 바로 no_host(L3 리뷰 M6)
+    hidden.isHidden = true
+    let h = await LinkRenderer(host: hidden, allowLoopback: false).render(base, budget: 5, ocr: false)
+    XCTAssertEqual(h, .failed("no_host"))
   }
 
   /// 이미지 전용 청첩장(D4, Codex 1): 글이 **0자**인 문서도 화면 스냅샷 OCR. 그림은 테스트 안에서 그린다(저장소에 그림 파일 없음)
@@ -2324,6 +2395,23 @@ final class LinkRendererTests: XCTestCase {
     let p = try page(o)
     XCTAssertTrue(p.visibleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     let t = try XCTUnwrap(p.ocrText, "OCR 결과 없음 — U4(시뮬레이터 Vision 한국어)·U2(스냅샷)를 메인에게 알린다")
+    XCTAssertTrue(LinkText.hasDateCandidate(t), "OCR 글자 수 \(t.count)")
+  }
+
+  /// 이미지 전용 긴 페이지: 날짜가 둘째 화면에만 있다 — 스크롤해 다음 화면도 스냅샷 OCR(스펙 §6 "최대 3화면", L3 리뷰 M8)
+  @MainActor func testOCRScrollsToNextScreen() async throws {
+    let screen = LinkRenderer.viewport.height
+    let img = UIGraphicsImageRenderer(size: CGSize(width: 360, height: screen * 2)).image { _ in
+      UIColor.white.setFill(); UIRectFill(CGRect(x: 0, y: 0, width: 360, height: screen * 2))
+      let a: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 26), .foregroundColor: UIColor.black]
+      ("2026년 12월 5일 토요일" as NSString).draw(at: CGPoint(x: 16, y: screen + 200), withAttributes: a)
+      ("합성 컨벤션 웨딩홀" as NSString).draw(at: CGPoint(x: 16, y: screen + 260), withAttributes: a)
+    }
+    let b64 = try XCTUnwrap(img.pngData()).base64EncodedString()
+    let (o, _) = try await read("""
+      <html><body style="margin:0"><img src="data:image/png;base64,\(b64)" width="360"></body></html>
+      """, budget: 8, ocr: true)
+    let t = try XCTUnwrap(try page(o).ocrText, "둘째 화면 OCR 없음")
     XCTAssertTrue(LinkText.hasDateCandidate(t), "OCR 글자 수 \(t.count)")
   }
 
@@ -2364,6 +2452,41 @@ final class LinkRendererTests: XCTestCase {
     XCTAssertEqual(o, .failed("http_404"))
   }
 
+  /// 페이지가 선 뒤 JS 이동이 404 를 받아도 실패가 아니다 — 지금 페이지를 계속 읽고, 실패한 이동을 예산까지 기다리지 않는다(L3 리뷰 I2)
+  @MainActor func testHTTPErrorAfterCommitKeepsPage() async throws {
+    let s = try await server()
+    defer { s.stop() }
+    let o = try await load("/later404", port: s.port, budget: 6)
+    guard case .page(let p, let ms) = o else { return XCTFail("\(o)") }
+    XCTAssertTrue(p.body.contains("11월 14일"))
+    XCTAssertEqual(s.hits("/missing"), 1)                // JS 이동이 실제로 났다
+    XCTAssertLessThan(ms, 3500, "실패한 뒤 이동의 didFinish 를 기다렸다")
+  }
+
+  /// 서기 전 리다이렉트가 앱 스킴으로 간다: 읽을 페이지가 없다 — 예산을 기다리지 않고 blocked_scheme(L3 리뷰 M1·P3)
+  @MainActor func testPreCommitAppSchemeRedirectFailsAtOnce() async throws {
+    let s = try await server()
+    defer { s.stop() }
+    let started = Date()
+    let o = try await load("/app", port: s.port, budget: 6)
+    XCTAssertEqual(o, .failed("blocked_scheme"))
+    XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+  }
+
+  /// 렌더러 재사용(앱 drain 은 한 인스턴스로 차례로 읽는다): 기한에 진 멈춘 페이지 다음 렌더링도 정상으로 읽는다 —
+  /// 진 렌더링의 내부 작업·위임 콜백이 다음 렌더링 상태를 바꾸지 않는다(webView === current, L3 리뷰 M8)
+  @MainActor func testRendererReuseAfterLostRace() async throws {
+    let s = try await server()
+    defer { s.stop() }
+    let w = try window()
+    defer { w.isHidden = true }
+    let r = LinkRenderer(host: w, allowLoopback: true)
+    let a = await r.render(URL(string: "http://127.0.0.1:\(s.port)/stuck")!, budget: 5, ocr: false)
+    XCTAssertTrue(a == .failed("timeout") || a == .failed("web_process"), "\(a)")
+    let b = await r.render(URL(string: "http://127.0.0.1:\(s.port)/ok")!, budget: 5, ocr: false)
+    XCTAssertTrue(try page(b).body.contains("11월 14일"))
+  }
+
   /// 302 가 끝없이 이어진다: 메인 프레임 이동 6회 초과 또는 WebKit 의 리다이렉트 초과(-1007) — 어느 쪽이든 redirects
   @MainActor func testTooManyRedirectsFail() async throws {
     let s = try await server()
@@ -2385,31 +2508,35 @@ final class LinkRendererTests: XCTestCase {
     let s = try await server()
     defer { s.stop() }
     let doc = """
-      <html><body><p>2026년 11월 14일 합성웨딩홀</p><img src="http://127.0.0.1:\(s.port)/pixel"><iframe src="http://127.0.0.1:\(s.port)/frame"></iframe></body></html>
+      <html><body><p>2026년 11월 14일 합성웨딩홀</p><img src="http://127.0.0.1:\(s.port)/pixel"><iframe src="http://127.0.0.1:\(s.port)/frame"></iframe>
+      <img src="http://u@127.0.0.1:\(s.port)/cred"></body></html>
       """
     let plain = URL(string: "http://invite.example.com/m/abc")!            // 대조군에서 혼합 콘텐츠 차단을 피하려고 http 기준 주소(네트워크 로드는 없다)
     let w = try window()
     defer { w.isHidden = true }
     _ = await LinkRenderer(host: w, allowLoopback: true, html: doc).render(plain, budget: 5, ocr: false)       // 대조: 루프백 허용이면 요청이 간다
     try XCTSkipIf(s.hits("/pixel") == 0, "대조군 0 — 하위 리소스 루프백 요청이 다른 이유로 막힌다. 규칙 판정은 L8 G9 옆에서")
+    XCTAssertGreaterThan(s.hits("/cred"), 0, "대조군: 사용자 정보가 붙은 주소도 요청이 간다")
     // 대조군 웹뷰를 뗀 뒤에도 /pixel 요청이 한 번 더 늦게 온다(시뮬레이터 실측 1 → 2) — 요청 수가 1.5초 멈출 때까지 기다려 실험군에 섞이지 않게
     var seen = -1, still = Date()
     for _ in 0..<12 {
-      let n = s.hits("/pixel") + s.hits("/frame")
+      let n = s.hits("/pixel") + s.hits("/frame") + s.hits("/cred")
       if n != seen { seen = n; still = Date() } else if Date().timeIntervalSince(still) >= 1.5 { break }
       try await Task.sleep(for: .milliseconds(500))
     }
-    let pixel = s.hits("/pixel"), frame = s.hits("/frame")
+    let pixel = s.hits("/pixel"), frame = s.hits("/frame"), cred = s.hits("/cred")
     let r = LinkRenderer(host: w, allowLoopback: false, html: doc)
     let o = await r.render(plain, budget: 5, ocr: false)
     XCTAssertTrue(try page(o).body.contains("11월 14일"))
     XCTAssertEqual(s.hits("/pixel"), pixel)
     XCTAssertEqual(s.hits("/frame"), frame)
+    XCTAssertEqual(s.hits("/cred"), cred, "u@127.0.0.1 이 규칙을 우회했다(L3 리뷰 M2)")
   }
 }
 
 /// 테스트 안 루프백 HTTP 서버(Network, 127.0.0.1 임의 포트, 연결마다 요청 하나).
-/// /ok 200(날짜 있는 글) · /missing 404 · /loop/<n> 302 → /loop/<n+1> · /hang 답하지 않음 · 그 밖 200 빈 본문
+/// /ok 200(날짜 있는 글) · /missing 404 · /loop/<n> 302 → /loop/<n+1> · /hang 답하지 않음 · /app 302 → 앱 스킴 ·
+/// /later404 200(날짜, 0.3초 뒤 JS 로 /missing) · /stuck 200(날짜, 0.3초 뒤 무한 루프) · 그 밖 200 빈 본문
 final class LoopServer: @unchecked Sendable {
   private let listener: NWListener
   private let queue = DispatchQueue(label: "link-loop-server")
@@ -2475,6 +2602,9 @@ final class LoopServer: @unchecked Sendable {
     case "/ok": return r("200 OK", "", "<html><body><p>2026년 11월 14일 합성웨딩홀</p></body></html>")
     case "/missing": return r("404 Not Found", "", "<html><body>없음</body></html>")
     case "/hang": return nil
+    case "/app": return r("302 Found", "Location: kakaolink://send?x=1\r\n")
+    case "/later404": return r("200 OK", "", "<html><body><p>2026년 11월 14일 합성웨딩홀</p><script>setTimeout(() => { location.href = '/missing'; }, 300);</script></body></html>")
+    case "/stuck": return r("200 OK", "", "<html><body><p>2026년 11월 14일 합성웨딩홀</p><script>setTimeout(() => { for (;;) {} }, 300);</script></body></html>")
     case let p where p.hasPrefix("/loop/"): return r("302 Found", "Location: /loop/\((Int(p.dropFirst(6)) ?? 0) + 1)\r\n")
     default: return r("200 OK")
     }
@@ -2665,9 +2795,9 @@ import WebKit
 
 /// 보이지 않는 웹뷰로 페이지를 읽는다(스펙 §6 "링크·이미지 읽기"). WebKit 이라 메인 액터에서만.
 /// 웹뷰는 실제 화면 크기로 host(창 안에 있는 뷰)의 **맨 아래**에 붙는다 — WebKit 은 창 안·foreground 일 때만 보이는 뷰로 다뤄 렌더링·타이머를 돌린다(F16)
-@MainActor public final class LinkRenderer: NSObject, LinkRendering, WKNavigationDelegate {
+@MainActor public final class LinkRenderer: NSObject, LinkRendering, WKNavigationDelegate, WKUIDelegate {
   public static let viewport = CGSize(width: 390, height: 844)
-  /// 메인 프레임 이동 상한(첫 로드 + 리다이렉트 5회)
+  /// 페이지가 서기 전 메인 프레임 이동 상한(첫 로드 + 리다이렉트 5회)
   public static let maxNavigations = 6
   public static let ocrScreens = 3
   /// 예산 뒤 추출·마무리 몫(초). 독립 기한 = 예산 + 이것 + (OCR 이면) ocrAllowance — 확장 12초, 앱 25초(D15)
@@ -2694,30 +2824,39 @@ import WebKit
     let c = WKWebViewConfiguration()
     c.websiteDataStore = .nonPersistent()                          // 쿠키·저장소를 디스크에 남기지 않는다(F17)
     c.mediaTypesRequiringUserActionForPlayback = .all              // 청첩장 배경 음악 자동 재생 금지
-    c.allowsInlineMediaPlayback = false
+    c.allowsInlineMediaPlayback = true                             // 재생이 어떻게든 시작돼도 전체 화면 플레이어가 사용자 화면을 덮지 않게
     c.preferences.javaScriptCanOpenWindowsAutomatically = false
     c.defaultWebpagePreferences.allowsContentJavaScript = true     // SPA 청첩장은 JS 로 글을 그린다
     return c
   }
 
-  /// 하위 리소스(이미지·fetch·XHR·iframe — 모든 종류)의 사설 IP 리터럴·localhost·.local 요청 차단 규칙(Codex 6, D7). 한 번 컴파일해 재사용한다.
-  /// 컴파일에 실패하면 nil(위임 메서드의 프레임 검사만 남는다 — DiagLog 에 코드만)
+  /// 하위 리소스(이미지·fetch·XHR·iframe — 모든 종류)의 사설 IP 리터럴·localhost·.local 요청 차단 규칙(Codex 6, D7). 앞선 실행이 컴파일해 둔 목록을 먼저 찾고,
+  /// 없으면 한 번 컴파일해 재사용한다. 실패하면 nil(위임 메서드의 프레임 검사만 남는다 — DiagLog 에 코드만)
   public static func ruleList(allowLoopback: Bool) async -> WKContentRuleList? {
     if let l = ruleLists[allowLoopback] { return l }
     guard let store = WKContentRuleListStore.default() else { return nil }
-    let l = (try? await store.compileContentRuleList(forIdentifier: "eruri-link-private-\(allowLoopback ? "debug" : "release")",
-                                                      encodedContentRuleList: blockRules(allowLoopback: allowLoopback))) ?? nil
+    let id = ruleIdentifier(allowLoopback: allowLoopback)
+    var l: WKContentRuleList? = try? await store.contentRuleList(forIdentifier: id)
+    if l == nil { l = try? await store.compileContentRuleList(forIdentifier: id, encodedContentRuleList: blockRules(allowLoopback: allowLoopback)) }
     if let l { ruleLists[allowLoopback] = l } else { DiagLog.append("link rules compile_failed") }
     return l
   }
 
-  /// 규칙 JSON. WebKit 콘텐츠 규칙의 url-filter 는 `|`·`{n}` 을 지원하지 않아 대역마다 규칙 하나. 공개 이름이 사설 주소로 풀리는 경우는 막지 않는다(스펙 §6)
+  /// 규칙 저장소 식별자 — 규칙 JSON 의 FNV-1a 해시를 붙인다. 컴파일된 목록은 디스크에 남으므로, 규칙이 바뀌면 옛 목록을 찾지 않고 새로 컴파일하게
+  nonisolated static func ruleIdentifier(allowLoopback: Bool) -> String {
+    var h: UInt64 = 0xcbf2_9ce4_8422_2325
+    for b in blockRules(allowLoopback: allowLoopback).utf8 { h = (h ^ UInt64(b)) &* 0x100_0000_01b3 }
+    return "eruri-link-private-" + String(h, radix: 16)
+  }
+
+  /// 규칙 JSON. WebKit 콘텐츠 규칙의 url-filter 는 `|`·`{n}` 을 지원하지 않아 대역마다 규칙 하나. 사용자 정보(`u@`)가 붙은 주소도 같은 대역으로 본다.
+  /// 공개 이름이 사설 주소로 풀리는 경우는 막지 않는다(스펙 §6)
   nonisolated static func blockRules(allowLoopback: Bool) -> String {
     var hosts = [#"10\\."#, #"192\\.168\\."#, #"169\\.254\\."#, #"172\\.1[6-9]\\."#, #"172\\.2[0-9]\\."#, #"172\\.3[01]\\."#,
                  #"100\\.6[4-9]\\."#, #"100\\.[7-9][0-9]\\."#, #"100\\.1[01][0-9]\\."#, #"100\\.12[0-7]\\."#, #"0\\."#,
                  #"\\[f"#, #"\\[::"#, #"[a-z0-9.-]*\\.local[:/]"#]
     if !allowLoopback { hosts += [#"127\\."#, #"localhost[:/]"#] }
-    let rules = hosts.map { #"{"trigger":{"url-filter":"^[a-z]+://\#($0)"},"action":{"type":"block"}}"# }
+    let rules = hosts.map { #"{"trigger":{"url-filter":"^[a-z]+://([^/]*@)?\#($0)"},"action":{"type":"block"}}"# }
     return "[" + rules.joined(separator: ",") + "]"
   }
 
@@ -2738,8 +2877,10 @@ import WebKit
   }
 
   public func render(_ url: URL, budget: TimeInterval, ocr: Bool) async -> LinkRenderOutcome {
+    let start = ContinuousClock.now                                 // 기한은 여기서부터 — 규칙 목록·웹뷰 생성도 상한 안
     if let b = LinkText.check(url, allowLoopback: allowLoopback) { return .failed("blocked_\(b.rawValue)") }
-    guard let host, host is UIWindow || host.window != nil else { return .failed("no_host") }   // UIWindow.window 는 nil — 창 자체(앱 키 창)도 창 안이다
+    // 보이는 창 안이어야 한다. 창 자체(앱 키 창 — UIWindow.window 는 nil)는 장면에 붙어 있고 숨지 않았을 때만(숨은 창에선 타이머가 조절된다)
+    guard let host, (host as? UIWindow).map({ $0.windowScene != nil && !$0.isHidden }) ?? (host.window != nil) else { return .failed("no_host") }
     if Task.isCancelled { return .failed("cancelled") }
     let target = html == nil ? LinkText.upgraded(url, allowLoopback: allowLoopback) : url     // http → https(F24, D7)
     finished = false; committed = false; failure = nil; navigations = 0; blockedNavigations = 0
@@ -2749,21 +2890,23 @@ import WebKit
     let wv = WKWebView(frame: CGRect(origin: .zero, size: Self.viewport), configuration: config)
     wv.isUserInteractionEnabled = false
     wv.navigationDelegate = self
+    wv.uiDelegate = self                                           // 권한 요청(카메라·마이크)은 묻지 않고 거절
     current = wv
     host.insertSubview(wv, at: 0)                                  // 다른 화면 밑 — 사용자에게 보이지 않는다
     defer {
-      wv.stopLoading(); wv.navigationDelegate = nil; wv.removeFromSuperview()
+      wv.stopLoading(); wv.navigationDelegate = nil; wv.uiDelegate = nil; wv.removeFromSuperview()
       if current === wv { current = nil }
     }
     if let html { wv.loadHTMLString(html, baseURL: url) } else { wv.load(URLRequest(url: target, timeoutInterval: budget)) }
 
     // 독립 기한 경주(D15, Codex 2): JS 호출은 페이지 스크립트가 멈추면 돌아오지 않는다 — 내부 작업·기한·취소 중 먼저 온 것으로 돌아오고 웹뷰를 뗀다.
-    // 진 내부 작업은 취소되고 결과는 버린다(멈춘 WebContent 를 기다리는 호출은 웹뷰가 풀릴 때 끝난다)
-    let limit = budget + Self.extractAllowance + (ocr ? Self.ocrAllowance : 0)
-    let race = RenderRace()
-    let work = Task { @MainActor in race.finish(await self.read(wv, url: url, budget: budget, ocr: ocr)) }
+    // 진 내부 작업은 취소되고 결과는 버린다. 내부 작업은 웹뷰를 약하게만 잡는다(WebViewRef·Reply) — 돌아오지 않는 JS 호출이 웹뷰를 붙잡으면
+    // render 가 돌아온 뒤에도 웹뷰와 무한 루프 WebContent 가 남는다(L3 리뷰 I1). 여기서 놓으면 웹뷰가 풀리고 페이지가 닫힌다
+    let deadline = start + .seconds(budget + Self.extractAllowance + (ocr ? Self.ocrAllowance : 0))
+    let race = RenderRace(), ref = WebViewRef(wv)
+    let work = Task { @MainActor in race.finish(await self.read(ref, url: url, start: start, budget: budget, ocr: ocr)) }
     let timer = Task { @MainActor in
-      guard (try? await Task.sleep(for: .seconds(limit))) != nil else { return }
+      guard (try? await Task.sleep(until: deadline, clock: .continuous)) != nil else { return }
       race.finish(.failed("timeout"))
     }
     let outcome = await withTaskCancellationHandler {
@@ -2775,18 +2918,17 @@ import WebKit
     return outcome
   }
 
-  /// 내부 작업: 대기(LinkSettle) → 추출 → (앱) 스냅샷 OCR
-  private func read(_ wv: WKWebView, url: URL, budget: TimeInterval, ocr: Bool) async -> LinkRenderOutcome {
-    let clock = ContinuousClock(), start = clock.now
+  /// 내부 작업: 대기(LinkSettle) → 추출 → (앱) 스냅샷 OCR. 시간은 render 진입부터 잰다
+  private func read(_ ref: WebViewRef, url: URL, start: ContinuousClock.Instant, budget: TimeInterval, ocr: Bool) async -> LinkRenderOutcome {
     func elapsed() -> TimeInterval {
-      let c = start.duration(to: clock.now).components
+      let c = start.duration(to: ContinuousClock.now).components
       return Double(c.seconds) + Double(c.attoseconds) / 1e18
     }
     var settle = LinkSettle(budget: budget), timedOut = false
     wait: while true {
       if Task.isCancelled { return .failed("cancelled") }
       if let f = failure { return .failed(f) }
-      let len = (try? await wv.callAsyncJavaScript(LinkScript.length, contentWorld: .defaultClient)) as? Int ?? 0
+      let len = await Self.js(ref, LinkScript.length, as: Int.self) ?? 0
       switch settle.observe(length: len, finished: finished, elapsed: elapsed()) {
       case .done: break wait
       case .deadline:
@@ -2797,33 +2939,52 @@ import WebKit
       }
     }
     if Task.isCancelled { return .failed("cancelled") }
-    guard let json = (try? await wv.callAsyncJavaScript(LinkScript.extract, contentWorld: .defaultClient)) as? String,
-          var page = LinkPage.decode(json: json, host: wv.url?.host() ?? url.host() ?? "") else { return .failed("extract_failed") }
+    guard let json = await Self.js(ref, LinkScript.extract, as: String.self),
+          var page = LinkPage.decode(json: json, host: ref.view?.url?.host() ?? url.host() ?? "") else { return .failed("extract_failed") }
     page.timedOut = timedOut
-    if ocr, !LinkText.hasDateCandidate(page.searchable) { page.ocrText = await snapshotText(wv) }
+    if ocr, await !Self.hasDate(page) { page.ocrText = await snapshotText(ref) }
     if Task.isCancelled { return .failed("cancelled") }
     if ocr, page.isEmpty { return .failed("empty") }                 // OCR 까지 했는데 빈 페이지 — 확정 실패(앱)
     return .page(page, elapsedMs: Int(elapsed() * 1000))             // OCR 없음(확장): 빈 페이지도 돌려 no_date 로 앱에 넘긴다
   }
 
+  /// 날짜 후보 판정은 메인 액터 밖에서 — 200,000자 × 2 에서 수백 ms 라 그동안 기한 타이머·화면이 멈추지 않게
+  nonisolated private static func hasDate(_ page: LinkPage) async -> Bool { LinkText.hasDateCandidate(page.searchable) }
+
   /// 이미지 전용 페이지(스펙 §6): 최대 3화면을 스냅샷(너비 390pt — 3배율 기기 1,170px)해 기기 OCR. 스냅샷은 메모리에서만 쓴다
-  private func snapshotText(_ wv: WKWebView) async -> String? {
+  private func snapshotText(_ ref: WebViewRef) async -> String? {
     var parts: [String] = []
     for i in 0..<Self.ocrScreens {
       if Task.isCancelled { break }
       if i > 0 {
         let y = Double(i) * Double(Self.viewport.height)
-        guard Double(wv.scrollView.contentSize.height) > y else { break }          // 페이지 끝
-        _ = try? await wv.callAsyncJavaScript("window.scrollTo(0, y); return window.scrollY;", arguments: ["y": y], contentWorld: .defaultClient)
-        try? await Task.sleep(for: .milliseconds(600))                               // 지연 로딩 그림
+        guard let h = ref.view?.scrollView.contentSize.height, Double(h) > y else { break }    // 페이지 끝(또는 웹뷰를 뗐다)
+        _ = await Self.js(ref, "window.scrollTo(0, y); return window.scrollY;", arguments: ["y": y], as: Double.self)
+        try? await Task.sleep(for: .milliseconds(600))                                          // 지연 로딩 그림
       }
       let cfg = WKSnapshotConfiguration()
       cfg.snapshotWidth = NSNumber(value: Double(Self.viewport.width))
-      guard let img = try? await wv.takeSnapshot(configuration: cfg), let text = try? await OCR.recognize(image: img), !text.isEmpty else { continue }
+      guard let img = await Self.snapshot(ref, cfg), let text = try? await OCR.recognize(image: img), !text.isEmpty else { continue }
       parts.append(text)
     }
     let joined = parts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     return joined.isEmpty ? nil : joined
+  }
+
+  /// JS 호출(격리 세계 .defaultClient). 완료 핸들러는 결과 상자만 잡고, 기다리는 동안 웹뷰를 강하게 잡지 않는다. 웹뷰를 뗐거나 오류·취소면 nil
+  private static func js<T: Sendable>(_ ref: WebViewRef, _ body: String, arguments: [String: Any] = [:], as _: T.Type) async -> T? {
+    await Reply<T>.wait { reply in
+      guard let wv = ref.view else { return reply.finish(nil) }
+      wv.callAsyncJavaScript(body, arguments: arguments, in: nil, in: .defaultClient) { reply.finish((try? $0.get()) as? T) }
+    }
+  }
+
+  /// 화면 스냅샷 — js 와 같은 방식(웹뷰를 잡지 않는다)
+  private static func snapshot(_ ref: WebViewRef, _ cfg: WKSnapshotConfiguration) async -> UIImage? {
+    await Reply<UIImage>.wait { reply in
+      guard let wv = ref.view else { return reply.finish(nil) }
+      wv.takeSnapshot(with: cfg) { img, _ in reply.finish(img) }
+    }
   }
 
   // MARK: WKNavigationDelegate (async 판만, 지금 웹뷰의 것만 반영)
@@ -2840,24 +3001,37 @@ import WebKit
       }
       return .allow
     }
-    if LinkText.check(u, allowLoopback: allowLoopback) != nil { blockedNavigations += 1; return .cancel }   // 앱 스킴·사설 주소 — 읽기는 계속
-    navigations += 1
-    if navigations > Self.maxNavigations { failure = "redirects"; return .cancel }
+    if let b = LinkText.check(u, allowLoopback: allowLoopback) {   // 앱 스킴·사설 주소 — 선 페이지는 계속 읽는다
+      blockedNavigations += 1
+      if !committed, failure == nil { failure = "blocked_\(b.rawValue)" }   // 서기 전(서버 리다이렉트)이면 읽을 페이지가 없다 — 예산을 기다리지 않고 확정
+      return .cancel
+    }
+    // 리다이렉트 상한은 페이지가 서기 전 이동만 센다 — 선 뒤의 JS 이동과 같은 문서 해시 이동(갤러리·슬라이드)은 읽기를 끊지 않는다(같은 문서 이동은 커밋 뒤에만 난다)
+    if !committed {
+      navigations += 1
+      if navigations > Self.maxNavigations { failure = "redirects"; return .cancel }
+    }
     return .allow
   }
 
   public func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
     guard webView === current else { return .cancel }
     guard navigationResponse.isForMainFrame else { return .allow }
-    if let h = navigationResponse.response as? HTTPURLResponse, h.statusCode >= 400 { failure = "http_\(h.statusCode)"; return .cancel }
-    if !navigationResponse.canShowMIMEType { failure = "unsupported"; return .cancel }
-    return .allow
+    let code: String
+    if let h = navigationResponse.response as? HTTPURLResponse, h.statusCode >= 400 { code = "http_\(h.statusCode)" }
+    else if !navigationResponse.canShowMIMEType { code = "unsupported" }
+    else { return .allow }
+    if !committed, failure == nil { failure = code }               // 선 뒤 이동(JS 이동)의 4xx·5xx·표시 불가는 그 이동만 막고 선 페이지를 계속 읽는다(loadError 와 같은 규칙)
+    return .cancel
   }
 
   public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { if webView === current { finished = false } }
   public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { if webView === current { committed = true } }
   public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { if webView === current { finished = true } }
-  public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { loadError(webView, error) }
+  public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    loadError(webView, error)
+    if webView === current, committed { finished = true }          // 선 뒤 이동이 실패하면 선 페이지가 그대로 남는다 — didFinish 는 다시 오지 않는다
+  }
   public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
     loadError(webView, error)
     if webView === current { finished = true }
@@ -2869,6 +3043,12 @@ import WebKit
     guard webView === current, let code = Self.loadFailure(error as NSError, upgraded: upgradedScheme) else { return }
     if !committed, failure == nil { failure = code }
   }
+
+  // MARK: WKUIDelegate — 숨은 웹뷰라 아무것도 묻지 않는다(alert·confirm 은 위임 메서드가 없으면 바로 끝난다)
+
+  /// 카메라·마이크(getUserMedia)는 거절 — 기본값은 묻기라 앱(마이크 사용 문구가 있다)에서 권한 창이 뜰 수 있다
+  public func webView(_ webView: WKWebView, decideMediaCapturePermissionsFor origin: WKSecurityOrigin, initiatedBy frame: WKFrameInfo,
+                      type: WKMediaCaptureType) async -> WKPermissionDecision { .deny }
 }
 
 /// 렌더링 결과 경주(D15): 내부 작업·독립 기한·취소 중 먼저 온 하나만 돌려준다. 늦게 온 결과는 버린다
@@ -2889,13 +3069,41 @@ import WebKit
   }
 }
 
+/// 내부 작업이 쥐는 웹뷰 약참조 — render 가 웹뷰를 떼면 nil
+@MainActor final class WebViewRef {
+  weak var view: WKWebView?
+  init(_ view: WKWebView) { self.view = view }
+}
+
+/// 완료 핸들러 한 번 기다리기: 핸들러는 이 상자만 잡아 웹뷰를 붙잡지 않고, 취소되면 핸들러를 기다리지 않고 nil 로 돌아간다(늦은 결과는 버린다)
+@MainActor final class Reply<T: Sendable> {
+  private var cont: CheckedContinuation<T?, Never>?
+
+  func finish(_ v: T?) {
+    cont?.resume(returning: v)
+    cont = nil
+  }
+
+  static func wait(_ start: (Reply<T>) -> Void) async -> T? {
+    let r = Reply<T>()
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { cont in
+        r.cont = cont
+        if Task.isCancelled { r.finish(nil) } else { start(r) }
+      }
+    } onCancel: {
+      Task { @MainActor in r.finish(nil) }
+    }
+  }
+}
+
 /// 추출 JS — callAsyncJavaScript 의 함수 본문. 격리 세계(.defaultClient)에서 돈다(DOM 공유, 페이지 스크립트가 바꿀 수 없다)
 enum LinkScript {
   static let length = "return document.body ? document.body.innerText.length : 0;"
-  /// 제목·OG·보이는 글(innerText)·숨은 요소 포함 글(스크립트·스타일 제외 텍스트 노드). 각 200,000자
+  /// 제목·OG(각 2,000자 — 확장 메모리)·보이는 글(innerText)·숨은 요소 포함 글(스크립트·스타일 제외 텍스트 노드, 각 200,000자)
   static let extract = #"""
     const meta = (k) => { const e = document.querySelector(`meta[property="${k}"],meta[name="${k}"]`); return e ? (e.getAttribute("content") || "") : ""; };
-    const cap = (s) => (s || "").slice(0, 200000);
+    const cap = (s, n) => (s || "").slice(0, n);
     let all = "";
     if (document.body) {
       const c = document.body.cloneNode(true);
@@ -2905,9 +3113,9 @@ enum LinkScript {
       while ((n = w.nextNode())) { const t = n.nodeValue.trim(); if (t) parts.push(t); }
       all = parts.join("\n");
     }
-    return JSON.stringify({ title: document.title || "", ogTitle: meta("og:title"),
-      ogDescription: meta("og:description") || meta("description"),
-      text: cap(document.body ? document.body.innerText : ""), all: cap(all) });
+    return JSON.stringify({ title: cap(document.title, 2000), ogTitle: cap(meta("og:title"), 2000),
+      ogDescription: cap(meta("og:description") || meta("description"), 2000),
+      text: cap(document.body ? document.body.innerText : "", 200000), all: cap(all, 200000) });
     """#
 }
 ```
@@ -2917,7 +3125,7 @@ enum LinkScript {
 메모리 확인(`vm_stat | grep -E 'free|compressor'`) 뒤:
 
 Run: `cd ios && ./scripts/sim.sh test EruriCoreTests/LinkRendererTests && ./scripts/sim.sh test EruriCoreTests/OCRImageTests`
-Expected: `LinkRendererTests` 23개·`OCRImageTests` 3개 통과(전체 약 2~3분). 건너뜀은 아래 U4·U5 사유일 때만 허용하고 보고에 적는다. 실패하면 원인별로:
+Expected: `LinkRendererTests` 30개·`OCRImageTests` 3개 통과(전체 약 3~4분). 건너뜀은 아래 U4·U5 사유일 때만 허용하고 보고에 적는다. 실패하면 원인별로:
 - `testDelayedScriptTextIsWaitedFor`·`testNeverSettlingPageReturnsPartial`이 실패(타이머가 안 돎) → U2 실패. 웹뷰를 `host.addSubview(wv)` + `wv.alpha = 0.01`(맨 위, 거의 투명)로 바꿔 다시 돌리고, 결과를 보고에 적는다(스펙 §6 문구도 그 방식으로 L0 커밋에 이어 고친다).
 - `testImageOnlyPageUsesOCR`만 실패 → 스냅샷이 비었는지(`takeSnapshot`) Vision이 한국어를 못 읽는지 구분한다: `p.ocrText`가 nil이고 `takeSnapshot` 이미지의 `size`가 0이면 U2, 이미지는 있는데 글자가 없으면 U4. U4면 이 테스트에 `try XCTSkipIf(true, "U4: 시뮬레이터 Vision 한국어 — LNK-device D6에서 판정")`를 넣고 보고한다(테스트를 지우지 않는다).
 - 서버 테스트 4개가 모두 `XCTSkip("U5 …")`면 U5 실패 — 보고하고 L8 Step 2의 하네스 예외로 넘긴다(제품 Info.plist는 바꾸지 않는다). `testTooManyRedirectsFail`가 `load_failed`면 WebKit이 다른 오류 코드를 쓰는 것이다 — 그 `NSError` 코드(숫자만)를 보고하고 `loadFailure`에 더한다.
