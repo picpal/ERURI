@@ -3,7 +3,7 @@ import { isServiceCaller } from "../_shared/auth.ts";
 import { SERVER_AUTH } from "../_shared/crypto.ts";
 import { classifierOrNone } from "../_shared/classifier-env.ts";
 import { classifyThreshold } from "../_shared/classify.ts";
-import { gmailFetch, gmailSync, gmailWatch } from "../_shared/gmail-jobs.ts";
+import { gmailFetch, gmailSync, gmailUnsubFetch, gmailUnsubScan, gmailWatch } from "../_shared/gmail-jobs.ts";
 import type { Job } from "../_shared/job.ts";
 import { nextDeferredWait, runBatches, SOON_WINDOW_MS } from "./batch.ts";
 import { embedItem } from "./embed.ts";
@@ -45,6 +45,9 @@ const handlers: Record<string, (job: Job) => Promise<string>> = {
   "gmail-sync": (j) => gmailSync(sb, j),
   "gmail-fetch": (j) => gmailFetch(sb, j),
   "gmail-watch": (j) => gmailWatch(sb, j),
+  // 광고 구독 해지 30일 스캔(스펙 §7): 헤더(format=metadata)만 읽어 unsub_* 에 기록
+  "gmail-unsub-scan": (j) => gmailUnsubScan(sb, j),
+  "gmail-unsub-fetch": (j) => gmailUnsubFetch(sb, j),
   // 재인증 푸시(스펙 §7): 연결·사유·만료 창마다 1회
   "gmail-reauth": (j) => reauthPush(reauth, j),
   // 원문 만료(스펙 §8): 기한 지난 이미지·PDF 의 Storage 객체. purge-expired-daily cron 이 넣는다

@@ -78,6 +78,17 @@ export async function getMessage(accessToken: string, id: string) {
   return await r.json() as GmailMessage;
 }
 
+// 광고 구독 해지 스캔(스펙 §7): 본문 없이 헤더만. messages.get format=metadata
+export const META_HEADERS = ["From", "Subject", "List-Unsubscribe", "List-Unsubscribe-Post", "Authentication-Results", "DKIM-Signature"];
+export async function getMessageMeta(accessToken: string, id: string) {
+  const u = new URL(`${G}/messages/${encodeURIComponent(id)}`);
+  u.searchParams.set("format", "metadata");
+  for (const h of META_HEADERS) u.searchParams.append("metadataHeaders", h);
+  const r = await fetch(u, { headers: { authorization: `Bearer ${accessToken}` } });
+  if (!r.ok) { await r.body?.cancel(); throw new GmailHttpError("messages.get", r.status); }
+  return await r.json() as GmailMessage;
+}
+
 function b64urlDecode(s: string) {
   return new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)));
 }
@@ -129,6 +140,7 @@ export interface GmailApi {
 }
 export interface GmailClient extends GmailApi {
   getMessage(id: string): Promise<GmailMessage>;
+  getMessageMeta(id: string): Promise<GmailMessage>;
   watch(topic: string): Promise<{ historyId: string; expiration: string }>;
 }
 export function gmailApi(accessToken: string): GmailClient {
@@ -137,6 +149,7 @@ export function gmailApi(accessToken: string): GmailClient {
     listMessageIds: (q, p) => listMessageIds(accessToken, q, p),
     profile: () => profile(accessToken),
     getMessage: (id) => getMessage(accessToken, id),
+    getMessageMeta: (id) => getMessageMeta(accessToken, id),
     watch: (topic) => watch(accessToken, topic),
   };
 }

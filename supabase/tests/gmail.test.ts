@@ -116,6 +116,7 @@ function fakeDeps(o: { api?: Partial<GmailClient>; refresh?: (rt: string) => Pro
       listMessageIds: async () => ({ messages: [] }),
       profile: async () => ({ emailAddress: "poc@example.com", historyId: "1" }),
       getMessage: async (id) => gmsg(id, "합성 본문", "합성 제목"),
+      getMessageMeta: async (id) => gmsg(id, "", "합성 제목"),
       watch: async (topic) => { log.push("watch:" + topic); return { historyId: "500", expiration: "1790600000000" }; },
       ...o.api,
     }),
