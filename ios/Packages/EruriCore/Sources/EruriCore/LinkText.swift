@@ -302,7 +302,10 @@ public struct LinkPage: Equatable, Sendable {
 
   /// 날짜 후보 판단 대상: 제목·설명·본문·OCR
   public var searchable: String { [title, description, body, ocrText ?? ""].joined(separator: "\n") }
-  public var isEmpty: Bool { searchable.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+  /// 빈 페이지 = searchable 이 공백. 본문은 보이는 글이나 숨은 글이라 다섯 필드가 모두 공백인지로 같게 판정한다 — 날짜 판정(본문 계산)을 다시 돌리지 않게
+  public var isEmpty: Bool {
+    [title, description, visibleText, allText, ocrText ?? ""].allSatisfy { $0.unicodeScalars.allSatisfy(CharacterSet.whitespacesAndNewlines.contains) }
+  }
 
   /// 추출 JS 결과(JSON 문자열, `LinkScript.extract`) → LinkPage. 형식이 다르면 nil
   public static func decode(json: String, host: String) -> LinkPage? {

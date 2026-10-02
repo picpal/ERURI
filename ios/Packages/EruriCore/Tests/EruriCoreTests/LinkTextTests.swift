@@ -130,6 +130,15 @@ final class LinkTextTests: XCTestCase {
     XCTAssertTrue(LinkPage(host: "x.example.com").isEmpty)
   }
 
+  /// 빈 페이지 판정은 날짜 판정 없이 — 제목·설명·보이는 글·숨은 글·OCR 이 모두 공백이면 빈 페이지(searchable 판정과 같다).
+  /// 본문(body)을 다시 계산하면 200,000자 페이지에서 날짜 판정이 두 번 더 돈다(L3 리뷰 M4)
+  func testIsEmptyMatchesSearchable() {
+    let pages = [LinkPage(host: "x"), LinkPage(host: "x", title: " \n"), LinkPage(host: "x", title: "합성"), LinkPage(host: "x", description: "설명"),
+                 LinkPage(host: "x", visibleText: "  ", allText: "숨은 글"), LinkPage(host: "x", visibleText: "보이는 글"),
+                 LinkPage(host: "x", visibleText: " ", allText: "\n\t"), LinkPage(host: "x", ocrText: "OCR"), LinkPage(host: "x", ocrText: "  ")]
+    for p in pages { XCTAssertEqual(p.isEmpty, p.searchable.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "\(p)") }
+  }
+
   func testDecode() {
     let json = #"{"title":"문서 제목","ogTitle":"합성신랑 ♥ 합성신부","ogDescription":"11월 14일","text":"보이는 글","all":"전체 글"}"#
     let p = LinkPage.decode(json: json, host: "invite.example.com")

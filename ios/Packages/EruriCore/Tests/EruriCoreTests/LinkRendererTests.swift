@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import Network
+import WebKit
 @testable import EruriCore
 
 /// WKWebView 렌더러(스펙 §6 "링크·이미지 읽기"): 합성 HTML 을 네트워크 없이(loadHTMLString, 기준 주소 = 공유 주소) 창 안 다른 화면 밑에서 읽고,
@@ -35,6 +36,27 @@ final class LinkRendererTests: XCTestCase {
     throw Failed(outcome: "\(o)")
   }
 
+  /// 렌더링 중 host 맨 아래에 붙은 웹뷰를 약하게 잡는다(해제 판정용)
+  @MainActor final class WeakView { weak var view: WKWebView?; var grabbed = false }
+
+  /// render 가 돌아온 뒤 웹뷰가 within 초 안에 풀리는지 본다(L3 리뷰 P1) — 렌더링 중 host 맨 아래 웹뷰를 약하게 잡아 둔다
+  @MainActor private func renderAndRelease(_ html: String, budget: TimeInterval, within: TimeInterval = 5) async throws -> (LinkRenderOutcome, Bool) {
+    let w = try window()
+    defer { w.isHidden = true }
+    let box = WeakView()
+    let grab = Task { @MainActor in
+      for _ in 0..<500 {
+        if let v = w.subviews.first as? WKWebView { box.view = v; box.grabbed = true; return }
+        try? await Task.sleep(for: .milliseconds(10))
+      }
+    }
+    let o = await LinkRenderer(host: w, allowLoopback: false, html: html).render(base, budget: budget, ocr: false)
+    await grab.value
+    let returned = Date()
+    while box.view != nil, Date().timeIntervalSince(returned) < within { try await Task.sleep(for: .milliseconds(200)) }
+    return (o, box.grabbed && box.view == nil)
+  }
+
   /// 루프백 서버 주소를 DEBUG 게이트처럼(allowLoopback) 연다
   @MainActor private func load(_ path: String, port: UInt16, budget: TimeInterval = 5) async throws -> LinkRenderOutcome {
     let w = try window()
@@ -57,6 +79,7 @@ final class LinkRendererTests: XCTestCase {
     XCTAssertFalse(c.websiteDataStore.isPersistent)
     XCTAssertEqual(c.mediaTypesRequiringUserActionForPlayback, .all)
     XCTAssertFalse(c.preferences.javaScriptCanOpenWindowsAutomatically)
+    XCTAssertTrue(c.allowsInlineMediaPlayback)          // 재생이 어떻게든 시작돼도 전체 화면 플레이어가 사용자 화면을 덮지 않게(L3 리뷰 M9)
   }
 
   /// 하위 리소스 차단 규칙(Codex 6, D7): JSON 이 맞고, 릴리스는 루프백까지 막는다
@@ -66,9 +89,12 @@ final class LinkRendererTests: XCTestCase {
       XCTAssertEqual(rules.count, loop ? 14 : 16)
       let filters = rules.compactMap { ($0["trigger"] as? [String: Any])?["url-filter"] as? String }
       XCTAssertEqual(filters.contains { $0.contains("127") }, !loop)
-      XCTAssertTrue(filters.contains(#"^[a-z]+://192\.168\."#))
+      XCTAssertTrue(filters.contains(#"^[a-z]+://([^/]*@)?192\.168\."#))     // 사용자 정보(u@)가 붙은 주소도(L3 리뷰 M2)
       XCTAssertTrue(rules.allSatisfy { ($0["action"] as? [String: Any])?["type"] as? String == "block" })
     }
+    // 컴파일된 목록은 디스크에 남아 다음 실행이 찾아 쓴다 — 식별자가 규칙 내용을 따라가야 바뀐 규칙이 옛 목록에 가리지 않는다(L3 리뷰 M7)
+    XCTAssertNotEqual(LinkRenderer.ruleIdentifier(allowLoopback: false), LinkRenderer.ruleIdentifier(allowLoopback: true))
+    XCTAssertEqual(LinkRenderer.ruleIdentifier(allowLoopback: false), LinkRenderer.ruleIdentifier(allowLoopback: false))
   }
 
   @MainActor func testRuleListCompiles() async {
@@ -133,6 +159,35 @@ final class LinkRendererTests: XCTestCase {
       """, budget: 5)
     XCTAssertTrue(o == .failed("timeout") || o == .failed("web_process"), "\(o)")
     XCTAssertLessThan(Date().timeIntervalSince(started), 5 + LinkRenderer.extractAllowance + 5)
+  }
+
+  /// 멈춘 페이지가 기한에 진 뒤 웹뷰가 풀린다(L3 리뷰 I1·P1b) — 내부 작업이 돌아오지 않는 JS 호출을 기다리며 웹뷰를 붙잡으면
+  /// 무한 루프 WebContent 가 앱이 멈출 때까지 남는다(앱은 timeout 을 다시 시도한다). 대조: 정상 페이지는 0.5초 안에 풀린다(리뷰 P1a)
+  @MainActor func testStuckPageReleasesWebView() async throws {
+    let (o, released) = try await renderAndRelease("""
+      <html><body><p>2026년 11월 14일 합성 행사</p><script>setTimeout(() => { for (;;) {} }, 300);</script></body></html>
+      """, budget: 5)
+    XCTAssertTrue(o == .failed("timeout") || o == .failed("web_process"), "\(o)")
+    XCTAssertTrue(released, "render 반환 5초 뒤에도 멈춘 페이지의 웹뷰가 살아 있다")
+  }
+
+  /// 같은 문서 해시 이동(갤러리·슬라이드의 hashNavigation)은 리다이렉트로 세지 않는다(L3 리뷰 I2·P2, D7 "첫 로드 + 리다이렉트 5회")
+  @MainActor func testHashChangesAreNotRedirects() async throws {
+    let (o, _) = try await read("""
+      <html><body><p>2026년 11월 14일 합성웨딩홀</p><script>
+      let i = 0; const t = setInterval(() => { location.hash = 's' + (++i); if (i >= 8) clearInterval(t); }, 100);
+      </script></body></html>
+      """)
+    XCTAssertTrue(try page(o).body.contains("11월 14일"))
+  }
+
+  /// 제목·설명도 자른다(2,000자 — 확장 메모리, L3 리뷰 M3). 본문은 200,000자
+  @MainActor func testMetaFieldsAreCapped() async throws {
+    let long = String(repeating: "가", count: 5000)
+    let (o, _) = try await read("<html><head><title>\(long)</title><meta name=\"description\" content=\"\(long)\"></head><body><p>합성</p></body></html>")
+    let p = try page(o)
+    XCTAssertEqual(p.title.count, 2000)
+    XCTAssertEqual(p.description.count, 2000)
   }
 
   /// 취소(앱이 비활성 — L5): 기다리지 않고 바로 cancelled
@@ -203,6 +258,10 @@ final class LinkRendererTests: XCTestCase {
     let detached = UIView(frame: CGRect(origin: .zero, size: LinkRenderer.viewport))
     let o = await LinkRenderer(host: detached, allowLoopback: false).render(base, budget: 5, ocr: false)
     XCTAssertEqual(o, .failed("no_host"))
+    let hidden = try window()                    // 숨은 창은 보이는 뷰가 아니다 — 타이머가 조절돼 기한까지 끌지 않고 바로 no_host(L3 리뷰 M6)
+    hidden.isHidden = true
+    let h = await LinkRenderer(host: hidden, allowLoopback: false).render(base, budget: 5, ocr: false)
+    XCTAssertEqual(h, .failed("no_host"))
   }
 
   /// 이미지 전용 청첩장(D4, Codex 1): 글이 **0자**인 문서도 화면 스냅샷 OCR. 그림은 테스트 안에서 그린다(저장소에 그림 파일 없음)
@@ -220,6 +279,23 @@ final class LinkRendererTests: XCTestCase {
     let p = try page(o)
     XCTAssertTrue(p.visibleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     let t = try XCTUnwrap(p.ocrText, "OCR 결과 없음 — U4(시뮬레이터 Vision 한국어)·U2(스냅샷)를 메인에게 알린다")
+    XCTAssertTrue(LinkText.hasDateCandidate(t), "OCR 글자 수 \(t.count)")
+  }
+
+  /// 이미지 전용 긴 페이지: 날짜가 둘째 화면에만 있다 — 스크롤해 다음 화면도 스냅샷 OCR(스펙 §6 "최대 3화면", L3 리뷰 M8)
+  @MainActor func testOCRScrollsToNextScreen() async throws {
+    let screen = LinkRenderer.viewport.height
+    let img = UIGraphicsImageRenderer(size: CGSize(width: 360, height: screen * 2)).image { _ in
+      UIColor.white.setFill(); UIRectFill(CGRect(x: 0, y: 0, width: 360, height: screen * 2))
+      let a: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 26), .foregroundColor: UIColor.black]
+      ("2026년 12월 5일 토요일" as NSString).draw(at: CGPoint(x: 16, y: screen + 200), withAttributes: a)
+      ("합성 컨벤션 웨딩홀" as NSString).draw(at: CGPoint(x: 16, y: screen + 260), withAttributes: a)
+    }
+    let b64 = try XCTUnwrap(img.pngData()).base64EncodedString()
+    let (o, _) = try await read("""
+      <html><body style="margin:0"><img src="data:image/png;base64,\(b64)" width="360"></body></html>
+      """, budget: 8, ocr: true)
+    let t = try XCTUnwrap(try page(o).ocrText, "둘째 화면 OCR 없음")
     XCTAssertTrue(LinkText.hasDateCandidate(t), "OCR 글자 수 \(t.count)")
   }
 
@@ -260,6 +336,41 @@ final class LinkRendererTests: XCTestCase {
     XCTAssertEqual(o, .failed("http_404"))
   }
 
+  /// 페이지가 선 뒤 JS 이동이 404 를 받아도 실패가 아니다 — 지금 페이지를 계속 읽고, 실패한 이동을 예산까지 기다리지 않는다(L3 리뷰 I2)
+  @MainActor func testHTTPErrorAfterCommitKeepsPage() async throws {
+    let s = try await server()
+    defer { s.stop() }
+    let o = try await load("/later404", port: s.port, budget: 6)
+    guard case .page(let p, let ms) = o else { return XCTFail("\(o)") }
+    XCTAssertTrue(p.body.contains("11월 14일"))
+    XCTAssertEqual(s.hits("/missing"), 1)                // JS 이동이 실제로 났다
+    XCTAssertLessThan(ms, 3500, "실패한 뒤 이동의 didFinish 를 기다렸다")
+  }
+
+  /// 서기 전 리다이렉트가 앱 스킴으로 간다: 읽을 페이지가 없다 — 예산을 기다리지 않고 blocked_scheme(L3 리뷰 M1·P3)
+  @MainActor func testPreCommitAppSchemeRedirectFailsAtOnce() async throws {
+    let s = try await server()
+    defer { s.stop() }
+    let started = Date()
+    let o = try await load("/app", port: s.port, budget: 6)
+    XCTAssertEqual(o, .failed("blocked_scheme"))
+    XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+  }
+
+  /// 렌더러 재사용(앱 drain 은 한 인스턴스로 차례로 읽는다): 기한에 진 멈춘 페이지 다음 렌더링도 정상으로 읽는다 —
+  /// 진 렌더링의 내부 작업·위임 콜백이 다음 렌더링 상태를 바꾸지 않는다(webView === current, L3 리뷰 M8)
+  @MainActor func testRendererReuseAfterLostRace() async throws {
+    let s = try await server()
+    defer { s.stop() }
+    let w = try window()
+    defer { w.isHidden = true }
+    let r = LinkRenderer(host: w, allowLoopback: true)
+    let a = await r.render(URL(string: "http://127.0.0.1:\(s.port)/stuck")!, budget: 5, ocr: false)
+    XCTAssertTrue(a == .failed("timeout") || a == .failed("web_process"), "\(a)")
+    let b = await r.render(URL(string: "http://127.0.0.1:\(s.port)/ok")!, budget: 5, ocr: false)
+    XCTAssertTrue(try page(b).body.contains("11월 14일"))
+  }
+
   /// 302 가 끝없이 이어진다: 메인 프레임 이동 6회 초과 또는 WebKit 의 리다이렉트 초과(-1007) — 어느 쪽이든 redirects
   @MainActor func testTooManyRedirectsFail() async throws {
     let s = try await server()
@@ -281,31 +392,35 @@ final class LinkRendererTests: XCTestCase {
     let s = try await server()
     defer { s.stop() }
     let doc = """
-      <html><body><p>2026년 11월 14일 합성웨딩홀</p><img src="http://127.0.0.1:\(s.port)/pixel"><iframe src="http://127.0.0.1:\(s.port)/frame"></iframe></body></html>
+      <html><body><p>2026년 11월 14일 합성웨딩홀</p><img src="http://127.0.0.1:\(s.port)/pixel"><iframe src="http://127.0.0.1:\(s.port)/frame"></iframe>
+      <img src="http://u@127.0.0.1:\(s.port)/cred"></body></html>
       """
     let plain = URL(string: "http://invite.example.com/m/abc")!            // 대조군에서 혼합 콘텐츠 차단을 피하려고 http 기준 주소(네트워크 로드는 없다)
     let w = try window()
     defer { w.isHidden = true }
     _ = await LinkRenderer(host: w, allowLoopback: true, html: doc).render(plain, budget: 5, ocr: false)       // 대조: 루프백 허용이면 요청이 간다
     try XCTSkipIf(s.hits("/pixel") == 0, "대조군 0 — 하위 리소스 루프백 요청이 다른 이유로 막힌다. 규칙 판정은 L8 G9 옆에서")
+    XCTAssertGreaterThan(s.hits("/cred"), 0, "대조군: 사용자 정보가 붙은 주소도 요청이 간다")
     // 대조군 웹뷰를 뗀 뒤에도 /pixel 요청이 한 번 더 늦게 온다(시뮬레이터 실측 1 → 2) — 요청 수가 1.5초 멈출 때까지 기다려 실험군에 섞이지 않게
     var seen = -1, still = Date()
     for _ in 0..<12 {
-      let n = s.hits("/pixel") + s.hits("/frame")
+      let n = s.hits("/pixel") + s.hits("/frame") + s.hits("/cred")
       if n != seen { seen = n; still = Date() } else if Date().timeIntervalSince(still) >= 1.5 { break }
       try await Task.sleep(for: .milliseconds(500))
     }
-    let pixel = s.hits("/pixel"), frame = s.hits("/frame")
+    let pixel = s.hits("/pixel"), frame = s.hits("/frame"), cred = s.hits("/cred")
     let r = LinkRenderer(host: w, allowLoopback: false, html: doc)
     let o = await r.render(plain, budget: 5, ocr: false)
     XCTAssertTrue(try page(o).body.contains("11월 14일"))
     XCTAssertEqual(s.hits("/pixel"), pixel)
     XCTAssertEqual(s.hits("/frame"), frame)
+    XCTAssertEqual(s.hits("/cred"), cred, "u@127.0.0.1 이 규칙을 우회했다(L3 리뷰 M2)")
   }
 }
 
 /// 테스트 안 루프백 HTTP 서버(Network, 127.0.0.1 임의 포트, 연결마다 요청 하나).
-/// /ok 200(날짜 있는 글) · /missing 404 · /loop/<n> 302 → /loop/<n+1> · /hang 답하지 않음 · 그 밖 200 빈 본문
+/// /ok 200(날짜 있는 글) · /missing 404 · /loop/<n> 302 → /loop/<n+1> · /hang 답하지 않음 · /app 302 → 앱 스킴 ·
+/// /later404 200(날짜, 0.3초 뒤 JS 로 /missing) · /stuck 200(날짜, 0.3초 뒤 무한 루프) · 그 밖 200 빈 본문
 final class LoopServer: @unchecked Sendable {
   private let listener: NWListener
   private let queue = DispatchQueue(label: "link-loop-server")
@@ -371,6 +486,9 @@ final class LoopServer: @unchecked Sendable {
     case "/ok": return r("200 OK", "", "<html><body><p>2026년 11월 14일 합성웨딩홀</p></body></html>")
     case "/missing": return r("404 Not Found", "", "<html><body>없음</body></html>")
     case "/hang": return nil
+    case "/app": return r("302 Found", "Location: kakaolink://send?x=1\r\n")
+    case "/later404": return r("200 OK", "", "<html><body><p>2026년 11월 14일 합성웨딩홀</p><script>setTimeout(() => { location.href = '/missing'; }, 300);</script></body></html>")
+    case "/stuck": return r("200 OK", "", "<html><body><p>2026년 11월 14일 합성웨딩홀</p><script>setTimeout(() => { for (;;) {} }, 300);</script></body></html>")
     case let p where p.hasPrefix("/loop/"): return r("302 Found", "Location: /loop/\((Int(p.dropFirst(6)) ?? 0) + 1)\r\n")
     default: return r("200 OK")
     }
