@@ -17,9 +17,9 @@
 | L6 | 일정 위치 — 제안 `location` → EventKit `location` | L0 | 무관 | — |
 | L7 | 서버 추출 평가 `LNK-eval` — 합성 본문 13종(링크 10·이미지 3) × 3회를 **배포된** worker(테스트 lease)에 넣어 게이트·추출 비교. 배포 없음 | L1 | **③c1·③c2 창 밖** | `LNK-eval` |
 | L8 | 0.11.0 + 시뮬레이터 게이트 `LNK-sim`(채팅 붙여넣기·이어받기·실패 알림·**Safari 공유 시트(필수)**·사진 공유·채팅 사진·같은 링크 중복, 로컬 합성 페이지) | L4·L5·L6·L7 | **③c1·③c2 창 밖** | `LNK-sim` |
-| L9 | TestFlight 0.11.0 + 실기기 게이트 `LNK-device`(실제 공유 시트·채팅·캘린더 위치·같은 링크 중복·사진 공유) | L8 + **0.10.0 TestFlight 기록(광고 해지 계획 U6b)** | ③c2 뒤(U6b 뒤) | `LNK-device` |
+| L9 | 실기기 게이트 `LNK-device`(실제 공유 시트·채팅·캘린더 위치·같은 링크 중복·사진 공유) — **업로드 없음**, 광고 해지 U6b가 올린 0.11.0 빌드 | L8 + **광고 해지 계획 U6b 판정 통과·0.11.0 업로드 기록**(D11) | ③c2 뒤(U6b 뒤) | `LNK-device` |
 
-순서: L0 → L1 → L2 → L3 → L4 → L5(L6은 L0 뒤 언제든, L5와 `ScheduleCard.swift`가 겹치므로 같은 pane에서 순서대로) → L7(L1 뒤 언제든, 창 밖) → L8 → [0.10.0 TestFlight] → L9. **서버 코드·마이그레이션·함수 배포가 없다** — Gmail 측정(③c2 ≈ 10-08) 동안 워커·gmail 함수를 배포하지 않는다는 조건은 그대로이고, 이 계획에는 배포할 것이 없다. 배포된 함수를 *호출*하는 L7·L8만 측정 창(③c1·③c2)을 피한다.
+순서: L0 → L1 → L2 → L3 → L4 → L5(L6은 L0 뒤 언제든, L5와 `ScheduleCard.swift`가 겹치므로 같은 pane에서 순서대로) → L7(L1 뒤 언제든, 창 밖) → L8 → [광고 해지 U6b: 원클릭 판정 통과 → 0.11.0 TestFlight] → L9. **서버 코드·마이그레이션·함수 배포가 없다** — Gmail 측정(③c2 ≈ 10-08) 동안 워커·gmail 함수를 배포하지 않는다는 조건은 그대로이고, 이 계획에는 배포할 것이 없다. 배포된 함수를 *호출*하는 L7·L8만 측정 창(③c1·③c2)을 피한다.
 
 **Goal:** 청첩장·초대장·행사 페이지 링크를 ① 공유 시트로 공유하거나 ② 채팅창에 붙여넣으면 **기기가 페이지를 보이지 않는 웹뷰로 렌더링해** 글(제목·OG 설명·본문, 날짜가 없거나 글이 없으면 화면 OCR)을 읽고, 청첩장·초대장 **사진**을 ③ 공유 시트로 공유하거나 ④ 채팅 "+"로 첨부하면 **기기 Vision OCR**로 글을 읽어, 기존 SHARE 수집 경로로 보내 서버의 기존 분류·추출·제안·겹침·묶음 알림(§7·§10)이 일정 제안을 만든다. 서버는 외부 URL을 가져오지 않고 이미지를 받지 않는다.
 
@@ -65,7 +65,7 @@
 | D8 | 결과를 사용자에게 | 확장: 시트 안 문구(읽는 중 → 결과 + 저장 범위 한 줄, 1.5초 뒤 닫힘 또는 [닫기] — **[닫기]는 결과를 기다리지 않고 즉시 닫는다**). 채팅: 링크 턴 문구 → 직접 업로드 → 처리 결과 폴링(3초 간격, 60초). 앱 이어받기 **확정 실패·3회 실패**만 로컬 알림 1건(주소·제목 없이, foreground 배너 — F25). 확장에서 링크가 확정 실패하면 **원래 공유 글을 지금처럼 텍스트 항목으로 넣는다**(주소만 공유했으면 주소 문자열 항목 — 0.10.0과 같다) | 확장·채팅은 사용자가 보고 있다. 이어받기는 사용자가 다른 화면에 있을 수 있다. 확정 실패로 공유 자체가 사라지면 안 된다(Fable F1) |
 | D9 | 일정 위치 | 제안 payload `location`(추출 결과, F11) → EventKit `location`(문자열). 경로: 제안 탭 행·배너 탭 시트(목록 값)·채팅 카드. **잠금화면 "캘린더에 추가"는 푸시에 location이 없어 장소 없이** 저장한다(서버 notify 변경은 이 계획 범위 밖 — 0.11.0은 서버 무변경) | §15 후보 "장소는 주소 그대로 일정 위치에". 지금은 모든 경로가 위치 없이 저장한다(F10) |
 | D10 | 버전 | **이 기능 = 0.11.0**, 보관 계획 R-B9(요약·저장 공간)는 **0.12.0**(L0이 스펙 §11·§15·§16·보관 계획을 고친다). 실행 때 `git log --oneline -- ios/project.yml`로 0.11.0이 이미 main에 있으면(R-B9가 먼저) 이 기능이 다음 빈 마이너를 쓰고 스펙·두 계획을 같은 커밋에서 맞춘다. 메이저 금지 | 이 기능은 서버를 바꾸지 않아 ③c2를 기다리지 않는 R-B9보다 먼저 준비된다 |
-| D11 | 공개 순서 | **TestFlight 0.11.0은 0.10.0 TestFlight(광고 해지 계획 U6b) 기록 뒤**. 0.11.0 빌드는 main의 0.10.0 해지 화면을 포함하므로 U6b의 원클릭 비율 판정 전에 내보내지 않는다. 시뮬레이터 게이트(L8)까지는 측정 창 밖이면 언제든 | 광고 해지 계획 D10·D11(워커 배포·판정 뒤 공개)을 깨지 않는다 |
+| D11 | 공개 순서 | **0.10.0을 따로 TestFlight에 올리지 않는다(2026-10-03 메인 판정, 최종 리뷰 F-I1 (B)).** 광고 해지 계획 U6b가 원클릭 비율 판정 통과 뒤 main HEAD의 **0.11.0 한 빌드**를 올리고(광고 해지 계획 D12), L9(`LNK-device`)와 광고 해지 U10(`UNS-real`)이 그 빌드를 쓴다 — L9는 업로드하지 않는다. 0.11.0 빌드는 0.10.0 해지 화면을 포함하므로 U6b 판정 전에는 내보내지 않는다(판정이 멈추면 0.11.0도 나가지 않는다). 시뮬레이터 게이트(L8)까지는 측정 창 밖이면 언제든 | 광고 해지 계획 D10·D11(워커 배포·판정 뒤 공개)을 깨지 않는다. 사용자 1명(본인) TestFlight라 0.10.0 단독 빌드(별도 worktree)의 이득이 작다 — 0.11.0이 `LNK-device` 전에 사용자 기기에 설치되는 것은 수용 |
 | D12 | 여행 글 후보와의 관계 | §15 "여행 글 → 일정 초안" 후보의 "서버가 본문 가져오기"를 **기기 렌더러 공유**로 바꿔 적는다(이번 구현 없음) | 링크 가져오기 계층을 공유한다는 후보 문구(§15)를 방식 A와 맞춘다 |
 | D13 | 이미지 입력(LD4·MR3) | 사진 → 기기 Vision OCR → `[이미지] 사진 N장` + `메모:` + (넘치면 `일시·장소 줄:`) + `이미지 속 글자:`(전체 4,000자) → 기기 규칙 → SHARE 큐(`app_name = "이미지"`). **이미지 파일·축소본을 App Group·디스크에 저장하지 않는다** — 확장·앱이 `loadDataRepresentation`/`loadTransferable`로 메모리에 받아 한 장씩 그 자리에서 OCR하고 버린다(대기 행 없음 — 확장이 죽으면 그 공유는 사라지고 다시 공유하면 된다). 한 번에 **최대 3장**, 한 항목으로 합친다. 디코딩은 `CGImageSourceCreateThumbnailAtIndex`(긴 변 2,048px, EXIF 방향 반영). OCR 글이 합쳐 10자 미만이면 "사진에서 글자를 찾지 못했어요"(큐에 아무것도 넣지 않음). 공유에 웹 주소 1개(D5 조건)와 이미지가 같이 오면 링크(Safari 미리보기 그림). 채팅은 "+" 메뉴(지금 비활성 "2단계 예정", F26)에 `PhotosPicker`(이미지, 최대 3장 — 사진 권한 창 없음), 입력창 글은 메모. 파일 업로드·서버 vision·PDF는 그대로 2단계 | 사용자 요구(서버 업로드 없음). 스펙 §6 "규칙 통과 전 영속화 없음"과 맞다. 48MP 원본을 통째로 풀지 않는다(확장 메모리, U10). 기존 `VNImageRequestHandler(cgImage:)`는 방향을 모른다 |
 | D14 | 같은 링크(MR2) | 캡처 id = `LinkText.captureID(for:)` — 조각(`#…`)을 떼고 스킴을 https로 맞춘 주소의 SHA-256 앞 16바이트(UUID 모양). 대기 행 id `link:<captureID>`. 큐 항목이 들어가면(`queued`) 기기 `link_seen`(App Group 큐 파일의 표, captureID와 만료 시각만 — 주소 없음)에 30일 남긴다. 관문이 기록을 찾으면 렌더링·행 없이 `duplicate` → "이미 읽은 링크예요. 제안 탭에서 확인해 주세요". 기록이 없어도(재설치) 서버 멱등 키(`SHARE:<id>`)가 같아 항목은 한 건이다. 확장이 죽어 남은 같은 주소의 대기 행은 다시 공유하면 lease만 새로 걸고 다시 읽는다. 규칙 폐기·실패는 기록하지 않는다(다시 해 볼 수 있게) | 같은 청첩장을 공유·채팅으로 두 번 넣으면 같은 일정이 두 번 제안된다(Fable F6). 읽은 링크 기록에 주소를 두지 않는다 |
@@ -87,7 +87,7 @@ UQ2·UQ3은 기본값으로 진행하고 메인이 사용자에게 알린다(B·
 - **서버 무변경:** `supabase/functions/**`·`supabase/migrations/**`·`supabase/config.toml`을 바꾸지 않는다. 새 파일은 `supabase/eval/link-cases.json`(합성)·`supabase/scripts/_link-eval.ts`·`supabase/scripts/eval-link.ts`(배포된 worker를 테스트 lease로 호출)·`supabase/tests/link-eval.test.ts`뿐이다. Edge 함수 배포·`db push` 없음.
 - **Gmail 측정 창(Gmail 계획 Global Constraints):** ③c2(≈ 10-08) 측정 동안 워커·gmail 함수 배포 금지는 그대로다(이 계획은 배포가 없다). 배포된 함수를 호출하는 L7(`eval-link.ts`)·L8(시뮬레이터 → ingest·worker)은 ③b3 진행 중·**③c1 10-07(수) 14:30~16:30 KST**·**③c2 10-08(목) 14:30 KST ~ ③c2 완료 기록**을 피한다(메인이 원장의 최신 `status.t0`와 완료 기록으로 다시 계산 — 날짜는 예시). 실사용자 `items`·`jobs`·`connections`를 만들거나 고치지 않는다 — 평가·게이트는 테스트 사용자만.
 - **버전(AGENTS.md §8):** `MARKETING_VERSION: 0.11.0`(L8, D10 확인 후). 빌드 번호는 `testflight.sh` 기본값(`date +%Y%m%d%H%M`). 메이저 금지.
-- **공개 순서(D11):** L9의 TestFlight 업로드는 `docs/superpowers/phase1/gates.md`에 0.10.0 TestFlight(UNS-server 통과 행, U6b)가 기록된 뒤.
+- **공개 순서(D11):** L9는 업로드하지 않는다 — 광고 해지 U6b가 원클릭 판정 통과 뒤 올린 0.11.0 빌드를 쓴다. 선행 조건은 `docs/superpowers/phase1/gates.md`의 `UNS-server` 통과 행(U6b 판정 통과 + `TestFlight 0.11.0 (<빌드>) VALID`). 0.10.0 단독 TestFlight는 없다.
 - **개인정보(AGENTS.md §7, 스펙 §12):** 로그·`DiagLog`·trace·`gates.md`·보고에 **링크 주소·호스트·페이지 제목·본문·OCR 글을 쓰지 않는다** — 결과 코드·글자 수·장 수·경과 ms·불리언만. trace 이벤트 이름은 서버가 받는 접두(`share.`)만 쓴다(F8 — `share.link`·`share.image`). 테스트·평가 픽스처는 합성(`합성`·`example.com`·`.test`), 실제 청첩장·초대장 글·주소·사진을 픽스처에 넣지 않는다(사진은 테스트 안에서 그린다). 실기기 게이트(L9)는 사용자가 고른 실제 링크·사진으로 하되 기록은 메타(글자 수·장 수·OCR 여부·상태·일정 수)만. `items.content_enc` 복호화 조회 금지.
 - **Swift 6 동시성:** WebKit 호출은 전부 메인 액터(`@MainActor`). Vision OCR은 메인 밖(`Task.detached`). `EruriCore`는 swift-tools 6.2(Swift 6 모드)다.
 - **기계(AGENTS.md §6):** 빌드·시뮬레이터·deno 전 `vm_stat | grep -E 'free|compressor'`. 시뮬레이터 빌드와 deno를 동시에 돌리지 않는다(`pgrep -x deno`·`pgrep -x xcodebuild`가 비었을 때만). 시뮬레이터는 pane 전용 UDID. 시간에 기대는 테스트는 스왑 포화를 감안해 예산 5초 이상으로 둔다.
@@ -210,7 +210,7 @@ docs/superpowers/phase1/gates.md                               # L7 LNK-eval · 
 3. L4 → L5 **순서대로**(둘 다 `sim.sh gen`·`build`·`test`로 같은 `Eruri.xcodeproj`·`ios/build`·`ios/.sim-udid`를 쓴다 — AGENTS.md §2·§6). L5와 L6은 `ScheduleCard.swift`가 겹치므로 같은 pane에서 순서대로 하거나 L6을 먼저 끝낸다.
 4. L7은 L1 뒤, 측정 창 밖이면 언제든(배포 없음). 결과가 L8 진행 조건이다(U7).
 5. L8(0.11.0 + 시뮬레이터 게이트) — 측정 창 밖. `LNK-sim` 통과(U1 판정 포함) 뒤에만 L9.
-6. [광고 해지 계획 U6b: 0.10.0 TestFlight 기록] → L9.
+6. [광고 해지 계획 U6b: 원클릭 판정 통과·0.11.0 TestFlight 업로드 기록] → L9(같은 빌드 — 광고 해지 U10과 한 사용자 세션으로 묶어도 된다).
 
 ---
 
@@ -2030,6 +2030,8 @@ public enum LinkCaptureText {
     case .handedOff("no_date"), .handedOff("empty"): return "그림으로 된 페이지 같아요. ERURI 앱을 열면 그림 속 글자까지 다시 읽어요."
     case .handedOff, .retry: return "지금은 다 읽지 못했어요. ERURI 앱을 열면 다시 읽어요."
     case .discarded: return discarded
+    // 큐 쓰기 실패는 텍스트 폴백을 하지 않는다(LinkFlow.fallsBackToText) — 대기 행이 남아 앱이 이어받는다(L4 메인 판정)
+    case .failed("queue"): return "기기에 잠시 저장하지 못했어요. ERURI 앱을 열면 다시 읽어요."
     case .failed(let code): return "페이지를 읽지 못했어요(\(reason(code)))."
     }
   }
@@ -4738,40 +4740,37 @@ git commit -m "docs(gates): LNK-sim — 0.11.0 link and photo reading on the sim
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-### Task L9: TestFlight 0.11.0 + 실기기 게이트 `LNK-device` (U6b 뒤)
+### Task L9: 실기기 게이트 `LNK-device` (U6b가 올린 0.11.0 빌드)
 
 **Files:**
 - Modify: `docs/superpowers/phase1/gates.md`(행 `LNK-device`, 필요하면 `LNK-ocr-device`)
 - (실패 시) Modify: `ios/Packages/EruriCore/Sources/EruriCore/LinkFlow.swift`(`renderInShareExtension = false`), `ios/project.yml`(0.11.1), 스펙 §6·§16
 
 **Interfaces:**
-- Consumes: L8 통과(`LNK-sim` — U1 판정 포함), `gates.md`의 0.10.0 TestFlight 기록(광고 해지 U6b, D11), `ios/scripts/testflight.sh`.
+- Consumes: L8 통과(`LNK-sim` — U1 판정 포함), `gates.md` `UNS-server` 통과 행의 U6b 판정 통과·`TestFlight 0.11.0 (<빌드>) VALID`(D11), (Step 4 대안 0.11.1 때만) `ios/scripts/testflight.sh`.
 - 사용자가 실기기에서 조작한다. 에이전트는 메타만 본다: `device_traces`의 `share.link`(필드 origin·result·code·elapsed_ms·chars·ocr·timed_out·blocked_nav)·`share.image`(origin·result·code·elapsed_ms·chars·images), 실사용자(`ERURI_USER_ID`) `items`의 `app_name in ('웹 링크','이미지')` 행의 `id·status·gate_label`과 그 `facts` 종류·개수. 본문·제목·주소·사진은 보지 않는다(AGENTS.md §7).
 
-판정(`LNK-device` 통과 = D1·D3·D3b·D5·D6 모두 + OCR 실기기 1건): D1 실제 공유 시트에서 확장이 페이지를 읽고(결과 `queued`, 또는 `handed_off`면 앱을 열어 `drain queued`) 확장이 죽지 않음(U3) · D3 다른 공개 행사·안내 페이지 링크를 채팅에 붙여넣어 결과 줄(앱 렌더링 실기기) · D3b D1과 같은 링크를 채팅에 붙여넣으면 "이미 읽은 링크예요. 제안 탭에서 확인해 주세요"(trace `result=duplicate`, MR2) · D5 제안 탭 추가 → 캘린더 일정에 위치 · D6 사진 앱에서 청첩장·초대장 사진(또는 캡처) 공유 → 확장 생존 + `share.image queued`(U10) · **OCR 실기기**: trace `ocr=true` 1건(D1·D3 중 OCR을 탄 링크) **또는** D6 — D6만 있으면 Vision 실기기는 판정되고, 화면 밑 스냅샷 OCR(U2 실기기)은 별도 행 `LNK-ocr-device` "대기"로 두고 첫 실제 그림 청첩장 때 판정한다(이 경우에만 대기 허용, Fable C8·L9-b). 읽는 중 [닫기]→이어받기(초판 D4)는 손으로 재현이 안 돼 실기기 필수에서 뺐다 — 시뮬레이터 G5·G8과 D1의 `handed_off` 경우가 맡는다(Fable F6).
+판정(`LNK-device` 통과 = D1·D3·D3b·D5·D6 모두 + OCR 실기기 1건): D1 실제 공유 시트에서 확장이 페이지를 읽고(결과 `queued`, 또는 `handed_off`면 앱을 열어 `drain queued`) 확장이 죽지 않음(U3) · D3 다른 공개 행사·안내 페이지 링크를 채팅에 붙여넣어 결과 줄(앱 렌더링 실기기) · D3b D1의 Safari 화면에서 복사한 같은 주소를 채팅에 붙여넣으면 "이미 읽은 링크예요. 제안 탭에서 확인해 주세요"(trace `result=duplicate`, MR2) · D5 제안 탭 추가 → 캘린더 일정에 위치 · D6 사진 앱에서 청첩장·초대장 사진(또는 캡처) 공유 → 확장 생존 + `share.image queued`(U10) · **OCR 실기기**: trace `ocr=true` 1건(D1·D3 중 OCR을 탄 링크) **또는** D6 — D6만 있으면 Vision 실기기는 판정되고, 화면 밑 스냅샷 OCR(U2 실기기)은 별도 행 `LNK-ocr-device` "대기"로 두고 첫 실제 그림 청첩장 때 판정한다(이 경우에만 대기 허용, Fable C8·L9-b). 읽는 중 [닫기]→이어받기(초판 D4)는 손으로 재현이 안 돼 실기기 필수에서 뺐다 — 시뮬레이터 G5·G8과 D1의 `handed_off` 경우가 맡는다(Fable F6).
 
-- [ ] **Step 1: 선행 확인·업로드**
+- [ ] **Step 1: 선행 확인 (업로드 없음)**
 
-`gates.md`에서 `LNK-sim` 통과와 0.10.0 TestFlight(U6b) 기록을 확인한다. 없으면 멈춘다(D11).
-
-Run: `cd ios && ./scripts/sim.sh gen && ./scripts/testflight.sh`
-Expected: `Upload succeeded`, 빌드 `0.11.0 (<yyyymmddHHMM>)`. App Store Connect에서 `VALID`가 되면 사용자에게 설치를 요청한다.
+`gates.md`에서 `LNK-sim` 통과와 `UNS-server` 통과(U6b 원클릭 판정 통과 + `TestFlight 0.11.0 (<빌드>) VALID`)를 확인한다. 없으면 멈춘다(D11). U6b가 원클릭 0곳으로 멈췄으면 0.11.0도 올라가지 않았다 — 메인에게 보고한다(공개 순서는 메인이 사용자와 다시 정한다). 업로드는 하지 않는다: 사용자 기기에 U6b가 올린 0.11.0(빌드 번호는 `UNS-server` 비고)이 설치돼 있는지 사용자에게 확인한다. 광고 해지 U10과 같은 세션이면 그 요청과 함께 묻는다.
 
 - [ ] **Step 2: 사용자 세션(메인이 안내, 사용자 조작 5회)**
 
 사용자에게 순서대로 부탁한다(문구는 메인이 다듬는다). 사용자가 가진 실제 청첩장 링크 하나와, 아무 공개 행사·안내 페이지 링크 하나, 청첩장·초대장 사진 하나가 필요하다:
-1. **D1**: Safari 또는 카카오톡 인앱 브라우저에서 실제 청첩장 링크를 열고 공유 → ERURI. 시트에 "링크를 읽는 중…" 뒤 결과 문구(와 저장 범위 한 줄)가 보이는지, 시트가 갑자기 사라지지 않는지. "앱을 열면 다시 읽어요"가 보이면 ERURI 앱을 연다. 그 뒤 알림·"제안" 탭에 일정이 왔는지 본다(조작 아님).
+1. **D1**: 실제 청첩장 링크를 **Safari**에서 열고(카카오톡에 온 링크면 Safari로 열기), 그 화면의 `⋯` → 공유 → ERURI(iOS 26 Safari는 공유가 `⋯` 메뉴 안, G8 관찰). 카카오톡 메시지를 길게 눌러 공유하지 않는다 — 메시지 글에 날짜가 있으면 링크가 아니라 텍스트 공유가 된다(D5). 시트에 "링크를 읽는 중…" 뒤 결과 문구(와 저장 범위 한 줄)가 보이는지, 시트가 갑자기 사라지지 않는지. "앱을 열면 다시 읽어요"가 보이면 ERURI 앱을 연다. 그 뒤 알림·"제안" 탭에 일정이 왔는지 본다(조작 아님).
 2. **D5**: "제안" 탭에서 그 일정 "캘린더에 추가" → 캘린더 앱에서 일정의 위치가 보이는지.
 3. **D3**: 다른 공개 행사·안내 페이지 링크를 ERURI 채팅창에 붙여넣고 보내기. 링크 턴의 결과 줄.
-4. **D3b**: D1의 청첩장 링크를 채팅창에 붙여넣고 보내기 → "이미 읽은 링크예요. 제안 탭에서 확인해 주세요".
-5. **D6**: 사진 앱에서 청첩장·초대장 사진(또는 화면 캡처)을 공유 → ERURI. 시트에 "사진에서 글 N자를 읽었어요…"가 보이는지, 시트가 갑자기 사라지지 않는지.
+4. **D3b**: D1에서 연 **같은 Safari 화면**에서 `⋯` → 공유 → **복사**한 주소를 채팅창에 붙여넣고 보내기 → "이미 읽은 링크예요. 제안 탭에서 확인해 주세요". 카카오톡의 원래 링크를 복사하지 않는다 — Safari는 리다이렉트 뒤 최종 주소를 공유하므로 단축 링크·원래 주소는 다른 링크로 본다(D14), 다시 읽혀 같은 일정 제안이 하나 더 생긴다.
+5. **D6**: 사진 앱에서 청첩장·초대장 사진(또는 화면 캡처)을 공유 → ERURI. **D1과 다른 초대장 사진을 권한다** — 같은 청첩장 캡처면 같은 일정 제안이 하나 더 생긴다(사진은 같은 링크 판정을 타지 않는다). 다른 사진이 없으면 같은 청첩장을 쓰고 새 제안은 "제안" 탭에서 무시한다. 시트에 "사진에서 글 N자를 읽었어요…"가 보이는지, 시트가 갑자기 사라지지 않는지.
 
 - [ ] **Step 3: 메타 확인**
 
 (먼저 `ERURI_USER_ID=$(grep '^ERURI_USER_ID=' supabase/.env | cut -d= -f2-)` — `.env`를 `source`하지 않는다. `device_traces` 열 이름이 다르면 `select column_name from information_schema.columns where table_name = 'device_traces'`로 확인해 바꾼다.)
 
-Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/sql.ts "select at, event, fields->>'origin' o, fields->>'result' r, fields->>'code' c, fields->>'elapsed_ms' ms, fields->>'chars' n, fields->>'ocr' ocr, fields->>'images' img, fields->>'blocked_nav' b from device_traces where user_id = \$1 and event in ('share.link', 'share.image') and at > now() - interval '2 hours' order by at" "$ERURI_USER_ID"`
-Expected: D1 `share.link o=share r=queued`(또는 `r=handed_off` 다음 `o=drain r=queued`), D3 `o=chat r=queued`, D3b `o=chat r=duplicate`, D6 `share.image o=share r=queued`. `ocr=true` 행이 있는지 적는다.
+Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/sql.ts "select at, event, fields->>'origin' o, fields->>'result' r, fields->>'code' c, fields->>'elapsed_ms' ms, fields->>'chars' n, fields->>'ocr' ocr, fields->>'images' img, fields->>'blocked_nav' b from device_traces where user_id = \$1 and event in ('share.link', 'share.image', 'share.received') and at > now() - interval '2 hours' order by at" "$ERURI_USER_ID"`
+Expected: D1 `share.link o=share r=queued`(또는 `r=handed_off` 다음 `o=drain r=queued`), D3 `o=chat r=queued`, D3b `o=chat r=duplicate`, D6 `share.image o=share r=queued`. `ocr=true` 행이 있는지 적는다. D1 자리에 `share.link`가 없고 `share.received`(텍스트 공유)만 있으면 공유 글에 날짜가 있어 텍스트로 간 것(D5) — 판정하지 말고 사용자에게 Safari `⋯` → 공유로 D1을 다시 부탁한다. D3b가 `r=duplicate`가 아니라 `r=queued`면 D1과 다른 주소(단축 링크·카카오톡 원래 링크)를 붙여넣은 것 — 절차 오류로 적고, 생긴 제안은 사용자에게 "제안" 탭에서 무시를 부탁한 뒤 같은 Safari 화면의 `⋯` → 공유 → 복사로 D3b를 다시 한다.
 
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/sql.ts "select i.id, i.app_name, i.status, i.gate_label, count(f.id) filter (where f.kind = 'event') events from items i left join facts f on f.item_id = i.id and f.status = 'active' where i.user_id = \$1 and i.app_name in ('웹 링크', '이미지') and i.captured_at > now() - interval '2 hours' group by i.id order by i.captured_at" "$ERURI_USER_ID"`
 Expected: D1·D3·D6 항목이 `extracted`(일정 ≥ 1) 또는 `discarded:server:empty`(그 페이지·사진에 일정이 없을 때 — 사용자에게 날짜가 있었는지 묻는다). D3b는 새 항목이 없다. D5는 사용자 확인.

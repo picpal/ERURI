@@ -16,8 +16,8 @@
 | U7 | EruriCore `Unsubscribe`(`can_request`) | U3 계약 | 무관 | — |
 | U8 | 앱 화면·0.10.0 | U7 | 무관 | — |
 | U9 | 시뮬레이터 게이트(TestFlight 없음) | U6a·U8 | **창 밖** | `UNS-sim` |
-| U6b | 워커 배포 → 30일 스캔 → **원클릭 비율 판정(N1)** → TestFlight 0.10.0 | U9 + **③c2 완료 기록**(10-08 15:00 KST 이후) | ③c2 뒤 | `UNS-server` 통과 |
-| U10 | `UNS-real` — 사용자 목록 확인 + 해지 1건 (한 번의 요청) | U6b 판정 통과 | ③c2 뒤 | `UNS-real` |
+| U6b | 워커 배포 → 30일 스캔 → **원클릭 비율 판정(N1)** → TestFlight **0.11.0 한 빌드**(0.10.0 단독 빌드 없음, D12) | U9 + **③c2 완료 기록**(10-08 15:00 KST 이후) | ③c2 뒤 | `UNS-server` 통과 |
+| U10 | `UNS-real` — 사용자 목록 확인 + 해지 1건 (한 번의 요청) | U6b 판정 통과 + TestFlight 0.11.0 VALID(같은 빌드, D12) | ③c2 뒤 | `UNS-real` |
 
 순서: U0 → U1·U2 → U3 → U4·U5·U7 → U6a → U8 → U9 → [③c2 완료 기록] → U6b → U10. 측정 기간에 할 수 있는 것은 U0~U5·U7·U8 코드, U3 `db push`(창 밖), U6a, U9까지다. 워커 배포·스캔·TestFlight·사용자 확인은 ③c2 뒤로 모은다(리뷰 반영 H4).
 
@@ -54,13 +54,14 @@
 | D8 | 버전 | **이 기능 = 0.10.0**, 보관 계획 R-B9(요약·저장 공간)는 **0.11.0**으로 밀린다(U0이 스펙 §11·§15·보관 계획을 고친다). 실행 때 `git log --oneline -- ios/project.yml`로 0.10.0이 이미 main에 있으면(R-B9가 먼저 들어감) 이 기능이 다음 빈 마이너를 쓰고 스펙·두 계획을 같은 커밋에서 맞춘다 | 이 기능의 앱은 서버 DDL만 있으면 되고 ③c2를 기다리지 않아 R-B9보다 먼저 나간다 |
 | D9 | 해지 요청 주체 | 서버(Edge). 기기 직접 POST 기각 | 기기로 URL을 내려야 하고 사용자 IP가 발신자에게 간다 |
 | D10 | 배포 분할 | **U6a**(`unsubscribe` 함수만 — 측정 창 밖이면 언제든) / **U6b**(워커·30일 스캔 — ③c2 완료 기록 뒤, 10-08 15:00 KST 이후) | 워커 재배포는 잡 처리 시간을 바꿔 7일 측정에 영향을 줄 수 있고, 일찍 배포해 얻는 것은 본문에만 `(광고)`가 있는 메일 며칠치뿐이다(30일 스캔이 나머지를 채움). 기능 스위치·지연 회귀 테스트보다 배포 순서로 푼다(리뷰 H4) |
-| D11 | 원클릭 지원 비율 판정 | U6b 30일 스캔 직후·TestFlight 전에 `unsub_stats`의 방법 분포를 본다. 광고 발신자 중 `one_click` 0곳이면 멈추고 `UNS-real`을 "실패(대안 채택)" 후보로, 메인이 사용자에게 `link_only` "웹 페이지 열기"를 묻는다. 1곳 이상이면 TestFlight → U10 | 국내 광고 발신자는 원클릭 헤더가 없는 곳이 많을 수 있다. 다 만든 뒤가 아니라 공개 전에 실현 가능성을 판정한다(AGENTS.md §5-6, 리뷰 N1) |
+| D11 | 원클릭 지원 비율 판정 | U6b 30일 스캔 직후·TestFlight 전에 `unsub_stats`의 방법 분포를 본다. 광고 발신자 중 `one_click` 0곳이면 멈추고 `UNS-real`을 "실패(대안 채택)" 후보로, 메인이 사용자에게 `link_only` "웹 페이지 열기"를 묻는다. 1곳 이상이면 TestFlight(0.11.0 — D12) → U10 | 국내 광고 발신자는 원클릭 헤더가 없는 곳이 많을 수 있다. 다 만든 뒤가 아니라 공개 전에 실현 가능성을 판정한다(AGENTS.md §5-6, 리뷰 N1) |
+| D12 | 공개 빌드(2026-10-03 메인 판정, 링크 계획 최종 리뷰 F-I1 (B)) | **0.10.0을 따로 TestFlight에 올리지 않는다.** main이 이미 0.11.0(링크·이미지 → 일정 계획, `e0dcbcd`)이라 U6b는 원클릭 판정(D11) 통과 뒤 main HEAD에서 **0.11.0 한 빌드**를 올리고, U10(`UNS-real`)과 링크 계획 L9(`LNK-device`)가 같은 빌드를 쓴다(한 사용자 세션으로 묶어도 된다). 판정이 멈추면(원클릭 0곳) 0.11.0도 올리지 않는다 | 사용자 1명(본인) TestFlight라 0.10.0 단독 빌드(별도 worktree)의 이득이 작고 서명·생성 경로를 한 번 더 검증해야 한다. 0.11.0이 `LNK-device` 전에 사용자 기기에 설치되는 것은 수용(원장 Ruling F-I1) |
 
 ## Global Constraints
 
 - **스펙 먼저(AGENTS.md §1):** U0 커밋 전에는 코드 태스크를 시작하지 않는다. 계획과 스펙 문구가 다르면 스펙이 원본이다.
 - **Gmail 권한:** `GMAIL_READONLY_SCOPE` 그대로. `gmail-connect`·OAuth 동의 화면·`GOOGLE_*` 설정을 바꾸지 않는다. 앱의 "다시 연결 (동의 다시 받기)"을 누르게 하지 않는다.
-- **버전(AGENTS.md §8):** `MARKETING_VERSION: 0.10.0`(U8, D8 확인 후). 빌드 번호는 `testflight.sh` 기본값(`date +%Y%m%d%H%M`). 메이저 금지.
+- **버전(AGENTS.md §8):** `MARKETING_VERSION: 0.10.0`(U8, D8 확인 후). **TestFlight는 0.10.0이 아니라 U6b 판정 통과 뒤 0.11.0 한 빌드**(D12 — main이 이미 0.11.0). 빌드 번호는 `testflight.sh` 기본값(`date +%Y%m%d%H%M`). 메이저 금지.
 - **서버 변경 범위:** 마이그레이션 1개(`0028_unsubscribe.sql` — 실행 때 다음 빈 번호, 새 표·함수·cron만, **기존 표·함수·행을 바꾸지 않는다**) + `_shared/rules.ts`(`AD_MARK` export 한 단어) + `_shared/gmail.ts`(`getMessageMeta`) + `_shared/unsub.ts`(신규) + `_shared/safe-post.ts`(신규) + `_shared/gmail-jobs.ts`(`recordUnsub`·`enqueueUnsubRescan`·`gmailUnsubScan`·`gmailUnsubFetch`, `gmailFetch` 두 분기, `gmailSync` 재동기화 훅 한 줄, `GmailJobDeps` 선택 필드 2개) + `worker/index.ts`(핸들러 2개) + `functions/unsubscribe/`(신규) + `config.toml`(`[functions.unsubscribe] verify_jwt = false`).
 - **Gmail 수집 회귀 금지:** `gmailFetch`의 기록 호출은 **fail-open**(`recordUnsub`가 throw하지 않고, RPC·암호화가 **2초**를 넘으면 기다리지 않고 `"error"` — 리뷰 H4). 재동기화 스캔 잡 넣기도 실패를 삼킨다. 기존 `supabase/tests/gmail.test.ts` 전부 통과(단언 수정 없이)가 U4의 완료 조건이다. 기존 테스트의 `fakeDeps`가 `GmailClient`에 생긴 `getMessageMeta`를 갖도록 기본값 한 줄을 더한다(타입 확인). 새 `GmailJobDeps` 필드(`onResync`·`unsubBudgetMs`)는 선택이라 기존 가짜 deps는 그대로다.
 - **Gmail 측정 창(Gmail 계획 Global Constraints "측정 기간 금지"):** 아래 동작은 창 밖에서만 — `db push`(U3), `unsubscribe` 함수 배포(U6a), 서버 스모크(U3·U5·U6a, 테스트 사용자), 시뮬레이터 게이트(U9). 창:
@@ -2727,7 +2728,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: U4 커밋(워커 기록·스캔·재동기화 훅·잡 로컬 차단기, `0029_unsub_gap_scan.sql` 파일 — 미적용, 다른 계획의 `db push`에 딸려 올라가지 않게 `supabase/migrations-pending/`에 둠(최종 리뷰 I3)), U6a(배포된 `unsubscribe`·`UNSUB_SINK_KEY`), U8·U9(0.10.0 앱, 시뮬레이터 게이트 통과), U5 `unsub-stats.ts`.
-- Produces: 배포된 `worker`, 실사용자 30일 스캔 결과(집계만), **원클릭 비율 판정(D11)**, TestFlight 0.10.0.
+- Produces: 배포된 `worker`, 실사용자 30일 스캔 결과(집계만), **원클릭 비율 판정(D11)**, TestFlight 0.11.0(D12 — U10·링크 계획 L9와 같은 빌드).
 
 **왜 ③c2 뒤인가(D10):** 워커 재배포는 잡 처리 시간을 바꿔 Gmail 7일 측정(지연·재시도·후속 저장)에 영향을 줄 수 있다. 30일 스캔이 배포 전 광고를 채우므로 일찍 배포해 얻는 것이 거의 없다.
 
@@ -2806,24 +2807,26 @@ Expected: `senders_with_ads_30d ≥ 1`, `ads_30d ≥ 1`. `method_of_senders_with
 
 **F2 관찰(게이트 아님, 원장 Ruling F2·U4-I2 · 최종 리뷰 I2):** 실시간 경로(history로 오는 광고)가 동작하는지는 `unsub_mail`로 가를 수 없다 — 출처 열이 없고, 30일·일일 공백 스캔이 같은 `msg_key`를 다시 쓴다. 대안(일 1회 공백 스캔)은 0029로 이미 들어가 있으므로 판정하지 않는다. 관찰만 한다: Step 7 기록 시점에 Supabase 대시보드 Edge Functions › `worker` 로그에서 Step 3 배포 뒤 `gmail_discard`의 `promotion` 줄 개수(개수만 — 줄에는 connection_id·사유 코드만 있다)를 적는다. 0이어도 실패가 아니다(공백 스캔이 메운다).
 
-- [ ] **Step 6: TestFlight 0.10.0**
+- [ ] **Step 6: TestFlight 0.11.0 (D12 — 0.10.0 단독 빌드 없음)**
 
-Run: `vm_stat | grep -E 'free|compressor'; pgrep -x deno || echo none; cd ios && ./scripts/testflight.sh`
-Expected: `none` 뒤 0.10.0(빌드 번호 `YYYYMMDDHHMM`) 업로드 성공, App Store Connect 처리 VALID. `MARKETING_VERSION`이 U8에서 정한 값인지 업로드 로그로 확인한다.
+먼저 `docs/superpowers/phase1/gates.md`에 링크 계획 `LNK-sim` 통과 행이 있는지 본다(0.11.0은 링크·사진 기능을 포함한다). 없으면 올리지 않고 메인에게 알린다.
+
+Run: `vm_stat | grep -E 'free|compressor'; pgrep -x deno || echo none; grep -n 'MARKETING_VERSION' ios/project.yml; cd ios && ./scripts/sim.sh gen && ./scripts/testflight.sh`
+Expected: `none`, `MARKETING_VERSION: 0.11.0` 뒤 0.11.0(빌드 번호 `YYYYMMDDHHMM`) 업로드 성공, App Store Connect 처리 VALID. 0.11.0이 아니면(그 사이 0.11.x·0.12.0이 들어갔으면) 올리지 않고 메인에게 알린다. 이 빌드를 U10과 링크 계획 L9가 쓴다.
 
 - [ ] **Step 7: 기록·커밋**
 
 `docs/superpowers/phase1/gates.md`의 `UNS-server` 행 상태를 **통과**로 바꾸고 비고 끝에 붙인다:
 
 ```
-U6b <KST>(worker v<n>), HEAD <sha>. smoke-gate <JSON 한 줄>. gmail-gate status dead 0. 0029 적용 <KST>(cron unsub-gap-scan-daily). 스캔 since <ISO> jobs <집계>(dead 0). 429 <JSON 한 줄>(기록만). unsub-stats senders_with_ads_30d <n>(≤100)·ads_30d <n>·방법 <JSON>(주소 없음) → 원클릭 <a>곳 ≥1 진행(unsub_list 기준과 동치, 요청 0건). F2 관찰 gmail_discard promotion <n>줄. 전체 deno <n> 통과·0 실패·<n> ignored. TestFlight 0.10.0 (<빌드>) VALID
+U6b <KST>(worker v<n>), HEAD <sha>. smoke-gate <JSON 한 줄>. gmail-gate status dead 0. 0029 적용 <KST>(cron unsub-gap-scan-daily). 스캔 since <ISO> jobs <집계>(dead 0). 429 <JSON 한 줄>(기록만). unsub-stats senders_with_ads_30d <n>(≤100)·ads_30d <n>·방법 <JSON>(주소 없음) → 원클릭 <a>곳 ≥1 진행(unsub_list 기준과 동치, 요청 0건). F2 관찰 gmail_discard promotion <n>줄. 전체 deno <n> 통과·0 실패·<n> ignored. TestFlight 0.11.0 (<빌드>) VALID(D12 — U10·LNK-device 같은 빌드)
 ```
 
 스펙 §7 "광고 구독 해지"의 m1 문구(일일 공백 스캔은 라벨·제목에 광고 표기가 있는 메일만 메운다 — 본문·발신자 이름에만 `(광고)`가 있는 규칙 광고는 잡 로컬 차단기로 빠지면 메우지 못한다)는 2026-10-02 최종 리뷰 수정에서 이미 고쳤다. 확인만 하고, U6b에서 바뀐 사실(예: 429로 스캔 간격 조정)이 있을 때만 스펙을 함께 고친다.
 
 ```bash
 git add docs/superpowers/phase1/gates.md
-git commit -m "docs(gates): UNS-server pass — worker deployed after ③c2, smoke-gate and Gmail fetch regressions clean, 30-day unsubscribe scan done with no dead jobs, one-click senders present (method mix without addresses), TestFlight 0.10.0
+git commit -m "docs(gates): UNS-server pass — worker deployed after ③c2, smoke-gate and Gmail fetch regressions clean, 30-day unsubscribe scan done with no dead jobs, one-click senders present (method mix without addresses), TestFlight 0.11.0 (one build with link reading, no separate 0.10.0)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -2836,7 +2839,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `docs/superpowers/phase1/gates.md` (행 `UNS-real`)
 
 **Interfaces:**
-- Consumes: U6b(워커 배포·30일 스캔 done·원클릭 발신자 ≥1·TestFlight 0.10.0 VALID), U5 `unsub-stats.ts`.
+- Consumes: U6b(워커 배포·30일 스캔 done·원클릭 발신자 ≥1·TestFlight 0.11.0 VALID — D12, 링크 계획 L9와 같은 빌드), U5 `unsub-stats.ts`.
 
 **사람이 필요한 이유(리뷰 N7):** 하드웨어 기능 때문이 아니라 **사용자 판단** 때문이다 — 실사용자 광고 메일로 만든 목록이 사용자가 아는 광고 발신자와 맞는지(거래 전용 발신자가 섞이지 않는지)는 사용자만 알고, 어느 발신자를 끊을지는 사용자가 고른다(자동 해지 금지 원칙). 화면 동작은 U9가 시뮬레이터로 닫았다. 시뮬레이터로 옮기려면 사용자가 시뮬레이터에 Apple 로그인을 해야 해서 조작이 오히려 늘어나므로 사용자 기기의 TestFlight 앱에서 **한 번의 요청(약 2분)**으로 묶는다. 실기기 고유 동작 게이트가 아니므로 이름을 `UNS-real`로 한다.
 
@@ -2857,7 +2860,7 @@ Expected: `senders_with_ads_30d ≥ 1`, 그리고 U6b Step 5와 같은 판정 �
 
 메인이 사용자에게 한 번에 묻는다(답은 예/아니오·개수·결과 문구만, 발신자 이름은 기록하지 않는다):
 
-"TestFlight 0.10.0을 설치하고 설정 → Gmail → 광고 메일 구독 해지를 열어 주세요. 목록 위에서 10곳(10곳보다 적으면 전부)을 보고 (a) 광고를 보내는 곳이 맞나요? (b) 주문·배송·결제 메일만 보내는 곳이 있나요(몇 곳)? 그다음 [해지] 버튼이 있는 곳 중 정말 끊고 싶은 한 곳을 골라 [해지] → 확인창 [해지 요청]을 누르고, 화면 위에 나온 결과 문구를 알려 주세요. 끊고 싶은 곳이 없으면 '없음'이라고 해 주세요."
+"TestFlight 0.11.0을 설치하고 설정 → Gmail → 광고 메일 구독 해지를 열어 주세요. 목록 위에서 10곳(10곳보다 적으면 전부)을 보고 (a) 광고를 보내는 곳이 맞나요? (b) 주문·배송·결제 메일만 보내는 곳이 있나요(몇 곳)? 그다음 [해지] 버튼이 있는 곳 중 정말 끊고 싶은 한 곳을 골라 [해지] → 확인창 [해지 요청]을 누르고, 화면 위에 나온 결과 문구를 알려 주세요. 끊고 싶은 곳이 없으면 '없음'이라고 해 주세요."
 
 D1 통과: (a) 예, (b) 0곳. (b)가 1곳 이상이면 그 행의 상태 문구와 광고 수만 받아(이름 없이) 실패로 적고, 원인(게이트 promo 오판인지 규칙 광고 표기인지)을 조사하는 태스크를 만든다.
 
@@ -2875,7 +2878,7 @@ D2 통과: `result_codes.ok ≥ 1`(사용자가 고른 발신자 1곳 이상 `re
 - [ ] **Step 4: 기록·커밋**
 
 ```
-| UNS-real | 0.10.0 사용자 확인(TestFlight): D1 목록 위 10곳이 실제 광고 발신자이고 거래 전용 발신자 0곳(사용자 확인) · D2 사용자가 고른 발신자 1곳 해지 요청 접수(2xx `ok`) | 통과 | <KST>. unsub-stats senders_with_ads_30d <n>·ads_30d <n>·방법 <JSON>(주소 없음). D1 (a) 예 (b) 0곳(본 곳 <n>). D2 result <code>. 관찰(+4일): <요청한 곳 광고 멈춤|계속 N통>. 원클릭 비율 <x>% | | <날짜> |
+| UNS-real | 0.10.0 기능 사용자 확인(TestFlight 0.11.0 빌드, D12): D1 목록 위 10곳이 실제 광고 발신자이고 거래 전용 발신자 0곳(사용자 확인) · D2 사용자가 고른 발신자 1곳 해지 요청 접수(2xx `ok`) | 통과 | <KST>. unsub-stats senders_with_ads_30d <n>·ads_30d <n>·방법 <JSON>(주소 없음). D1 (a) 예 (b) 0곳(본 곳 <n>). D2 result <code>. 관찰(+4일): <요청한 곳 광고 멈춤|계속 N통>. 원클릭 비율 <x>% | | <날짜> |
 ```
 
 ```bash
