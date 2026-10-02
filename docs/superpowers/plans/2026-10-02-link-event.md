@@ -60,7 +60,7 @@
 | D3 | 저장(LD3·MR1) | **기존 항목 규칙 그대로**: 큐 항목 본문 = 모델이 보는 발췌(머리 줄 + 일시·장소 줄 + 본문 + OCR, **최대 4,000자** — 서버 추출 입력 상한과 같음)를 서버가 사용자 키로 암호화해 3년 보관, 요약(영구)·청크(§8)도 같다. **짧은 페이지는 4,000자 안에 보이는 글 전체가 들어간다**(혼주 이름·전화번호 포함 — 계좌·카드 번호는 기기·서버 규칙이 마스킹) — 화면에 한 줄로 알린다(`LinkCaptureText.storageNote`). 페이지 전체·이미지·스냅샷·사진 파일은 어디에도 저장하지 않는다(기기 메모리에서만). 주소는 **호스트만** 본문 첫 줄 `[웹 링크] <호스트>`에 둔다(경로·쿼리·조각 없음). 기기 대기 행에는 전체 주소와 (규칙을 거친) 메모가 최대 7일 남는다(이어받기에 필요, 기기 밖으로 나가지 않음, 계정 삭제 때 `LocalWipe`가 큐 파일을 지운다) | 기존 §7·§12 규칙과 같아 서버 변경이 없고, "청첩장 장소 어디였지" 검색이 된다. 쿼리의 숫자(`?code=482913`)는 OTP 규칙(키워드 `code` + 숫자)에 걸려 **항목 전체가 폐기**되고(F9), 초대 토큰은 개인 식별자다. "발췌"라는 말만으로는 짧은 페이지의 전문 저장을 감출 수 있어(Codex 3) 문구로 명시한다 |
 | D4 | 이미지 전용 청첩장(링크) | **앱 OCR**: 앱이 읽은 글(제목·설명·본문)에 날짜 후보가 없거나 **글이 0자**면 웹뷰 화면을 최대 3화면 스냅샷(너비 390pt — 3배율 기기 1,170px) → Vision(ko-KR·en-US, accurate) → `이미지 속 글자:` 블록(1,500자). 글 0자 페이지도 `didFinish` 뒤 4초가 지나면 완료로 보고 OCR로 간다. 확장에서는 OCR하지 않고(메모리 한도 미확인, U3) 앱에 넘긴다. 서버 vision 경로는 쓰지 않는다 | 제품에는 서버 이미지 수집 경로가 없다(F2, 스펙 §15 2단계). 순수 이미지 페이지가 OCR 전에 `empty`로 끝나 지워지면 핵심 사례를 놓친다(Codex 1) |
 | D5 | 링크 판정 | 공유 본문·채팅 입력에 `http://`·`https://`로 적힌 주소가 **정확히 1개**이고, 주소를 뺀 나머지 글이 **200자 이하이며 날짜 후보가 없을 때만** 링크(나머지 글은 메모). 그 밖은 지금처럼 텍스트 공유(공유)·질문(채팅). 주소가 **2개 이상**이면 공유는 텍스트, 채팅은 "링크는 한 번에 하나씩 보내 주세요". 스킴 없는 도메인("naver.com")은 링크가 아니다. 주소 바로 뒤에 붙은 비 ASCII 글자("…/1이에요")는 주소에서 뗀다(한글 경로 주소는 링크로 보지 않는 대가). 클립보드를 앱이 읽지 않는다 | 주소 1개가 든 긴 공지·일정 문자를 링크로 바꾸면 본문이 200자 메모로 잘리고 페이지 실패 시 통째로 사라진다(Fable F1 — 기존 기능 회귀). 서버 chat은 URL을 읽지 못하므로 짧은 "청첩장 https://…"는 수집이 맞다. 프로그램으로 붙여넣기를 읽으면 iOS 16+가 허용 창을 띄운다(F14) |
-| D6 | 렌더링 대기 | `didFinish`(오지 않으면 4초) 뒤 `innerText` 길이를 0.5초마다 재서 **3번 같으면 완료**. 글 0자는 `didFinish`가 왔고 4초가 지났을 때만 완료(SPA가 그릴 시간). 예산(확장 10초·앱 15초)이 끝나면 그때까지 읽은 글로 진행(`timedOut`) — 0자여도 추출(OG 메타)·OCR로 간다. 커밋도 못 했으면 `timeout` | WebKit에 network idle API가 없고 `didFinish`는 XHR·fetch 완료를 뜻하지 않는다(F15) |
+| D6 | 렌더링 대기 | `didFinish`(오지 않으면 로드 시작 4초) 뒤 `innerText` 길이를 0.5초마다 재서 **3번 같으면 완료** — `didFinish` 전 샘플은 세지 않는다(고정 "로딩 중…" 글에서 끝내지 않게). 글 0자는 **`didFinish` 뒤** 4초가 지났을 때만 완료(SPA가 그릴 시간, 늦은 `didFinish`도 그 뒤 4초 — 스펙 §6 "대기", L0L1 리뷰 I2). 예산(확장 10초·앱 15초)이 끝나면 그때까지 읽은 글로 진행(`timedOut`) — 0자여도 추출(OG 메타)·OCR로 간다. 커밋도 못 했으면 `timeout` | WebKit에 network idle API가 없고 `didFinish`는 XHR·fetch 완료를 뜻하지 않는다(F15) |
 | D7 | 웹뷰 설정 | 비영속 저장소(쿠키·로그인 없음), 미디어 자동 재생 금지, 새 창·앱 스킴 이동 차단(읽기는 계속), 메인 프레임 이동 6회(리다이렉트 5회) 초과·`NSURLErrorHTTPTooManyRedirects`는 `redirects`, 다운로드 취소, HTTP 4xx·5xx·표시 불가 MIME 실패. 주소 검사(메인·**하위 프레임** 모두): http(s)만, 사설·루프백·링크로컬·CGNAT IP 리터럴·`.local`·점 없는 호스트 거부. **하위 리소스(img·fetch·XHR·iframe)는 `WKContentRuleList`로 사설 IP 리터럴·`localhost`·`.local` 요청을 막는다**(DEBUG 빌드만 루프백 허용 — 시뮬레이터 게이트). 공개 이름이 사설 주소로 풀리는 경우는 막지 않는다. **`http://`는 `https://`로 올려 연다**(앱·확장에 ATS 예외가 없어 공개 http 로드는 막힌다 — F24). 올린 https가 TLS·연결 거부로 실패하면 `insecure`("보안 연결(https)이 안 되는 페이지예요"). ATS 예외는 넣지 않는다. 웹뷰는 실제 화면 크기(390×844pt)로 **창 안, 다른 화면 밑**에 붙인다 | 로컬 네트워크 권한 창·내부 기기 접근을 피한다(서버 SSRF가 아니라 기기 위생). 위임 메서드는 하위 리소스를 거치지 않아(Codex 6) 콘텐츠 규칙이 필요하다. 평문 로드를 열 이유가 약하다(Fable F3) |
 | D8 | 결과를 사용자에게 | 확장: 시트 안 문구(읽는 중 → 결과 + 저장 범위 한 줄, 1.5초 뒤 닫힘 또는 [닫기] — **[닫기]는 결과를 기다리지 않고 즉시 닫는다**). 채팅: 링크 턴 문구 → 직접 업로드 → 처리 결과 폴링(3초 간격, 60초). 앱 이어받기 **확정 실패·3회 실패**만 로컬 알림 1건(주소·제목 없이, foreground 배너 — F25). 확장에서 링크가 확정 실패하면 **원래 공유 글을 지금처럼 텍스트 항목으로 넣는다**(주소만 공유했으면 주소 문자열 항목 — 0.10.0과 같다) | 확장·채팅은 사용자가 보고 있다. 이어받기는 사용자가 다른 화면에 있을 수 있다. 확정 실패로 공유 자체가 사라지면 안 된다(Fable F1) |
 | D9 | 일정 위치 | 제안 payload `location`(추출 결과, F11) → EventKit `location`(문자열). 경로: 제안 탭 행·배너 탭 시트(목록 값)·채팅 카드. **잠금화면 "캘린더에 추가"는 푸시에 location이 없어 장소 없이** 저장한다(서버 notify 변경은 이 계획 범위 밖 — 0.11.0은 서버 무변경) | §15 후보 "장소는 주소 그대로 일정 위치에". 지금은 모든 경로가 위치 없이 저장한다(F10) |
@@ -514,6 +514,13 @@ final class LinkTextTests: XCTestCase {
                    .link(URL(string: "https://a.example.com/1")!, note: "다시"))               // 같은 주소 두 번은 하나
     // 주소에 한글이 붙어 있다 — 첫 비 ASCII 글자에서 주소가 끝난다(NSDataDetector 경계를 고정)
     XCTAssertEqual(LinkText.chatIntent("https://a.example.com/1이에요"), .link(URL(string: "https://a.example.com/1")!, note: "이에요"))
+    // 끝 ?·: 는 주소가 아니다(리뷰 Minor 3), 영숫자·한글 없는 메모는 없음(Minor 4)
+    let one = URL(string: "https://a.example.com/1")!
+    XCTAssertEqual(LinkText.chatIntent("https://a.example.com/1?"), .link(one, note: nil))
+    XCTAssertEqual(LinkText.chatIntent("https://a.example.com/1:"), .link(one, note: nil))
+    XCTAssertEqual(LinkText.chatIntent("여기 https://a.example.com/1?"), .link(one, note: "여기 ?"))
+    XCTAssertEqual(LinkText.chatIntent("(https://a.example.com/1)"), .link(one, note: nil))
+    XCTAssertEqual(LinkText.chatIntent("\"https://a.example.com/1\"."), .link(one, note: nil))
   }
 
   /// 공유(스펙 §6): ShareText.compose 결과에 주소가 정확히 하나 + 짧은 메모일 때만 링크. 나머지는 지금처럼 텍스트 공유
@@ -552,6 +559,13 @@ final class LinkTextTests: XCTestCase {
               "http://intranet/", "http://svc.internal/", "http://[::1]/", "http://[fe80::1]/", "http://[fd00::1]/", "http://[2001:db8::1]/"] {
       XCTAssertEqual(c(h), .host, h)
     }
+    // WebKit(WHATWG)이 IPv4 로 정규화하는 변형(리뷰 Minor 2): 끝 점·축약·16진·8진(앞 0) — 엄격한 10진 4부가 아니면 막는다
+    for h in ["http://127.0.0.1./", "http://192.168.0.1./", "http://127.1/", "http://0x7f.0.0.1/", "http://0177.0.0.1/",
+              "http://012.0.0.1/", "http://2130706433/", "http://[2002:c0a8:1::1]/"] {
+      XCTAssertEqual(c(h), .host, h)
+    }
+    XCTAssertNil(c("http://93.184.216.34./"))
+    XCTAssertNil(c("https://a1.example.com/"))
     XCTAssertNil(c("http://127.0.0.1:8765/link-wedding.html", loop: true))
     XCTAssertNil(c("http://localhost:8765/link-wedding.html", loop: true))
     XCTAssertEqual(c("http://10.0.0.1/", loop: true), .host)                                   // 루프백만 풀린다
@@ -576,6 +590,8 @@ final class LinkTextTests: XCTestCase {
     XCTAssertNotEqual(a, c)
     XCTAssertNotNil(UUID(uuidString: a))
     XCTAssertEqual(a, LinkText.captureID(for: URL(string: "https://invite.example.com/m/abc?code=1")!))   // 실행마다 같다
+    XCTAssertEqual(LinkText.captureID(for: URL(string: "https://a.example.com")!),
+                   LinkText.captureID(for: URL(string: "https://a.example.com/")!))            // 빈 경로 = "/"(리뷰 Minor 3)
   }
 
   func testDateCandidates() {
@@ -583,9 +599,22 @@ final class LinkTextTests: XCTestCase {
               "Nov 14, 2026", "December 5"] {
       XCTAssertTrue(LinkText.hasDateCandidate(s), s)
     }
-    for s in ["오후 1시 30분", "합성웨딩홀 3층", "010-1234-5678", "터치하면 음악이 재생됩니다", "축의금 50,000원"] {
+    for s in ["오후 1시 30분", "합성웨딩홀 3층", "010-1234-5678", "터치하면 음악이 재생됩니다", "축의금 50,000원",
+              "market 5", "decent 3", "Junior 2", "Marathon 10"] {
       XCTAssertFalse(LinkText.hasDateCandidate(s), s)
     }
+    for s in ["11 . 14 . ( 토", "11.14.\n(토)", "Sept 5", "March 3", "Dec. 24"] { XCTAssertTrue(LinkText.hasDateCandidate(s), s) }
+  }
+
+  /// 날짜 후보는 정리 전 원문(숨은 글 200,000자까지)에 돈다 — "1.1" + 공백 5만 자가 2차 백트래킹으로 수십 초 걸리지 않는다(리뷰 I1).
+  /// 고치기 전 실측 4만 자 27초. 상한은 스왑 포화를 감안한 5초(계획 "기계")
+  func testDateCandidateWhitespaceFloodIsFast() {
+    let flood = "1.1" + String(repeating: " \n", count: 25_000)
+    let t0 = Date()
+    XCTAssertFalse(LinkText.hasDateCandidate(flood))
+    let p = LinkPage(host: "x.example.com", visibleText: "합성", allText: flood)
+    _ = p.body; _ = p.isEmpty
+    XCTAssertLessThan(Date().timeIntervalSince(t0), 5)
   }
 
   /// "터치해서 열기" 덮개(스펙 §6): 보이는 글에 날짜가 없고 숨은 글에 있으면 숨은 글
@@ -683,13 +712,25 @@ final class LinkTextTests: XCTestCase {
     var g = LinkSettle(budget: 10)
     for t in [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5] { XCTAssertEqual(g.observe(length: 80, finished: false, elapsed: t), .wait) }
     XCTAssertEqual(g.observe(length: 80, finished: false, elapsed: 4.0), .done)
+    // didFinish 전 샘플은 "3번 같음"에 들지 않는다(스펙 §6 "didFinish 뒤 … 3번") — HTML 의 고정 "로딩 중…" 글에서 바로 끝내지 않는다
+    var h = LinkSettle(budget: 10)
+    XCTAssertEqual(h.observe(length: 120, finished: false, elapsed: 0.5), .wait)
+    XCTAssertEqual(h.observe(length: 120, finished: false, elapsed: 1.0), .wait)
+    XCTAssertEqual(h.observe(length: 120, finished: true, elapsed: 1.5), .wait)
+    XCTAssertEqual(h.observe(length: 120, finished: true, elapsed: 2.0), .wait)
+    XCTAssertEqual(h.observe(length: 120, finished: true, elapsed: 2.5), .done)
   }
 
-  /// 글 0자(Codex 1 — 순수 이미지 페이지): didFinish 가 왔고 4초가 지나야 완료(SPA 가 그릴 시간). didFinish 전 0자는 계속 기다린다
+  /// 글 0자(Codex 1 — 순수 이미지 페이지): didFinish **뒤** 4초가 지나야 완료(스펙 §6 "대기" — SPA 가 그릴 시간). didFinish 전 0자는 계속 기다린다
   func testSettleEmptyPage() {
     var e = LinkSettle(budget: 10)
-    for t in [1.0, 1.5, 2.0, 2.5, 3.0, 3.5] { XCTAssertEqual(e.observe(length: 0, finished: true, elapsed: t), .wait) }
-    XCTAssertEqual(e.observe(length: 0, finished: true, elapsed: 4.0), .done)
+    for t in stride(from: 1.0, through: 4.5, by: 0.5) { XCTAssertEqual(e.observe(length: 0, finished: true, elapsed: t), .wait, "\(t)") }
+    XCTAssertEqual(e.observe(length: 0, finished: true, elapsed: 5.0), .done)
+    // 늦은 didFinish(느린 망, 5초): 로드 시작 기준이 아니라 didFinish 기준 4초 — 9초에 완료
+    var l = LinkSettle(budget: 10)
+    for t in stride(from: 0.5, through: 4.5, by: 0.5) { XCTAssertEqual(l.observe(length: 0, finished: false, elapsed: t), .wait, "\(t)") }
+    for t in stride(from: 5.0, through: 8.5, by: 0.5) { XCTAssertEqual(l.observe(length: 0, finished: true, elapsed: t), .wait, "\(t)") }
+    XCTAssertEqual(l.observe(length: 0, finished: true, elapsed: 9.0), .done)
     var n = LinkSettle(budget: 10)
     for t in stride(from: 0.5, through: 9.5, by: 0.5) { XCTAssertEqual(n.observe(length: 0, finished: false, elapsed: t), .wait) }
     XCTAssertEqual(n.observe(length: 0, finished: false, elapsed: 10), .deadline)
@@ -779,7 +820,8 @@ public enum LinkText {
   private static let detector = try! NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 
   /// 글 안에서 `http://`·`https://` 로 적힌 주소(호스트 있음)의 모든 자리. 스킴 없는 도메인("naver.com")은 링크가 아니다.
-  /// 주소 바로 뒤에 붙은 비 ASCII 글자("…/1이에요")는 주소가 아니다 — 첫 비 ASCII·공백 글자에서 자른다(한글 경로 주소는 링크로 보지 않는 대가)
+  /// 주소 바로 뒤에 붙은 비 ASCII 글자("…/1이에요")는 주소가 아니다 — 첫 비 ASCII·공백 글자에서 자른다(한글 경로 주소는 링크로 보지 않는 대가).
+  /// 끝의 `?`·`:` 도 문장 부호로 본다("…/1?" 가 다른 캡처 id·다른 경로가 되지 않게)
   static func matches(_ text: String) -> [(url: URL, range: NSRange)] {
     let ns = text as NSString
     return detector.matches(in: text, range: NSRange(location: 0, length: ns.length)).compactMap { (m: NSTextCheckingResult) -> (url: URL, range: NSRange)? in
@@ -788,6 +830,7 @@ public enum LinkText {
         guard u.isASCII, !u.properties.isWhitespace else { break }
         scalars.append(u)
       }
+      while let l = scalars.last, l == "?" || l == ":" { scalars.removeLast() }
       let s = String(scalars)
       guard s.lowercased().hasPrefix("http"), let u = URL(string: s), let scheme = u.scheme?.lowercased(),
             scheme == "http" || scheme == "https", u.host() != nil else { return nil }
@@ -827,7 +870,9 @@ public enum LinkText {
     case 1:
       let r = rest(text, removing: matches(text).map { $0.range })
       if r.count > noteMaxChars || hasDateCandidate(r) { return .text }
-      return .link(urls[0], note: r.isEmpty ? nil : r)
+      // 주소를 둘렀던 괄호·따옴표·마침표만 남은 메모("( )")는 없음
+      let hasWord = r.unicodeScalars.contains { CharacterSet.alphanumerics.contains($0) }
+      return .link(urls[0], note: hasWord ? r : nil)
     default: return .tooMany(urls.count)
     }
   }
@@ -860,9 +905,12 @@ public enum LinkText {
     guard var h = url.host(percentEncoded: false)?.lowercased(), !h.isEmpty else { return .host }
     if h.hasPrefix("["), h.hasSuffix("]") { h = String(h.dropFirst().dropLast()) }
     if h == "localhost" || h == "127.0.0.1" || h == "::1" { return allowLoopback ? nil : .host }
-    if let v4 = ipv4(h) { return publicV4(v4) ? nil : .host }
     if h.contains(":") { return publicV6(h) ? nil : .host }
     let bare = h.hasSuffix(".") ? String(h.dropLast()) : h
+    if let v4 = ipv4(bare) { return publicV4(v4) ? nil : .host }
+    // 마지막 라벨이 숫자·0x… 면 WebKit(WHATWG "ends in a number")이 IPv4 로 읽는다("127.1"·"0x7f.0.0.1"·"0177.0.0.1"·"2130706433").
+    // 엄격한 10진 4부(위)가 아니면 어느 주소로 풀릴지 따지지 않고 막는다
+    if let last = bare.split(separator: ".").last, last.hasPrefix("0x") || last.allSatisfy({ $0.isASCII && $0.isNumber }) { return .host }
     if !bare.contains(".") { return .host }                                       // 점 없는 이름(사내 호스트)
     for suffix in [".local", ".localhost", ".internal", ".home.arpa"] where bare.hasSuffix(suffix) { return .host }
     return nil
@@ -882,21 +930,29 @@ public enum LinkText {
   /// 같은 링크 = 같은 캡처 id(스펙 §6 "같은 링크", D14): 조각(#…)을 떼고 스킴을 https·호스트를 소문자로 맞춘 주소의 SHA-256 앞 16바이트를
   /// UUID 모양(이름 기반 v5 비트)으로. 큐(INSERT OR IGNORE)·서버 멱등 키(SHARE:<id>)·기기 읽은 링크 기록이 이 값을 쓴다 — 주소 자체는 남기지 않는다
   public static func captureID(for url: URL) -> String {
-    var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
-    c?.fragment = nil
-    if c?.scheme?.lowercased() == "http" { c?.scheme = "https" } else { c?.scheme = c?.scheme?.lowercased() }
-    if c?.port == 80 || c?.port == 443 { c?.port = nil }
-    c?.percentEncodedHost = c?.percentEncodedHost?.lowercased()                   // IPv6 괄호를 그대로 둔다
-    let key = c?.string ?? url.absoluteString
+    var key = url.absoluteString
+    if var c = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+      c.fragment = nil
+      let scheme = c.scheme?.lowercased()
+      c.scheme = scheme == "http" ? "https" : scheme
+      if c.port == 80 || c.port == 443 { c.port = nil }
+      let host = c.percentEncodedHost?.lowercased()
+      c.percentEncodedHost = host                                                  // IPv6 괄호를 그대로 둔다
+      if c.percentEncodedPath.isEmpty { c.percentEncodedPath = "/" }               // "https://a.example.com" = "…/"
+      key = c.string ?? key
+    }
     var b = Array(SHA256.hash(data: Data(("link:" + key).utf8)).prefix(16))
     b[6] = (b[6] & 0x0F) | 0x50
     b[8] = (b[8] & 0x3F) | 0x80
     return UUID(uuid: (b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15])).uuidString
   }
 
+  /// 엄격한 10진 4부 IPv4. 앞 0("012")은 WebKit 이 8진으로 읽으므로 아니다(check 가 막는다)
   static func ipv4(_ h: String) -> [Int]? {
     let p = h.split(separator: ".", omittingEmptySubsequences: false)
-    guard p.count == 4, p.allSatisfy({ part in !part.isEmpty && part.count <= 3 && part.allSatisfy { $0.isASCII && $0.isNumber } }) else { return nil }
+    guard p.count == 4, p.allSatisfy({ part in
+      !part.isEmpty && part.count <= 3 && !(part.count > 1 && part.first == "0") && part.allSatisfy { $0.isASCII && $0.isNumber }
+    }) else { return nil }
     let n = p.compactMap { Int($0) }
     return n.allSatisfy { (0...255).contains($0) } ? n : nil
   }
@@ -914,10 +970,10 @@ public enum LinkText {
     }
   }
 
-  /// IPv6 리터럴: 전역 유니캐스트(2000::/3)이고 문서용(2001:db8::/32)이 아닐 때만
+  /// IPv6 리터럴: 전역 유니캐스트(2000::/3)이고 문서용(2001:db8::/32)·6to4(2002::/16 — 사설 IPv4 를 품을 수 있다)가 아닐 때만
   static func publicV6(_ h: String) -> Bool {
     guard let f = h.first, f == "2" || f == "3" else { return false }
-    return !h.hasPrefix("2001:db8")
+    return !h.hasPrefix("2001:db8") && !h.hasPrefix("2002:")
   }
 
   // MARK: 날짜 후보·일시 장소 줄
@@ -925,9 +981,9 @@ public enum LinkText {
   private static let datePatterns: [NSRegularExpression] = [
     #"\d{1,2}\s*월\s*\d{1,2}\s*일"#,
     #"(?:19|20)\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]\s*\d{1,2}"#,
-    #"(?<![\d.])\d{1,2}\s*[./]\s*\d{1,2}\s*\.?\s*\(\s*[월화수목금토일]"#,
+    #"(?<![\d.])\d{1,2}\s{0,3}[./]\s{0,3}\d{1,2}\s{0,3}\.?\s{0,3}\(\s{0,3}[월화수목금토일]"#,   // \s* 는 "1.1" + 긴 공백에서 2차 백트래킹(리뷰 I1)
     #"(?<![\d/.,])\d{1,2}/\d{1,2}(?![\d/])"#,
-    #"(?i)\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?!\d)"#,
+    #"(?i)\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?\s+\d{1,2}(?!\d)"#,
   ].map { try! NSRegularExpression(pattern: $0) }
   private static let timePattern = try! NSRegularExpression(pattern: #"(?:오전|오후|낮|저녁|밤)\s*\d{1,2}\s*시|(?<!\d)\d{1,2}:\d{2}(?!\d)|(?i)\b(?:am|pm)\s*\d{1,2}"#)
   private static let placeWords = try! NSRegularExpression(pattern: #"일시|장소|예식|식장|웨딩|홀|층|오시는\s*길|주소|위치|시작|입장|개최|행사|시간"#)
@@ -936,8 +992,12 @@ public enum LinkText {
     r.firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length)) != nil
   }
 
-  /// 날짜 후보(스펙 §6 "이미지 전용 페이지"·"입력"): "11월 14일"·"2026.11.14"·"2026-11-14"·"11/14"·"11. 14.(토)"·영문 월 + 일. 시각만은 아니다
-  public static func hasDateCandidate(_ s: String) -> Bool { datePatterns.contains { found($0, s) } }
+  /// 날짜 후보(스펙 §6 "이미지 전용 페이지"·"입력"): "11월 14일"·"2026.11.14"·"2026-11-14"·"11/14"·"11. 14.(토)"·영문 월 + 일. 시각만은 아니다.
+  /// 정리 전 원문(숨은 글 200,000자까지)에도 돌므로 공백을 먼저 접는다 — 패턴의 \s 는 줄바꿈도 받으므로 판정은 같다(리뷰 I1)
+  public static func hasDateCandidate(_ s: String) -> Bool {
+    let t = oneLine(s)
+    return datePatterns.contains { found($0, t) }
+  }
 
   /// 본문에서 앞으로 끌어올릴 줄: 날짜·시각·장소 단어
   static func isKeyLine(_ l: String) -> Bool { hasDateCandidate(l) || found(timePattern, l) || found(placeWords, l) }
@@ -1055,20 +1115,28 @@ public struct LinkPage: Equatable, Sendable {
 public struct LinkSettle: Sendable {
   public static let pollInterval: Duration = .milliseconds(500)
   public static let stableSamples = 3
-  /// didFinish 가 오지 않아도(긴 폴링·끝없는 하위 리소스) 이 시간 뒤에는 길이만 보고 끝낸다. 글 0자는 didFinish + 이 시간이 지나야 끝낸다
+  /// didFinish 가 오지 않아도(긴 폴링·끝없는 하위 리소스) 로드 시작 뒤 이 시간이 지나면 길이만 보고 끝낸다. 글 0자는 **didFinish 뒤** 이 시간이 지나야 끝낸다
   public static let finishGrace: TimeInterval = 4
   public enum Decision: Equatable, Sendable { case wait, done, deadline }
   public let budget: TimeInterval
   private var last = -1, same = 0
+  /// didFinish 를 처음 본 elapsed(스펙 §6 "대기"의 기준 시각 — 로드 시작이 아니다)
+  private var finishedAt: TimeInterval?
   public init(budget: TimeInterval) { self.budget = budget }
 
   public mutating func observe(length: Int, finished: Bool, elapsed: TimeInterval) -> Decision {
     if elapsed >= budget { return .deadline }
+    // didFinish 전 샘플은 "3번 같음"에 넣지 않는다 — HTML 의 고정 "로딩 중…" 글만 읽고 끝내지 않게(리뷰 I2)
+    if finished, finishedAt == nil { finishedAt = elapsed; last = -1 }
     if length == last { same += 1 } else { last = length; same = 1 }
     guard same >= Self.stableSamples else { return .wait }
-    // 글 0자(순수 이미지 페이지, Codex 1): 페이지가 섰고(didFinish) SPA 가 그릴 시간(4초)이 지났을 때만 완료 — 렌더러가 OCR 로 간다
-    if length == 0 { return finished && elapsed >= Self.finishGrace ? .done : .wait }
-    return finished || elapsed >= Self.finishGrace ? .done : .wait
+    // 글 0자(순수 이미지 페이지, Codex 1): didFinish 뒤 SPA 가 그릴 시간(4초)이 지났을 때만 완료 — 렌더러가 OCR 로 간다.
+    // 느린 망에서 didFinish 가 늦게 와도 그 뒤 4초를 준다
+    if length == 0 {
+      guard let f = finishedAt else { return .wait }
+      return elapsed - f >= Self.finishGrace ? .done : .wait
+    }
+    return finishedAt != nil || elapsed >= Self.finishGrace ? .done : .wait
   }
 }
 ```
@@ -1112,7 +1180,7 @@ public enum ImageText {
 - [ ] **Step 5: 통과 확인**
 
 Run: `cd ios && ./scripts/sim.sh test EruriCoreTests/LinkTextTests && ./scripts/sim.sh test EruriCoreTests/ImageTextTests`
-Expected: `LinkTextTests` 17개·`ImageTextTests` 3개 통과. `testDateCandidates`의 음성 사례가 실패하면 정규식을 고치고(사례를 빼지 않는다), `testCheck`의 IPv6 사례에서 `URL.host(percentEncoded:)`가 괄호를 남기는지에 따라 `check`의 괄호 제거가 동작하는지 본다. `testChatIntent`의 한글 붙은 주소 사례가 실패하면 `NSDataDetector`가 그 입력에서 주소를 아예 못 찾는 것인지(`matches`가 빈 배열) 확인해 보고한다(사례를 빼지 않는다).
+Expected: `LinkTextTests` 18개·`ImageTextTests` 3개 통과. `testDateCandidates`의 음성 사례가 실패하면 정규식을 고치고(사례를 빼지 않는다), `testCheck`의 IPv6 사례에서 `URL.host(percentEncoded:)`가 괄호를 남기는지에 따라 `check`의 괄호 제거가 동작하는지 본다. `testChatIntent`의 한글 붙은 주소 사례가 실패하면 `NSDataDetector`가 그 입력에서 주소를 아예 못 찾는 것인지(`matches`가 빈 배열) 확인해 보고한다(사례를 빼지 않는다).
 
 - [ ] **Step 6: 회귀**
 
