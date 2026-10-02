@@ -54,7 +54,7 @@ final class UnsubscribeTests: XCTestCase {
 
   func testLabelsAndButtons() {
     XCTAssertEqual([Unsubscribe.State.available, .requesting, .requested("10/9"), .stillComing(2), .failed("http_500"), .unsupported("해지 링크가 없어요")].map(\.label),
-                   ["원클릭 해지 지원", "요청 중…", "해지 요청함 · 10/9", "해지 요청 뒤에도 광고 2통", "요청 실패 (http_500)", "해지 링크가 없어요"])
+                   ["원클릭 해지 지원", "요청 중…", "해지 요청함 · 10/9", "해지 요청 뒤에도 광고 2통", "응답이 없어요. 잠시 뒤 다시 시도해 주세요", "해지 링크가 없어요"])
     XCTAssertEqual([Unsubscribe.State.available, .requesting, .requested("10/9"), .stillComing(2), .failed("x"), .unsupported("y")].map(\.buttonTitle),
                    ["해지", nil, nil, "다시 요청", "다시 시도", nil])
     XCTAssertEqual([Unsubscribe.State.stillComing(1), .failed("x"), .available].map(\.isWarning), [true, true, false])
@@ -63,15 +63,39 @@ final class UnsubscribeTests: XCTestCase {
   func testMessages() {
     func m(_ s: Int?, _ body: String?) -> String { Unsubscribe.message(status: s, data: body.map { Data($0.utf8) }) }
     XCTAssertEqual(m(200, #"{"result":"requested","code":"ok"}"#), "해지 요청을 보냈어요. 발신자가 처리하는 데 며칠 걸릴 수 있어요")
-    XCTAssertEqual(m(200, #"{"result":"failed","code":"timeout"}"#), "해지 요청 실패 (timeout)")
-    XCTAssertEqual(m(200, #"{"result":"failed","code":"redirect_302"}"#), "해지 요청 실패 (redirect_302)")
+    XCTAssertEqual(m(200, #"{"result":"failed","code":"timeout"}"#), "응답이 없어요. 잠시 뒤 다시 시도해 주세요")
+    XCTAssertEqual(m(200, #"{"result":"failed","code":"redirect_302"}"#), "발신자가 다른 주소로 넘겨 요청하지 못했어요")
+    XCTAssertEqual(m(200, #"{"result":"failed","code":"blocked_private"}"#), "해지 페이지가 안전하지 않아 요청하지 않았어요")
+    XCTAssertEqual(m(200, #"{"result":"failed","code":"no_url"}"#), "해지 정보를 찾지 못했어요")
+    XCTAssertEqual(m(200, #"{"result":"failed"}"#), "응답이 없어요. 잠시 뒤 다시 시도해 주세요")          // code 없음 = error
     XCTAssertEqual(m(200, #"{"result":"unsupported"}"#), "이 발신자는 앱에서 해지할 수 없어요")
     XCTAssertEqual(m(200, #"{"result":"already"}"#), "이미 해지 요청을 보냈어요")
     XCTAssertEqual(m(200, #"{"result":"busy"}"#), "요청 중이에요. 잠시 뒤 새로고침해 주세요")
     XCTAssertEqual(m(200, #"{"result":"limit"}"#), "이 발신자에게는 더 요청할 수 없어요 (5회)")
     XCTAssertEqual(m(200, #"{"result":"not_found"}"#), "목록이 바뀌었어요. 새로고침해 주세요")
-    XCTAssertEqual(m(401, ""), "요청 실패: http_401")
-    XCTAssertEqual(m(nil, nil), "요청 실패: network")
+    XCTAssertEqual(m(401, ""), "응답이 없어요. 잠시 뒤 다시 시도해 주세요")
+    XCTAssertEqual(m(nil, nil), "응답이 없어요. 잠시 뒤 다시 시도해 주세요")
+    XCTAssertEqual(m(200, #"{"result":"weird"}"#), "응답이 없어요. 잠시 뒤 다시 시도해 주세요")
+  }
+
+  // U7 리뷰 Minor 2: 실패 코드 원문(blocked_private·redirect_302·http_500 …)은 화면에 보이지 않는다
+  func testFailureText() {
+    let unsafe = "해지 페이지가 안전하지 않아 요청하지 않았어요", moved = "발신자가 다른 주소로 넘겨 요청하지 못했어요"
+    let noInfo = "해지 정보를 찾지 못했어요", noAnswer = "응답이 없어요. 잠시 뒤 다시 시도해 주세요"
+    let cases: [(String, String)] = [
+      ("blocked_private", unsafe), ("blocked_scheme", unsafe), ("blocked_host", unsafe),
+      ("redirect_302", moved), ("redirect_307", moved),
+      ("no_url", noInfo), ("unsupported", noInfo),
+      ("timeout", noAnswer), ("network", noAnswer), ("error", noAnswer), ("dns_error", noAnswer),
+      ("http_500", noAnswer), ("http_404", noAnswer), ("something_new", noAnswer),
+    ]
+    for (code, text) in cases {
+      XCTAssertEqual(Unsubscribe.failureText(code), text, code)
+      XCTAssertEqual(Unsubscribe.State.failed(code).label, text, code)
+    }
+    XCTAssertEqual(row(status: "failed", code: "blocked_private").state(now: now).label, unsafe)
+    XCTAssertEqual(row(status: "failed").state(now: now).label, noAnswer)                          // result_code null
+    XCTAssertEqual(row(status: "requesting", statusAt: "2026-10-09T23:58:00+00:00").state(now: now).label, noAnswer)   // 60초 넘은 요청 중
   }
 
   func testConfirmCopy() {

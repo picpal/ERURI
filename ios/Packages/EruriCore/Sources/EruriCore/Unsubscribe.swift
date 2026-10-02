@@ -35,7 +35,7 @@ public enum Unsubscribe {
       case .requesting: return "요청 중…"
       case .requested(let d): return "해지 요청함 · \(d)"
       case .stillComing(let n): return "해지 요청 뒤에도 광고 \(n)통"
-      case .failed(let c): return "요청 실패 (\(c))"
+      case .failed(let c): return Unsubscribe.failureText(c)
       case .unsupported(let r): return r
       }
     }
@@ -97,19 +97,30 @@ public enum Unsubscribe {
 
   /// Edge unsubscribe 응답 {result, code?} → 사용자 문구
   public static func message(status: Int?, data: Data?) -> String {
-    guard let status, let data else { return "요청 실패: network" }
+    guard let status, let data else { return failureText("network") }
     guard status == 200, let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let r = o["result"] as? String else {
-      return "요청 실패: http_\(status)"
+      return failureText("http_\(status)")
     }
     switch r {
     case "requested": return "해지 요청을 보냈어요. 발신자가 처리하는 데 며칠 걸릴 수 있어요"
-    case "failed": return "해지 요청 실패 (\(o["code"] as? String ?? "error"))"
+    case "failed": return failureText(o["code"] as? String ?? "error")
     case "unsupported": return "이 발신자는 앱에서 해지할 수 없어요"
     case "already": return "이미 해지 요청을 보냈어요"
     case "busy": return "요청 중이에요. 잠시 뒤 새로고침해 주세요"
     case "limit": return "이 발신자에게는 더 요청할 수 없어요 (5회)"
     case "not_found": return "목록이 바뀌었어요. 새로고침해 주세요"
-    default: return "요청 실패: \(r)"
+    default: return failureText(r)
+    }
+  }
+
+  /// 실패 코드(unsub_senders.result_code·Edge code·앱 network/http_<n>) → 사용자 문구. 코드 원문은 화면에 보이지 않는다(U7 리뷰 Minor 2).
+  /// 정확한 코드는 서버 기록(unsub_senders.result_code·unsub_stats)으로 본다
+  public static func failureText(_ code: String) -> String {
+    if code.hasPrefix("blocked_") { return "해지 페이지가 안전하지 않아 요청하지 않았어요" }   // blocked_scheme·host·private(safe-post)
+    if code.hasPrefix("redirect_") { return "발신자가 다른 주소로 넘겨 요청하지 못했어요" }     // 3xx 는 따라가지 않는다
+    switch code {
+    case "no_url", "unsupported": return "해지 정보를 찾지 못했어요"
+    default: return "응답이 없어요. 잠시 뒤 다시 시도해 주세요"                            // timeout·network·error·dns_error·http_<n>·모르는 코드
     }
   }
 

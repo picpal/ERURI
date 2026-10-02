@@ -116,7 +116,7 @@
 
 1. **같은 주소로 광고와 거래 메일을 보내는 발신자**(쇼핑몰이 같은 From으로 주문 확인·세일 안내). 사람은 "30일 광고 N통"에 주문 확인이 섞이지 않고, 해지가 주문 메일을 끊지 않길 기대한다 → 광고 판정 메일만 센다: 게이트를 통과한 거래 메일(`extracted`)은 `item_id`로 기록돼도 세지 않는다(U3 `unsub_list counts rule ads and gate-promo items only`). **해지 URL도 광고 판정 메일에서만 고른다** — 광고 A 뒤에 더 최근 거래 메일 B가 와도 요청은 A의 URL로 간다(U3 `H2: a newer non-ad mail never supplies the URL`). 확인창에 "거래 메일은 계속 올 수 있습니다(발신자 정책)"(U7 `testConfirmCopy`).
 2. **위조 발신자·악성 해지 URL**: From을 유명 쇼핑몰로 꾸미고 해지 URL을 내부 주소(`https://10.0.0.1/`, 사설로 풀리는 호스트명, 공인 → 307 → 사설)로 둔 메일, 또는 같은 도메인의 무효 서명을 하나 더 붙여 `h=`에 해지 헤더를 적은 메일. 사람은 그런 요청이 나가지 않길 기대한다 → DKIM 확인은 Gmail AR이 특정한 서명 하나로만(U1 `dkim: signature pinned by selector and b= prefix`), 실패면 `unverified`(버튼 없음, U7·U9 G8), 리다이렉트는 따라가지 않는다(U2 `every 3xx is one request`), 주소 검사(U2 `ipBlocked table`), 스모크에서 사설 IP 실제 차단(U5 `smoke-unsub` `blocked_private`). DNS 재바인딩은 수용 위험(D4).
-3. **버튼을 두 번 누르거나 요청 중 앱·Edge가 끊긴다**. 사람은 요청이 한 번만 가고, 결과를 모르면 다시 시도할 수 있길 기대한다 → 60초 안 재요청 `busy`, 60초 넘은 `requesting`은 다시 시작 가능, 앱은 60초 넘은 `requesting`을 "요청 실패 (timeout)" + [다시 시도]로 보인다(U3 `begin: busy within 60s, stale requesting restarts`, U7 `testStaleRequestingIsRetryable`).
+3. **버튼을 두 번 누르거나 요청 중 앱·Edge가 끊긴다**. 사람은 요청이 한 번만 가고, 결과를 모르면 다시 시도할 수 있길 기대한다 → 60초 안 재요청 `busy`, 60초 넘은 `requesting`은 다시 시작 가능, 앱은 60초 넘은 `requesting`을 `failed("timeout")`("응답이 없어요. 잠시 뒤 다시 시도해 주세요") + [다시 시도]로 보인다(U3 `begin: busy within 60s, stale requesting restarts`, U7 `testStaleRequestingIsRetryable`).
 4. **해지했는데 광고가 계속 온다**. 사람은 며칠 기다린 뒤에도 오면 알 수 있고 다시 요청할 수 있길 기대한다 → 요청 시각 + 3일 뒤 광고 수 `ads_after_request` → "해지 요청 뒤에도 광고 N통" + [다시 요청], 3일 안 광고는 세지 않는다(U3 `requested sender: ads after the 3-day grace reopen the request`, U7 `testStates`).
 5. **기록이 Gmail 수집을 깨뜨린다**: `worker_record_unsub` 오류·연결 삭제 경합·이상한 헤더(From 없음, 2,048자 넘는 URL, 깨진 `Authentication-Results`)로 `gmail-fetch` 잡이 실패하면 백오프·dead로 **거래 메일까지 유실**된다(Gmail 게이트 "누락 0"). 사람은 광고 기능 때문에 메일 수집이 멈추지 않길 기대한다 → `recordUnsub`는 throw하지 않고 2초를 넘기면 기다리지 않는다(U4 `gmail-fetch: unsub record failure never fails the fetch`·`a hanging record RPC does not hold the fetch`), 해석 함수는 어떤 입력에도 throw하지 않고 null·`none`을 낸다(U1 `unsubMeta never throws on malformed headers`). 워커 배포 자체는 ③c2 뒤(D10).
 6. **같은 메일이 두 번 들어온다**(sync 뒤 30일 스캔이 같은 메일을 다시 읽음, 재시도). 사람은 숫자가 부풀지 않길 기대한다 → `unsub_mail` pk `(user_id, msg_key)`, 두 번째 기록은 `item_id`만 보충(U3 `same message twice counts once`).
@@ -2664,13 +2664,13 @@ func testUnsubscribeGate() throws {
   XCTAssertFalse(button("s1@example.com").exists)
   // G3 리다이렉트는 따라가지 않고 실패(리뷰 M1) → 다시 시도
   button("s2@example.com").tap(); app.alerts.firstMatch.buttons["해지 요청"].tap()
-  waitLabel(m, "label == '해지 요청 실패 (redirect_307)'")
-  XCTAssertEqual(state("s2@example.com").label, "요청 실패 (redirect_307)")
+  waitLabel(m, "label == '발신자가 다른 주소로 넘겨 요청하지 못했어요'")                 // 코드 원문 대신 사용자 문구(U8) — 정확한 코드 redirect_307 은 DB 대조
+  XCTAssertEqual(state("s2@example.com").label, "발신자가 다른 주소로 넘겨 요청하지 못했어요")
   XCTAssertEqual(button("s2@example.com").label, "다시 시도")
   // G4 사설 IP 차단 → 실패 + 다시 시도
   button("s4@example.com").tap(); app.alerts.firstMatch.buttons["해지 요청"].tap()
-  waitLabel(m, "label == '해지 요청 실패 (blocked_private)'")
-  XCTAssertEqual(state("s4@example.com").label, "요청 실패 (blocked_private)")
+  waitLabel(m, "label == '해지 페이지가 안전하지 않아 요청하지 않았어요'")               // 정확한 코드 blocked_private 는 DB 대조
+  XCTAssertEqual(state("s4@example.com").label, "해지 페이지가 안전하지 않아 요청하지 않았어요")
   XCTAssertEqual(button("s4@example.com").label, "다시 시도")
   // G7 취소는 요청을 보내지 않는다(DB 대조에서 s5 attempts 1 그대로로 확인)
   button("s5@example.com").tap(); app.alerts.firstMatch.buttons["취소"].tap()
@@ -2684,8 +2684,8 @@ func testUnsubscribeGate() throws {
 |---|---|---|
 | G1 | 목록 순서·문구 | s1(12)·s2(5)·s6(4)·s3(3)·s4(2)·s5(1) 순(`frame.minY` 단언), 상태 문구 일치 |
 | G2 | 원클릭 요청 | 확인창 → "해지 요청을 보냈어요…" → s1 "해지 요청함 · M/D", 버튼 없음 |
-| G3 | 리다이렉트 | s2 "해지 요청 실패 (redirect_307)" + [다시 시도](307을 따라가지 않음) |
-| G4 | 사설 IP | "요청 실패 (blocked_private)" + [다시 시도] |
+| G3 | 리다이렉트 | s2 "발신자가 다른 주소로 넘겨 요청하지 못했어요" + [다시 시도](307을 따라가지 않음 — DB `result_code` `redirect_307`) |
+| G4 | 사설 IP | "해지 페이지가 안전하지 않아 요청하지 않았어요" + [다시 시도](DB `result_code` `blocked_private`) |
 | G5 | mailto | 사유 문구, 버튼 없음 |
 | G6 | 유예 뒤 광고 | s5 "해지 요청 뒤에도 광고 1통" + [다시 요청] |
 | G7 | 취소 | 상태 변화 없음 + DB `attempts` 그대로 |
@@ -2837,7 +2837,7 @@ D1 통과: (a) 예, (b) 0곳. (b)가 1곳 이상이면 그 행의 상태 문구�
 D2: 사용자가 "없음"이면 D2는 판정하지 않고 대기로 둔다(사용자가 끊고 싶은 곳이 생길 때 다시 묻는다 — 자동 해지 금지라 대신 고르지 않는다).
 
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/unsub-stats.ts`
-Expected: `status.requested`가 1 늘고 `result_codes`에 `ok`. 결과 문구가 "해지 요청 실패 (<code>)"면 그 코드를 적는다 — `redirect_<n>`·`http_4xx`·`timeout`은 발신자 쪽 방식일 수 있으므로 사용자가 원하면 다른 발신자 1곳으로 한 번 더 한다.
+Expected: `status.requested`가 1 늘고 `result_codes`에 `ok`. 결과가 실패 문구(U8부터 코드 원문 대신 사용자 문구)면 `unsub_stats`/`unsub_senders.result_code`의 코드를 적는다 — `redirect_<n>`·`http_4xx`·`timeout`은 발신자 쪽 방식일 수 있으므로 사용자가 원하면 다른 발신자 1곳으로 한 번 더 한다.
 
 D2 통과: `result_codes.ok ≥ 1`(사용자가 고른 발신자 1곳 이상 `requested`).
 
