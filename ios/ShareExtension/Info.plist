@@ -25,6 +25,7 @@
         $attachment,
         ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url"
         OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text"
+        OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.image"
     ).@count == $extensionItem.attachments.@count
 ).@count &gt;= 1</string>
     </dict>
