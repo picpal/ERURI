@@ -2,7 +2,7 @@ import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 import type { GmailClient, GmailMessage } from "../functions/_shared/gmail.ts";
 import { GmailHttpError } from "../functions/_shared/gmail.ts";
 import {
-  enqueueUnsubRescan, gmailFetch, type GmailJobDeps, gmailSync, gmailUnsubFetch, gmailUnsubScan, recordUnsub, type RpcClient, UNSUB_SCAN_Q, unsubScanQuery,
+  defaultGmailDeps, enqueueUnsubRescan, gmailFetch, type GmailJobDeps, gmailSync, gmailUnsubFetch, gmailUnsubScan, recordUnsub, type RpcClient, UNSUB_SCAN_Q, unsubScanQuery,
 } from "../functions/_shared/gmail-jobs.ts";
 import type { Job } from "../functions/_shared/job.ts";
 
@@ -98,6 +98,43 @@ Deno.test("gmail-fetch: a hanging record RPC does not hold the fetch (budget →
   assertEquals(calls.filter((f) => f === "insert_item").length, 1);                         // 광고 기록이 멈춰도 다음 메일은 저장됐다
 });
 
+// 리뷰 U4-I1: 예산은 호출당이라 기록 RPC 가 계통적으로 멈추면 잡 지연이 예산 × 기록 수로 커진다 → 첫 실패 뒤 그 잡의 나머지 기록은 건너뛴다
+Deno.test("gmail-fetch: after the first record failure the job skips the rest of its records (one budget per job), storing/discarding unchanged", async () => {
+  const msgs: Record<string, GmailMessage> = {
+    p1: mk("p1", { labels: ["CATEGORY_PROMOTIONS"], lu: true }), t: mk("t", { subject: "합성 주문 확인" }),
+    p2: mk("p2", { labels: ["CATEGORY_PROMOTIONS"], lu: true }), n: mk("n", { lu: true, subject: "합성 소식" }),
+  };
+  const ids = ["p1", "t", "p2", "n"];
+  const run = async (hang: boolean) => {
+    const calls: string[] = [];
+    const logs: string[] = [];
+    const results: Record<string, unknown> = { ...ST, insert_item: "item-x" };
+    const rpc: RpcClient = { rpc: (fn, _args = {}) => {
+      calls.push(fn);
+      if (hang && fn === "worker_record_unsub") return new Promise(() => {});                 // 끝나지 않는 RPC
+      return Promise.resolve({ data: fn in results ? results[fn] : null, error: null });
+    } };
+    const log = console.log;
+    console.log = (s: string) => { logs.push(s); };
+    const t0 = Date.now();
+    try {
+      const r = await gmailFetch(rpc, job("gmail-fetch", { ids }), { ...fakeDeps({ getMessage: async (id) => msgs[id] }), unsubBudgetMs: 100 });
+      return { r, ms: Date.now() - t0, calls, logs };
+    } finally { console.log = log; }
+  };
+  const ok = await run(false), hung = await run(true);
+  assertEquals(ok.calls.filter((f) => f === "worker_record_unsub").length, 3);              // 기록 대상 3건(p1·p2 폐기 + n 저장)
+  assertEquals(hung.calls.filter((f) => f === "worker_record_unsub").length, 1);
+  assert(hung.ms < 200, `elapsed ${hung.ms}ms ≥ 2 × budget`);
+  assertEquals(hung.r, ok.r);
+  assertEquals(hung.calls.filter((f) => f === "insert_item"), ok.calls.filter((f) => f === "insert_item"));
+  const fetchLog = (l: string[]) => l.find((s) => s.includes('"gmail_fetch"'));
+  assertEquals(fetchLog(hung.logs), fetchLog(ok.logs));                                     // stored·discarded·gone 그대로
+  assertEquals(hung.logs.filter((s) => s.includes("unsub_record_skipped")).map((s) => JSON.parse(s)),
+    [{ connection_id: CONN, code: "unsub_record_skipped", n: 2 }]);
+  assertEquals(ok.logs.filter((s) => s.includes("unsub_record_skipped")), []);
+});
+
 Deno.test("gmail-unsub-scan: list query + gate targets → gmail-unsub-fetch jobs of 50 on the payload lease, backfill lane", async () => {
   const ids = Array.from({ length: 70 }, (_, i) => "s" + i);
   const qs: string[] = [];
@@ -172,4 +209,15 @@ Deno.test("gmail-sync: resync calls onResync once with the last success time, hi
     { connection_id: CONN, backfill: true, lease_key: "backfill:" + USER, after: Math.floor(Date.parse("2026-09-20T00:00:00Z") / 1000) - 86_400 }]]);
   const { rpc: bad } = fakeRpc({}, ["enqueue_job"]);
   await enqueueUnsubRescan(bad, USER, CONN, "2026-09-20T00:00:00Z");                           // 실패를 삼킨다(sync 는 계속)
+});
+
+// 리뷰 U4 M3: 배선이 빠지거나 스캔 간격이 실시간 간격으로 돌아가도 다른 테스트는 모두 통과한다 → 직접 단언
+Deno.test("wiring: default onResync is enqueueUnsubRescan; gmail-unsub-fetch paces at 400ms (scan gap, not the 240ms fetch gap)", async () => {
+  assertEquals(defaultGmailDeps.onResync, enqueueUnsubRescan);
+  const paused: number[] = [];
+  const { rpc } = fakeRpc(ST);
+  const deps = { ...fakeDeps({ getMessageMeta: async (id) => { if (id === "gone") throw new GmailHttpError("messages.get", 404); return mk(id); } }),
+    pause: async (ms: number) => { paused.push(ms); } };
+  await gmailUnsubFetch(rpc, job("gmail-unsub-fetch", { msgs: [{ id: "a", item: null }, { id: "gone", item: null }] }), deps);
+  assertEquals(paused, [400, 400]);
 });

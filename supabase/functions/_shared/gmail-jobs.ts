@@ -127,6 +127,13 @@ export async function gmailFetch(sb: RpcClient, job: Job, deps = defaultGmailDep
   const api = deps.api(token);
   let stored = 0, discarded = 0, gone = 0;
   let n = 0;
+  // 잡 로컬 차단기(리뷰 U4-I1): 기록 예산은 호출당이라 RPC 가 계통적으로 멈추면 잡 지연이 예산 × 기록 수가 된다.
+  // 첫 "error"(실패·타임아웃) 뒤 이 잡의 나머지 기록은 건너뛴다 → 잡당 추가 지연 ≈ 예산 1번. 빠진 기록은 일일 공백 스캔(0029)이 메운다
+  let recordOff = false, recordSkipped = 0;
+  const record = async (msg: GmailMessage, itemId: string | null) => {
+    if (recordOff) { recordSkipped++; return; }
+    if (await recordUnsub(sb, deps, user, conn, msg, itemId) === "error") recordOff = true;
+  };
   for (const id of job.payload.ids as string[]) {
     if (n++ % 10 === 0) {
       const st = await call(sb, "gmail_state", { p_user: user, p_connection: conn }) as unknown[];
@@ -145,7 +152,7 @@ export async function gmailFetch(sb: RpcClient, job: Job, deps = defaultGmailDep
     if (it.kind === "discard") {
       discarded++;
       console.log(JSON.stringify({ connection_id: conn, gmail_discard: it.reason }));   // 사유 코드만
-      if (it.reason === "promotion") await recordUnsub(sb, deps, user, conn, msg, null);   // 광고 헤더 메타(§7), fail-open
+      if (it.reason === "promotion") await record(msg, null);   // 광고 헤더 메타(§7), fail-open
     } else {
       const itemId = await call(sb, "insert_item", {
         p_user: user, p_source: "GMAIL", p_idempotency_key: "gmail:" + id,
@@ -156,10 +163,11 @@ export async function gmailFetch(sb: RpcClient, job: Job, deps = defaultGmailDep
       }) as string | null;
       stored++;
       // 게이트가 promo 로 판정하면 광고로 센다(unsub_list). 중복(null)은 첫 수신 때 기록됐다
-      if (itemId && hasListUnsub(msg)) await recordUnsub(sb, deps, user, conn, msg, itemId);
+      if (itemId && hasListUnsub(msg)) await record(msg, itemId);
     }
     await deps.pause(FETCH_GAP_MS);
   }
+  if (recordSkipped) console.log(JSON.stringify({ connection_id: conn, code: "unsub_record_skipped", n: recordSkipped }));
   console.log(JSON.stringify({ connection_id: conn, gmail_fetch: { stored, discarded, gone } }));
   return "fetched";
 }
