@@ -2273,6 +2273,20 @@ final class LinkRendererTests: XCTestCase {
     XCTAssertEqual(o, .failed("empty"))
   }
 
+  /// 글 0자 + 글자 없는 그림만(OCR 0자) → .page 가 아니라 반드시 empty(L2 리뷰 교차 확인 a — .page 면 호스트만 든 빈 항목이 큐에 들어간다)
+  @MainActor func testBlankImagePageFailsAfterOCR() async throws {
+    let fmt = UIGraphicsImageRendererFormat()
+    fmt.scale = 1
+    let img = UIGraphicsImageRenderer(size: CGSize(width: 360, height: 240), format: fmt).image { _ in
+      UIColor.white.setFill(); UIRectFill(CGRect(x: 0, y: 0, width: 360, height: 240))
+    }
+    let b64 = try XCTUnwrap(img.pngData()).base64EncodedString()
+    let (o, _) = try await read("""
+      <html><body style="margin:0"><img src="data:image/png;base64,\(b64)" width="360"><div style="display:none">   </div></body></html>
+      """, budget: 6, ocr: true)
+    XCTAssertEqual(o, .failed("empty"))
+  }
+
   /// 글 0자, OCR 없음(확장, Codex 1): 실패가 아니라 빈 페이지를 돌려 확장이 no_date 로 앱에 넘긴다
   @MainActor func testEmptyPageWithoutOCRReturnsEmptyPage() async throws {
     let (o, _) = try await read("<html><body></body></html>", budget: 6, ocr: false)
@@ -2378,6 +2392,13 @@ final class LinkRendererTests: XCTestCase {
     defer { w.isHidden = true }
     _ = await LinkRenderer(host: w, allowLoopback: true, html: doc).render(plain, budget: 5, ocr: false)       // 대조: 루프백 허용이면 요청이 간다
     try XCTSkipIf(s.hits("/pixel") == 0, "대조군 0 — 하위 리소스 루프백 요청이 다른 이유로 막힌다. 규칙 판정은 L8 G9 옆에서")
+    // 대조군 웹뷰를 뗀 뒤에도 /pixel 요청이 한 번 더 늦게 온다(시뮬레이터 실측 1 → 2) — 요청 수가 1.5초 멈출 때까지 기다려 실험군에 섞이지 않게
+    var seen = -1, still = Date()
+    for _ in 0..<12 {
+      let n = s.hits("/pixel") + s.hits("/frame")
+      if n != seen { seen = n; still = Date() } else if Date().timeIntervalSince(still) >= 1.5 { break }
+      try await Task.sleep(for: .milliseconds(500))
+    }
     let pixel = s.hits("/pixel"), frame = s.hits("/frame")
     let r = LinkRenderer(host: w, allowLoopback: false, html: doc)
     let o = await r.render(plain, budget: 5, ocr: false)
@@ -2718,7 +2739,7 @@ import WebKit
 
   public func render(_ url: URL, budget: TimeInterval, ocr: Bool) async -> LinkRenderOutcome {
     if let b = LinkText.check(url, allowLoopback: allowLoopback) { return .failed("blocked_\(b.rawValue)") }
-    guard let host, host.window != nil else { return .failed("no_host") }
+    guard let host, host is UIWindow || host.window != nil else { return .failed("no_host") }   // UIWindow.window 는 nil — 창 자체(앱 키 창)도 창 안이다
     if Task.isCancelled { return .failed("cancelled") }
     let target = html == nil ? LinkText.upgraded(url, allowLoopback: allowLoopback) : url     // http → https(F24, D7)
     finished = false; committed = false; failure = nil; navigations = 0; blockedNavigations = 0
@@ -2896,7 +2917,7 @@ enum LinkScript {
 메모리 확인(`vm_stat | grep -E 'free|compressor'`) 뒤:
 
 Run: `cd ios && ./scripts/sim.sh test EruriCoreTests/LinkRendererTests && ./scripts/sim.sh test EruriCoreTests/OCRImageTests`
-Expected: `LinkRendererTests` 22개·`OCRImageTests` 3개 통과(전체 약 2~3분). 건너뜀은 아래 U4·U5 사유일 때만 허용하고 보고에 적는다. 실패하면 원인별로:
+Expected: `LinkRendererTests` 23개·`OCRImageTests` 3개 통과(전체 약 2~3분). 건너뜀은 아래 U4·U5 사유일 때만 허용하고 보고에 적는다. 실패하면 원인별로:
 - `testDelayedScriptTextIsWaitedFor`·`testNeverSettlingPageReturnsPartial`이 실패(타이머가 안 돎) → U2 실패. 웹뷰를 `host.addSubview(wv)` + `wv.alpha = 0.01`(맨 위, 거의 투명)로 바꿔 다시 돌리고, 결과를 보고에 적는다(스펙 §6 문구도 그 방식으로 L0 커밋에 이어 고친다).
 - `testImageOnlyPageUsesOCR`만 실패 → 스냅샷이 비었는지(`takeSnapshot`) Vision이 한국어를 못 읽는지 구분한다: `p.ocrText`가 nil이고 `takeSnapshot` 이미지의 `size`가 0이면 U2, 이미지는 있는데 글자가 없으면 U4. U4면 이 테스트에 `try XCTSkipIf(true, "U4: 시뮬레이터 Vision 한국어 — LNK-device D6에서 판정")`를 넣고 보고한다(테스트를 지우지 않는다).
 - 서버 테스트 4개가 모두 `XCTSkip("U5 …")`면 U5 실패 — 보고하고 L8 Step 2의 하네스 예외로 넘긴다(제품 Info.plist는 바꾸지 않는다). `testTooManyRedirectsFail`가 `load_failed`면 WebKit이 다른 오류 코드를 쓰는 것이다 — 그 `NSError` 코드(숫자만)를 보고하고 `loadFailure`에 더한다.
