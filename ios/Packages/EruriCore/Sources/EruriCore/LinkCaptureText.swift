@@ -30,6 +30,7 @@ public enum LinkCaptureText {
     case "web_process": return "페이지가 너무 무거워요"
     case "cancelled": return "취소했어요"
     case "queue": return "기기에 저장하지 못했어요"
+    case "queue_admit": return "읽기를 시작하지 못했어요"                       // 대기 행을 못 남겼다 — 앱이 이어받지 않는다(L5 메인 판정 1)
     case let c where c.hasPrefix("http_"): return "페이지 오류 \(c.dropFirst(5))"
     default: return "연결할 수 없어요"
     }

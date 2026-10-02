@@ -25,6 +25,13 @@ final class LinkCaptureTextTests: XCTestCase {
     XCTAssertEqual(LinkCaptureText.chat(.failed("queue")), "페이지를 읽지 못했어요(기기에 저장하지 못했어요).")
   }
 
+  /// admit 의 큐 쓰기 실패(L5 메인 판정 1): 대기 행이 없어 앱이 이어받지 않는다 — "앱을 열면" 없이 일반 실패 문구, 폴백했으면 폴백 문구
+  func testAdmitQueueFailureText() {
+    XCTAssertEqual(LinkCaptureText.share(.failed("queue_admit")), "페이지를 읽지 못했어요(읽기를 시작하지 못했어요).")
+    XCTAssertEqual(LinkCaptureText.shareFallback("queue_admit"), "페이지를 읽지 못해 공유한 글만 저장했어요(읽기를 시작하지 못했어요).")
+    XCTAssertEqual(LinkCaptureText.chat(.failed("queue_admit")), "페이지를 읽지 못했어요(읽기를 시작하지 못했어요).")
+  }
+
   func testChatTexts() {
     XCTAssertEqual(LinkCaptureText.chat(.queued(captureID: "c", chars: 640, ocr: true, timedOut: false)), "페이지에서 글 640자를 읽었어요. 일정을 찾는 중…")
     XCTAssertEqual(LinkCaptureText.chat(.failed("timeout")), "페이지를 읽지 못했어요(시간이 너무 걸려요).")
@@ -60,7 +67,7 @@ final class LinkCaptureTextTests: XCTestCase {
 
   func testReasonsCarryNoAddress() {
     for code in ["blocked_scheme", "blocked_host", "redirects", "unsupported", "timeout", "empty", "web_process", "cancelled", "http_500",
-                 "load_failed", "insecure", "queue", "bad_url"] {
+                 "load_failed", "insecure", "queue", "queue_admit", "bad_url"] {
       XCTAssertFalse(LinkCaptureText.reason(code).isEmpty, code)
       XCTAssertFalse(LinkCaptureText.reason(code).contains("http:"), code)
     }

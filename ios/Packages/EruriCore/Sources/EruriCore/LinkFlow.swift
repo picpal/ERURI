@@ -58,7 +58,7 @@ public enum LinkFlow {
     case handedOff(String)
     /// 앱: 행을 남겨 다시 읽는다(retryCodes 는 백오프, cancelled 는 바로)
     case retry(String)
-    /// 끝(사유 코드). 대기 행도 지웠다(queue = 큐 쓰기 실패)
+    /// 끝(사유 코드). 대기 행도 지웠다 — 단 queue(finish 의 큐 쓰기 실패)는 행을 남겨 앱이 이어받고, queue_admit(관문의 대기 행 쓰기 실패)은 행이 없다
     case failed(String)
   }
 
@@ -75,7 +75,7 @@ public enum LinkFlow {
       case .pass(let m): l.note = m
       }
     }
-    do { try queue.enqueueLink(l, lease: lease, now: now) } catch { return .stop(.failed("queue")) }
+    do { try queue.enqueueLink(l, lease: lease, now: now) } catch { return .stop(.failed("queue_admit")) }   // 행 없음 — 앱이 이어받지 않는다(L5 메인 판정 1)
     return .go(l)
   }
 
@@ -130,7 +130,8 @@ public enum LinkFlow {
   }
 
   /// 공유 확장의 텍스트 폴백(스펙 §6, D8): 확정 실패만 원래 공유 글을 텍스트 항목으로 넣는다. failed("queue") 는 뺀다 —
-  /// finish 의 큐 쓰기 실패는 대기 행이 남아 앱이 이어받고(폴백하면 항목 두 개), admit 의 실패는 텍스트도 같은 큐 파일이라 넣지 못한다
+  /// finish 의 큐 쓰기 실패는 대기 행이 남아 앱이 이어받는다(폴백하면 항목 두 개). admit 의 실패 failed("queue_admit")는 행이 없어 폴백한다
+  /// (잠금이 잠깐이었으면 원래 글이 남고, 큐 파일이 망가졌으면 폴백도 실패해 일반 실패 문구 — L5 메인 판정 1)
   public static func fallsBackToText(_ o: Outcome) -> Bool {
     if case .failed(let code) = o { return code != "queue" }
     return false

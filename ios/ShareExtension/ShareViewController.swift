@@ -74,7 +74,7 @@ final class ShareViewController: UIViewController {
     let begun = Date(), link = PendingLink(url: url, note: note, origin: "share")
     let renderer = LinkRenderer(host: view, allowLoopback: Self.allowLoopback)
     let work = Task { @MainActor () -> LinkFlow.Outcome in
-      guard let q = try? CaptureQueue.shared() else { return .failed("queue") }
+      guard let q = try? CaptureQueue.shared() else { return .failed("queue_admit") }   // 대기 행 없음 — 앱이 이어받지 않는다(L5 메인 판정 1)
       return await LinkFlow.share(link, renderer: renderer, queue: q)
     }
     status.onClose = { work.cancel() }
@@ -89,7 +89,8 @@ final class ShareViewController: UIViewController {
     DiagLog.append("ShareExtension link \(LinkFlow.code(o))")
     var text = LinkCaptureText.share(o), saved = false
     if case .queued = o { saved = true }
-    // 확정 실패만 폴백(LinkFlow.fallsBackToText) — failed("queue") 는 대기 행이 남아 앱이 이어받으므로 폴백하면 항목이 두 개다(메인 판정)
+    // 확정 실패만 폴백(LinkFlow.fallsBackToText) — failed("queue") 는 대기 행이 남아 앱이 이어받으므로 폴백하면 항목이 두 개다(메인 판정).
+    // failed("queue_admit")는 행이 없어 폴백한다(L5 메인 판정 1)
     if case .failed(let code) = o, LinkFlow.fallsBackToText(o), handleText(original, collected, started) == "queued" { text = LinkCaptureText.shareFallback(code) }
     status.show(text, note: saved ? LinkCaptureText.storageNote : nil, done: true)
     await status.waitClose(seconds: 1.5)
