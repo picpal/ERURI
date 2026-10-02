@@ -33,6 +33,8 @@ struct ContentView: View {
           if !gmail.isEmpty { Text(gmail).font(.caption).foregroundStyle(gmail.contains("다시 연결") ? .orange : .secondary) }
           Button("Gmail 연결") { connectGmail(false) }.disabled(busy || !GmailConnect.configured)
           Button("다시 연결 (동의 다시 받기)") { connectGmail(true) }.disabled(busy || !GmailConnect.configured)
+          NavigationLink("광고 메일 구독 해지") { UnsubscribeView() }        // 스펙 §7 광고 구독 해지(0.10.0)
+            .accessibilityIdentifier("settings-unsubscribe")
         }
         Section("이번 달 사용") {                                              // 스펙 §13 월 상한(M2-⑦)
           Text(usage.isEmpty ? "-" : usage).font(.caption).foregroundStyle(usage.contains("중단") ? .red : .secondary)
