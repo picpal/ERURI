@@ -420,6 +420,7 @@ struct ChatView: View {
 
   /// 사진 턴(§9 채팅 사진 첨부): 입력창 글은 메모. OCR·업로드 동안 보내기를 막고, 서버 결과(최대 60초)는 따로 기다린다
   private func sendImages(_ items: [PhotosPickerItem]) {
+    guard !busy else { return }                              // 피커를 연 사이 다른 턴이 시작됐으면 겹치지 않게(L5 리뷰 Minor 5)
     let note = input.trimmingCharacters(in: .whitespacesAndNewlines)
     input = ""
     inputFocused = false

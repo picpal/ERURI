@@ -14,7 +14,7 @@ import EruriCore
   #else
   static let allowLoopback = false
   #endif
-  private var drainTask: Task<Void, Never>?
+  private let drain = RestartableTask()
   private let reads = LinkReads()
 
   struct ChatRead: Sendable { let text: String; let captureID: String? }
@@ -27,15 +27,15 @@ import EruriCore
 
   private static func ms(since d: Date) -> Int { Int(Date().timeIntervalSince(d) * 1000) }
 
-  /// foreground(EruriApp .active): 이어받기를 띄운다(이미 돌고 있으면 그대로)
+  /// foreground(EruriApp .active): 이어받기를 띄운다(돌고 있으면 그대로). 취소된 이어받기가 아직 풀리는 중이어도(flush 대기) 새로 띄운다 —
+  /// 비활성 → 곧바로 활성(제어 센터·권한 알림창)에도 돌려놓은 행을 다시 읽는다(L5 리뷰 I1)
   func startDrain() {
-    guard drainTask == nil else { return }
-    drainTask = Task { await self.drainPending(); self.drainTask = nil }
+    drain.start { await self.drainPending() }
   }
 
   /// 활성 상태를 벗어남(EruriApp): 이어받기·채팅 읽기를 취소한다 — LinkFlow.app 이 cancelled 로 행을 돌려놓는다(시도로 세지 않는다)
   func suspend() {
-    drainTask?.cancel()
+    drain.cancel()
     reads.cancelAll()
   }
 
@@ -50,7 +50,7 @@ import EruriCore
     guard let host, let q = try? CaptureQueue.shared() else { return }
     var queued = false
     while !Task.isCancelled {
-      let links = (try? q.claimLinks(limit: 5)) ?? []
+      let claimedAt = Date(), links = (try? q.claimLinks(limit: 5)) ?? []
       if links.isEmpty {
         guard let next = try? q.nextLinkAttempt(), next.timeIntervalSinceNow < 120 else { break }
         try? await Task.sleep(for: .seconds(max(1, next.timeIntervalSinceNow)))
@@ -58,8 +58,8 @@ import EruriCore
       }
       for link in links {
         if Task.isCancelled { try? q.releaseLink(id: link.id); continue }   // 잡아 둔 나머지는 돌려놓는다
-        // 채팅이 같은 링크를 읽는 중이면 건너뛴다 — 그쪽이 행을 지우거나 돌려놓는다
-        guard let o = await reads.drain(link, read: { await self.read($0, origin: "drain", host: host, queue: q) }) else { continue }
+        // 잡은 뒤 채팅이 같은 링크를 끝냈거나 읽는 중이면 건너뛴다 — 그쪽이 행을 지우거나 백오프로 다시 건다(취소였으면 이쪽이 읽는다, LinkReads)
+        guard let o = await reads.drain(link, claimedAt: claimedAt, read: { await self.read($0, origin: "drain", host: host, queue: q) }) else { continue }
         if case .queued = o { queued = true }
         if case .failed(let code) = o, code != "queue" {
           await ExecutionReporter.notice(title: LinkCaptureText.drainFailedTitle, body: LinkCaptureText.drainFailedBody(code))
@@ -81,7 +81,8 @@ import EruriCore
   /// 채팅 붙여넣기 1단계(스펙 §9): 이어받기가 같은 링크를 읽는 중이면 그 결과만 받는다. 아니면 관문(읽은 링크면 중복, 메모 OTP면 폐기 — 행 없음)
   /// → 대기 행(앱이 죽어도 다음 foreground 가 이어받게, lease 600초) → 읽기(15초 + OCR) → 큐 → 업로드. 다시 해 볼 실패면 이어받기가 백오프 뒤 다시 읽는다
   func chatRead(url: URL, note: String?) async -> ChatRead {
-    guard let host = hostWindow(), let q = try? CaptureQueue.shared() else { return ChatRead(text: LinkCaptureText.chat(.failed("no_host")), captureID: nil) }
+    guard let host = hostWindow() else { return ChatRead(text: LinkCaptureText.chat(.failed("no_host")), captureID: nil) }
+    guard let q = try? CaptureQueue.shared() else { return ChatRead(text: LinkCaptureText.chat(.failed("queue_admit")), captureID: nil) }   // 대기 행 없음
     let r = await reads.chat(PendingLink(url: url, note: note, origin: "chat"), queue: q) { await self.read($0, origin: "chat", host: host, queue: q) }
     let o = r.outcome
     switch r {
