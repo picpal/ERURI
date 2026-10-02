@@ -21,6 +21,7 @@ struct ArchiveView: View {
   @State private var generation = 0                 // 처음부터 불러올 때마다 올린다. 앞 세대의 늦은 응답은 버린다
   @State private var message = ""
   @State private var page = 0                       // 범위 모드: 마지막으로 불러온 id 조각
+  @State private var detailShown = false            // 목록 위에 상세(또는 최근 폐기)가 열려 있는지 — 탭 재진입 새로고침은 목록 루트일 때만
   private var router: ArchiveRouter { ArchiveRouter.shared }
 
   var body: some View {
@@ -36,11 +37,12 @@ struct ArchiveView: View {
         Picker("출처", selection: $filter) {
           ForEach(Archive.Filter.allCases, id: \.self) { Text($0.label).tag($0) }
         }.pickerStyle(.segmented)
-        if scope == nil { NavigationLink("최근 폐기 (7일)") { RecentDiscardsView(filter: filter) } }   // 고른 출처 탭의 폐기만. 격리 항목은 후보가 아니다
+        if scope == nil { NavigationLink("최근 폐기 (7일)") { RecentDiscardsView(filter: filter).onAppear { detailShown = true } } }   // 고른 출처 탭의 폐기만. 격리 항목은 후보가 아니다
         if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
         ForEach(rows) { r in
           NavigationLink {
             ItemDetailView(itemID: r.id, footer: r.gatePassed ? AnyView(WrongPassSection(itemID: r.id)) : nil)
+              .onAppear { detailShown = true }
           } label: {
             VStack(alignment: .leading, spacing: 2) {
               Text(r.titleLine).lineLimit(1)
@@ -52,11 +54,14 @@ struct ArchiveView: View {
         if loading && !rows.isEmpty { ProgressView().frame(maxWidth: .infinity) }
         else if failed { Button("다시 시도") { Task { await load(reset: retryReset) } }.frame(maxWidth: .infinity) }
       }
+      .onAppear { detailShown = false }                                   // 상세에서 목록으로 돌아왔다
       .navigationTitle(scope == nil ? "보관함" : "검색 결과")
     }
     // 상세가 열린 채 채팅에서 새 범위를 열면 목록으로 돌아온다. 아래 수식어는 .id 바깥에 둬야 새 정체성에서도 onChange 가 첫 변화를 보고 .task 가 다시 돌지 않는다
     .id(router.openCount)
-    .task { if rows.isEmpty { await load(reset: true) } }                // 상세에서 돌아올 때 목록·스크롤을 유지
+    // 탭을 다시 고를 때마다 돈다(TabView 가 뷰를 살려 둬도) — 목록 루트면 처음부터 다시 불러와 그 사이 들어온 항목(공유·링크 결과)을 보인다.
+    // 상세가 열린 채 돌아오면 목록·스크롤을 유지한다. 상세에서 목록으로 돌아오는 것은 스택 안 이동이라 여기를 타지 않는다
+    .task { if rows.isEmpty || !detailShown { await load(reset: true) } }
     .onChange(of: filter) { _, _ in Task { await load(reset: true) } }
     .onChange(of: router.openCount) { _, _ in Task { await load(reset: true, rescope: true) } }   // 새 범위·"전체 보기" → 앞 범위 행을 지우고 처음부터
     .refreshable { await load(reset: true) }
