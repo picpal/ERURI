@@ -1,0 +1,83 @@
+[
+  {
+    "id": "wedding-text",
+    "title": "합성신랑 ♥ 합성신부 결혼합니다",
+    "text": "[웹 링크] invite.example.com\n제목: 합성신랑 ♥ 합성신부 결혼합니다\n설명: 2026년 11월 14일 토요일 오후 1시 30분 합성웨딩홀 3층\n본문:\n저희 두 사람이 사랑의 결실을 맺게 되었습니다.\n귀한 걸음 하시어 축복해 주시면 감사하겠습니다.\n일시\n2026년 11월 14일 토요일 오후 1시 30분\n장소\n합성웨딩홀 3층 그랜드볼룸\n서울 합성구 합성로 123\n오시는 길\n지하철 합성역 2번 출구 도보 5분\n마음 전하실 곳\n신랑측 합성은행 ***-****-1234",
+    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-11-14T13:30"], "location": "합성웨딩홀" }
+  },
+  {
+    "id": "wedding-ocr",
+    "title": "모바일 청첩장",
+    "text": "[웹 링크] card.example.com\n제목: 모바일 청첩장\n본문:\n터치하면 음악이 재생됩니다\n이미지 속 글자:\n합성민수 그리고 합성지은\n2026. 12. 5. SAT PM 12:00\n합성 컨벤션 웨딩홀 5층",
+    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-12-05T12:00"], "location": "합성 컨벤션" }
+  },
+  {
+    "id": "first-birthday",
+    "title": "합성아기 첫 돌잔치에 초대합니다",
+    "text": "[웹 링크] party.example.com\n제목: 합성아기 첫 돌잔치에 초대합니다\n본문:\n건강하게 자라 첫 번째 생일을 맞이합니다.\n일시: 10월 24일(토) 오후 6시\n장소: 합성뷔페 2층 연회장",
+    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-10-24T18:00"], "location": "합성뷔페" }
+  },
+  {
+    "id": "book-talk",
+    "title": "합성 북토크 — 작가와의 만남",
+    "text": "[웹 링크] library.example.com\n제목: 합성 북토크 — 작가와의 만남\n설명: 신청 기간 10월 1일~10월 15일, 행사 10월 21일(수) 오후 7시\n본문:\n신청 기간\n2026년 10월 1일(목) ~ 10월 15일(목)\n행사 일시\n2026년 10월 21일(수) 오후 7시 ~ 9시\n장소\n합성도서관 1층 강당",
+    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-10-21T19:00"], "location": "합성도서관" }
+  },
+  {
+    "id": "two-sessions",
+    "title": "합성 문화센터 도자기 원데이 클래스",
+    "text": "[웹 링크] culture.example.com\n제목: 합성 문화센터 도자기 원데이 클래스\n본문:\n1회차 2026년 11월 3일(화) 오후 2시\n2회차 2026년 11월 10일(화) 오후 2시\n장소 합성 문화센터 3층 공방",
+    "expect": { "status": ["extracted"], "events": 2, "starts": ["2026-11-03T14:00", "2026-11-10T14:00"], "location": "합성 문화센터" }
+  },
+  {
+    "id": "date-only",
+    "title": "합성 결혼식 안내",
+    "text": "[웹 링크] invite.example.com\n제목: 합성 결혼식 안내\n본문:\n2026년 11월 28일 토요일\n합성 가든 웨딩\n예식 시간은 추후 안내드리겠습니다.",
+    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-11-28"] }
+  },
+  {
+    "id": "wedding-noisy",
+    "title": "합성태호 ♥ 합성소라 결혼합니다",
+    "text": "[웹 링크] invite.example.com\n제목: 합성태호 ♥ 합성소라 결혼합니다\n설명: 2026년 11월 22일 일요일 낮 12시 30분\n본문:\n2026년 11월\n일 월 화 수 목 금 토\n1 2 3 4 5 6 7\n8 9 10 11 12 13 14\n15 16 17 18 19 20 21\n22 23 24 25 26 27 28\n29 30\nD-51\n예식 일시\n2026년 11월 22일 일요일 낮 12시 30분\n장소\n합성웨딩컨벤션 4층 아이리스홀\n마음 전하실 곳\n신랑측 합성은행 ***-****-5678\n방명록\n합성친구1 2026.09.30 축하해!\n합성친구2 2026.10.01 행복하세요\n합성친구3 2026.10.02 결혼 축하합니다",
+    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-11-22T12:30"], "location": "합성웨딩컨벤션" }
+  },
+  {
+    "id": "wedding-long",
+    "title": "합성준호 ♥ 합성유진 결혼합니다",
+    "text": "[웹 링크] invite.example.com\n제목: 합성준호 ♥ 합성유진 결혼합니다\n일시·장소 줄:\n예식 일시 2026년 12월 12일 토요일 오후 2시\n장소 합성 그랜드호텔 2층 크리스탈홀\n본문:\n{{GALLERY:200}}",
+    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-12-12T14:00"], "location": "합성 그랜드호텔" }
+  },
+  {
+    "id": "image-wedding",
+    "app_name": "이미지",
+    "title": null,
+    "text": "[이미지] 사진 1장\n이미지 속 글자:\n합성웨딩홀 5층 라벤더홀\n합성동훈\n2026년 12월 19일 토요일 오후 3시\n그리고\n합성미래\n결혼합니다",
+    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-12-19T15:00"], "location": "합성웨딩홀" }
+  },
+  {
+    "id": "promo-lineup",
+    "title": "합성 페스티벌 2026 라인업 공개!",
+    "text": "[웹 링크] festival.example.com\n제목: 합성 페스티벌 2026 라인업 공개!\n설명: 지금 예매하면 30% 할인\n본문:\n11/7(토) 합성밴드 · 합성가수\n11/8(일) 합성듀오 · 합성 오케스트라\n얼리버드 티켓 30% 할인 — 지금 예매하세요",
+    "expect": { "status": ["discarded:server:empty", "discarded:server:promo"], "events": 0 }
+  },
+  {
+    "id": "map-only",
+    "title": "합성웨딩홀 : 지도",
+    "text": "[웹 링크] map.example.com\n제목: 합성웨딩홀 : 지도\n본문:\n합성웨딩홀\n서울 합성구 합성로 123\n길찾기\n전화",
+    "expect": { "status": ["discarded:server:empty", "discarded:server:notice"], "events": 0 }
+  },
+  {
+    "id": "image-receipt",
+    "app_name": "이미지",
+    "title": null,
+    "text": "[이미지] 사진 1장\n이미지 속 글자:\n합성마트 합성점\n2026-10-01 14:22\n합성우유 1L 2,980\n합성식빵 3,500\n합계 6,480원",
+    "expect": { "status": ["extracted", "discarded:server:empty", "discarded:server:notice", "discarded:server:promo"], "events": 0 }
+  },
+  {
+    "id": "image-chat",
+    "app_name": "이미지",
+    "title": null,
+    "text": "[이미지] 사진 1장\n이미지 속 글자:\n합성친구\n토요일 6시 합성역 2번 출구에서 봐\n오후 3:12\nㅇㅋ 그때 보자\n오후 3:13",
+    "expect": { "status": ["extracted", "discarded:server:personal", "discarded:server:empty"], "events": null }
+  }
+]
