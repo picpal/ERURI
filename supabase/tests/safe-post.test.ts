@@ -18,7 +18,9 @@ Deno.test("checkUrl: https only, 443, no userinfo, no local names", () => {
   assertEquals(checkUrl("ftp://u.example.com/x"), "blocked_scheme");
   assertEquals(checkUrl("not a url"), "blocked_scheme");
   for (const u of ["https://u.example.com:8443/x", "https://a:b@u.example.com/x", "https://localhost/x", "https://box.local/x",
-                   "https://svc.internal/x", "https://router.home.arpa/x", "https://intranet/x", "https://x.localhost/x"]) {
+                   "https://svc.internal/x", "https://router.home.arpa/x", "https://intranet/x", "https://x.localhost/x",
+                   // 끝의 점(FQDN 표기)도 같은 이름으로 본다
+                   "https://localhost./x", "https://box.local./x", "https://intranet./x"]) {
     assertEquals([u, checkUrl(u)], [u, "blocked_host"]);
   }
   assertEquals((checkUrl("https://u.example.com:443/x?t=1") as URL).hostname, "u.example.com");

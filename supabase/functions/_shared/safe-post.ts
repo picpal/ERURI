@@ -73,7 +73,7 @@ export function checkUrl(raw: string): URL | "blocked_scheme" | "blocked_host" {
   try { u = new URL(raw); } catch { return "blocked_scheme"; }
   if (u.protocol !== "https:") return "blocked_scheme";
   if (u.username || u.password || (u.port && u.port !== "443")) return "blocked_host";
-  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");   // 끝의 점(FQDN 표기)은 떼고 본다
   if (!h.includes(".") && !h.includes(":")) return "blocked_host";
   if (/(^|\.)(localhost|local|internal|localdomain|home\.arpa)$/.test(h)) return "blocked_host";
   return u;
