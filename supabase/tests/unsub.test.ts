@@ -104,3 +104,57 @@ Deno.test("hasListUnsub / isAdMail: promotion label, (광고) subject or sender;
   assertEquals(isAdMail(msg({ From: FROM, Subject: "합성 주문 확인" })), false);
   assertEquals(isAdMail(msg({ From: FROM, Subject: "광고 문의 답변" })), false);   // 맨 앞 (광고) 표기가 아니다
 });
+
+// 리뷰 I1: From 은 발신자가 정한다 — 정규식이 겹치는 공백에서 역추적하지 않아야 한다(gmail-fetch CPU 한도)
+Deno.test("parseFrom: long or adversarial From finishes fast; over 1000 chars → null", () => {
+  const inputs = [" ".repeat(10000) + "x", " ".repeat(10000), "a" + " ".repeat(990) + "x", '"'.repeat(990) + "x <a@example.net>",
+    "a@" + ".".repeat(990) + "@", "x".repeat(500) + " ".repeat(490) + "<a@example.net"];
+  for (const v of inputs) {
+    const t = performance.now();
+    parseFrom(v);
+    assertEquals([v.length, performance.now() - t < 50], [v.length, true]);
+  }
+  assertEquals(parseFrom("x".repeat(1000) + " <a@example.net>"), null);
+  assertEquals(parseFrom("  " + FROM + "  "), { address: "news@mail.example.com", name: "합성쇼핑" });
+});
+
+// 리뷰 I2: AR 안의 주석·따옴표 문자열(SPF 주석, smtp.mailfrom 의 따옴표 local-part)은 공격자가 정할 수 있다
+Deno.test("dkim: dkim=pass injected via AR comments or quoted strings → unverified; header.b must be base64", () => {
+  const base = { From: FROM, "List-Unsubscribe": LU, "List-Unsubscribe-Post": LUP };
+  const inj = "x; dkim=pass header.i=@example.com header.s=evil header.b=EVIL1234 ";
+  const forged = "v=1; d=example.com; s=evil; h=From:List-Unsubscribe:List-Unsubscribe-Post; b=EVIL1234rest";
+  const real = "mx.google.com; dkim=fail header.i=@example.com header.s=s1 header.b=AbC+d/Ef; spf=pass";
+  const ars = [
+    `${real} (google.com: domain of "${inj}"@evil.example.net designates 192.0.2.1 as permitted sender) smtp.mailfrom="${inj}"@evil.example.net`,
+    `${real} (google.com: domain of ${inj}@evil.example.net designates 192.0.2.1 as permitted sender) smtp.mailfrom=a@evil.example.net`,
+    `${real} smtp.mailfrom="${inj}"@evil.example.net`,
+    `${real} (outer (nested) ${inj}) smtp.mailfrom=a@evil.example.net`,                       // 중첩 주석
+    `${real} (a \\) ${inj}) smtp.mailfrom=a@evil.example.net`,                                 // 주석 안 이스케이프된 )
+  ];
+  for (const [i, ar] of ars.entries()) {
+    const m = msg({ ...base, "Authentication-Results": ar, "DKIM-Signature": [SIG, forged] });
+    assertEquals([i, unsubMeta(m)?.method, unsubMeta(m)?.url], [i, "unverified", null]);
+  }
+  // 주석이 결과 안에 있어도 진짜 dkim=pass 는 그대로 인정
+  const ok = msg({ ...base, "Authentication-Results": "mx.google.com; dkim=pass (good signature) header.i=@example.com header.s=s1 header.b=AbC+d/Ef; spf=pass (google.com: ok) smtp.mailfrom=b@example.com", "DKIM-Signature": SIG });
+  assertEquals(unsubMeta(ok)?.method, "one_click");
+  // header.b 가 base64 문자가 아니면 특정하지 않는다
+  const badB = msg({ ...base, "Authentication-Results": "mx.google.com; dkim=pass header.i=@example.com header.s=s1 header.b=AbC+d/E*", "DKIM-Signature": SIG.replace("b=AbC+d/Ef", "b=AbC+d/E*") });
+  assertEquals(unsubMeta(badB)?.method, "unverified");
+});
+
+// 리뷰 Minor 3: header.d 가 없고 header.i 가 서명 d= 의 하위 도메인이면 그 서명으로 특정, 정렬은 서명의 d= 로
+Deno.test("dkim: header.i in a subdomain of the signing domain pins the signature", () => {
+  const sig = SIG.replace("d=example.com;", "d=example.com; i=news@mail.example.com;");
+  const ar = "mx.google.com; dkim=pass header.i=news@mail.example.com header.s=s1 header.b=AbC+d/Ef";
+  const m = msg({ From: FROM, "List-Unsubscribe": LU, "List-Unsubscribe-Post": LUP, "Authentication-Results": ar, "DKIM-Signature": sig });
+  assertEquals(unsubMeta(m)?.method, "one_click");
+  // header.d 가 있으면 그것과 정확히 같아야 한다
+  const exact = msg({ From: FROM, "List-Unsubscribe": LU, "List-Unsubscribe-Post": LUP, "Authentication-Results": ar.replace("header.i=", "header.d=mail.example.com header.i="), "DKIM-Signature": sig });
+  assertEquals(unsubMeta(exact)?.method, "unverified");
+});
+
+// 리뷰 Minor 4: RFC 2369 — 꺾쇠 안 공백(접힌 줄)은 무시한다
+Deno.test("listUnsubUris: whitespace inside angle brackets is removed", () => {
+  assertEquals(listUnsubUris("<https://u.example.com/a\r\n b?t=1 2>, <mailto:u@example.com>"), ["https://u.example.com/ab?t=12", "mailto:u@example.com"]);
+});
