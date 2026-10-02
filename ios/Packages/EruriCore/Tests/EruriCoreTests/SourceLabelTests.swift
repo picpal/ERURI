@@ -11,4 +11,11 @@ final class SourceLabelTests: XCTestCase {
     XCTAssertEqual(SourceLabel.label(source: "GMAIL", appName: nil), "메일")
     XCTAssertEqual(SourceLabel.label(source: "SHARE", appName: nil), "공유")
   }
+
+  /// 보관함 출처(0.11.0, Fable F12): 링크·사진 항목은 "공유한 링크"·"공유한 이미지", 그 밖의 공유는 "공유"
+  func testShareLinkAndImageLabels() {
+    XCTAssertEqual(SourceLabel.label(source: "SHARE", appName: "웹 링크"), "공유한 링크")
+    XCTAssertEqual(SourceLabel.label(source: "SHARE", appName: "이미지"), "공유한 이미지")
+    XCTAssertEqual(SourceLabel.label(source: "SHARE", appName: nil), "공유")
+  }
 }

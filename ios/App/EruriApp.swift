@@ -27,6 +27,9 @@ struct EruriApp: App {
       if newPhase == .active {
         AppState.prepareProbe(); ContactsLoader.refresh(); Uploader.shared.flush(); NotificationActions.register()
         Task { await DeviceRegistrar.shared.register(); await ExecutionReporter.shared.flush() }
+        LinkCapture.shared.startDrain()          // 공유 확장이 넘긴 링크(스펙 §6 이어받기) — foreground 에서만 WebKit 이 돈다
+      } else {
+        LinkCapture.shared.suspend()             // 비활성: 읽던 링크를 취소하고 행을 돌려놓는다(시도로 세지 않음)
       }
       if newPhase == .background { BackgroundRefresh.schedule() }
     }

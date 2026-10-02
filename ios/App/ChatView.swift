@@ -1,5 +1,6 @@
 import SwiftUI
 import EruriCore
+import PhotosUI
 
 /// 채팅(스펙 §9): 질문 → 답변 + 인용 항목의 제안 카드(Ruling 8) + 답 맨 아래 텍스트 버튼 막대(맞아요·틀렸어요·복사 — eval_judgments, §9 평가 절차 4, 0.9.0)
 /// + 일정 질문이면 "기기 캘린더" 절(§9 일정 질문과 기기 캘린더 — 기기 안에서만 읽는다)
@@ -9,12 +10,17 @@ struct ChatView: View {
     var calendar: [ProposalFlow.CalendarEvent]?   // "기기 캘린더" 절(§9): 일정 기간의 기기 일정. nil = 일정 질문 아님·읽지 않음·카드가 그 하루를 대신함
     var cards: [ScheduleCard.Model] = []          // 일정 답 카드(§9, 0.8.2): 시작 순 최대 3
     var cardsMore = 0                             // 카드로 못 보인 제안 수
+    var link: String?                             // 링크·사진 턴(§9, 0.11.0): 상태 문구. nil = 질문 턴
+    var linkDone = false
+    var linkSaved = false                         // 큐에 넣었다 — 저장 범위 한 줄(메인 판정 MR1)을 보인다
   }
 
   @State private var input = ""
   @FocusState private var inputFocused: Bool           // 키보드가 탭 막대를 가리므로 스크롤·빈 곳 탭으로 내린다(키보드 툴바 "완료"는 가려져 0.7.1 에서 뺐다)
   @State private var turns: [Turn] = []
   @State private var busy = false
+  @State private var showPhotos = false                // "+" → 사진에서 일정 읽기(§9 채팅 사진 첨부, 0.11.0)
+  @State private var photoItems: [PhotosPickerItem] = []
   @State private var judged: [String: Bool] = [:]      // "<answer_id>|<item_id>" → ok
   @State private var judging: Set<String> = []         // 기록 요청 중인 키 — 연타가 도착 순서 경합을 만들지 않게 막는다
   @State private var judgeSheet: JudgeSheet.Model?     // 틀렸어요 시트: 인용 항목별 관련 있음/없음. 닫기만 하면 기록하지 않는다
@@ -37,7 +43,8 @@ struct ChatView: View {
             Section {
               Text(t.question).font(.subheadline).foregroundStyle(.secondary).id(t.id)
               if let e = t.error { Text(e).foregroundStyle(.red) }
-              if let a = t.answer { answerRows(t, a) }
+              if let l = t.link { linkRow(l, done: t.linkDone, saved: t.linkSaved) }
+              else if let a = t.answer { answerRows(t, a) }
               else if t.error == nil { ProgressView() }
             }
           }
@@ -91,9 +98,18 @@ struct ChatView: View {
       if let n = dictation.state.notice { Text(n).font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 6) }
       HStack(spacing: 10) {
         Menu {
-          Button("이미지·파일 첨부 (2단계 예정)") {}.disabled(true)   // 첨부는 스펙 §15 2단계
+          Button { showPhotos = true } label: { Label("사진에서 일정 읽기", systemImage: "photo") }   // 기기 OCR 글만(§9, 0.11.0)
+          Button("파일 첨부 (2단계 예정)") {}.disabled(true)                                          // 파일 업로드는 스펙 §15 2단계
         } label: { roundIcon("plus", fill: Color(.secondarySystemFill), tint: Color.primary) }
         .buttonStyle(.plain)
+        .disabled(busy)
+        .accessibilityLabel("첨부")
+        .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: ImageText.maxImages, matching: .images)
+        .onChange(of: photoItems) { _, items in
+          guard !items.isEmpty else { return }
+          sendImages(items)
+          photoItems = []
+        }
         Spacer()
         Button { Task { await dictation.toggle(currentText: input) } } label: {
           dictation.recording ? roundIcon("waveform", fill: .red, tint: .white) : roundIcon("mic", fill: Color(.secondarySystemFill), tint: Color.primary)
@@ -343,6 +359,13 @@ struct ChatView: View {
     let q = input.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !q.isEmpty, !busy else { return }
     dictation.stopIfRecording()
+    // 링크 붙여넣기(§9, 0.11.0): http(s) 주소 하나 + 짧은 메모면 질문이 아니라 링크 수집 — /chat 을 부르지 않는다. 둘 이상이면 안내(입력은 남긴다).
+    // 긴 글·날짜 있는 글 + 주소는 지금처럼 질문(LinkText.linkCandidate)
+    switch LinkText.chatIntent(q) {
+    case .link(let url, let note): sendLink(q, url: url, note: note, keepFocus: keepFocus); return
+    case .tooMany: turns.append(Turn(question: q, error: LinkCaptureText.tooMany)); return
+    case .none: break
+    }
     // 서버 한도(⑧b bad_question). 넘으면 입력을 지우지 않고 고칠 수 있게 둔다
     guard q.utf16.count <= 500 else { turns.append(Turn(question: q, error: ChatReply.errorMessage(status: 400))); return }
     input = ""
@@ -370,6 +393,63 @@ struct ChatView: View {
           turns[idx].error = ChatReply.errorMessage(status: r.status)
         }
         return
+      }
+    }
+  }
+
+  /// 링크 수집 턴(§9): 읽기(15초 + OCR) 동안만 보내기를 막고, 서버 결과(최대 60초)는 따로 기다린다
+  private func sendLink(_ q: String, url: URL, note: String?, keepFocus: Bool) {
+    input = ""
+    if !keepFocus { inputFocused = false }
+    var t = Turn(question: q)
+    t.link = LinkCaptureText.reading
+    turns.append(t)
+    let idx = turns.count - 1
+    scroll(to: turns[idx].id)
+    busy = true
+    Task {
+      let read = await LinkCapture.shared.chatRead(url: url, note: note)
+      turns[idx].link = read.text
+      busy = false
+      guard let id = read.captureID else { turns[idx].linkDone = true; return }
+      turns[idx].linkSaved = true
+      turns[idx].link = await LinkCapture.shared.chatResult(captureID: id, subject: .page)
+      turns[idx].linkDone = true
+    }
+  }
+
+  /// 사진 턴(§9 채팅 사진 첨부): 입력창 글은 메모. OCR·업로드 동안 보내기를 막고, 서버 결과(최대 60초)는 따로 기다린다
+  private func sendImages(_ items: [PhotosPickerItem]) {
+    let note = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    input = ""
+    inputFocused = false
+    let n = min(items.count, ImageText.maxImages)
+    var t = Turn(question: note.isEmpty ? "사진 \(n)장" : "사진 \(n)장 · \(note)")
+    t.link = LinkCaptureText.imageReading
+    turns.append(t)
+    let idx = turns.count - 1
+    scroll(to: turns[idx].id)
+    busy = true
+    Task {
+      let read = await LinkCapture.shared.chatImages(Array(items.prefix(n)), note: note.isEmpty ? nil : note)
+      turns[idx].link = read.text
+      busy = false
+      guard let id = read.captureID else { turns[idx].linkDone = true; return }
+      turns[idx].linkSaved = true
+      turns[idx].link = await LinkCapture.shared.chatResult(captureID: id, subject: .image)
+      turns[idx].linkDone = true
+    }
+  }
+
+  /// 링크·사진 턴(§9): 상태 문구 + (큐에 넣었으면) 저장 범위 한 줄 — 일정 카드·보관함 버튼·맞아요 막대 없음(제안은 "제안" 탭·알림)
+  private func linkRow(_ text: String, done: Bool, saved: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        if !done { ProgressView() }
+        Text(text).accessibilityIdentifier("chat-link-status")
+      }
+      if saved {
+        Text(LinkCaptureText.storageNote).font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("chat-link-note")
       }
     }
   }

@@ -94,6 +94,15 @@ final class ScheduleCardTests: XCTestCase {
     XCTAssertNil(ScheduleCard.receivedLine(cite("OTHER")))
   }
 
+  /// 링크·사진 항목(0.11.0, app_name "웹 링크"·"이미지", 스펙 §9 ①)은 "공유한 링크"·"공유한 이미지", 그 밖의 공유는 그대로
+  func testLinkAndImageSourceLines() {
+    XCTAssertEqual(ScheduleCard.sourceLine(cite("SHARE", app: "웹 링크")), "공유한 링크에서 찾은 일정")
+    XCTAssertEqual(ScheduleCard.receivedLine(cite("SHARE", app: "웹 링크")), "10/1 공유한 링크")
+    XCTAssertEqual(ScheduleCard.sourceLine(cite("SHARE", app: "이미지")), "공유한 이미지에서 찾은 일정")
+    XCTAssertEqual(ScheduleCard.receivedLine(cite("SHARE", app: "이미지")), "10/1 공유한 이미지")
+    XCTAssertEqual(ScheduleCard.sourceLine(cite("SHARE")), "공유한 내용에서 찾은 일정")
+  }
+
   /// ② 그날(서울) 줄: 겹친 일정(어느 캘린더든) → 종일 → 시작 순. 표시 대상 캘린더(listed)만·취소·다른 날 제외. 최대 4 + 넘친 수.
   /// 겹침은 값 비교(반복 일정은 회차마다 id 가 같다), 다음 날 0시에 끝나면 그날 안
   func testDayLines() {

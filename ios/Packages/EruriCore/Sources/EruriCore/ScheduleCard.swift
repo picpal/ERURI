@@ -57,7 +57,10 @@ public enum ScheduleCard {
       if SourceLabel.label(source: c.source, appName: c.app_name) == "문자" { return ("문자", "받은 문자") }
       return ("\(c.app_name.flatMap { $0.isEmpty ? nil : $0 } ?? "앱") 알림", "받은 알림")
     case "GMAIL": return ("메일", "받은 메일")
-    case "SHARE": return ("공유한 내용", "공유함")
+    case "SHARE":                                                         // 링크·사진 읽기(스펙 §6, 0.11.0)
+      if c.app_name == LinkText.appName { return ("공유한 링크", "공유한 링크") }
+      if c.app_name == ImageText.appName { return ("공유한 이미지", "공유한 이미지") }
+      return ("공유한 내용", "공유함")
     default: return ("저장된 정보", nil)
     }
   }
