@@ -172,7 +172,7 @@ export async function gmailFetch(sb: RpcClient, job: Job, deps = defaultGmailDep
   return "fetched";
 }
 
-// 광고 구독 해지 스캔(스펙 §7): 30일 1회(운영자가 gmail_enqueue_unsub_scan, ③c2 뒤) 또는 재동기화 공백(payload.after, enqueueUnsubRescan).
+// 광고 구독 해지 스캔(스펙 §7): 30일 1회(운영자가 gmail_enqueue_unsub_scan, ③c2 뒤), 일일 8일 공백(cron gmail_enqueue_unsub_gap, 0029) 또는 재동기화 공백(payload.after, enqueueUnsubRescan).
 // 헤더만 읽는 자식 잡을 50개씩 넣는다. 백필 레인 lease 'backfill:<user>' — 실시간 sync 를 막지 않는다(리뷰 M3)
 export async function gmailUnsubScan(sb: RpcClient, job: Job, deps = defaultGmailDeps): Promise<string> {
   const { user, conn } = ids(job);

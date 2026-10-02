@@ -10,7 +10,7 @@
 | U1 | 헤더 해석 — DKIM 서명을 AR의 selector·`b=` 앞부분으로 특정, 해지 헤더·https URI 각 1개 | U0 | 무관(로컬) | — |
 | U2 | 안전 POST — 요청 1회·3xx는 `redirect_<n>` 실패, DoH 폴백, IPv6 허용 목록식 | U0 | 무관(로컬) | — |
 | U3 | 마이그레이션 — 방법·URL은 메일 행, `unsub_best`, `unsub_list` left join·`can_request`, `unsub_stats`, lease `backfill:<user>` · DB 테스트 · `db push` | U1 | **push·DB 테스트는 창 밖** | — |
-| U4 | 워커 — `recordUnsub` 2초 예산, 스캔 기록 실패는 잡 실패, 재동기화 때 공백 구간 스캔 | U1·U3 | 단위 테스트만 | — |
+| U4 | 워커 — `recordUnsub` 2초 예산 + 잡 로컬 차단기, 스캔 기록 실패는 잡 실패, 재동기화 때 공백 구간 스캔, 일일 8일 공백 스캔 cron `0029`(파일만) | U1·U3 | 단위 테스트 + 0029 트랜잭션 적용·롤백 DB 테스트 | — |
 | U5 | Edge `unsubscribe`(2xx만 접수, sink 키) + 스모크·시드·집계 도구 | U2·U3 | 단위 테스트만 | — |
 | U6a | `unsubscribe` 함수만 배포 + `smoke-unsub` | U3 적용·U5 | **창 밖이면 언제든**(워커 안 건드림) | `UNS-server` 대기 |
 | U7 | EruriCore `Unsubscribe`(`can_request`) | U3 계약 | 무관 | — |
@@ -50,7 +50,7 @@
 | D4 | 해지 요청 보안 | https만·443·userinfo 금지·로컬 호스트명 금지·DNS A/AAAA 전부 공인 주소(사설·루프백·링크로컬·CGNAT·멀티캐스트·문서용 IPv4, IPv6는 `2000::/3` 안이고 6to4·NAT64 내장 사설·문서용·`2001::/23`이 아닐 때만)·전체 10초·**요청 1회, 3xx는 따라가지 않고 실패**(`redirect_<상태>`)·응답 본문 읽지 않음·쿠키/인증 헤더 없음. **DKIM 확인 실패면 보내지 않음**(`unverified`). DNS 재바인딩은 수용 위험(메인 판정 2026-10-02, 사용자 재검토 가능 — 스펙 §12 통제 3) | RFC 8058 §3(유효한 서명이 두 헤더를 덮어야 함)·§3.1(발신자 서버는 리다이렉트하지 않는다) + 위조 발신자가 임의 URL로 POST를 유도하지 못하게. 리다이렉트를 없애 SSRF 창을 첫 요청 하나로 줄인다(리뷰 H3·M1) |
 | D5 | 결과 기록·재표시 억제 | 2xx → `requested`(요청 시각), 그 밖 → `failed`(코드). 요청 뒤 **3일 유예** 뒤에도 광고가 오면 "해지 요청 뒤에도 N통" + [다시 요청]. 같은 발신자 5회 한도(목록 `can_request`로 버튼을 숨김), 60초 안 재요청 `busy`, 60초 넘게 `requesting`이면 결과 없이 끝난 것으로 보고 다시 시도 가능 | 발신자가 처리하는 데 시간이 걸린다(Gmail 대량 발신 가이드 2일). 버튼 두 번 누름·Edge 중단 대비. 한도에 닿은 뒤 누를 수 없는 버튼을 보이지 않는다(리뷰 N5) |
 | D6 | UI 위치 | **설정 "Gmail" 절 → "광고 메일 구독 해지" 화면 하나**. 채팅 카드·새 탭 기각 | 질문 응답이 아니라 관리 작업. 탭 4개 유지(스펙 §11) |
-| D7 | 30일 과거분·공백 | ③c2 뒤 워커 배포(U6b) 직후 1회 `gmail-unsub-scan` 잡(목록 `newer_than:30d {category:promotions subject:광고} -in:drafts` + 게이트 promo 항목 id → 50개씩 `gmail-unsub-fetch`, `format=metadata`, 백필 레인 lease `backfill:<user>`). 재동기화(history 404 — 주간 재인증 공백 등) 때는 `gmailSync`가 같은 구간(`after:<마지막 성공 − 1일>`)의 스캔 잡을 넣는다(메인 결정 2026-10-02, 리뷰 N4) | 배포 즉시 의미 있는 숫자. 측정 기간 실사용자 `jobs` 수정 금지. 백필 lease는 기존 연결 백필(`gmail-connect`의 `backfill:<user>`)과 같아 실시간 sync를 막지 않고 계정 Gmail 호출이 직렬이 된다(리뷰 M3) |
+| D7 | 30일 과거분·공백 | ③c2 뒤 워커 배포(U6b) 직후 1회 `gmail-unsub-scan` 잡(목록 `newer_than:30d {category:promotions subject:광고} -in:drafts` + 게이트 promo 항목 id → 50개씩 `gmail-unsub-fetch`, `format=metadata`, 백필 레인 lease `backfill:<user>`). 재동기화(history 404 — 드문 경우) 때는 `gmailSync`가 같은 구간(`after:<마지막 성공 − 1일>`)의 스캔 잡을 넣는다(메인 결정 2026-10-02, 리뷰 N4). 주간 재인증 공백(재연결은 history 유지)과 실시간 기록 누락은 일 1회 8일 공백 스캔 cron(`0029`, U6b에서 워커 배포 뒤 적용)이 메운다(U4 리뷰 I2) | 배포 즉시 의미 있는 숫자. 측정 기간 실사용자 `jobs` 수정 금지. 백필 lease는 기존 연결 백필(`gmail-connect`의 `backfill:<user>`)과 같아 실시간 sync를 막지 않고 계정 Gmail 호출이 직렬이 된다(리뷰 M3) |
 | D8 | 버전 | **이 기능 = 0.10.0**, 보관 계획 R-B9(요약·저장 공간)는 **0.11.0**으로 밀린다(U0이 스펙 §11·§15·보관 계획을 고친다). 실행 때 `git log --oneline -- ios/project.yml`로 0.10.0이 이미 main에 있으면(R-B9가 먼저 들어감) 이 기능이 다음 빈 마이너를 쓰고 스펙·두 계획을 같은 커밋에서 맞춘다 | 이 기능의 앱은 서버 DDL만 있으면 되고 ③c2를 기다리지 않아 R-B9보다 먼저 나간다 |
 | D9 | 해지 요청 주체 | 서버(Edge). 기기 직접 POST 기각 | 기기로 URL을 내려야 하고 사용자 IP가 발신자에게 간다 |
 | D10 | 배포 분할 | **U6a**(`unsubscribe` 함수만 — 측정 창 밖이면 언제든) / **U6b**(워커·30일 스캔 — ③c2 완료 기록 뒤, 10-08 15:00 KST 이후) | 워커 재배포는 잡 처리 시간을 바꿔 7일 측정에 영향을 줄 수 있고, 일찍 배포해 얻는 것은 본문에만 `(광고)`가 있는 메일 며칠치뿐이다(30일 스캔이 나머지를 채움). 기능 스위치·지연 회귀 테스트보다 배포 순서로 푼다(리뷰 H4) |
@@ -106,7 +106,7 @@
 | F16 | 앱 설정 "Gmail" 절(`ContentView.swift:32-36`), 요청 도우미 `API.send(path, method:, json:, timeout:)`(401 한 번 재시도), 목록 화면 선례 `RecentDiscardsView` + `EruriCore/RecentDiscards`(행 해석·문구를 Core에 두고 XCTest) | `ios/App/ContentView.swift`, `ios/App/API.swift`, `ios/App/RecentDiscardsView.swift` |
 | F17 | 앱 0.9.2, 보관 계획 R-B9가 0.10.0을 예약 | `ios/project.yml:13`, `2026-10-01-retention-summary.md:46,97,3162,3197` |
 | F18 | ERURI 보관함 삭제는 출처 전체(`delete_gmail_source` — 사용자의 Gmail 항목 전부 + 연결)와 계정 전체뿐. 항목·발신자 단위 삭제 RPC·화면은 없다 | `0013_source_delete_lock.sql`, `functions/account/handler.ts`, `grep -rn delete_item` 0건 |
-| F19 | `collectNewMessageIds`는 history 404면 `resync`(목록 `after:<last_success_at − 1일> -category:promotions -in:drafts`, `mode: "resync"`)로 넘어간다 → 그 구간 광고 메일 id는 `gmail-fetch`로 오지 않는다(주간 재인증 공백 등). `gmailSync`는 `gmail_state`의 `last_success_at`을 읽은 뒤 `r.mode`를 돌려준다 | `_shared/gmail.ts:144-169`, `_shared/gmail-jobs.ts:53-68` |
+| F19 | `collectNewMessageIds`는 history 404면 `resync`(목록 `after:<last_success_at − 1일> -category:promotions -in:drafts`, `mode: "resync"`)로 넘어간다 → 그 구간 광고 메일 id는 `gmail-fetch`로 오지 않는다(연결이 active인 채 sync가 history 보존 기간 넘게 멈춘 드문 경우. **주간 재인증 공백은 여기 해당하지 않는다** — 재연결 `gmail_save_connection`(`0001_baseline.sql:247`)이 커서를 새 historyId로 덮어 history 모드가 유지되고, 재연결 백필은 `-category:promotions`라 그 공백의 광고는 일일 공백 스캔 `0029`가 메운다 — U4 리뷰 I2). `gmailSync`는 `gmail_state`의 `last_success_at`을 읽은 뒤 `r.mode`를 돌려준다 | `_shared/gmail.ts:144-169`, `_shared/gmail-jobs.ts:53-68` |
 | F20 | 연결 시 90일 백필 fetch 잡의 lease는 `backfill:<user>`(사용자당 1개 실행 — `jobs_one_running_per_key`) | `gmail-connect/handler.ts:89`, `0001_baseline.sql` `jobs_one_running_per_key` |
 | F21 | `insert_item(GMAIL)`은 `status <> 'disconnected'`인 사용자 Gmail 연결이 없으면 null(항목 없음). 테스트 선례는 `status: "active"` + 실행 태그 `account_ref` | `0013_source_delete_lock.sql:14-16`, `tests/gmail-gate-db.test.ts:21` |
 | F22 | 기존 `gmail.test.ts`의 `fakeDeps`는 `GmailJobDeps` 객체를 직접 만든다(기본값 펼침 없음) → 선택 필드를 더해도 기존 가짜 deps에는 들어가지 않는다. resync 테스트는 `enqueue_job` 호출 순서를 정확히 단언한다 | `tests/gmail.test.ts:110-126,129-144` |
@@ -145,7 +145,7 @@
 | N1 | 원클릭 지원 비율을 맨 끝에야 잼 | 반영 | D11, U6b 판정 지점(스캔 직후·TestFlight 전) |
 | N2 | 테스트 사용자 1 공유로 충돌 | 반영 | U3 실행 태그 주소·범위 비교, 스모크 사용자 11·시드 사용자 12 |
 | N3 | 하네스 원본 경로 없음 | 반영 | F23, U9 Files·Step 1 |
-| N4 | 재인증 공백 광고 누락 | **고친다**(메인 결정 2026-10-02) | U4 `onResync` 훅 → `enqueueUnsubRescan`(`after:`), 스펙 §7 "도착 경로" |
+| N4 | 재인증 공백 광고 누락 | **고친다**(메인 결정 2026-10-02) | U4 `onResync` 훅 → `enqueueUnsubRescan`(`after:`, 드문 404 재동기화) + 일 1회 8일 공백 스캔 cron `0029`(주간 재인증 — 재연결은 history 유지라 훅이 안 돎, U4 리뷰 I2), 스펙 §7 "도착 경로" |
 | N5 | 5회 한도 뒤에도 버튼 | 반영 | U3 `can_request`, U7 `state()` |
 | N6 | U9 게이트 구멍 | 반영 | G1 순서 단언, G3 리다이렉트 실패, G7 DB `attempts` 대조, G8 `unverified` |
 | N7 | U10 판정 성립 조건·사용자 조작 분류 | 반영 | U10 → `UNS-real`, 선행 조건 U6b 판정, 한 번의 요청, "위 10곳" |
@@ -253,9 +253,9 @@ Expected: `n ≥ 1`. 메일 내용·발신자는 보지 않는다(로그에 코�
 
 - **무엇**: 광고 메일을 보내는 발신자별로 "최근 30일 광고 N통"과 [해지]를 보인다. 사용자가 고른 발신자에게만, 확인창 뒤에 서버가 해지 요청을 보낸다. 자동 해지·일괄 해지 없음. 거래 메일은 대상이 아니다 — 광고로 판정된 메일만 세고, 해지는 그 발신자의 광고 수신 거부 요청이다(거래 메일 발송은 발신자 정책).
 - **광고 판정**: (a) 서버 규칙 `promotion` 폐기(`CATEGORY_PROMOTIONS` 라벨·`(광고)` 표기) — 본문은 지금처럼 저장하지 않는다, (b) 저장된 Gmail 항목 중 Jev 게이트가 `promo`로 폐기한 것(`items.status = 'discarded:server:promo'`). 사용자가 "복구"하면 광고에서 빠진다.
-- **기록(헤더 메타만)**: `gmail-fetch`가 (a) 메일과, 저장한 메일 중 `List-Unsubscribe` 헤더가 있는 것(게이트 판정 전이라 `item_id`로 연결해 두고 판정이 `promo`일 때만 센다)의 헤더 메타를 남긴다 — 발신자 From 주소·표시 이름(60자)은 `unsub_senders`, 메일마다 Gmail 메시지 키(`gmail:<id>`)·수신 시각·해지 방법·해지 URL(`one_click`일 때만, 사용자 데이터 키로 암호화 — §12 통제 1)은 `unsub_mail`(§8). 발신자 행에는 URL을 두지 않는다. 구독 해지 기록에는 제목·본문을 저장하지 않는다. 실시간 기록 실패나 2초 초과는 메일 수집을 실패시키지 않는다(fail-open, 로그 코드 `unsub_record_error`). 스캔(아래)의 기록 실패는 잡 실패로 재시도한다(기록은 멱등).
-- **도착 경로**: watch는 프로모션 라벨을 제외해 광고 메일만으로는 Pub/Sub이 오지 않는다. 광고 메일은 다음 sync(다른 메일의 푸시 또는 6시간 cron)의 history로 들어와 기록된다 — 집계는 최대 약 6시간 늦다. history가 404여서 재동기화(`-category:promotions` 목록)로 넘어가면(주간 재인증 공백 등) 그 구간 광고는 history로 오지 않으므로, 재동기화한 sync가 같은 구간(`after:` = 마지막 성공 − 1일)의 헤더 스캔 잡을 하나 넣는다(넣기 실패해도 sync는 계속, 2026-10-02 리뷰 반영). 백필·재동기화 목록의 `-category:promotions`는 그대로다.
-- **30일 스캔**: 워커 배포 직후 운영자가 `gmail_enqueue_unsub_scan(user)`로 1회 넣는다(Gmail 게이트 ③c2 뒤). 목록 `newer_than:30d {category:promotions subject:광고} -in:drafts`(재동기화 스캔은 `after:<초>`)와 같은 기간 게이트 `promo` 항목의 Gmail id(이미 기록된 것 제외)를 모아 `gmail-unsub-fetch` 잡(50개씩, 백필 레인, lease `backfill:<user>` — 연결 시 90일 백필과 같은 레인이라 실시간 sync를 막지 않고 계정의 Gmail 호출이 한 줄로 선다)이 `messages.get format=metadata`(From·Subject·List-Unsubscribe·List-Unsubscribe-Post·Authentication-Results·DKIM-Signature)로 헤더만 읽는다. 라벨·제목·발신자 표기로 광고가 아니면 버린다. **스캔의 광고 판정은 실시간과 다르다**: 본문을 읽지 않아 본문에만 `(광고)` 표기가 있는 과거 메일은 세지 못하고 OTP 제외 규칙도 적용하지 않는다(광고 라벨·표기가 있는 메일이라 수용). 연결을 지우고 다시 연결해도 30일 스캔은 다시 넣지 않는다(새 광고부터 쌓인다).
+- **기록(헤더 메타만)**: `gmail-fetch`가 (a) 메일과, 저장한 메일 중 `List-Unsubscribe` 헤더가 있는 것(게이트 판정 전이라 `item_id`로 연결해 두고 판정이 `promo`일 때만 센다)의 헤더 메타를 남긴다 — 발신자 From 주소·표시 이름(60자)은 `unsub_senders`, 메일마다 Gmail 메시지 키(`gmail:<id>`)·수신 시각·해지 방법·해지 URL(`one_click`일 때만, 사용자 데이터 키로 암호화 — §12 통제 1)은 `unsub_mail`(§8). 발신자 행에는 URL을 두지 않는다. 구독 해지 기록에는 제목·본문을 저장하지 않는다. 실시간 기록 실패나 2초 초과는 메일 수집을 실패시키지 않는다(fail-open, 로그 코드 `unsub_record_error`). 2초 예산은 기록 1건마다라 기록 RPC가 계통적으로 멈추면 잡 지연이 기록 수만큼 커지므로, `gmail-fetch` 잡은 첫 기록 실패·초과 뒤 그 잡의 나머지 기록을 건너뛴다(로그 `unsub_record_skipped`·개수, 잡당 추가 지연 약 2초 — 빠진 기록은 일일 공백 스캔이 채운다). 스캔(아래)의 기록 실패는 잡 실패로 재시도한다(기록은 멱등).
+- **도착 경로**: watch는 프로모션 라벨을 제외해 광고 메일만으로는 Pub/Sub이 오지 않는다. 광고 메일은 다음 sync(다른 메일의 푸시 또는 6시간 cron)의 history로 들어와 기록된다 — 집계는 최대 약 6시간 늦다. **주간 재인증 공백**은 재연결(`gmail_save_connection`)이 커서를 새 historyId로 덮어 history 모드가 유지되므로 재동기화가 일어나지 않고, 재연결 백필은 `-category:promotions`라 `reauth_required` 기간의 프로모션 광고는 실시간 경로로 오지 않는다. 이 공백은 **일일 공백 스캔**이 메운다: pg_cron(KST 04:27, `0029`)이 활성 Gmail 연결마다 최근 8일(`after:` = 지금 − 8일, 재인증 공백 7일 + 하루) 헤더 스캔 잡을 넣는다(`gmail_enqueue_unsub_gap`, 그 사용자에게 대기 중 스캔이 있으면 건너뜀). 실시간 기록이 빠진 것(아래 잡 로컬 차단기로 건너뛴 기록, 실시간 경로가 비는 경우)도 같은 스캔이 채운다(기록은 메시지 키로 멱등). history가 404여서 재동기화로 넘어가는 드문 경우(연결이 active인 채 sync가 history 보존 기간 넘게 멈춤)에는 재동기화한 sync가 같은 구간(`after:` = 마지막 성공 − 1일)의 헤더 스캔 잡을 바로 하나 넣는다(넣기 실패해도 sync는 계속, 2026-10-02 리뷰 반영). 백필·재동기화 목록의 `-category:promotions`는 그대로다.
+- **30일 스캔**: 워커 배포 직후 운영자가 `gmail_enqueue_unsub_scan(user)`로 1회 넣는다(Gmail 게이트 ③c2 뒤). 목록 `newer_than:30d {category:promotions subject:광고} -in:drafts`(일일 공백·재동기화 스캔은 `after:<초>`)와 같은 기간 게이트 `promo` 항목의 Gmail id(이미 기록된 것 제외)를 모아 `gmail-unsub-fetch` 잡(50개씩, 백필 레인, lease `backfill:<user>` — 연결 시 90일 백필과 같은 레인이라 실시간 sync를 막지 않고 계정의 Gmail 호출이 한 줄로 선다)이 `messages.get format=metadata`(From·Subject·List-Unsubscribe·List-Unsubscribe-Post·Authentication-Results·DKIM-Signature)로 헤더만 읽는다. 라벨·제목·발신자 표기로 광고가 아니면 버린다. **스캔의 광고 판정은 실시간과 다르다**: 본문을 읽지 않아 본문에만 `(광고)` 표기가 있는 과거 메일은 세지 못하고 OTP 제외 규칙도 적용하지 않는다(광고 라벨·표기가 있는 메일이라 수용). 연결을 지우고 다시 연결해도 30일 스캔은 다시 넣지 않는다(새 광고와 일일 공백 스캔의 최근 8일부터 쌓인다).
 - **해지 방법 판정**(메일마다): `one_click` = `List-Unsubscribe`·`List-Unsubscribe-Post` 헤더가 **각각 정확히 1개**, https URI가 정확히 1개, `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, 그리고 **맨 위** `Authentication-Results`가 Gmail(`mx.google.com`)의 것이고 그 안의 `dkim=pass` 결과가 서명 도메인(`header.d` 또는 `header.i`의 도메인)·selector(`header.s`)·서명값 앞부분(`header.b`)으로 **`DKIM-Signature` 하나를 특정**하며 그 서명의 `h=`가 두 헤더를 모두 덮음(RFC 8058 §3 — 유효한 서명이 덮어야 한다). 추가로 서명 도메인이 From 도메인과 같거나 그 상위 도메인이어야 한다 — 이 정렬 조건은 RFC가 아니라 **제품 정책**이다(외부 발송 대행 도메인 서명은 `unverified`가 된다). `unverified` = 원클릭 헤더는 있으나 위 확인 실패(헤더·URI 중복 포함) · `link_only` = https 링크뿐(웹 페이지 방식) · `mailto` = 메일 주소뿐 · `none` = 헤더 없음. URL이 2,048자를 넘으면 없는 것으로 본다. 목록·요청에 쓰는 발신자의 방법·URL은 그 발신자의 **광고로 세는 메일**에서만 고른다 — 그중 `one_click`이 있으면 가장 최근 `one_click` 메일, 없으면 가장 최근 메일(같은 From의 거래·뉴스레터 메일 URL로 요청하지 않는다). **`one_click`만 [해지] 버튼**, 나머지는 사유만 보인다(mailto 발송은 `gmail.send` 재동의, 링크 열기는 원클릭이 아니어서 이번 범위 밖 — §16).
 - **해지 요청**(Edge `unsubscribe`, 사용자 JWT, `POST {sender_id}`): `unsub_begin`(행 잠금, 상태 확인, 그 시점의 광고 메일에서 방법·URL 선택, 복호화 감사) → URL 복호화 → 안전 POST → `unsub_finish`. 안전 POST(`_shared/safe-post.ts`): https만, 포트 443, userinfo 없음, `localhost`·`.local`·`.internal`·`.home.arpa`·점 없는 호스트 거부, DNS(A·AAAA) 결과가 하나라도 사설·루프백·링크로컬·CGNAT·멀티캐스트·예약·문서용 IPv4이거나, IPv6가 전역 유니캐스트 `2000::/3` 밖이거나 그 안의 특수 대역(6to4·NAT64 내장 사설, 문서용, `2001::/23`)이면 거부, 본문 `List-Unsubscribe=One-Click`(`application/x-www-form-urlencoded`), 쿠키·인증 헤더 없음, 전체 10초, **요청은 한 번 — 3xx는 따라가지 않고 실패**(`redirect_<상태>`; RFC 8058 §3.1은 발신자 서버가 리다이렉트하지 않아야 한다고 정하므로 리다이렉트는 접수의 증거가 아니다). 응답 본문은 읽지 않는다. 남은 위험 DNS 재바인딩은 수용(§12 통제 3). 리졸버는 런타임의 `Deno.resolveDns`(A·AAAA 둘 다 실패하거나 함수가 없으면 DNS-over-HTTPS `dns.google`, 호스트 이름만 간다).
 - **결과·재표시**: 2xx → `requested`(요청 시각), 그 밖(3xx 포함) → `failed`(결과 코드). 요청 시각 + 3일 뒤에도 광고가 오면 "해지 요청 뒤에도 광고 N통"과 [다시 요청]. 같은 발신자 요청은 5회까지(한도에 닿으면 버튼 대신 "요청 한도(5회)에 도달했어요"), 60초 안 재요청은 `busy`, 60초 넘게 `requesting`이면 결과 없이 끝난 것으로 보고 다시 시도할 수 있다. 목록은 발신자 기준으로 최근 30일 광고가 있거나 30일 안에 요청·실패한 발신자만(광고 메일 행이 정리된 뒤에도 요청 이력은 남는다), 30일 광고 수 순, 100곳까지. 화면의 수는 기록을 시작한 뒤(30일 스캔 포함)의 최근 30일이다.
@@ -2722,9 +2722,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `docs/superpowers/phase1/gates.md` (행 `UNS-server` 대기 → 통과)
+- Apply: `supabase/migrations/0029_unsub_gap_scan.sql` (호스팅 DB, 워커 배포 뒤)
 
 **Interfaces:**
-- Consumes: U4 커밋(워커 기록·스캔·재동기화 훅), U6a(배포된 `unsubscribe`·`UNSUB_SINK_KEY`), U8·U9(0.10.0 앱, 시뮬레이터 게이트 통과), U5 `unsub-stats.ts`.
+- Consumes: U4 커밋(워커 기록·스캔·재동기화 훅·잡 로컬 차단기, `0029_unsub_gap_scan.sql` 파일 — 미적용), U6a(배포된 `unsubscribe`·`UNSUB_SINK_KEY`), U8·U9(0.10.0 앱, 시뮬레이터 게이트 통과), U5 `unsub-stats.ts`.
 - Produces: 배포된 `worker`, 실사용자 30일 스캔 결과(집계만), **원클릭 비율 판정(D11)**, TestFlight 0.10.0.
 
 **왜 ③c2 뒤인가(D10):** 워커 재배포는 잡 처리 시간을 바꿔 Gmail 7일 측정(지연·재시도·후속 저장)에 영향을 줄 수 있다. 30일 스캔이 배포 전 광고를 채우므로 일찍 배포해 얻는 것이 거의 없다.
@@ -2752,10 +2753,20 @@ Expected: 기존 단건 회귀 `{"gate":"pass",…}`(워커 재배포가 process
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/gmail-gate.ts status`
 Expected: dead `gmail-fetch` 0, 연결 `active`(Gmail 게이트 원장의 직전 값과 같은 꼴).
 
+- [ ] **Step 3b: 0029 적용 (일일 공백 스캔 cron, U4 리뷰 I2)**
+
+워커 배포·회귀 뒤에만 적용한다 — 먼저 적용하면 배포 전 워커가 `gmail-unsub-scan`을 모르는 잡으로 받아 dead가 된다.
+
+Run: `supabase db push --dry-run`
+Expected: 적용 대상이 `0029_unsub_gap_scan.sql` 하나뿐.
+
+Run: `supabase db push --yes && deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/unsub-gap-db.test.ts supabase/tests/unsub-db.test.ts`
+Expected: 적용 성공, 테스트 전부 통과(`unsub-gap-db`는 배포본을 그대로 쓰고 롤백). `cron.job`에 `unsub-gap-scan-daily`(`27 19 * * *`)가 있다. 첫 실행(다음 KST 04:27) 뒤 `unsub-stats.ts`의 `jobs`에 `gmail-unsub-scan:done`이 늘었는지·dead 0인지 Step 4의 확인과 함께 본다.
+
 - [ ] **Step 4: 30일 스캔**
 
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/unsub-stats.ts --enqueue-scan`
-Expected: `{"enqueued":1,"since":"<ISO>"}` 뒤 집계 한 줄. `since` 값을 적어 둔다.
+Expected: `{"enqueued":1,"since":"<ISO>"}` 뒤 집계 한 줄. `since` 값을 적어 둔다. `enqueued: 0`이면 일일 공백 스캔(0029)이 대기·실행 중이다(같은 lease 대기 중 검사) — 그 잡이 done 된 뒤 다시 실행한다.
 
 10분 간격으로(최대 1시간) `unsub-stats.ts --since <위 since>`를 다시 실행해 `jobs`에 `gmail-unsub-scan:done`이 있고 `gmail-unsub-fetch:*`가 모두 `done`(queued·running 0, **dead 0**)인지 본다. 같은 시점에 `gmail-gate.ts status`로 실시간 sync dead 0도 본다(스캔은 `backfill:<user>` lease라 sync를 막지 않는다). dead가 있으면 `jobs.last_error` 코드만 조회해 적는다 — 스캔 fetch의 기록 실패는 잡 실패로 남으므로(U4) dead 0이 완료 조건이다.
 
