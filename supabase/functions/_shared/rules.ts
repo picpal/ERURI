@@ -23,7 +23,7 @@ const ACCOUNT_LIKE = /(?<![\d-])(?:\d{2,6}(?:-\d{2,6}){2,3}|\d{10,16})(?![\d-])/
 const ACCOUNT_KEYWORD = /은행|뱅크|계좌|예금주|입금|농협|신협|수협|우체국|새마을금고|신한|국민|기업|IBK|KB|NH|SC제일|씨티/;
 const ACCOUNT_WINDOW = 20;
 // 정보통신망법 광고 표기 "(광고)"
-const AD_MARK = /^\s*(?:\[Web발신\]\s*)?[(\[]\s*광고\s*[)\]]/;
+export const AD_MARK = /^\s*(?:\[Web발신\]\s*)?[(\[]\s*광고\s*[)\]]/;
 
 type Range = { start: number; end: number };
 
