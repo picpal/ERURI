@@ -17,6 +17,14 @@ final class LinkCaptureTextTests: XCTestCase {
     XCTAssertEqual(LinkCaptureText.storageNote, "읽은 글은 공유한 내용처럼 암호화해 보관해요. 짧은 페이지는 보이는 글 전체가 저장돼요.")
   }
 
+  /// 확장의 큐 쓰기 실패(L4 메인 판정): failed("queue") 는 텍스트 폴백을 하지 않고(LinkFlow.fallsBackToText) 대기 행을 앱이 이어받으므로
+  /// "앱을 열면 다시 읽어요" 계열. 다른 확정 실패·채팅 문구는 그대로
+  func testShareQueueFailureText() {
+    XCTAssertEqual(LinkCaptureText.share(.failed("queue")), "기기에 잠시 저장하지 못했어요. ERURI 앱을 열면 다시 읽어요.")
+    XCTAssertEqual(LinkCaptureText.share(.failed("timeout")), "페이지를 읽지 못했어요(시간이 너무 걸려요).")
+    XCTAssertEqual(LinkCaptureText.chat(.failed("queue")), "페이지를 읽지 못했어요(기기에 저장하지 못했어요).")
+  }
+
   func testChatTexts() {
     XCTAssertEqual(LinkCaptureText.chat(.queued(captureID: "c", chars: 640, ocr: true, timedOut: false)), "페이지에서 글 640자를 읽었어요. 일정을 찾는 중…")
     XCTAssertEqual(LinkCaptureText.chat(.failed("timeout")), "페이지를 읽지 못했어요(시간이 너무 걸려요).")

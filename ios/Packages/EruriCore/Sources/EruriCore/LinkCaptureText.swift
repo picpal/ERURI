@@ -43,6 +43,8 @@ public enum LinkCaptureText {
     case .handedOff("no_date"), .handedOff("empty"): return "그림으로 된 페이지 같아요. ERURI 앱을 열면 그림 속 글자까지 다시 읽어요."
     case .handedOff, .retry: return "지금은 다 읽지 못했어요. ERURI 앱을 열면 다시 읽어요."
     case .discarded: return discarded
+    // 큐 쓰기 실패는 텍스트 폴백을 하지 않는다(LinkFlow.fallsBackToText) — 대기 행이 남아 앱이 이어받는다(L4 메인 판정)
+    case .failed("queue"): return "기기에 잠시 저장하지 못했어요. ERURI 앱을 열면 다시 읽어요."
     case .failed(let code): return "페이지를 읽지 못했어요(\(reason(code)))."
     }
   }
