@@ -62,7 +62,8 @@ Deno.test("SHARE request: stage timeline, public event and notes rules in the in
   const r = buildTextExtractRequest("[웹 링크] 합성 경진대회 접수 9월 24일 ~ 11월 5일 24시", SHARE_META, "2026-10-03");
   const ins = textOf(r, 1);
   for (const s of ["SHARE", "대회·공모전·시험·채용", "날짜가 있는 단계마다", "마감 일시 하나", "'마감'", "그날 23:59", "다음 날 00:00이 아니다",
-    "날짜와 장소가 함께 있는 공개 행사", "축제·전시·체험·공연", "홍보 문구가 섞여 있어도 event", "할인·쿠폰", "SHARE여도 none", "notes", "신청·접수 방법"]) {
+    "날짜와 장소가 함께 있는 공개 행사", "축제·전시·체험·공연", "홍보 문구가 섞여 있어도 event", "할인·쿠폰", "SHARE여도 none", "notes", "신청·접수 방법",
+    "같은 날의 단계", "한 일정에만", "오시는 길"]) {
     assert(ins.includes(s), s);
   }
   // 기존 규칙은 그대로 남는다(부수 일시·광고 none — SHARE 예외는 그 뒤에 붙는다)

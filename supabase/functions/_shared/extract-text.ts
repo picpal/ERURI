@@ -32,7 +32,7 @@ const EVENT_ITEM = {
 const EVENT_ITEM_SHARE = {
   ...EVENT_ITEM,
   required: [...EVENT_ITEM.required, "notes"],
-  properties: { ...EVENT_ITEM.properties, notes: S("신청·접수 방법 안내(신청 경로·방법·준비물·문의처). 원문에 있을 때만 200자 이내, 없으면 null") },
+  properties: { ...EVENT_ITEM.properties, notes: S("신청·접수 방법(어디서·어떻게 신청하는지, 제출물, 문의처). 원문에 있을 때만 한 일정에 200자 이내, 그 밖은 null") },
 } as const;
 
 export const TEXT_SCHEMA = {
@@ -87,9 +87,9 @@ type RawText = { kind: TextKind; title: string | null; events: RawTextEvent[]; d
   order_no: string | null; order_status: string | null; evidence: string | null; uncertain: string[]; year_in_text: boolean; lunar: boolean };
 
 // SHARE 에만 끼우는 줄(스펙 §7, 2026-10-03 사용자 결정 — 다건 계획 U2 개정, diag-hackathon B2·diag-restore R2). 각 줄은 기준 줄 바로 뒤에 들어간다
-const SHARE_STAGES = "  · 단, 출처가 SHARE(사용자가 직접 공유한 글·링크·사진)이고 대회·공모전·시험·채용처럼 단계별 일정표(접수·제출, 서류·필기·면접, 결과 발표, 본선·시상식 등)가 있으면 날짜가 있는 단계마다 하나씩 넣는다. 단계 제목마다 대회·행사 이름을 붙인다. 접수·제출 기간은 마감 일시 하나로 넣고 제목에 '마감'을 붙인다(예: '합성 경진대회 접수 마감'). '24시'·'자정까지' 마감은 그날 23:59로 쓴다(다음 날 00:00이 아니다).";
+const SHARE_STAGES = "  · 단, 출처가 SHARE(사용자가 직접 공유한 글·링크·사진)이고 대회·공모전·시험·채용처럼 단계별 일정표(접수·제출, 서류·필기·면접, 결과 발표, 본선·시상식 등)가 있으면 날짜가 있는 단계마다 하나씩 넣는다. 같은 날의 단계(본선 발표와 시상식 등)는 하나로 넣는다. 단계 제목마다 대회·행사 이름을 붙인다. 접수·제출 기간은 마감 일시 하나로 넣고 제목에 '마감'을 붙인다(예: '합성 경진대회 접수 마감'). '24시'·'자정까지' 마감은 그날 23:59로 쓴다(다음 날 00:00이 아니다).";
 const SHARE_PUBLIC = "  · 단, 출처가 SHARE이면 날짜와 장소가 함께 있는 공개 행사(축제·전시·체험·공연 등)는 할인·사전예약·'놓치지 마세요' 같은 홍보 문구가 섞여 있어도 event다. 할인·쿠폰 안내만 있고 행사 일시가 없거나, 장소 없이 출연진·날짜만 나열한 라인업은 SHARE여도 none이다.";
-const SHARE_NOTES = "  · notes: 신청·접수 방법 안내(신청 경로·방법·준비물·문의처)가 원문에 있으면 그 접수·신청 일정의 notes에, 그런 일정이 없으면 본 행사의 notes에 200자 이내로 옮긴다. 안내가 없는 일정은 null이다.";
+const SHARE_NOTES = "  · notes: 원문에 신청·접수 방법(어디서·어떻게 신청하는지, 제출물, 문의처)이 있으면 한 일정에만 200자 이내로 옮긴다 — 접수·신청 마감 일정이 있으면 그 일정, 없으면 본 행사. 오시는 길·교통·계좌·할인·프로그램 소개 같은 다른 안내는 넣지 않는다. 신청·접수가 없는 일정(결혼식·돌잔치 등)과 나머지 일정은 null이다.";
 
 const TEXT_INSTRUCTION = (today: string, share: boolean) => [
   `이 메시지를 받은 날은 ${today}(Asia/Seoul)이다. '내일'·'목요일' 같은 상대 날짜는 이 날짜를 기준으로 계산하라.`,
