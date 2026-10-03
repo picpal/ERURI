@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
-import { buildTextExtractRequest, EVIDENCE_MAX, MAX_EVENTS, MAX_TEXT_CHARS, normalizeTextExtraction, parseTextExtractResponse, TEXT_SCHEMA }
+import { buildTextExtractRequest, EVIDENCE_MAX, MAX_EVENTS, MAX_TEXT_CHARS, normalizeTextExtraction, NOTES_MAX, parseTextExtractResponse, TEXT_SCHEMA }
   from "../functions/_shared/extract-text.ts";
 import { receivedDay, seoulToday } from "../functions/_shared/time.ts";
 import { proposalAction, textFacts } from "../functions/_shared/facts.ts";
@@ -53,6 +53,43 @@ Deno.test("text request: gpt-6-luna, store false, effort none, strict; source/ap
   assertEquals(textOf(bare, 0), "출처: MESSAGES\n메시지:\n합성");
 });
 
+// SHARE 추출 지시(스펙 §7, 2026-10-03 사용자 결정): 출처가 SHARE 일 때만 단계별 일정표·공개 행사·신청 방법 notes 를 더한다
+const SHARE_META = { source: "SHARE", appName: "웹 링크", title: "합성 경진대회" };
+const sha = async (s: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))))
+  .map((b) => b.toString(16).padStart(2, "0")).join("");
+
+Deno.test("SHARE request: stage timeline, public event and notes rules in the instruction; event items carry notes (strict)", () => {
+  const r = buildTextExtractRequest("[웹 링크] 합성 경진대회 접수 9월 24일 ~ 11월 5일 24시", SHARE_META, "2026-10-03");
+  const ins = textOf(r, 1);
+  for (const s of ["SHARE", "대회·공모전·시험·채용", "날짜가 있는 단계마다", "마감 일시 하나", "'마감'", "그날 23:59", "다음 날 00:00이 아니다",
+    "날짜와 장소가 함께 있는 공개 행사", "축제·전시·체험·공연", "홍보 문구가 섞여 있어도 event", "할인·쿠폰", "SHARE여도 none", "notes", "신청·접수 방법"]) {
+    assert(ins.includes(s), s);
+  }
+  // 기존 규칙은 그대로 남는다(부수 일시·광고 none — SHARE 예외는 그 뒤에 붙는다)
+  for (const s of ["부수 일시", "광고·홍보성 행사 목록", "최대 5개"]) assert(ins.includes(s), s);
+  assert(ins.indexOf("부수 일시") < ins.indexOf("날짜가 있는 단계마다"));
+  assert(ins.indexOf("광고·홍보성 행사 목록") < ins.indexOf("날짜와 장소가 함께 있는 공개 행사"));
+  const item = (r.text.format.schema.properties as Record<string, any>).events.items;
+  assertEquals(item.additionalProperties, false);
+  assertEquals([...item.required].sort(), Object.keys(item.properties).sort());
+  assert(item.required.includes("notes"));
+  assertEquals(item.properties.notes.type, ["string", "null"]);
+});
+
+// 비SHARE 출처는 요청(지시문·스키마)이 바이트 그대로 — 아래 해시는 SHARE 분기 전 main(724d5d5)의 MESSAGES 요청에서 잰 값
+Deno.test("non-SHARE requests are byte-identical to the pre-SHARE request (instruction + schema hash)", async () => {
+  for (const source of ["MESSAGES", "NOTIFICATION", "GMAIL", "CHAT"]) {
+    const r = buildTextExtractRequest("합성", { source, appName: null, title: null }, "2026-10-01");
+    assertEquals(await sha(JSON.stringify({ ins: textOf(r, 1), schema: r.text.format.schema })),
+      "bd6bf45ade84ba3f7c3ded6642e4e2c3a296c4c1688b7fe7be6684bc173d44eb", source);
+    assertEquals(r.text.format.schema, TEXT_SCHEMA);
+  }
+  // 출처 판정은 정확한 값 — 소문자·앱 이름 "웹 링크"만으로는 SHARE 가 아니다
+  for (const meta of [{ source: "share", appName: null, title: null }, { source: "MESSAGES", appName: "웹 링크", title: null }]) {
+    assert(!textOf(buildTextExtractRequest("합성", meta, "2026-10-01"), 1).includes("SHARE"));
+  }
+});
+
 Deno.test("text request: body over 4,000 chars is cut; blank body throws", () => {
   const r = buildTextExtractRequest("가".repeat(MAX_TEXT_CHARS + 500), META, "2026-09-29");
   assertEquals(textOf(r, 0).split("메시지:\n")[1].length, MAX_TEXT_CHARS);
@@ -98,11 +135,36 @@ Deno.test("C1: year missing in text → no uncertain year → planProposalPush A
   assertEquals(due.kind === "task" && due.task.uncertain, []);
 });
 
-Deno.test("normalize: event without start / task without title / purchase without merchant and amount → none", () => {
-  assertEquals(normalizeTextExtraction(raw({ kind: "event", events: [ev({ title: "약속", start: null })] }), "2026-09-29"), { kind: "none" });
-  assertEquals(normalizeTextExtraction(raw({ kind: "task", title: "  " }), "2026-09-29"), { kind: "none" });
-  assertEquals(normalizeTextExtraction(raw({ kind: "purchase", merchant: null, amount: null }), "2026-09-29"), { kind: "none" });
-  assertEquals(normalizeTextExtraction(raw({ kind: "none", title: "무시" }), "2026-09-29"), { kind: "none" });
+// R1(2026-10-03): none 에 사유 코드와 모델이 낸 원래 일정 후보 수를 담는다(워커 empty 로그용 — 본문·값 없음)
+Deno.test("normalize: event without start / task without title / purchase without merchant and amount → none with a reason code", () => {
+  assertEquals(normalizeTextExtraction(raw({ kind: "event", events: [ev({ title: "약속", start: null }), ev({ start: "모름" })] }), "2026-09-29"),
+    { kind: "none", why: "no_start", raw_events: 2 });
+  assertEquals(normalizeTextExtraction(raw({ kind: "event", events: [] }), "2026-09-29"), { kind: "none", why: "no_start", raw_events: 0 });
+  assertEquals(normalizeTextExtraction(raw({ kind: "task", title: "  " }), "2026-09-29"), { kind: "none", why: "task_no_title", raw_events: 0 });
+  assertEquals(normalizeTextExtraction(raw({ kind: "purchase", merchant: null, amount: null }), "2026-09-29"),
+    { kind: "none", why: "purchase_empty", raw_events: 0 });
+  assertEquals(normalizeTextExtraction(raw({ kind: "none", title: "무시" }), "2026-09-29"), { kind: "none", why: "model_none", raw_events: 0 });
+  assertEquals(normalizeTextExtraction(raw({ kind: "none", events: [ev({ start: "2026-10-04" })] }), "2026-09-29"),
+    { kind: "none", why: "model_none", raw_events: 1 });
+});
+
+// notes(SHARE 일정의 신청·접수 방법): 다듬고 NOTES_MAX 에서 자른다. null·빈 값이면 키 자체가 없다(비SHARE 응답에는 필드가 없다)
+Deno.test("normalize: event notes trimmed and cut; missing, null or blank notes leave no key; textFacts carries notes into the payload", () => {
+  const x = normalizeTextExtraction(raw({ kind: "event", events: [
+    ev({ title: "합성 경진대회 접수 마감", start: "2026-11-05T23:59", notes: "  합성플랫폼 누리집에서 온라인 접수  " }),
+    ev({ title: "합성 경진대회 본선", start: "2026-11-19", notes: "가".repeat(NOTES_MAX + 50) }),
+    ev({ title: "합성 경진대회 예선 결과 발표", start: "2026-11-12", notes: "  " }),
+    ev({ title: "합성 경진대회 시상식", start: "2026-11-20", notes: null }),
+    ev({ title: "합성 축제", start: "2026-11-21" }),
+  ] }), "2026-10-03");
+  assertEquals(x.kind, "event");
+  if (x.kind !== "event") return;
+  // 시작 순: 11-05 접수 마감 · 11-12 발표(빈 notes) · 11-19 본선(긴 notes) · 11-20 시상식(null) · 11-21 축제(필드 없음)
+  assertEquals(x.events.map((e) => e.notes ?? null), ["합성플랫폼 누리집에서 온라인 접수", null, "가".repeat(NOTES_MAX), null, null]);
+  assertEquals(x.events.map((e) => "notes" in e), [true, false, true, false, false]);
+  const f = textFacts("u1", "i1", x)!;
+  assertEquals(f.entries[0].payload.notes, "합성플랫폼 누리집에서 온라인 접수");
+  assertEquals(f.entries.map((e) => "notes" in e.payload), [true, false, true, false, false]);
 });
 
 Deno.test("normalize: event → Seoul ISO + uncertain; evidence trimmed and cut at 300", () => {
@@ -132,8 +194,8 @@ Deno.test("normalize: duplicates collapsed, sorted by start, capped at 5; no-sta
   const dup = normalizeTextExtraction(raw({ kind: "event", events: [ev({ title: "합성 공연", start: "2026-10-09T19:30" }),
     ev({ title: " 합성 공연 ", start: "2026-10-09T19:30:00+09:00" })] }), "2026-10-01");
   assertEquals(dup.kind === "event" && dup.events.length, 1);
-  assertEquals(normalizeTextExtraction(raw({ kind: "event", events: [ev({ start: null })] }), "2026-10-01"), { kind: "none" });
-  assertEquals(normalizeTextExtraction(raw({ kind: "event", events: [] }), "2026-10-01"), { kind: "none" });
+  assertEquals(normalizeTextExtraction(raw({ kind: "event", events: [ev({ start: null })] }), "2026-10-01"), { kind: "none", why: "no_start", raw_events: 1 });
+  assertEquals(normalizeTextExtraction(raw({ kind: "event", events: [] }), "2026-10-01"), { kind: "none", why: "no_start", raw_events: 0 });
 });
 
 Deno.test("normalize: date-only events sort as Seoul midnight; evidence per event cut at 300", () => {

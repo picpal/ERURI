@@ -88,7 +88,9 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   await deps.addTokens(user, usage.input_tokens + usage.output_tokens, job.payload.backfill === true);
   const facts = textFacts(user, itemId, result);
   if (facts === null) {                                              // 남길 것 없음: 원문 유지(1b 검색 대상, §7)
-    const st = await discard(deps, job, user, itemId, "empty", false);
+    // R1(2026-10-03): 0건 사유 코드·모델이 낸 원래 일정 후보 수만 로그에(본문·값 없음) — model_none 과 no_start 를 가른다
+    const why = result.kind === "none" ? { why: result.why ?? null, raw_events: result.raw_events ?? null } : {};
+    const st = await discard(deps, job, user, itemId, "empty", false, why);
     await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);
     return st;
   }
@@ -102,10 +104,11 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
     label: verdict?.label ?? null, confidence: verdict?.confidence ?? null, tokens: usage.input_tokens + usage.output_tokens });
 }
 
-async function discard(deps: TextDeps, job: Job, user: string, itemId: string, reason: string, wipe: boolean): Promise<string> {
+async function discard(deps: TextDeps, job: Job, user: string, itemId: string, reason: string, wipe: boolean,
+  extra: Record<string, unknown> = {}): Promise<string> {
   const status = `discarded:server:${reason}`;
   await deps.setStatus(user, itemId, status, wipe);
-  return log(job, status, { wipe });
+  return log(job, status, { wipe, ...extra });
 }
 
 function log(job: Job, checkpoint: string, m: Record<string, unknown>): string {

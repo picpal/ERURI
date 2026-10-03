@@ -177,6 +177,27 @@ Deno.test("nothing to keep → discarded:server:empty without wipe; missing ciph
   assertEquals(n.calls.decrypt, 0);
 });
 
+// R1(2026-10-03): 추출 0건이면 empty 로그 줄에 사유 코드·원래 일정 후보 수만(본문·추출값 없음). 다른 empty(원문 없음)는 사유 없음
+Deno.test("empty after extraction logs why and raw_events only — no body or extracted values", async () => {
+  const lines: string[] = [];
+  const orig = console.log;
+  console.log = (...a: unknown[]) => { lines.push(a.map(String).join(" ")); };
+  try {
+    const e = fake({ item: { source: "SHARE" }, text: "[이미지] 합성구 문화제 10.23~25 합성광장", result: { kind: "none", why: "no_start", raw_events: 3 } });
+    assertEquals(await processText(e.d, job()), "discarded:server:empty");
+    const m = fake({ result: { kind: "none" } });                     // 사유가 없는 none(구 형태)도 깨지지 않는다
+    assertEquals(await processText(m.d, job()), "discarded:server:empty");
+    const n = fake({ item: { contentEnc: null } });
+    assertEquals(await processText(n.d, job()), "discarded:server:empty");
+  } finally {
+    console.log = orig;
+  }
+  const logs = lines.map((l) => JSON.parse(l) as Record<string, unknown>);
+  assertEquals(logs.map((l) => [l.checkpoint, l.why, l.raw_events]),
+    [["discarded:server:empty", "no_start", 3], ["discarded:server:empty", null, null], ["discarded:server:empty", undefined, undefined]]);
+  for (const l of lines) for (const w of ["합성구", "문화제", "합성광장"]) assertEquals(l.includes(w), false, w);
+});
+
 Deno.test("errors: no user_id, item not found", async () => {
   await assertRejects(() => processText(fake().d, job({ user_id: null })), Error, "process job without user_id");
   await assertRejects(() => processText(fake({ item: null }).d, job()), Error, "worker_get_text_item not_found");

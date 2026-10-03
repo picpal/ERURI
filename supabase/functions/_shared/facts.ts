@@ -20,10 +20,12 @@ export function eventFact(userId: string, itemId: string, event: ExtractedEvent,
 export type FactEntry = { payload: Record<string, unknown>; evidence: string | null };
 export type FactsInput = { userId: string; itemId: string; kind: FactKind; entries: FactEntry[] };
 
-// 텍스트 추출 → 한 항목의 fact 묶음(스펙 §7 저장, 2026-10-01): event 는 일정마다(시작 순 = 순번), task·purchase 는 1건
+// 텍스트 추출 → 한 항목의 fact 묶음(스펙 §7 저장, 2026-10-01): event 는 일정마다(시작 순 = 순번), task·purchase 는 1건.
+// SHARE 일정의 notes(신청·접수 방법, 2026-10-03)는 있을 때만 payload 에 — save_facts 가 제안 payload 로 그대로 옮긴다(via 만 뺀다)
 export function textFacts(userId: string, itemId: string, x: TextExtraction): FactsInput | null {
   switch (x.kind) {
-    case "event": return { userId, itemId, kind: "event", entries: x.events.map((e) => ({ payload: { ...e.event, via: "text" }, evidence: e.evidence })) };
+    case "event": return { userId, itemId, kind: "event", entries: x.events.map((e) => ({
+      payload: { ...e.event, ...(e.notes ? { notes: e.notes } : {}), via: "text" }, evidence: e.evidence })) };
     case "task": return { userId, itemId, kind: "task", entries: [{ payload: { ...x.task, via: "text" }, evidence: x.evidence }] };
     case "purchase": return { userId, itemId, kind: "purchase", entries: [{ payload: { ...x.purchase, via: "text" }, evidence: x.evidence }] };
     default: return null;

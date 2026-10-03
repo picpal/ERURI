@@ -8,6 +8,7 @@ export const TEXT_KINDS = ["event", "task", "purchase", "none"] as const;
 export type TextKind = typeof TEXT_KINDS[number];
 export const MAX_TEXT_CHARS = 4000;   // 메일 본문이 길어도 항목당 입력을 스펙 §13 가정(입력 1.5k 토큰) 근처로 묶는다
 export const EVIDENCE_MAX = 300;      // facts.evidence ≤300자(스펙 §8)
+export const NOTES_MAX = 300;         // SHARE 일정 notes(신청·접수 방법) — 지시는 200자, 서버 절단은 evidence 와 같은 300
 
 const S = (description: string) => ({ type: ["string", "null"], description });
 export const MAX_EVENTS = 5;          // 한 항목의 일정 상한(스펙 §7, 2026-10-01 사용자 결정)
@@ -25,6 +26,13 @@ const EVENT_ITEM = {
     lunar: { type: "boolean", description: "날짜가 음력으로만 적혀 있으면 true" },
     evidence: S("이 일정이 적힌 한 구절 원문 그대로(80자 이내)"),
   },
+} as const;
+
+// SHARE 전용(스펙 §7, 2026-10-03): 일정마다 notes(신청·접수 방법 안내). 비SHARE 요청은 위 EVENT_ITEM·TEXT_SCHEMA 그대로(바이트 불변)
+const EVENT_ITEM_SHARE = {
+  ...EVENT_ITEM,
+  required: [...EVENT_ITEM.required, "notes"],
+  properties: { ...EVENT_ITEM.properties, notes: S("신청·접수 방법 안내(신청 경로·방법·준비물·문의처). 원문에 있을 때만 200자 이내, 없으면 null") },
 } as const;
 
 export const TEXT_SCHEMA = {
@@ -51,35 +59,54 @@ export const TEXT_SCHEMA = {
   },
 } as const;
 
+// SHARE(사용자가 직접 공유·채팅 첨부)만 추출 지시·스키마가 다르다(스펙 §7, 2026-10-03). 값은 ingest 가 정규화한 그대로 — 대소문자 변형은 SHARE 가 아니다
+export const TEXT_SCHEMA_SHARE = {
+  ...TEXT_SCHEMA,
+  properties: { ...TEXT_SCHEMA.properties, events: { ...TEXT_SCHEMA.properties.events, items: EVENT_ITEM_SHARE } },
+} as const;
+
 export type TextMeta = { source: string; appName: string | null; title: string | null };
+const isShare = (meta: TextMeta) => meta.source === "SHARE";
 export type Task = { title: string; due: string | null; uncertain: string[] };
 export type Purchase = { merchant: string | null; products: string[]; ordered_at: string | null; amount: number | null;
   currency: string | null; order_no: string | null; status: string | null };
-export type TextEvent = { event: ExtractedEvent; evidence: string | null };
+// notes 는 값이 있을 때만 키가 있다(비SHARE 응답·빈 값 → 키 없음 → fact·제안 payload 도 그대로)
+export type TextEvent = { event: ExtractedEvent; evidence: string | null; notes?: string };
+// none 사유(R1, 2026-10-03 — 워커 empty 로그용 코드·개수만): model_none 모델이 none · no_start 일정 후보가 모두 시작 없음 · task_no_title · purchase_empty.
+// raw_events = 모델이 낸 원래 일정 후보 수. 테스트 픽스처의 { kind: "none" } 처럼 사유가 없을 수도 있다
+export type NoneWhy = "model_none" | "no_start" | "task_no_title" | "purchase_empty";
 export type TextExtraction =
   | { kind: "event"; events: TextEvent[] }
   | { kind: "task"; task: Task; evidence: string | null }
   | { kind: "purchase"; purchase: Purchase; evidence: string | null }
-  | { kind: "none" };
+  | { kind: "none"; why?: NoneWhy; raw_events?: number };
 type RawTextEvent = { title: string | null; start: string | null; end: string | null; location: string | null; uncertain: string[];
-  year_in_text: boolean; lunar: boolean; evidence: string | null };
+  year_in_text: boolean; lunar: boolean; evidence: string | null; notes?: string | null };
 type RawText = { kind: TextKind; title: string | null; events: RawTextEvent[]; due: string | null;
   merchant: string | null; products: string[]; ordered_at: string | null; amount: number | null; currency: string | null;
   order_no: string | null; order_status: string | null; evidence: string | null; uncertain: string[]; year_in_text: boolean; lunar: boolean };
 
-const TEXT_INSTRUCTION = (today: string) => [
+// SHARE 에만 끼우는 줄(스펙 §7, 2026-10-03 사용자 결정 — 다건 계획 U2 개정, diag-hackathon B2·diag-restore R2). 각 줄은 기준 줄 바로 뒤에 들어간다
+const SHARE_STAGES = "  · 단, 출처가 SHARE(사용자가 직접 공유한 글·링크·사진)이고 대회·공모전·시험·채용처럼 단계별 일정표(접수·제출, 서류·필기·면접, 결과 발표, 본선·시상식 등)가 있으면 날짜가 있는 단계마다 하나씩 넣는다. 단계 제목마다 대회·행사 이름을 붙인다. 접수·제출 기간은 마감 일시 하나로 넣고 제목에 '마감'을 붙인다(예: '합성 경진대회 접수 마감'). '24시'·'자정까지' 마감은 그날 23:59로 쓴다(다음 날 00:00이 아니다).";
+const SHARE_PUBLIC = "  · 단, 출처가 SHARE이면 날짜와 장소가 함께 있는 공개 행사(축제·전시·체험·공연 등)는 할인·사전예약·'놓치지 마세요' 같은 홍보 문구가 섞여 있어도 event다. 할인·쿠폰 안내만 있고 행사 일시가 없거나, 장소 없이 출연진·날짜만 나열한 라인업은 SHARE여도 none이다.";
+const SHARE_NOTES = "  · notes: 신청·접수 방법 안내(신청 경로·방법·준비물·문의처)가 원문에 있으면 그 접수·신청 일정의 notes에, 그런 일정이 없으면 본 행사의 notes에 200자 이내로 옮긴다. 안내가 없는 일정은 null이다.";
+
+const TEXT_INSTRUCTION = (today: string, share: boolean) => [
   `이 메시지를 받은 날은 ${today}(Asia/Seoul)이다. '내일'·'목요일' 같은 상대 날짜는 이 날짜를 기준으로 계산하라.`,
   "메시지에서 캘린더·미리알림·구매 기록에 남길 종류를 정해 kind로 쓰고 그 kind의 필드만 채워라. 나머지는 null(products·events는 빈 배열).",
   "- event: 날짜가 정해진 약속·예약·진료·행사. events에 일정마다 하나씩, 최대 5개. 일정이 5개를 넘으면 시작이 이른 5개만 넣는다. 시작 일시가 없는 것은 넣지 않는다.",
   "  · 날짜가 다른 별개 일정(1회차·2회차, 서로 다른 진료·공연·행사)은 각각 넣는다.",
   "  · 한 행사가 여러 날 이어지면 start~end 하나로 넣는다.",
   "  · 접수·신청 기간, 마감, 발표, 변경·취소 기한, 준비 안내(금식 등) 같은 부수 일시는 별개 일정이 아니다. 본 행사·약속만 넣는다. 본 행사 없이 마감만 있으면 task다.",
+  ...(share ? [SHARE_STAGES] : []),
   "  · '매주 화요일'처럼 반복되는 일정은 첫 회 하나만 넣는다.",
   "  · 같은 일정을 두 번 넣지 않는다. evidence는 그 일정이 적힌 근거 한 구절(80자 이내)이다.",
+  ...(share ? [SHARE_NOTES] : []),
   "- task: 기한이 있는 할 일(납부·제출·회신). due는 기한.",
   "- purchase: 주문·결제·배송·카드 승인. 배송 도착 안내도 purchase다.",
   "- none: 잡담·인사·광고·단순 안내처럼 남길 것이 없는 메시지.",
   "  · 광고·홍보성 행사 목록(라인업·출연진 공개, 티켓 할인·'지금 예매하세요'처럼 구매를 권하는 홍보)은 날짜가 여러 개여도 none이다. 받는 사람의 예약·예매 확인이나 기관·학교·단체의 행사 일정 안내는 event다.",
+  ...(share ? [SHARE_PUBLIC] : []),
   `- 일시는 ISO 8601 +09:00으로 쓴다. 연도가 없으면 받은 해(${today.slice(0, 4)}년)로 쓴다 — 지난 날짜여도 내년으로 넘기지 않는다. 오전/오후가 불명확하면 uncertain에 ampm을 넣어라.`,
   "  · 연도 단서가 있으면 그 해로 쓰고 year_in_text를 true로 한다: 연도 표기, '작년·지난해'(전년), '내년·다음 해'(다음 해), '내일·다음 주 금요일' 같은 상대 날짜(받은 날로 계산한 해), 12월→1월처럼 해를 넘어가는 나열의 뒤쪽(다음 해). 단서가 없으면 false.",
   "- evidence는 근거 구절을 원문 그대로 옮긴다. `*`로 가려진 숫자는 그대로 둔다.",
@@ -96,9 +123,9 @@ export function buildTextExtractRequest(text: string, meta: TextMeta, today: str
     max_output_tokens: 2048,   // 잘림 방지 상한(과금 아님) — 잘리면 항목 전체가 실패(스펙 §7)
     input: [{ role: "user" as const, content: [
       { type: "input_text" as const, text: `${head}\n메시지:\n${body}` },
-      { type: "input_text" as const, text: TEXT_INSTRUCTION(today) },
+      { type: "input_text" as const, text: TEXT_INSTRUCTION(today, isShare(meta)) },
     ] }],
-    text: { format: { type: "json_schema" as const, name: "text_fact", schema: TEXT_SCHEMA, strict: true } },
+    text: { format: { type: "json_schema" as const, name: "text_fact", schema: isShare(meta) ? TEXT_SCHEMA_SHARE : TEXT_SCHEMA, strict: true } },
   };
 }
 
@@ -118,6 +145,7 @@ function toReceivedYear(start: string | null, end: string | null, yearInText: bo
 }
 
 export function normalizeTextExtraction(raw: RawText, today: string): TextExtraction {
+  const none = (why: NoneWhy): TextExtraction => ({ kind: "none", why, raw_events: raw.events.length });
   const evidence = clean(raw.evidence)?.slice(0, EVIDENCE_MAX) ?? null;
   switch (raw.kind) {
     case "event": {
@@ -131,15 +159,17 @@ export function normalizeTextExtraction(raw: RawText, today: string): TextExtrac
         const key = `${e.start}|${e.title ?? ""}`;              // normalizeEvent 가 제목을 clean 한 뒤라 앞뒤 공백 차이는 같은 키
         if (seen.has(key)) continue;
         seen.add(key);
-        events.push({ event: { ...e, uncertain: noYear(e.uncertain) }, evidence: clean(r.evidence)?.slice(0, EVIDENCE_MAX) ?? null });
+        const notes = clean(r.notes ?? null)?.slice(0, NOTES_MAX);
+        events.push({ event: { ...e, uncertain: noYear(e.uncertain) }, evidence: clean(r.evidence)?.slice(0, EVIDENCE_MAX) ?? null,
+          ...(notes ? { notes } : {}) });
       }
       // 시작 순(날짜만은 서울 0시), 같으면 모델 순서 유지(안정 정렬). 상한은 정렬 뒤 — 가장 가까운 일정들을 남긴다
       events.sort((a, b) => startMs(a.event.start!) - startMs(b.event.start!));
-      return events.length === 0 ? { kind: "none" } : { kind: "event", events: events.slice(0, MAX_EVENTS) };
+      return events.length === 0 ? none("no_start") : { kind: "event", events: events.slice(0, MAX_EVENTS) };
     }
     case "task": {
       const title = clean(raw.title);
-      if (title === null) return { kind: "none" };
+      if (title === null) return none("task_no_title");
       if (raw.due === null) return { kind: "task", task: { title, due: null, uncertain: [] }, evidence };
       // 기한도 일정과 같은 날짜 규칙(연도 단서 없음 → 받은 해, 해석 불가 → null + date)
       const y = toReceivedYear(raw.due, null, raw.year_in_text, today);
@@ -149,13 +179,13 @@ export function normalizeTextExtraction(raw: RawText, today: string): TextExtrac
     }
     case "purchase": {
       const merchant = clean(raw.merchant);
-      if (merchant === null && raw.amount === null) return { kind: "none" };
+      if (merchant === null && raw.amount === null) return none("purchase_empty");
       return { kind: "purchase", evidence, purchase: { merchant, products: raw.products.map((p) => p.trim()).filter((p) => p.length > 0),
         ordered_at: normalizeDateTime(raw.ordered_at).value, amount: raw.amount, currency: clean(raw.currency),
         order_no: clean(raw.order_no), status: clean(raw.order_status) } };
     }
     default:
-      return { kind: "none" };
+      return none("model_none");
   }
 }
 
