@@ -45,7 +45,10 @@ enum NotificationActions {
     // 기록·보고 version 은 실제로 넣은 내용(푸시 페이로드)의 것. 서버가 더 새 version 이면 보고 결과 changed 로 알린다(순서 5)
     let version = Int(f["version"] ?? "") ?? server?.version ?? 1
     // 2~3. 확인 → 표식 조회 → 겹침 → 저장 → 기록(한 actor 구간, await 없음)
-    let outcome = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, timing: timing, version: version, confirmed: confirmed, location: ProposalReview.place(f["location"])))
+    // 메모(스펙 §10, 0.11.2): 화면 값 → 없으면 순서 1 조회 값. 조회를 못 했으면 메모 없이 저장한다
+    let outcome = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, timing: timing, version: version, confirmed: confirmed,
+                                                                location: ProposalReview.place(f["location"]),
+                                                                notes: ProposalReview.memo(fields: f, server: server?.notes)))
     let held = ProposalFlow.heldCount(outcome)                          // 겹침·비슷한 일정(0.9.2) — 저장하지 않았다
     // 잠금화면이 겹침·비슷한 일정으로 멈추면 앱 확인을 유도하는 로컬 알림(§10). 결과를 action.handled 에 같이 남기려고 trace 앞에서
     var notice: String? = nil
@@ -114,11 +117,11 @@ enum NotificationActions {
     return rows.reduce(into: [String: String]()) { d, row in if let id = row["id"] as? String, let st = row["status"] as? String { d[id.lowercased()] = st } }
   }
 
-  private struct ServerProposal: Sendable { let status: String?; let version: Int? }
+  private struct ServerProposal: Sendable { let status: String?; let version: Int?; let notes: String? }
   private static func serverProposal(_ pid: String) async -> ServerProposal? {
-    guard let r = await API.send("rest/v1/proposals?id=eq.\(pid)&select=status,version", timeout: 5), r.status == 200,
+    guard let r = await API.send("rest/v1/proposals?id=eq.\(pid)&select=\(ProposalReview.serverSelect)", timeout: 5), r.status == 200,
           let row = (try? JSONSerialization.jsonObject(with: r.data) as? [[String: Any]])?.first else { return nil }
-    return ServerProposal(status: row["status"] as? String, version: row["version"] as? Int)
+    return ServerProposal(status: row["status"] as? String, version: row["version"] as? Int, notes: row["notes"] as? String)
   }
 
   private static func trace(_ result: String, pid: String, started: Date, notice: String? = nil) {
@@ -134,7 +137,8 @@ enum NotificationActions {
   }
 }
 
-struct AddEventRequest: Sendable { let pid: String; let title: String; let timing: ProposalTiming; let version: Int; var confirmed = false; var location: String? = nil }
+struct AddEventRequest: Sendable { let pid: String; let title: String; let timing: ProposalTiming; let version: Int; var confirmed = false; var location: String? = nil
+                              var notes: String? = nil }
 
 /// 확인 → 표식 조회 → 겹침·비슷한 일정 판정 → 저장 → 기록을 await 없이 한 actor 안에서 처리한다(스펙 §10 순서 2~3, PoC-5 실측: 동시 두 번 탭 +1).
 /// 반환: "ok" · "recovered"(저장 후 기록 전 종료 복구) · "dup" · "conflict:<n>"(겹침, 저장 안 함) · "similar:<n>"(비슷한 일정, 저장 안 함) · "fail:<코드>"
@@ -168,6 +172,7 @@ actor AddEventGate {
       let span = r.timing.eventSpan(deviceZone: .current)
       ev.title = r.title; ev.isAllDay = r.timing.isAllDay; ev.startDate = span.start; ev.endDate = span.end
       ev.location = r.location                                       // 일정 위치(스펙 §10, 0.11.0). 잠금화면 경로는 nil
+      ev.notes = r.notes                                             // 일정 메모(스펙 §10, 0.11.2). 순서 1 조회로 잠금화면 경로도 실린다
       ev.calendar = cal
       ev.url = ProposalFlow.marker(r.pid)
       try store.save(ev, span: .thisEvent, commit: true)

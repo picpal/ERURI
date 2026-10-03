@@ -171,6 +171,8 @@ public enum ScheduleCard {
     public let moreLines: Int
     /// 제안 payload 의 location(일정 위치, 스펙 §10 0.11.0) — addFields 로 EventKit 에
     public var location: String? = nil
+    /// 제안 payload 의 notes(일정 메모, 스펙 §10 0.11.2) — addFields 로 EventKit 메모에
+    public var notes: String? = nil
     public var day: DateInterval { ScheduleCard.seoulDay(start) }
   }
 
@@ -186,7 +188,7 @@ public enum ScheduleCard {
     let l = events.map { dayLines(day: c.day, events: $0, conflicts: conflicts, deviceZone: deviceZone) }
     return Model(pid: c.proposal.id, itemID: c.proposal.item_id, title: c.title, startText: c.proposal.payload["start"]?.string ?? "",
                  endText: c.proposal.payload["end"]?.string, kind: c.kind, start: c.start, timed: c.timed, status: st, lines: l?.lines, moreLines: l?.more ?? 0,
-                 location: ProposalReview.place(c.proposal.payload["location"]?.string))
+                 location: ProposalReview.place(c.proposal.payload["location"]?.string), notes: ProposalReview.memo(c.proposal.payload["notes"]?.string))
   }
 
   public enum Action: Equatable, Sendable { case add, addAnyway, addSimilar }
@@ -211,6 +213,7 @@ public enum ScheduleCard {
     var f = ["proposal_id": m.pid, "title": m.title, "start": m.startText]
     if !m.timed, let end = ProposalTiming.parse(start: m.startText, end: m.endText)?.fieldValues["end"] { f["end"] = end }
     if let l = m.location { f["location"] = l }
+    if let n = m.notes { f["notes"] = n }
     return f
   }
   /// 상태 줄: 캘린더 대조 상태, 없으면 종류 문구(확인 필요·지난 일정). 미래 제안(시각·종일)인데 캘린더를 못 읽었으면 nil(안내가 대신한다)

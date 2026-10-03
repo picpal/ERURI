@@ -240,6 +240,24 @@ final class ScheduleCardTests: XCTestCase {
     XCTAssertNil(ScheduleCard.addFields(plain)["location"])
   }
 
+  /// 일정 메모(스펙 §10, 0.11.2): 제안 payload 의 notes → 카드 모델·추가 필드(정리·300자). 없거나 비면 키도 없다
+  func testCardAddFieldsCarryNotes() throws {
+    var p = prop("p-memo", start: .string("2026-10-20"), title: "합성 공모전 접수 마감")
+    p = ChatReply.Proposal(id: p.id, item_id: p.item_id, action: p.action, status: p.status,
+                           payload: p.payload.merging(["notes": .string(" 합성재단 누리집에서 신청 ")]) { _, n in n })
+    let m = ScheduleCard.model(try XCTUnwrap(ScheduleCard.card(p, now: now)), events: [], executed: false)
+    XCTAssertEqual(m.notes, "합성재단 누리집에서 신청")
+    XCTAssertEqual(ScheduleCard.addFields(m)["notes"], "합성재단 누리집에서 신청")
+    let plain = ScheduleCard.model(try XCTUnwrap(ScheduleCard.card(prop("p-2", start: .string("2026-10-05T05:00:00+00:00")), now: now)),
+                                   events: [], executed: false)
+    XCTAssertNil(plain.notes)
+    XCTAssertNil(ScheduleCard.addFields(plain)["notes"])
+    var blank = prop("p-3", start: .string("2026-10-05T05:00:00+00:00"))
+    blank = ChatReply.Proposal(id: blank.id, item_id: blank.item_id, action: blank.action, status: blank.status,
+                               payload: blank.payload.merging(["notes": .string("  ")]) { _, n in n })
+    XCTAssertNil(ScheduleCard.addFields(ScheduleCard.model(try XCTUnwrap(ScheduleCard.card(blank, now: now)), events: [], executed: false))["notes"])
+  }
+
   func testStatusText() {
     let o = ev("o", "2026-10-04T06:00:00Z", "2026-10-04T07:00:00Z", title: "합성 겹침")
     let o2 = ev("o2", "2026-10-04T06:45:00Z", "2026-10-04T07:15:00Z")

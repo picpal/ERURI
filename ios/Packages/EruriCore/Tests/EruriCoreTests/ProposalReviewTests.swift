@@ -51,6 +51,46 @@ final class ProposalReviewTests: XCTestCase {
     XCTAssertNil(ProposalReview.place(nil))
   }
 
+  /// 일정 메모(스펙 §10, 0.11.2): 목록 행에 notes 가 있으면 handleAdd 입력으로. 지금 목록 RPC 는 notes 열이 없다 → 키 없음(0.11.1 그대로)
+  func testAddFieldsCarryNotes() throws {
+    let plain = try XCTUnwrap(ProposalReview.decodeList(listJSON())?.first)
+    XCTAssertNil(plain.notes)
+    XCTAssertNil(plain.addFields?["notes"])
+    let row = try XCTUnwrap(ProposalReview.decodeList(Data("""
+      [{"proposal_id":"\(pid)","action":"ADD_EVENT","title":"합성 공모전 접수 마감","start":"2026-10-20","end":null,"all_day":true,
+        "location":null,"notes":"  합성재단 누리집에서 신청서 제출 \\n","version":1,"created_at":"x"}]
+      """.utf8))?.first)
+    XCTAssertEqual(row.addFields?["notes"], "합성재단 누리집에서 신청서 제출")
+    let blank = try XCTUnwrap(ProposalReview.decodeList(Data("""
+      [{"proposal_id":"\(pid)","action":"ADD_EVENT","title":"t","start":"2026-10-02T06:30:00+00:00","end":null,"location":null,"notes":" ","version":1,"created_at":"x"}]
+      """.utf8))?.first)
+    XCTAssertNil(blank.addFields?["notes"])
+  }
+
+  /// 메모 정리: 앞뒤 공백만 떼고, 비면 nil, 서버 절단(NOTES_MAX)과 같은 300자에서 자른다. 줄바꿈 등 안쪽은 그대로
+  func testMemo() {
+    XCTAssertNil(ProposalReview.memo(nil))
+    XCTAssertNil(ProposalReview.memo(" \n "))
+    XCTAssertEqual(ProposalReview.memo(" 합성 접수처\n문의 합성센터 "), "합성 접수처\n문의 합성센터")
+    XCTAssertEqual(ProposalReview.memoMax, 300)
+    XCTAssertEqual(ProposalReview.memo(String(repeating: "가", count: 301))?.count, 300)
+    XCTAssertEqual(ProposalReview.memo(String(repeating: "가", count: 300))?.count, 300)
+  }
+
+  /// 메모 출처(§10): 화면이 가진 값(addFields·푸시) → 없으면 handleAdd 순서 1 서버 조회 값. 둘 다 없으면 nil(메모 없이 저장)
+  func testMemoSource() {
+    XCTAssertEqual(ProposalReview.memo(fields: ["notes": "화면 값"], server: "서버 값"), "화면 값")
+    XCTAssertEqual(ProposalReview.memo(fields: ["proposal_id": "x"], server: " 서버 값 "), "서버 값")
+    XCTAssertEqual(ProposalReview.memo(fields: ["notes": "  "], server: "서버 값"), "서버 값")
+    XCTAssertNil(ProposalReview.memo(fields: [:], server: nil))
+    XCTAssertNil(ProposalReview.memo(fields: [:], server: ""))
+  }
+
+  /// handleAdd 순서 1 조회는 같은 요청에 notes 를 더한다(PostgREST 별칭 — 호스팅 DB 에서 200 확인, 2026-10-04)
+  func testServerSelect() {
+    XCTAssertEqual(ProposalReview.serverSelect, "status,version,notes:payload->>notes")
+  }
+
   /// 0026 종일 행(0.9.1): start·end 는 YYYY-MM-DD, all_day = true. 표시 "10/8(목) · 종일", 추가 필드는 날짜 그대로(여러 날이면 end).
   /// 0026 의 시각 있는 행(+09:00 text)은 그대로 읽힌다. all_day 와 start 형식이 어긋나면 추가 버튼 없음
   func testAllDayRows() throws {

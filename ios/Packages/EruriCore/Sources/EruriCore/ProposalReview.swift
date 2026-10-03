@@ -8,6 +8,8 @@ public enum ProposalReview {
   public struct Pending: Identifiable, Decodable, Sendable, Equatable {
     public let proposal_id: String; public let action: String; public let title: String; public let start: String
     public let end: String?; public let location: String?; public let version: Int; public let created_at: String
+    /// 일정 메모(스펙 §10, 0.11.2). 지금 list_pending_proposals 는 이 열이 없다 — 없으면 nil, handleAdd 가 서버 조회 값으로 채운다
+    public var notes: String? = nil
     /// 0026 부터. 없으면(0022 서버) start 형식으로 판단
     public let all_day: Bool?
     public var id: String { proposal_id }
@@ -24,6 +26,7 @@ public enum ProposalReview {
       guard let t = timing else { return nil }
       var f = t.fieldValues.merging(["proposal_id": proposal_id, "title": title, "version": String(version)]) { a, _ in a }
       if let l = ProposalReview.place(location) { f["location"] = l }          // 일정 위치(스펙 §10, 0.11.0)
+      if let n = ProposalReview.memo(notes) { f["notes"] = n }                 // 일정 메모(스펙 §10, 0.11.2)
       return f
     }
   }
@@ -33,6 +36,17 @@ public enum ProposalReview {
     guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
     return t
   }
+
+  /// 일정 메모(스펙 §10, 0.11.2): SHARE 제안 payload 의 notes(신청·접수 방법). 앞뒤 공백만 떼고, 비면 nil, 서버 절단(NOTES_MAX)과 같은 300자
+  public static let memoMax = 300
+  public static func memo(_ s: String?) -> String? {
+    guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+    return String(t.prefix(memoMax))
+  }
+  /// 메모 출처: 화면이 가진 값(addFields — 채팅 카드 payload·목록 행) → 없으면 handleAdd 순서 1 서버 조회 값(제안 탭·시트·잠금화면·알림 값 경로)
+  public static func memo(fields f: [String: String], server: String?) -> String? { memo(f["notes"]) ?? memo(server) }
+  /// handleAdd 순서 1 조회(proposals 본인 행)의 select — 같은 요청에 notes 를 더한다(PostgREST 별칭, 없으면 null)
+  public static let serverSelect = "status,version,notes:payload->>notes"
 
   public static func decodeList(_ data: Data) -> [Pending]? { try? JSONDecoder().decode([Pending].self, from: data) }
 
