@@ -2747,7 +2747,7 @@ Expected: 0 실패(ignored 수는 직전 기록과 같음), 무오류. 실패가
 - [ ] **Step 3: 워커 배포·회귀**
 
 Run: `git log --oneline -1 && git diff --stat <gates.md에 기록된 마지막 worker 배포 HEAD>..HEAD -- supabase/functions/_shared supabase/functions/worker`
-Expected: 이 계획의 커밋(U1·U2·U4 등)과 **SHARE 게이트 생략 `a17bc61`(`worker/text.ts`, 스펙 §7·§16 2026-10-03 사용자 결정 — 함께 배포한다)**만 보인다. 그 밖의 서버 변경이 함께 배포되면 멈추고 메인에게 알린다(최종 리뷰 권고).
+Expected: 이 계획의 커밋(U1·U2·U4 등)과 **SHARE 게이트 생략 `a17bc61`(`worker/text.ts`, 스펙 §7·§16 2026-10-03 사용자 결정 — 함께 배포한다)**, **SHARE 추출 지시·empty 사유 로그 `51229cb`·`b3caac8`(`_shared/extract-text.ts`·`_shared/facts.ts`·`worker/text.ts`, 스펙 §7 2026-10-03 사용자 결정 — 함께 배포한다)**만 보인다. 그 밖의 서버 변경이 함께 배포되면 멈추고 메인에게 알린다(최종 리뷰 권고).
 
 Run: `supabase functions deploy worker`
 Expected: 배포 성공. 배포 시각(KST)·HEAD를 적어 둔다.
@@ -2758,10 +2758,15 @@ Expected: 기존 단건 회귀 `{"gate":"pass",…}`(워커 재배포가 process
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/gmail-gate.ts status`
 Expected: dead `gmail-fetch` 0, 연결 `active`(Gmail 게이트 원장의 직전 값과 같은 꼴).
 
-**이 변경도 함께 배포됨 — SHARE 게이트 생략(`a17bc61`).** 배포 뒤 SHARE 합성 항목(테스트 사용자 13)이 게이트 없이 추출되는지 스모크한다. LNK-eval 러너가 SHARE 합성 13건을 배포된 worker 의 process 경로에 테스트 lease 로 넣고 자기 행을 지운다(본문 출력 없음 — 사례 id·상태·게이트 라벨·개수만).
+**이 변경도 함께 배포됨 — SHARE 게이트 생략(`a17bc61`)과 SHARE 추출 지시(`51229cb`·`b3caac8`).** 배포 뒤 SHARE 합성 항목(테스트 사용자 13)이 게이트 없이 추출되고 새 지시(단계별 일정표·공개 행사·notes)가 배포본에 실렸는지 **LNK-eval·다건 평가를 재실행**한다(배포 전 로컬 추출기 확인: LNK 54/54, 다건 72/72 — `.context/server-share-extract.report.md`). LNK-eval 러너가 SHARE 합성 18건을 배포된 worker 의 process 경로에 테스트 lease 로 넣고 자기 행을 지운다(본문 출력 없음 — 사례 id·상태·게이트 라벨·개수만).
 
-Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/eval-link.ts | tee "$TMPDIR/share-smoke.log" && grep -c '"gate":null' "$TMPDIR/share-smoke.log" && grep '"case":"wedding-text"' "$TMPDIR/share-smoke.log"`
-Expected: 사례 13줄 모두 `"gate":null,"conf":null`(Jev 미호출 — count 13), `wedding-text` 1건이 `"status":"extracted"`·일정 1, 상태에 `discarded:server:promo|notice|personal` 없음(`promo-lineup` 은 `discarded:server:empty`), 마지막 줄 `{"gate":"pass",…}`. 한 줄이라도 gate 라벨이 남으면 배포본에 `a17bc61` 이 빠진 것 — 멈추고 메인에게 알린다. 결과는 `docs/superpowers/phase1/gates.md` `LNK-eval` 행 비고에 "SHARE 게이트 생략 배포 뒤 재실행" 한 줄로 적는다.
+Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/eval-link.ts --runs 3 | tee "$TMPDIR/share-smoke.log" && grep -c '"gate":null' "$TMPDIR/share-smoke.log" && grep -E '"case":"(wedding-text|contest-[a-z]+|poster-[a-z-]+)"' "$TMPDIR/share-smoke.log"`
+Expected: 사례 54줄(18종 × 3) 모두 `"gate":null,"conf":null`(Jev 미호출 — count 54), `wedding-text` 이 `"status":"extracted"`·일정 1, `contest-timeline`·`contest-photo` 일정 3(마감 23:59·notes 포함 — `miss` 에 `start0`·`notes` 없음), `contest-hiring` 일정 4, `poster-festival`·`poster-festival-ocr` 일정 1, 상태에 `discarded:server:promo|notice|personal` 없음(`promo-lineup` 은 `discarded:server:empty`·일정 0), 마지막 줄 `{"gate":"pass",…}`. 한 줄이라도 gate 라벨이 남으면 배포본에 `a17bc61` 이 빠진 것, contest 사례가 일정 1이면 `51229cb` 가 빠진 것 — 멈추고 메인에게 알린다. 모델 흔들림으로 한두 줄만 어긋나면(로컬 54/54 기준) 그 사례만 `--runs 3` 한 번 더 보고, 다시 어긋나면 메인에게 알린다.
+
+Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/eval/run-multi-event-eval.ts --runs 3`
+Expected: 마지막 줄 `ok` 72(24종 × 3, m23 SHARE 단계 3건·m24 문자 대조 1건 포함), `split`·`missing` 0, 종료 코드 0. 이 평가는 배포본이 아니라 HEAD 의 추출기를 직접 부르므로 배포와 같은 HEAD 에서 돌린 값이 배포본의 기준이다.
+
+Supabase 대시보드 Edge Functions › `worker` 로그에서 위 LNK 실행의 `discarded:server:empty` 줄(예: `promo-lineup`)에 `why`·`raw_events` 가 있는지 본다(R1 — 값은 코드·개수뿐). 결과는 `docs/superpowers/phase1/gates.md` `LNK-eval` 행 비고에 "SHARE 게이트 생략·추출 지시 배포 뒤 재실행 — LNK n/54, 다건 n/72, empty 사유 로그 확인" 한 줄로 적는다.
 
 - [ ] **Step 3b: 0029 적용 (일일 공백 스캔 cron, U4 리뷰 I2)**
 
