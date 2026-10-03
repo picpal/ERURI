@@ -55,6 +55,39 @@
     "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-12-19T15:00"], "location": "합성웨딩홀" }
   },
   {
+    "id": "contest-timeline",
+    "title": "2026 합성플랫폼 AI 경진대회",
+    "text": "[웹 링크] contest.example.com\n제목: 2026 합성플랫폼 AI 경진대회\n본문:\n2026 합성플랫폼 AI 경진대회\n소재 데이터로 문제를 푸는 AI 모델을 겨룹니다.\n참가 신청 방법\ncontest.example.com 에서 회원가입 후 팀 단위 온라인 접수\n수상 자격 : 2026년 11월 19일 본선 발표 및 시상식 참가 가능한 자\n대회 일정\n접수/제출\n9월 24일 0시\n- 11월 05일 24시\n예선결과 발표\n11월 12일\n합성플랫폼 홈페이지\n본선\n11월 19일\n합성 컨벤션센터\n현장 발표\n문의 contest@example.com",
+    "expect": { "status": ["extracted"], "events": 3, "starts": ["2026-11-05T23:59", "2026-11-12", "2026-11-19"], "location": "합성 컨벤션센터", "notes": "contest.example.com" }
+  },
+  {
+    "id": "contest-photo",
+    "title": "제5회 합성 사진 공모전",
+    "text": "[웹 링크] photo.example.com\n제목: 제5회 합성 사진 공모전\n설명: 우리 동네의 가을을 담아 주세요\n본문:\n주제\n합성구의 가을 풍경\n접수 기간\n2026. 10. 12.(월) ~ 10. 30.(금) 자정까지\n접수 방법\nphoto.example.com 출품 게시판에 신청서와 사진 파일(JPG, 장당 10MB 이하) 업로드\n심사 결과 발표\n11. 13.(금) 누리집 공지\n시상식\n11. 27.(금) 오후 3시 합성아트홀\n시상 내역\n대상 1명 · 우수상 3명 · 입선 10명",
+    "expect": { "status": ["extracted"], "events": 3, "starts": ["2026-10-30T23:59", "2026-11-13", "2026-11-27T15:00"], "location": "합성아트홀", "notes": "photo.example.com" }
+  },
+  {
+    "id": "contest-hiring",
+    "app_name": "이미지",
+    "title": null,
+    "text": "[이미지] 사진 1장\n이미지 속 글자:\n2026 하반기\n합성공사 신입사원 공개채용\n채용 일정\n서류 접수 10.14(수) ~ 10.21(수) 18:00\n필기시험 11.1(일) 10:00 합성고등학교\n면접 11.12(목)\n최종 합격 발표 11.20(금)\n지원 방법\nrecruit.example.com 온라인 지원서 작성\n문의 합성공사 인사팀",
+    "expect": { "status": ["extracted"], "events": 4, "starts": ["2026-10-21T18:00", "2026-11-01T10:00", "2026-11-12", "2026-11-20"], "location": "합성고등학교" }
+  },
+  {
+    "id": "poster-festival",
+    "app_name": "이미지",
+    "title": null,
+    "text": "[이미지] 사진 1장\n이미지 속 글자:\n놓치지 마세요!\n제7회 합성구 가을 문화제\n10.23(금) ~ 10.25(일)\n10:00 ~ 19:00\n합성구청 앞 광장\n체험마당 · 먹거리장터 · 초청공연\n사전예약 시 체험비 20% 할인\n지금 신청하세요\n주최 합성구청",
+    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-10-23*"], "location": "합성구청" }
+  },
+  {
+    "id": "poster-festival-ocr",
+    "app_name": "이미지",
+    "title": null,
+    "text": "[이미지] 사진 1장\n이미지 속 글자:\n2026\n합성\n별빛\n축제\n11월 7일(토)\n오후 5시~9시\n합성천 둔치\n초청가수\n합성밴드\n경품 추첨\n사전접수\nfest.example.com\n문의 02-***-1234",
+    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-11-07T17:00"], "location": "합성천" }
+  },
+  {
     "id": "promo-lineup",
     "title": "합성 페스티벌 2026 라인업 공개!",
     "text": "[웹 링크] festival.example.com\n제목: 합성 페스티벌 2026 라인업 공개!\n설명: 지금 예매하면 30% 할인\n본문:\n11/7(토) 합성밴드 · 합성가수\n11/8(일) 합성듀오 · 합성 오케스트라\n얼리버드 티켓 30% 할인 — 지금 예매하세요",
