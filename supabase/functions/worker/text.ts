@@ -7,7 +7,7 @@ import type { Job } from "../_shared/job.ts";
 import { applyRules } from "../_shared/rules.ts";
 import { receivedDay } from "../_shared/time.ts";
 
-// process 잡(스펙 §7 "0단계 예외" 0b): 규칙 재적용 → 분류 게이트(Jev) → 텍스트 추출 → save_facts → embed 잡(1b).
+// process 잡(스펙 §7 "0단계 예외" 0b): 규칙 재적용 → 분류 게이트(Jev, SHARE 제외) → 텍스트 추출 → save_facts → embed 잡(1b).
 // 로그에는 id·코드·개수만(본문·추출값 금지)
 export type TextItem = { contentEnc: string | null; source: string; appName: string | null; sender: string | null; title: string | null;
   occurredAt: string; capturedAt: string; status: string };
@@ -61,9 +61,9 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   const meta: TextMeta = { source: item.source, appName: item.appName, title: item.title };
 
   // 2) 분류 게이트: 비행동 라벨 + confidence ≥ 임계만 폐기(7일 격리). 임계 미만·오류·타임아웃은 추출로(fail-open).
-  //    사용자가 "최근 폐기"에서 복구한 항목(skip_gate)은 게이트를 건너뛴다(스펙 §7)
+  //    사용자가 "최근 폐기"에서 복구한 항목(skip_gate)과 사용자가 직접 공유·채팅 첨부한 SHARE 항목은 게이트를 건너뛴다(스펙 §7, 2026-10-03)
   let verdict: ClassifyResult | null = null;
-  if (job.payload.skip_gate !== true) {
+  if (job.payload.skip_gate !== true && item.source !== "SHARE") {
     try {
       verdict = await deps.classifier.classify(v.masked, classifierMeta(meta));   // 메신저 제목(발신자 이름)은 빼고 보낸다
     } catch (e) {

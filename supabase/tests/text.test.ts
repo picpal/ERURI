@@ -112,6 +112,42 @@ Deno.test("restored item (skip_gate): classifier not called, no quarantine, extr
   assertEquals([calls.classify.length, calls.quarantine.length, calls.extract.length], [0, 0, 1]);
 });
 
+// 사용자 결정 2026-10-03: 사용자가 직접 공유·채팅 첨부한 SHARE 항목은 게이트를 건너뛴다(스펙 §7). 다른 출처는 그대로 게이트를 탄다
+Deno.test("SHARE item: classifier not called, no gate label or quarantine, extraction runs", async () => {
+  for (const appName of ["이미지", "웹 링크", "메모"]) {
+    const { d, calls } = fake({ item: { source: "SHARE", appName }, verdict: { label: "promo", confidence: 0.91 } });
+    assertEquals(await processText(d, job()), "proposed");
+    assertEquals([calls.classify.length, calls.gate, calls.quarantine, calls.extract.length], [0, [], [], 1]);
+  }
+});
+
+Deno.test("non-SHARE sources still go through the gate", async () => {
+  for (const source of ["NOTIFICATION", "MESSAGES", "GMAIL", "CHAT"]) {
+    const { d, calls } = fake({ item: { source }, verdict: { label: "promo", confidence: 0.91 } });
+    assertEquals(await processText(d, job()), "discarded:server:promo");
+    assertEquals([calls.classify.length, calls.quarantine, calls.extract.length], [1, ["discarded:server:promo"], 0]);
+  }
+});
+
+Deno.test("SHARE item: server rules still discard (OTP wipe, (광고) promotion) and mask before extraction", async () => {
+  const otp = fake({ item: { source: "SHARE" }, text: "[합성은행] 인증번호 [482913]를 입력하세요" });
+  assertEquals(await processText(otp.d, job()), "discarded:server:otp");
+  assertEquals([otp.calls.status, otp.calls.classify.length, otp.calls.extract.length], [[["discarded:server:otp", true]], 0, 0]);
+  const ad = fake({ item: { source: "SHARE" }, text: "(광고) 합성마트 가을 세일 30% 할인 쿠폰" });
+  assertEquals(await processText(ad.d, job()), "discarded:server:promotion");
+  assertEquals([ad.calls.status, ad.calls.classify.length, ad.calls.extract.length], [[["discarded:server:promotion", true]], 0, 0]);
+  const card = fake({ item: { source: "SHARE" }, text: "[합성카드] 4111-1111-1111-1111 승인 32,000원" });
+  await processText(card.d, job());
+  assertEquals([card.calls.classify.length, card.calls.extract[0].text.includes("****-****-****-1111")], [0, true]);
+});
+
+// 순수 광고 SHARE 는 게이트 대신 추출기의 none 으로 걸러진다 → empty(원문 유지, 검색 대상)
+Deno.test("SHARE ad without a (광고) mark: extraction none → discarded:server:empty", async () => {
+  const { d, calls } = fake({ item: { source: "SHARE" }, text: "합성 페스티벌 얼리버드 30% 할인 지금 예매하세요", result: { kind: "none" } });
+  assertEquals(await processText(d, job()), "discarded:server:empty");
+  assertEquals([calls.classify.length, calls.status, calls.embed.length], [0, [["discarded:server:empty", false]], 1]);
+});
+
 Deno.test("gate label recorded for passed items too; classifier error records nothing", async () => {
   const a = fake({ verdict: { label: "actionable", confidence: 0.97 } });
   await processText(a.d, job());
