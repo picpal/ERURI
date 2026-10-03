@@ -16,7 +16,7 @@
 | U7 | EruriCore `Unsubscribe`(`can_request`) | U3 계약 | 무관 | — |
 | U8 | 앱 화면·0.10.0 | U7 | 무관 | — |
 | U9 | 시뮬레이터 게이트(TestFlight 없음) | U6a·U8 | **창 밖** | `UNS-sim` |
-| U6b | 워커 배포 → 30일 스캔 → **원클릭 비율 판정(N1)** → TestFlight **0.11.0 한 빌드**(0.10.0 단독 빌드 없음, D12) | U9 + **③c2 완료 기록**(10-08 15:00 KST 이후) | ③c2 뒤 | `UNS-server` 통과 |
+| U6b | 워커 배포(SHARE 변경은 10-04 선배포됨 — `SHARE-deploy`) → 30일 스캔 → **원클릭 비율 판정(N1)** → TestFlight **0.11.0 한 빌드**(0.10.0 단독 빌드 없음, D12) | U9 + **③c2 완료 기록**(10-08 15:00 KST 이후) | ③c2 뒤 | `UNS-server` 통과 |
 | U10 | `UNS-real` — 사용자 목록 확인 + 해지 1건 (한 번의 요청) | U6b 판정 통과 + TestFlight 0.11.0 VALID(같은 빌드, D12) | ③c2 뒤 | `UNS-real` |
 
 순서: U0 → U1·U2 → U3 → U4·U5·U7 → U6a → U8 → U9 → [③c2 완료 기록] → U6b → U10. 측정 기간에 할 수 있는 것은 U0~U5·U7·U8 코드, U3 `db push`(창 밖), U6a, U9까지다. 워커 배포·스캔·TestFlight·사용자 확인은 ③c2 뒤로 모은다(리뷰 반영 H4).
@@ -2746,7 +2746,9 @@ Expected: 0 실패(ignored 수는 직전 기록과 같음), 무오류. 실패가
 
 - [ ] **Step 3: 워커 배포·회귀**
 
-Run: `git log --oneline -1 && git diff --stat <gates.md에 기록된 마지막 worker 배포 HEAD>..HEAD -- supabase/functions/_shared supabase/functions/worker`
+**SHARE 변경은 10-04 선배포됨**(gates.md `SHARE-deploy`, 2026-10-04 02:00:58 KST worker v17 = 기준선 `39728f3` + `a17bc61`·`51229cb`·`b3caac8` cherry-pick, 사용자 승인 B — gmail 경로 파일은 바이트 동일). 그래서 아래 diff 의 기준은 `39728f3` 이고, SHARE 3파일(`_shared/extract-text.ts`·`_shared/facts.ts`·`worker/text.ts`)은 이미 배포본과 같으므로 이번 배포의 새 변경은 이 계획의 gmail·unsub 커밋뿐이다(그 사이 SHARE 파일이 또 바뀌었으면 그것도 새 변경으로 본다).
+
+Run: `git log --oneline -1 && git diff --stat 39728f3..HEAD -- supabase/functions/_shared supabase/functions/worker`
 Expected: 이 계획의 커밋(U1·U2·U4 등)과 **SHARE 게이트 생략 `a17bc61`(`worker/text.ts`, 스펙 §7·§16 2026-10-03 사용자 결정 — 함께 배포한다)**, **SHARE 추출 지시·empty 사유 로그 `51229cb`·`b3caac8`(`_shared/extract-text.ts`·`_shared/facts.ts`·`worker/text.ts`, 스펙 §7 2026-10-03 사용자 결정 — 함께 배포한다)**만 보인다. 그 밖의 서버 변경이 함께 배포되면 멈추고 메인에게 알린다(최종 리뷰 권고).
 
 Run: `supabase functions deploy worker`
@@ -2758,7 +2760,7 @@ Expected: 기존 단건 회귀 `{"gate":"pass",…}`(워커 재배포가 process
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/gmail-gate.ts status`
 Expected: dead `gmail-fetch` 0, 연결 `active`(Gmail 게이트 원장의 직전 값과 같은 꼴).
 
-**이 변경도 함께 배포됨 — SHARE 게이트 생략(`a17bc61`)과 SHARE 추출 지시(`51229cb`·`b3caac8`).** 배포 뒤 SHARE 합성 항목(테스트 사용자 13)이 게이트 없이 추출되고 새 지시(단계별 일정표·공개 행사·notes)가 배포본에 실렸는지 **LNK-eval·다건 평가를 재실행**한다(배포 전 로컬 추출기 확인: LNK 54/54, 다건 72/72 — `.context/server-share-extract.report.md`). LNK-eval 러너가 SHARE 합성 18건을 배포된 worker 의 process 경로에 테스트 lease 로 넣고 자기 행을 지운다(본문 출력 없음 — 사례 id·상태·게이트 라벨·개수만).
+**SHARE 게이트 생략(`a17bc61`)과 SHARE 추출 지시(`51229cb`·`b3caac8`)는 10-04 선배포됨** — 배포 직후 LNK 54/54·다건 24/24(`--runs 1`)·empty 사유 로그 확인을 마쳤다(gates.md `LNK-eval`·`SHARE-deploy`). U6b 에서는 워커가 다시 배포되므로 아래 재실행을 **회귀 확인**으로 한 번 더 한다. 배포 뒤 SHARE 합성 항목(테스트 사용자 13)이 게이트 없이 추출되고 새 지시(단계별 일정표·공개 행사·notes)가 배포본에 실렸는지 **LNK-eval·다건 평가를 재실행**한다(배포 전 로컬 추출기 확인: LNK 54/54, 다건 72/72 — `.context/server-share-extract.report.md`). LNK-eval 러너가 SHARE 합성 18건을 배포된 worker 의 process 경로에 테스트 lease 로 넣고 자기 행을 지운다(본문 출력 없음 — 사례 id·상태·게이트 라벨·개수만).
 
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/eval-link.ts --runs 3 | tee "$TMPDIR/share-smoke.log" && grep -c '"gate":null' "$TMPDIR/share-smoke.log" && grep -E '"case":"(wedding-text|contest-[a-z]+|poster-[a-z-]+)"' "$TMPDIR/share-smoke.log"`
 Expected: 사례 54줄(18종 × 3) 모두 `"gate":null,"conf":null`(Jev 미호출 — count 54), `wedding-text` 이 `"status":"extracted"`·일정 1, `contest-timeline`·`contest-photo` 일정 3(마감 23:59·notes 포함 — `miss` 에 `start0`·`notes` 없음), `contest-hiring` 일정 4, `poster-festival`·`poster-festival-ocr` 일정 1, 상태에 `discarded:server:promo|notice|personal` 없음(`promo-lineup` 은 `discarded:server:empty`·일정 0), 마지막 줄 `{"gate":"pass",…}`. 한 줄이라도 gate 라벨이 남으면 배포본에 `a17bc61` 이 빠진 것, contest 사례가 일정 1이면 `51229cb` 가 빠진 것 — 멈추고 메인에게 알린다. 모델 흔들림으로 한두 줄만 어긋나면(로컬 54/54 기준) 그 사례만 `--runs 3` 한 번 더 보고, 다시 어긋나면 메인에게 알린다.
