@@ -71,4 +71,88 @@ final class RecentDiscardsTests: XCTestCase {
     XCTAssertEqual(RecentDiscards.title(filter: .all), "최근 폐기")
     XCTAssertEqual(RecentDiscards.title(filter: .notification), "최근 폐기 · 알림·문자")
   }
+
+  // 복구 뒤 진행 상태(진단 10-03 UX): 본인 items.status·process 잡 status·facts 종류만 읽는다(본문 열 없음)
+  func testRestoreQueriesHaveNoBody() {
+    let qs = [RecentDiscards.itemStatusQuery(itemID: "i1"), RecentDiscards.jobStatusQuery(itemID: "i1"), RecentDiscards.factKindsQuery(itemID: "i1")]
+    XCTAssertEqual(qs[0], "rest/v1/items?select=status&id=eq.i1")
+    XCTAssertEqual(qs[1], "rest/v1/jobs?select=status&kind=eq.process&payload-%3E%3Eitem_id=eq.i1&order=created_at.desc&limit=1")   // 복구 잡(가장 최근)
+    XCTAssertEqual(qs[2], "rest/v1/facts?select=kind&status=eq.active&item_id=eq.i1")                                             // LinkCapture.result 와 같은 기준
+    for q in qs {
+      XCTAssertNotNil(URL(string: q))
+      XCTAssertFalse(q.contains("content_enc") || q.contains("ocr_text") || q.contains("payload,") || q.contains("select=*"))
+    }
+  }
+  func testRestoreState() {
+    typealias S = RecentDiscards.RestoreState
+    XCTAssertNil(RecentDiscards.restoreState(itemStatus: nil, jobStatus: nil, kinds: []))                       // 행을 못 읽음 → 아직
+    XCTAssertNil(RecentDiscards.restoreState(itemStatus: "queued", jobStatus: nil, kinds: []))
+    XCTAssertNil(RecentDiscards.restoreState(itemStatus: "queued", jobStatus: "running", kinds: []))
+    XCTAssertEqual(RecentDiscards.restoreState(itemStatus: "queued", jobStatus: "dead", kinds: []), S.failed)       // 5회 실패 — items 는 queued 로 남는다
+    XCTAssertEqual(RecentDiscards.restoreState(itemStatus: "extracted", jobStatus: nil, kinds: ["event", "place", "event"]), S.proposed(2))
+    XCTAssertEqual(RecentDiscards.restoreState(itemStatus: "extracted", jobStatus: nil, kinds: ["task"]), S.task)
+    XCTAssertEqual(RecentDiscards.restoreState(itemStatus: "extracted", jobStatus: nil, kinds: []), S.noSchedule)
+    XCTAssertEqual(RecentDiscards.restoreState(itemStatus: "discarded:server:empty", jobStatus: "done", kinds: []), S.noSchedule)
+    XCTAssertEqual(RecentDiscards.restoreState(itemStatus: "discarded:server:otp", jobStatus: "done", kinds: []), S.failed)  // 서버 규칙 폐기
+  }
+  func testRestoreLine() {
+    XCTAssertEqual(RecentDiscards.restoreLine(.processing), "처리 중…")
+    XCTAssertEqual(RecentDiscards.restoreLine(.proposed(2)), "일정 제안 2건 — '제안' 탭과 알림에서 추가할 수 있어요")
+    XCTAssertEqual(RecentDiscards.restoreLine(.task), "할 일을 찾았어요 — 알림에서 확인하세요")
+    XCTAssertEqual(RecentDiscards.restoreLine(.noSchedule), "일정을 찾지 못했어요 · 보관함에 보관됨")
+    XCTAssertEqual(RecentDiscards.restoreLine(.failed), "처리하지 못했어요")
+    XCTAssertEqual(RecentDiscards.restoreLine(.timedOut), "아직 처리 중이에요 — 보관함에서 확인하세요")
+  }
+  // 3초 × 30회 = 최대 90초(분당 cron 대기 + 처리, 진단 실측 최악 ~65초)
+  func testPollLimit() {
+    XCTAssertEqual(RecentDiscards.pollTries, 30)
+    XCTAssertEqual(RecentDiscards.pollEvery, .seconds(3))
+  }
+  /// 가짜 서버: 경로 → 응답 차례(nil = 200 이 아님). 마지막 응답은 계속 반복
+  final class FakeGet: @unchecked Sendable {
+    var replies: [String: [Data?]]; var calls: [String] = []
+    init(_ r: [String: [String?]]) { replies = r.mapValues { $0.map { $0.map { Data($0.utf8) } } } }
+    func get(_ path: String) async -> Data? {
+      calls.append(path)
+      let key = String(path.prefix(while: { $0 != "?" }))
+      guard var q = replies[key], !q.isEmpty else { return nil }
+      let d = q.count > 1 ? q.removeFirst() : q[0]
+      replies[key] = q
+      return d
+    }
+  }
+  func testPollRestoreProcessingThenProposal() async {
+    let f = FakeGet(["rest/v1/items": [#"[{"status":"queued"}]"#, #"[{"status":"queued"}]"#, #"[{"status":"extracted"}]"#],
+                     "rest/v1/jobs": [#"[{"status":"queued"}]"#, #"[{"status":"running"}]"#],
+                     "rest/v1/facts": [#"[{"kind":"event"}]"#]])
+    var waits = 0
+    let s = await RecentDiscards.pollRestore(itemID: "i1", wait: { waits += 1 }, get: f.get)
+    XCTAssertEqual(s, .proposed(1))
+    XCTAssertEqual(waits, 3)
+    XCTAssertEqual(f.calls.filter { $0.hasPrefix("rest/v1/jobs") }.count, 2)        // queued 일 때만 잡을 본다
+    XCTAssertEqual(f.calls.filter { $0.hasPrefix("rest/v1/facts") }.count, 1)       // extracted 일 때만 facts 를 본다
+  }
+  func testPollRestoreEmptyAndDeadJob() async {
+    let empty = FakeGet(["rest/v1/items": [#"[{"status":"discarded:server:empty"}]"#]])
+    let s1 = await RecentDiscards.pollRestore(itemID: "i1", wait: {}, get: empty.get)
+    XCTAssertEqual(s1, .noSchedule)
+    XCTAssertFalse(empty.calls.contains { $0.hasPrefix("rest/v1/facts") || $0.hasPrefix("rest/v1/jobs") })
+    let dead = FakeGet(["rest/v1/items": [#"[{"status":"queued"}]"#], "rest/v1/jobs": [#"[{"status":"dead"}]"#]])
+    let s2 = await RecentDiscards.pollRestore(itemID: "i1", wait: {}, get: dead.get)
+    XCTAssertEqual(s2, .failed)
+  }
+  // facts 조회가 실패하면 "일정 없음"으로 단정하지 않고 다음 회차에 다시 본다. 상한까지 끝나지 않으면 timedOut
+  func testPollRestoreRetriesOnReadFailureAndTimesOut() async {
+    let f = FakeGet(["rest/v1/items": [#"[{"status":"extracted"}]"#], "rest/v1/facts": [nil, #"[{"kind":"event"},{"kind":"event"}]"#]])
+    let s = await RecentDiscards.pollRestore(itemID: "i1", wait: {}, get: f.get)
+    XCTAssertEqual(s, .proposed(2))
+    let stuck = FakeGet(["rest/v1/items": [#"[{"status":"queued"}]"#], "rest/v1/jobs": [#"[]"#]])
+    var waits = 0
+    let s2 = await RecentDiscards.pollRestore(itemID: "i1", tries: 4, wait: { waits += 1 }, get: stuck.get)
+    XCTAssertEqual(s2, .timedOut)
+    XCTAssertEqual(waits, 4)
+    let broken = FakeGet([:])                                                         // 네트워크 없음 → 끝까지 nil
+    let s3 = await RecentDiscards.pollRestore(itemID: "i1", tries: 2, wait: {}, get: broken.get)
+    XCTAssertEqual(s3, .timedOut)
+  }
 }

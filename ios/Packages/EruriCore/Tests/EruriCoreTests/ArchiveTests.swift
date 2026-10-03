@@ -32,7 +32,7 @@ final class ArchiveTests: XCTestCase {
 
   func testStatusKo() {
     XCTAssertEqual(["extracted", "queued", "discarded:server:empty", "discarded:server:promo", "discarded:device:rule"].map(Archive.statusKo),
-                   ["추출됨", "처리 중", "보관", "폐기", "폐기"])
+                   ["추출됨", "처리 중", "일정 없음(보관)", "폐기", "폐기"])
     XCTAssertEqual(Archive.statusKo("new_status"), "new_status")
   }
 
