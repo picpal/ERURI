@@ -59,7 +59,12 @@ public enum Outbox {
     return url
   }
 
-  public static func body(_ item: CaptureItem) throws -> Data { try JSONEncoder().encode(item) }
+  /// 출처는 ingest 가 받는 값으로 맞춰 보낸다(CaptureSource). id 는 그대로라 멱등 키는 `<맞춘 출처>:<id>`
+  public static func body(_ item: CaptureItem) throws -> Data {
+    var i = item
+    i.source = CaptureSource.normalize(i.source)
+    return try JSONEncoder().encode(i)
+  }
 
   public static func remove(id: String, container: URL) {
     try? FileManager.default.removeItem(at: container.appendingPathComponent(dir, isDirectory: true).appendingPathComponent(id + ".json"))

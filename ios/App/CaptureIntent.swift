@@ -59,7 +59,7 @@ struct CaptureIntent: AppIntent {
   /// `queue_id` 는 서버 대조용(`items.idempotency_key = source:queue_id`). 폐기·오류면 빈 값
   private func trace(result: String, queueID: String?, started: Date, state: AppState.Snapshot) {
     let base: [String: Any] = [
-      "source": source, "app": appName ?? "", "app_set": appName != nil, "title_len": title?.count ?? -1,
+      "source": source, "source_sent": CaptureSource.normalize(source), "app": appName ?? "", "app_set": appName != nil, "title_len": title?.count ?? -1,
       "text_len": text.count, "text_sha8": Trace.sha8(text), "sender_set": sender != nil, "sender_len": sender?.count ?? -1,
       "result": result, "queue_id": queueID ?? "", "elapsed_ms": Int(Date().timeIntervalSince(started) * 1000),
     ]
@@ -82,7 +82,8 @@ struct CaptureIntent: AppIntent {
       return ("discarded:\(reason)", nil)
     case .queue(let deviceFilter):
       if deviceFilter == "rules" { DiagLog.append("FM fallback \(outcome) kind=unknown") }
-      let qid = try pipeline.enqueue(source: source, appName: appName, title: maskedTitle, sender: sender, masked: masked, deviceFilter: deviceFilter)
+      // 출처는 사용자가 단축어에 적은 글이라 ingest 가 받는 값으로 맞춘다("MESSAGE" → "MESSAGES", CaptureSource). trace 의 source 는 입력값 그대로
+      let qid = try pipeline.enqueue(source: CaptureSource.normalize(source), appName: appName, title: maskedTitle, sender: sender, masked: masked, deviceFilter: deviceFilter)
       return ("queued:\(deviceFilter)", qid)
     }
   }
