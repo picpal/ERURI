@@ -10,7 +10,7 @@ settings:
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "6.0"
     # 제품 앱은 0.3.0부터(0.2.x 는 PoC, 스펙 §11). 메이저 금지(AGENTS.md §8). 빌드 번호는 scripts/testflight.sh 가 $(date +%Y%m%d%H%M)
-    MARKETING_VERSION: 0.11.1
+    MARKETING_VERSION: 0.11.2
     CURRENT_PROJECT_VERSION: "1"
 packages:
   EruriCore:
