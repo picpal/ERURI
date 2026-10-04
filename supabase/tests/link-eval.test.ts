@@ -38,15 +38,25 @@ Deno.test("link-eval judge: date wildcard accepts all-day or a time on that date
   assertEquals(judge(w, "extracted", [ev(0, "2026-10-24")]), ["start0"]);
 });
 
+// 끝(2026-10-04 실기기 — 10:00~16:00 공지가 캘린더에 1시간으로 들어감, 앱 0.11.3): ends 는 starts 와 같은 규칙으로 일정 k 의 end 를 본다
+Deno.test("link-eval judge: ends expectation", () => {
+  const e: Case = { ...c, expect: { status: ["extracted"], events: 1, starts: ["2026-10-17T10:00"], ends: ["2026-10-17T16:00"] } };
+  const withEnd = (end: string | null): Fact => ({ kind: "event", ordinal: 0, payload: { start: "2026-10-17T10:00:00+09:00", end } });
+  assertEquals(judge(e, "extracted", [withEnd("2026-10-17T16:00:00+09:00")]), []);
+  assertEquals(judge(e, "extracted", [withEnd(null)]), ["end0"]);
+  assertEquals(judge(e, "extracted", [withEnd("2026-10-17T11:00:00+09:00")]), ["end0"]);
+});
+
 Deno.test("link-eval expand: gallery filler", () => {
   assertEquals(expand("본문:\n{{GALLERY:3}}\n끝"), "본문:\n합성 갤러리 사진 설명 1번\n합성 갤러리 사진 설명 2번\n합성 갤러리 사진 설명 3번\n끝");
 });
 
-// 사례 파일: 18종(2026-10-03 SHARE 추출 지시 — contest 3·poster 2 추가), id 유일, app_name 은 둘 중 하나, 긴 사례는 펼친 뒤 3,000~4,000자이고 일시 줄이 앞 2,000자 안(F23 — 게이트가 보는 범위)
+// 사례 파일: 19종(2026-10-03 SHARE 추출 지시 — contest 3·poster 2 추가, 10-04 notice-hours 끝 시각), id 유일, app_name 은 둘 중 하나, 긴 사례는 펼친 뒤 3,000~4,000자이고 일시 줄이 앞 2,000자 안(F23 — 게이트가 보는 범위)
 Deno.test("link-cases.json shape", async () => {
   const cases: Case[] = JSON.parse(await Deno.readTextFile(new URL("../eval/link-cases.json", import.meta.url)));
-  assertEquals(cases.length, 18);
-  assertEquals(new Set(cases.map((x) => x.id)).size, 18);
+  assertEquals(cases.length, 19);
+  assertEquals(new Set(cases.map((x) => x.id)).size, 19);
+  assert(cases.some((x) => x.id === "notice-hours" && x.expect.ends?.length === 1), "notice-hours");
   for (const id of ["contest-timeline", "contest-photo", "contest-hiring", "poster-festival", "poster-festival-ocr"]) {
     assert(cases.some((x) => x.id === id && x.expect.status.join() === "extracted" && (x.expect.events ?? 0) >= 1), id);
   }
