@@ -31,6 +31,16 @@ Deno.test("link-eval judge: notes expectation matches any event's notes", () => 
   assertEquals(judge(n, "extracted", [ev(0, "2026-11-05"), ev(1, "2026-11-19")]), ["notes"]);
 });
 
+// 여러 날 행사(2026-10-04 결정 A): notes 배열은 한 일정의 notes 가 모두 포함해야 한다(두 일정에 나뉘면 실패)
+Deno.test("link-eval judge: notes array must all be in one event's notes", () => {
+  const n: Case = { ...c, expect: { status: ["extracted"], events: 1, notes: ["10:00~19:00", "11:00~21:00"] } };
+  const withNotes = (ordinal: number, notes: string | null): Fact => ({ kind: "event", ordinal, payload: { start: "2026-10-23", notes } });
+  assertEquals(judge(n, "extracted", [withNotes(0, "체험마당 10:00~19:00 / 장터 11:00~21:00")]), []);
+  assertEquals(judge(n, "extracted", [withNotes(0, "체험마당 10:00~19:00")]), ["notes"]);
+  assertEquals(judge({ ...n, expect: { ...n.expect, events: 2 } }, "extracted",
+    [withNotes(0, "10:00~19:00"), withNotes(1, "11:00~21:00")]), ["notes"]);
+});
+
 Deno.test("link-eval judge: date wildcard accepts all-day or a time on that date", () => {
   const w: Case = { ...c, expect: { status: ["extracted"], events: 1, starts: ["2026-10-23*"] } };
   assertEquals(judge(w, "extracted", [ev(0, "2026-10-23")]), []);
@@ -51,15 +61,21 @@ Deno.test("link-eval expand: gallery filler", () => {
   assertEquals(expand("본문:\n{{GALLERY:3}}\n끝"), "본문:\n합성 갤러리 사진 설명 1번\n합성 갤러리 사진 설명 2번\n합성 갤러리 사진 설명 3번\n끝");
 });
 
-// 사례 파일: 19종(2026-10-03 SHARE 추출 지시 — contest 3·poster 2 추가, 10-04 notice-hours 끝 시각), id 유일, app_name 은 둘 중 하나, 긴 사례는 펼친 뒤 3,000~4,000자이고 일시 줄이 앞 2,000자 안(F23 — 게이트가 보는 범위)
+// 사례 파일: 20종(2026-10-03 SHARE 추출 지시 — contest 3·poster 2 추가, 10-04 notice-hours 끝 시각, 10-04 여러 날 박람회 poster-multiday-programs), id 유일, app_name 은 둘 중 하나, 긴 사례는 펼친 뒤 3,000~4,000자이고 일시 줄이 앞 2,000자 안(F23 — 게이트가 보는 범위)
 Deno.test("link-cases.json shape", async () => {
   const cases: Case[] = JSON.parse(await Deno.readTextFile(new URL("../eval/link-cases.json", import.meta.url)));
-  assertEquals(cases.length, 19);
-  assertEquals(new Set(cases.map((x) => x.id)).size, 19);
+  assertEquals(cases.length, 20);
+  assertEquals(new Set(cases.map((x) => x.id)).size, 20);
   assert(cases.some((x) => x.id === "notice-hours" && x.expect.ends?.length === 1), "notice-hours");
-  for (const id of ["contest-timeline", "contest-photo", "contest-hiring", "poster-festival", "poster-festival-ocr"]) {
+  for (const id of ["contest-timeline", "contest-photo", "contest-hiring", "poster-festival", "poster-festival-ocr", "poster-multiday-programs"]) {
     assert(cases.some((x) => x.id === id && x.expect.status.join() === "extracted" && (x.expect.events ?? 0) >= 1), id);
   }
+  // 여러 날 공개 행사(10-04 결정 A)는 종일 1건(날짜만 시작·끝) + notes 운영 시간, 하루짜리 축제는 시각 + 끝 시각
+  for (const id of ["poster-festival", "poster-multiday-programs"]) {
+    const x = cases.find((y) => y.id === id)!.expect;
+    assert(x.events === 1 && x.starts?.[0].length === 10 && x.ends?.[0].length === 10 && [x.notes ?? []].flat().length >= 2, id);
+  }
+  assert(cases.find((x) => x.id === "poster-festival-ocr")!.expect.ends?.[0].includes("T21:00"));
   // 장소 없는 라인업은 SHARE 예외(날짜+장소 공개 행사)에 들지 않는다 — 기대값 그대로 0건
   assertEquals(cases.find((x) => x.id === "promo-lineup")!.expect.events, 0);
   assert(cases.every((x) => (x.app_name ?? "웹 링크") === "웹 링크" || x.app_name === "이미지"));

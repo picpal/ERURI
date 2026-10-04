@@ -78,14 +78,21 @@
     "app_name": "이미지",
     "title": null,
     "text": "[이미지] 사진 1장\n이미지 속 글자:\n놓치지 마세요!\n제7회 합성구 가을 문화제\n10.23(금) ~ 10.25(일)\n10:00 ~ 19:00\n합성구청 앞 광장\n체험마당 · 먹거리장터 · 초청공연\n사전예약 시 체험비 20% 할인\n지금 신청하세요\n주최 합성구청",
-    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-10-23*"], "location": "합성구청" }
+    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-10-23"], "ends": ["2026-10-25"], "location": "합성구청", "notes": ["10:00", "19:00"] }
   },
   {
     "id": "poster-festival-ocr",
     "app_name": "이미지",
     "title": null,
     "text": "[이미지] 사진 1장\n이미지 속 글자:\n2026\n합성\n별빛\n축제\n11월 7일(토)\n오후 5시~9시\n합성천 둔치\n초청가수\n합성밴드\n경품 추첨\n사전접수\nfest.example.com\n문의 02-***-1234",
-    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-11-07T17:00"], "location": "합성천" }
+    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-11-07T17:00"], "ends": ["2026-11-07T21:00"], "location": "합성천" }
+  },
+  {
+    "id": "poster-multiday-programs",
+    "app_name": "이미지",
+    "title": null,
+    "text": "[이미지] 사진 1장\n이미지 속 글자:\n2026 합성 가을 박람회\n10.30(금) ~ 11.1(일)\n장소 : 합성시민공원 일대\n체험마당 10:00 ~ 19:00 (잔디광장)\n먹거리장터 11:00 ~ 21:00 (분수광장)\n입장료 무료\n체험 사전 신청 expo.example.com\n주최 합성시",
+    "expect": { "status": ["extracted"], "events": 1, "starts": ["2026-10-30"], "ends": ["2026-11-01"], "location": "합성시민공원", "notes": ["10:00", "19:00", "11:00", "21:00"] }
   },
   {
     "id": "notice-hours",
