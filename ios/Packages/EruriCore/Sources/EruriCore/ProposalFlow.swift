@@ -5,11 +5,12 @@ public enum ProposalFlow {
   public enum Check: Equatable, Sendable { case proceed, stop(reason: String) }
   public enum FollowUp: Equatable, Sendable { case done, doneNotifyChanged, retryLater }
 
-  /// 순서 1: 서버 최신 상태가 stale·succeeded 면 중단. nil(오프라인·오류)이면 받은 버전으로 진행(순서 5)
-  public static func check(serverStatus: String?) -> Check {
+  /// 순서 1: 서버 최신 상태가 stale·succeeded 면 중단. nil(오프라인·오류)이면 받은 버전으로 진행(순서 5).
+  /// readd(항목 상세 "캘린더에 다시 추가", §10 0.11.4): 캘린더에서 지운 일정을 다시 넣는다 — succeeded 는 진행, stale 만 중단
+  public static func check(serverStatus: String?, readd: Bool = false) -> Check {
     switch serverStatus {
     case "stale": return .stop(reason: "stale")
-    case "succeeded": return .stop(reason: "succeeded")
+    case "succeeded" where !readd: return .stop(reason: "succeeded")
     default: return .proceed
     }
   }

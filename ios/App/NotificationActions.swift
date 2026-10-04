@@ -27,19 +27,21 @@ enum NotificationActions {
   /// lockScreen: 잠금화면 알림 액션(델리게이트) — 겹침·비슷한 일정이면 저장 대신 로컬 알림 1건을 여기서 등록한다
   /// 백그라운드 실행 시간 안에 EventKit 쓰기와 완료 핸들러가 끝나도록 구간마다 마감을 둔다(M1-②c 리뷰):
   /// 순서 1 조회 5초 + 순서 4 보고 5초, 둘 다 토큰 갱신 포함. 겹침이면 보고를 건너뛰고 로컬 알림 등록 2초뿐(Codex #5)
+  /// readd: 항목 상세 "캘린더에 다시 추가"(§10 "일정 다시 추가", 0.11.4) — 순서 1은 stale 에서만 멈추고, 게이트는 로컬 기록이 있어도 dup 으로
+  /// 멈추지 않고 표식 조회부터 한다. 기록은 새 일정으로 덮고 서버에 새로 보고하지 않는다(보고 전 기록이면 다음 보고가 새 id 로)
   /// 반환: AddEventGate 결과(ok·recovered·dup·conflict:<n>·similar:<n>·fail:<코드>) · "skip_<why>" · "invalid_payload".
   /// 채팅 카드·시트는 conflict·similar 면 확인창을 띄운다
   @discardableResult
-  static func handleAdd(fields f: [String: String], confirmed: Bool = false, lockScreen: Bool = false) async -> String {
+  static func handleAdd(fields f: [String: String], confirmed: Bool = false, lockScreen: Bool = false, readd: Bool = false) async -> String {
     let started = Date()
     guard let pid = f["proposal_id"], UUID(uuidString: pid) != nil, let title = f["title"], let shown = ProposalReview.timing(fields: f, serverEnd: nil) else {
       Trace.log("action.handled", ["result": "invalid_payload"]); return "invalid_payload"
     }
     // 1. 서버 최신 상태(토큰 갱신 포함 5초). 넘기거나 오프라인이면 건너뛰고 받은 버전으로 실행(순서 5)
     let server = await Deadline.run(seconds: 5) { await serverProposal(pid) }
-    if case .stop(let why) = ProposalFlow.check(serverStatus: server?.status) {
+    if case .stop(let why) = ProposalFlow.check(serverStatus: server?.status, readd: readd) {
       await ExecutionReporter.notice(title: "이미 처리된 제안", body: why == "stale" ? "제안이 바뀌어 추가하지 않았습니다." : "이미 캘린더에 추가된 제안입니다.")
-      trace("skip_\(why)", pid: pid, started: started); return "skip_\(why)"
+      trace("skip_\(why)", pid: pid, started: started, readd: readd); return "skip_\(why)"
     }
     // 기록·보고 version 은 실제로 넣은 내용(푸시 페이로드)의 것. 서버가 더 새 version 이면 보고 결과 changed 로 알린다(순서 5)
     let version = Int(f["version"] ?? "") ?? server?.version ?? 1
@@ -49,12 +51,12 @@ enum NotificationActions {
     // 메모(스펙 §10, 0.11.2): 화면 값 → 없으면 순서 1 조회 값. 조회를 못 했으면 메모 없이 저장한다
     let outcome = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, timing: timing, version: version, confirmed: confirmed,
                                                                 location: ProposalReview.place(f["location"]),
-                                                                notes: ProposalReview.memo(fields: f, server: server?.notes)))
+                                                                notes: ProposalReview.memo(fields: f, server: server?.notes), readd: readd))
     let held = ProposalFlow.heldCount(outcome)                          // 겹침·비슷한 일정(0.9.2) — 저장하지 않았다
     // 잠금화면이 겹침·비슷한 일정으로 멈추면 앱 확인을 유도하는 로컬 알림(§10). 결과를 action.handled 에 같이 남기려고 trace 앞에서
     var notice: String? = nil
     if lockScreen, let n = held { notice = await conflictNotice(fields: f, count: n, similar: ProposalFlow.similarCount(outcome) != nil) }
-    trace(outcome, pid: pid, started: started, notice: notice)
+    trace(outcome, pid: pid, started: started, notice: notice, readd: readd)
     // 추가됐으면 알림 센터에 남은 겹침 알림을 지운다(탭해도 "처리됨" 시트만 뜨는 죽은 알림, Fable N5)
     if ["ok", "recovered", "dup"].contains(outcome) {
       UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [ProposalFlow.conflictNoticeID(pid)])
@@ -126,21 +128,24 @@ enum NotificationActions {
                           end: row["end_at"] as? String)
   }
 
-  private static func trace(_ result: String, pid: String, started: Date, notice: String? = nil) {
+  private static func trace(_ result: String, pid: String, started: Date, notice: String? = nil, readd: Bool = false) {
     Task {
       let st = await AppState.snapshot()
       let auth = EKEventStore.authorizationStatus(for: .event).rawValue
-      DiagLog.append("ADD \(result) \(pid) bg=\(st.bg) auth=\(auth)")
+      DiagLog.append("ADD \(readd ? "readd " : "")\(result) \(pid) bg=\(st.bg) auth=\(auth)")
       var base: [String: Any] = ["result": result, "dup": result == "dup", "proposal_id": pid, "auth": auth,
                                  "elapsed_ms": Int(Date().timeIntervalSince(started) * 1000)]
       if let notice { base["notice"] = notice }
+      if readd { base["readd"] = true }
       Trace.log("action.handled", base.merging(st.traceFields) { _, new in new })
     }
   }
 }
 
 struct AddEventRequest: Sendable { let pid: String; let title: String; let timing: ProposalTiming; let version: Int; var confirmed = false; var location: String? = nil
-                              var notes: String? = nil }
+                              var notes: String? = nil
+                              /// 다시 추가(§10 0.11.4): 로컬 기록이 있어도 dup 으로 멈추지 않고, 기록을 새 일정으로 덮는다(rerecord)
+                              var readd = false }
 
 /// 확인 → 표식 조회 → 겹침·비슷한 일정 판정 → 저장 → 기록을 await 없이 한 actor 안에서 처리한다(스펙 §10 순서 2~3, PoC-5 실측: 동시 두 번 탭 +1).
 /// 반환: "ok" · "recovered"(저장 후 기록 전 종료 복구) · "dup" · "conflict:<n>"(겹침, 저장 안 함) · "similar:<n>"(비슷한 일정, 저장 안 함) · "fail:<코드>"
@@ -149,15 +154,17 @@ actor AddEventGate {
   func add(_ r: AddEventRequest) -> String {
     do {
       let ex = try Executions.shared()
-      if try ex.existing(proposalId: r.pid) != nil { return "dup" }
+      if !r.readd, try ex.existing(proposalId: r.pid) != nil { return "dup" }
       // 전체 접근이 없으면(추가만 허용·철회) 표식·겹침을 읽지 못한 채 저장하게 된다 — 저장하지 않는다(§10 권한 철회, C2 리뷰 Minor 1).
       // 화면은 전체 접근일 때만 추가 버튼을 보이므로 이 경로는 권한을 바꾼 직후의 낡은 화면·알림뿐이다
       guard CalendarLookup.fullAccess else { return "fail:no_full_access" }
       let store = EKEventStore()
       let (from, to) = r.timing.searchWindow                // 시각 ±1일, 종일은 첫날 서울 0시 −1일 ~ 마지막 날 다음 날 0시 +1일(기간 전체, 0.9.2)
       let events = CalendarLookup.events(store, from: from, to: to)
+      // 다시 추가도 표식부터 — 캘린더에 이미 그 일정이 있으면 새로 만들지 않는다(두 번 탭해도 1건). 기록만 그 일정으로
       if let found = ProposalFlow.matchMarker(pid: r.pid, events: events.map { (id: $0.id, url: $0.url) }) {
-        try ex.record(proposalId: r.pid, eventkitId: found, version: r.version)
+        if r.readd { try ex.rerecord(proposalId: r.pid, eventkitId: found, version: r.version) }
+        else { try ex.record(proposalId: r.pid, eventkitId: found, version: r.version) }
         return "recovered"
       }
       // 겹침(§10 순서 3): 표식 조회에 쓴 같은 배열로 판정 — EventKit 조회·await 가 늘지 않는다. 확인받지 않았으면 저장하지 않는다. 종일은 판정 대상 아님.
@@ -179,7 +186,8 @@ actor AddEventGate {
       ev.url = ProposalFlow.marker(r.pid)
       try store.save(ev, span: .thisEvent, commit: true)
       let eid: String = ev.eventIdentifier ?? ev.calendarItemIdentifier   // SDK 상 String! — nil 이면 암시적 언래핑으로 죽는다
-      try ex.record(proposalId: r.pid, eventkitId: eid, version: r.version)
+      if r.readd { try ex.rerecord(proposalId: r.pid, eventkitId: eid, version: r.version) }
+      else { try ex.record(proposalId: r.pid, eventkitId: eid, version: r.version) }
       return "ok"
     } catch { return "fail:\(type(of: error))" }
   }

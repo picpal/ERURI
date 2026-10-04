@@ -17,7 +17,8 @@ import EruriCore
   private let drain = RestartableTask()
   private let reads = LinkReads()
 
-  struct ChatRead: Sendable { let text: String; let captureID: String? }
+  /// seenCaptureID = 이미 읽은 링크(관문 duplicate)의 캡처 id — 채팅이 그 항목을 찾아 "일정 보기"를 붙인다(§9, 0.11.4)
+  struct ChatRead: Sendable { let text: String; let captureID: String?; var seenCaptureID: String? = nil }
 
   /// 지금 화면에 붙은 키 창(웹뷰를 그 맨 아래에 붙인다)
   private func hostWindow() -> UIWindow? {
@@ -83,7 +84,8 @@ import EruriCore
   func chatRead(url: URL, note: String?) async -> ChatRead {
     guard let host = hostWindow() else { return ChatRead(text: LinkCaptureText.chat(.failed("no_host")), captureID: nil) }
     guard let q = try? CaptureQueue.shared() else { return ChatRead(text: LinkCaptureText.chat(.failed("queue_admit")), captureID: nil) }   // 대기 행 없음
-    let r = await reads.chat(PendingLink(url: url, note: note, origin: "chat"), queue: q) { await self.read($0, origin: "chat", host: host, queue: q) }
+    let link = PendingLink(url: url, note: note, origin: "chat")
+    let r = await reads.chat(link, queue: q) { await self.read($0, origin: "chat", host: host, queue: q) }
     let o = r.outcome
     switch r {
     case .stopped:
@@ -93,6 +95,7 @@ import EruriCore
     case .read: break
     }
     if case .retry(let code) = o, code != "cancelled" { startDrain() }       // cancelled 는 다음 .active 가 이어받는다
+    if o == .duplicate { return ChatRead(text: LinkCaptureText.chat(o), captureID: nil, seenCaptureID: link.captureID) }
     guard case .queued(let id, _, _, _) = o else { return ChatRead(text: LinkCaptureText.chat(o), captureID: nil) }
     await Uploader.shared.flush(trigger: .foreground)        // 직접 요청 우선(8초), 응답이 없으면 background 세션(스펙 §6 업로더)
     return ChatRead(text: LinkCaptureText.chat(o), captureID: id)
@@ -117,16 +120,22 @@ import EruriCore
 
   /// 2단계: 서버 처리 결과를 3초마다 최대 60초 확인(본인 items.status·gate_label·facts 종류만 — RLS, F19)
   func chatResult(captureID: String, subject: LinkCaptureText.Subject) async -> String {
-    let key = "SHARE:\(captureID)".addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-"))) ?? captureID
     for _ in 0..<20 {
       try? await Task.sleep(for: .seconds(3))
-      if let text = await result(key: key, subject: subject) { return text }
+      if let text = await result(captureID: captureID, subject: subject) { return text }
     }
     return LinkCaptureText.pending
   }
 
-  private func result(key: String, subject: LinkCaptureText.Subject) async -> String? {
-    guard let r = await API.send("rest/v1/items?select=id,status,gate_label&idempotency_key=eq.\(key)"), r.status == 200,
+  /// 이미 읽은 링크의 항목 id(§9 "일정 보기", 0.11.4): 서버 멱등 키로 본인 items 의 id 만(RLS). 못 찾으면(업로드 전·서버 폐기·오류) nil
+  func itemID(captureID: String) async -> String? {
+    guard let r = await API.send(LinkFlow.itemQuery(captureID: captureID, select: "id")), r.status == 200,
+          let rows = (try? JSONSerialization.jsonObject(with: r.data)) as? [[String: Any]] else { return nil }
+    return rows.first?["id"] as? String
+  }
+
+  private func result(captureID: String, subject: LinkCaptureText.Subject) async -> String? {
+    guard let r = await API.send(LinkFlow.itemQuery(captureID: captureID, select: "id,status,gate_label")), r.status == 200,
           let rows = (try? JSONSerialization.jsonObject(with: r.data)) as? [[String: Any]], let row = rows.first,
           let itemID = row["id"] as? String, let status = row["status"] as? String else { return nil }
     var kinds: [String] = []

@@ -6,7 +6,7 @@ final class LinkCaptureTextTests: XCTestCase {
   func testShareTexts() {
     XCTAssertEqual(LinkCaptureText.share(.queued(captureID: "c", chars: 812, ocr: false, timedOut: false)),
                    "페이지에서 글 812자를 읽었어요. 일정을 찾으면 알림으로 알려 드릴게요.")
-    XCTAssertEqual(LinkCaptureText.share(.duplicate), "이미 읽은 링크예요. 제안 탭에서 확인해 주세요.")
+    XCTAssertEqual(LinkCaptureText.share(.duplicate), "이미 읽은 링크예요. 보관함에서 그 항목을 열면 일정을 다시 볼 수 있어요.")   // 0.11.4
     XCTAssertEqual(LinkCaptureText.share(.handedOff("no_date")), "그림으로 된 페이지 같아요. ERURI 앱을 열면 그림 속 글자까지 다시 읽어요.")
     XCTAssertEqual(LinkCaptureText.share(.handedOff("empty")), "그림으로 된 페이지 같아요. ERURI 앱을 열면 그림 속 글자까지 다시 읽어요.")
     XCTAssertEqual(LinkCaptureText.share(.handedOff("timeout")), "지금은 다 읽지 못했어요. ERURI 앱을 열면 다시 읽어요.")
@@ -36,7 +36,7 @@ final class LinkCaptureTextTests: XCTestCase {
     XCTAssertEqual(LinkCaptureText.chat(.queued(captureID: "c", chars: 640, ocr: true, timedOut: false)), "페이지에서 글 640자를 읽었어요. 일정을 찾는 중…")
     XCTAssertEqual(LinkCaptureText.chat(.failed("timeout")), "페이지를 읽지 못했어요(시간이 너무 걸려요).")
     XCTAssertEqual(LinkCaptureText.chat(.discarded("otp")), "보안 숫자로 보이는 내용이 있어 저장하지 않았어요.")
-    XCTAssertEqual(LinkCaptureText.chat(.duplicate), "이미 읽은 링크예요. 제안 탭에서 확인해 주세요.")
+    XCTAssertEqual(LinkCaptureText.chat(.duplicate), "이미 읽은 링크예요. 보관함에서 그 항목을 열면 일정을 다시 볼 수 있어요.")
     XCTAssertEqual(LinkCaptureText.chat(.retry("cancelled")), "앱으로 돌아오면 다시 읽어요.")
     XCTAssertEqual(LinkCaptureText.chat(.retry("timeout")), "지금은 다 읽지 못했어요(시간이 너무 걸려요). 잠시 뒤 다시 읽고, 일정을 찾으면 알림으로 알려 드려요.")
   }
@@ -73,5 +73,16 @@ final class LinkCaptureTextTests: XCTestCase {
     }
     XCTAssertEqual(LinkCaptureText.reason("insecure"), "보안 연결(https)이 안 되는 페이지예요")
     XCTAssertEqual(LinkCaptureText.drainFailedBody("timeout"), "시간이 너무 걸려요. 날짜·장소 글을 복사해 ERURI로 공유해 주세요.")
+  }
+
+  /// 이미 읽은 링크 → 항목(스펙 §9, 0.11.4): 서버 멱등 키 SHARE:<캡처 id> 로 본인 items 의 id 만. 항목을 찾으면 문구를 줄이고 "일정 보기"
+  func testDuplicateItemLookup() {
+    let cid = "0f8e2c1a-1b2c-5d3e-8f4a-0123456789ab"
+    XCTAssertEqual(LinkFlow.itemQuery(captureID: cid, select: "id"),
+                   "rest/v1/items?select=id&idempotency_key=eq.SHARE%3A0f8e2c1a-1b2c-5d3e-8f4a-0123456789ab")
+    XCTAssertEqual(LinkFlow.itemQuery(captureID: cid, select: "id,status,gate_label"),
+                   "rest/v1/items?select=id,status,gate_label&idempotency_key=eq.SHARE%3A0f8e2c1a-1b2c-5d3e-8f4a-0123456789ab")
+    XCTAssertEqual(LinkCaptureText.duplicateFound, "이미 읽은 링크예요.")
+    XCTAssertEqual(LinkCaptureText.showEvents, "일정 보기")
   }
 }

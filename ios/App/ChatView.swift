@@ -13,6 +13,7 @@ struct ChatView: View {
     var link: String?                             // 링크·사진 턴(§9, 0.11.0): 상태 문구. nil = 질문 턴
     var linkDone = false
     var linkSaved = false                         // 큐에 넣었다 — 저장 범위 한 줄(메인 판정 MR1)을 보인다
+    var seenItemID: String?                       // 이미 읽은 링크의 항목(§9, 0.11.4) — "일정 보기" → 항목 상세
   }
 
   @State private var input = ""
@@ -43,7 +44,7 @@ struct ChatView: View {
             Section {
               Text(t.question).font(.subheadline).foregroundStyle(.secondary).id(t.id)
               if let e = t.error { Text(e).foregroundStyle(.red) }
-              if let l = t.link { linkRow(l, done: t.linkDone, saved: t.linkSaved) }
+              if let l = t.link { linkRow(l, done: t.linkDone, saved: t.linkSaved, itemID: t.seenItemID) }
               else if let a = t.answer { answerRows(t, a) }
               else if t.error == nil { ProgressView() }
             }
@@ -411,6 +412,11 @@ struct ChatView: View {
       let read = await LinkCapture.shared.chatRead(url: url, note: note)
       turns[idx].link = read.text
       busy = false
+      // 이미 읽은 링크: 그 항목을 찾으면 문구를 줄이고 "일정 보기"(다시 추가는 항목 상세, §10 0.11.4). 못 찾으면 보관함 안내 문구 그대로
+      if let seen = read.seenCaptureID {
+        if let item = await LinkCapture.shared.itemID(captureID: seen) { turns[idx].seenItemID = item; turns[idx].link = LinkCaptureText.duplicateFound }
+        turns[idx].linkDone = true; return
+      }
       guard let id = read.captureID else { turns[idx].linkDone = true; return }
       turns[idx].linkSaved = true
       turns[idx].link = await LinkCapture.shared.chatResult(captureID: id, subject: .page)
@@ -442,8 +448,9 @@ struct ChatView: View {
     }
   }
 
-  /// 링크·사진 턴(§9): 상태 문구 + (큐에 넣었으면) 저장 범위 한 줄 — 일정 카드·보관함 버튼·맞아요 막대 없음(제안은 "제안" 탭·알림)
-  private func linkRow(_ text: String, done: Bool, saved: Bool) -> some View {
+  /// 링크·사진 턴(§9): 상태 문구 + (큐에 넣었으면) 저장 범위 한 줄 — 일정 카드·보관함 버튼·맞아요 막대 없음(제안은 "제안" 탭·알림).
+  /// 이미 읽은 링크의 항목을 찾았으면 다음 행 "일정 보기" → 항목 상세(일정 절에서 다시 추가, 0.11.4). 행 하나에 탭 경로 하나(카드 출처 행과 같은 NavigationLink)
+  @ViewBuilder private func linkRow(_ text: String, done: Bool, saved: Bool, itemID: String?) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       HStack(alignment: .firstTextBaseline, spacing: 8) {
         if !done { ProgressView() }
@@ -452,6 +459,10 @@ struct ChatView: View {
       if saved {
         Text(LinkCaptureText.storageNote).font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("chat-link-note")
       }
+    }
+    if let itemID {
+      NavigationLink { ItemDetailView(itemID: itemID) } label: { Text(LinkCaptureText.showEvents).font(.subheadline) }
+        .accessibilityIdentifier("chat-link-show-events")
     }
   }
 }

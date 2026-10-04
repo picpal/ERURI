@@ -7,7 +7,11 @@ public enum LinkCaptureText {
   public static let tooMany = "링크는 한 번에 하나씩 보내 주세요"
   /// 기기·서버 규칙 폐기(OTP 등). 청첩장 글의 우편번호·QR 번호가 걸릴 수 있어 "인증번호"라고 단정하지 않는다(Fable F10)
   public static let discarded = "보안 숫자로 보이는 내용이 있어 저장하지 않았어요."
-  public static let duplicate = "이미 읽은 링크예요. 제안 탭에서 확인해 주세요."
+  /// 이미 읽은 링크(§6·§9, 0.11.4): 이미 추가했거나 지난 제안은 제안 탭에 없으므로 보관함 항목으로 안내한다
+  public static let duplicate = "이미 읽은 링크예요. 보관함에서 그 항목을 열면 일정을 다시 볼 수 있어요."
+  /// 채팅: 그 링크의 항목을 찾았을 때 — 아래 "일정 보기"가 항목 상세로 간다
+  public static let duplicateFound = "이미 읽은 링크예요."
+  public static let showEvents = "일정 보기"
   public static let pending = "아직 처리 중이에요 — 끝나면 알림으로 알려 드려요."
   /// 저장 범위(메인 판정 MR1 — 스펙 §6·§12): 확장 상태 화면·채팅 링크·사진 턴에 한 줄로
   public static let storageNote = "읽은 글은 공유한 내용처럼 암호화해 보관해요. 짧은 페이지는 보이는 글 전체가 저장돼요."

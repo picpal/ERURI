@@ -172,10 +172,15 @@ struct ProposalSheet: View {
 /// 겹침(스펙 §10): 뜰 때·앱 활성화 때 미리 판정해 "겹치는 일정" 줄과 "겹쳐도 추가"를 보이고, 누르면 확인창 없이 confirmed 로 부른다(0.8.1).
 /// 비슷한 일정(0.9.2): 겹침이 없으면 같은 날 비슷한 제목 → "✅ 캘린더에 비슷한 일정이 있음 · 날짜 제목" + "그래도 추가"(확인창 없이 confirmed).
 /// 종일 제안이 다른 제안 표식·같은 날짜·같은 정규화 제목 일정과 맞으면 "✅ 캘린더에 등록됨" — 추가 버튼 없이 무시만.
-/// 최종 판정은 AddEventGate — 미리 판정에 없던 겹침·비슷한 일정이 저장 직전에 나오면 다시 읽고 확인창(C2-5)
+/// 최종 판정은 AddEventGate — 미리 판정에 없던 겹침·비슷한 일정이 저장 직전에 나오면 다시 읽고 확인창(C2-5).
+/// mode(항목 상세 "일정" 절, §10 0.11.4): readd = "캘린더에 다시 추가"(무시 없음, handleAdd readd), addOnly = 무시한 제안(추가만)
 struct ProposalActionsView: View {
+  enum Mode { case pending, readd, addOnly }
   let title: String; let when: String; let location: String?; let addFields: [String: String]?; let proposalId: String
   @Binding var state: ProposalReview.ActionState
+  var mode = Mode.pending
+  /// 장소 아래 상태 한 줄(항목 상세 — "캘린더에서 찾지 못함 …"·"무시한 제안")
+  var note: String? = nil
   @Environment(\.scenePhase) private var scenePhase
   @State private var preview = ProposalFlow.Preview.clear
   @State private var askConfirm = false
@@ -186,6 +191,7 @@ struct ProposalActionsView: View {
       Text(title).font(.headline)
       Text(when).font(.subheadline).foregroundStyle(.secondary)
       if let location { Label(location, systemImage: "mappin.and.ellipse").font(.caption).foregroundStyle(.secondary) }
+      if let note, !finished { Text(note).font(.caption).foregroundStyle(.secondary) }
       // 추가·무시가 끝나면(.finished) 미리 판정 줄은 지난 정보라 숨긴다(C2 리뷰 Minor 4)
       if addFields != nil, !finished {
         if let line = ProposalFlow.conflictLine(conflicts) { Text(line).font(.caption).foregroundStyle(.orange) }
@@ -194,15 +200,16 @@ struct ProposalActionsView: View {
       }
       HStack {
         if addFields != nil, !(registered && !finished) {
-          Button(state == .running ? "처리하는 중…" : ProposalFlow.addButtonTitle(allDay: allDay, conflictsShown: !conflicts.isEmpty && !finished,
-                                                                            similarShown: !similars.isEmpty && !finished)) {
+          Button(state == .running ? "처리하는 중…" : buttonTitle) {
             add(confirmed: ProposalFlow.tapConfirmed(conflictsShown: !conflicts.isEmpty || !similars.isEmpty))
           }.buttonStyle(.borderedProminent)
         }
-        Button("무시") {
-          state = .running
-          Task { state = .after(ProposalReview.dismissFeedback(await NotificationActions.dismiss(proposalId: proposalId))) }
-        }.buttonStyle(.bordered)
+        if mode == .pending {
+          Button("무시") {
+            state = .running
+            Task { state = .after(ProposalReview.dismissFeedback(await NotificationActions.dismiss(proposalId: proposalId))) }
+          }.buttonStyle(.bordered)
+        }
       }
       .disabled(!state.buttonsEnabled)
       switch state {
@@ -221,6 +228,12 @@ struct ProposalActionsView: View {
   }
 
   private var finished: Bool { if case .finished = state { return true }; return false }
+  /// 겹침·비슷한 일정을 보였으면 그 문구("겹쳐도 추가"·"그래도 추가"), 아니면 다시 추가 행은 "캘린더에 다시 추가"
+  private var buttonTitle: String {
+    let c = !conflicts.isEmpty && !finished, s = !similars.isEmpty && !finished
+    if mode == .readd, !c, !s { return ItemEvents.readdButtonTitle }
+    return ProposalFlow.addButtonTitle(allDay: allDay, conflictsShown: c, similarShown: s)
+  }
   private var timing: ProposalTiming? { addFields?["start"].flatMap { ProposalTiming.parse(start: $0, end: addFields?["end"]) } }
   /// 날짜만 = 종일(0.9.1): "종일 일정으로 추가", 겹침 미리 판정 없음(§10 종일 제외)
   private var allDay: Bool { timing?.isAllDay ?? false }
@@ -246,12 +259,12 @@ struct ProposalActionsView: View {
     guard let fields = addFields else { return }
     state = .running
     Task {
-      let outcome = await NotificationActions.handleAdd(fields: fields, confirmed: confirmed)
+      let outcome = await NotificationActions.handleAdd(fields: fields, confirmed: confirmed, readd: mode == .readd)
       if ProposalFlow.needsConfirm(confirmed: confirmed, outcome: outcome) {
         heldSimilar = ProposalFlow.similarCount(outcome) != nil
         refreshPreview(); state = .idle; askConfirm = true
       }
-      else { state = .after(ChatReply.addFeedback(outcome)) }
+      else { state = .after(mode == .readd ? ItemEvents.readdFeedback(outcome) : ChatReply.addFeedback(outcome)) }
     }
   }
 }

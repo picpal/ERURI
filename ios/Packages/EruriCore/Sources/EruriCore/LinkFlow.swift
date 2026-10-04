@@ -62,6 +62,12 @@ public enum LinkFlow {
     case failed(String)
   }
 
+  /// 이 링크의 본인 items 행(서버 멱등 키 `SHARE:<captureID>`, RLS). 채팅 결과 확인·이미 읽은 링크의 "일정 보기"(§9, 0.11.4)가 쓴다
+  public static func itemQuery(captureID: String, select: String) -> String {
+    let key = "SHARE:\(captureID)".addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-"))) ?? captureID
+    return "rest/v1/items?select=\(select)&idempotency_key=eq.\(key)"
+  }
+
   public enum Admission: Equatable, Sendable { case go(PendingLink), stop(Outcome) }
 
   /// 읽기 전 관문(스펙 §6): 이미 읽은 링크면 duplicate, 메모가 기기 규칙에 걸리면 discarded — 둘 다 행을 만들지 않는다(App Group 에 인증번호를 남기지 않는다).

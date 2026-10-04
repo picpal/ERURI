@@ -28,6 +28,14 @@ public final class Executions {
       sqlite3_bind_int(s, 4, Int32(version))
     }
   }
+  /// 다시 추가(스펙 §10 "일정 다시 추가", 0.11.4): 기록이 있으면 eventkit_id 만 새 일정으로(보고 여부·version·시각 유지 — 아직 보고 전이면
+  /// 다음 보고가 새 id 로 간다), 없으면 보고 끝(reported = 1)으로 새로 넣는다 — 서버 제안은 이미 succeeded 이고 다시 보고해도 바뀌는 것이 없다
+  public func rerecord(proposalId: String, eventkitId: String, version: Int) throws {
+    try run("INSERT INTO executions(proposal_id,eventkit_id,executed_at,version,reported) VALUES(?,?,?,?,1) ON CONFLICT(proposal_id) DO UPDATE SET eventkit_id=excluded.eventkit_id") { s in
+      sqlite3_bind_text(s, 1, proposalId, -1, Self.transient); sqlite3_bind_text(s, 2, eventkitId, -1, Self.transient); sqlite3_bind_double(s, 3, Date().timeIntervalSince1970)
+      sqlite3_bind_int(s, 4, Int32(version))
+    }
+  }
   public func unreported() throws -> [(proposalId: String, eventkitId: String, version: Int)] {
     var s: OpaquePointer?; defer { sqlite3_finalize(s) }
     guard sqlite3_prepare_v2(db, "SELECT proposal_id, eventkit_id, version, executed_at FROM executions WHERE reported=0", -1, &s, nil) == SQLITE_OK else { throw Error.sqlite(msg) }
