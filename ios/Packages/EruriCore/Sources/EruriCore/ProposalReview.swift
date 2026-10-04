@@ -13,7 +13,7 @@ public enum ProposalReview {
     /// 0026 부터. 없으면(0022 서버) start 형식으로 판단
     public let all_day: Bool?
     public var id: String { proposal_id }
-    /// 종일 행의 end 만 쓴다(시각 있는 일정은 1시간, §10). all_day 와 start 형식이 어긋나면 nil(추가 버튼 없음)
+    /// 종일 행은 마지막 날, 시각 행은 끝(§10 "일정 종료", 0.11.3)으로 end 를 쓴다. all_day 와 start 형식이 어긋나면 nil(추가 버튼 없음)
     public var timing: ProposalTiming? {
       guard let t = ProposalTiming.parse(start: start, end: end), all_day.map({ $0 == t.isAllDay }) ?? true else { return nil }
       return t
@@ -45,8 +45,16 @@ public enum ProposalReview {
   }
   /// 메모 출처: 화면이 가진 값(addFields — 채팅 카드 payload·목록 행) → 없으면 handleAdd 순서 1 서버 조회 값(제안 탭·시트·잠금화면·알림 값 경로)
   public static func memo(fields f: [String: String], server: String?) -> String? { memo(f["notes"]) ?? memo(server) }
-  /// handleAdd 순서 1 조회(proposals 본인 행)의 select — 같은 요청에 notes 를 더한다(PostgREST 별칭, 없으면 null)
-  public static let serverSelect = "status,version,notes:payload->>notes"
+  /// handleAdd 순서 1 조회(proposals 본인 행)의 select — 같은 요청에 notes·end 를 더한다(PostgREST 별칭, 없으면 null. end 는 예약어라 end_at)
+  public static let serverSelect = "status,version,notes:payload->>notes,end_at:payload->>end"
+
+  /// handleAdd 의 일시(스펙 §10 "일정 종료", 0.11.3): 화면 값(fields start·end). 시각 일정의 끝이 없으면 순서 1 조회 end 로 다시 읽는다 —
+  /// 푸시 페이로드는 시각 일정의 end 를 싣지 않는다. 종일은 조회 end 를 쓰지 않는다(마지막 날은 화면·푸시 값). start 를 못 읽으면 nil
+  public static func timing(fields f: [String: String], serverEnd: String?) -> ProposalTiming? {
+    guard let s = f["start"], let t = ProposalTiming.parse(start: s, end: f["end"]) else { return nil }
+    if case .timed(_, nil) = t, let e = serverEnd { return ProposalTiming.parse(start: s, end: e) }
+    return t
+  }
 
   public static func decodeList(_ data: Data) -> [Pending]? { try? JSONDecoder().decode([Pending].self, from: data) }
 

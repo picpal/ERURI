@@ -22,7 +22,7 @@ enum NotificationActions {
     ])
   }
 
-  /// 스펙 §10 순서 1~5. fields: proposal_id·title·start(+09:00 시각 또는 날짜만 = 종일)·end(종일 여러 날의 마지막 날)·version.
+  /// 스펙 §10 순서 1~5. fields: proposal_id·title·start(+09:00 시각 또는 날짜만 = 종일)·end(종일 여러 날의 마지막 날·시각 일정의 끝)·version.
   /// confirmed: 겹침·비슷한 일정을 사용자가 확인했음(화면에 보인 상태에서 누름·앱 안 확인창 뒤에만 true).
   /// lockScreen: 잠금화면 알림 액션(델리게이트) — 겹침·비슷한 일정이면 저장 대신 로컬 알림 1건을 여기서 등록한다
   /// 백그라운드 실행 시간 안에 EventKit 쓰기와 완료 핸들러가 끝나도록 구간마다 마감을 둔다(M1-②c 리뷰):
@@ -32,8 +32,7 @@ enum NotificationActions {
   @discardableResult
   static func handleAdd(fields f: [String: String], confirmed: Bool = false, lockScreen: Bool = false) async -> String {
     let started = Date()
-    guard let pid = f["proposal_id"], UUID(uuidString: pid) != nil, let title = f["title"], let s = f["start"],
-          let timing = ProposalTiming.parse(start: s, end: f["end"]) else {
+    guard let pid = f["proposal_id"], UUID(uuidString: pid) != nil, let title = f["title"], let shown = ProposalReview.timing(fields: f, serverEnd: nil) else {
       Trace.log("action.handled", ["result": "invalid_payload"]); return "invalid_payload"
     }
     // 1. 서버 최신 상태(토큰 갱신 포함 5초). 넘기거나 오프라인이면 건너뛰고 받은 버전으로 실행(순서 5)
@@ -44,6 +43,8 @@ enum NotificationActions {
     }
     // 기록·보고 version 은 실제로 넣은 내용(푸시 페이로드)의 것. 서버가 더 새 version 이면 보고 결과 changed 로 알린다(순서 5)
     let version = Int(f["version"] ?? "") ?? server?.version ?? 1
+    // 끝(스펙 §10 "일정 종료", 0.11.3): 화면 값 → 시각 일정에 끝이 없으면 순서 1 조회 end. 조회를 못 했으면 1시간
+    let timing = ProposalReview.timing(fields: f, serverEnd: server?.end) ?? shown
     // 2~3. 확인 → 표식 조회 → 겹침 → 저장 → 기록(한 actor 구간, await 없음)
     // 메모(스펙 §10, 0.11.2): 화면 값 → 없으면 순서 1 조회 값. 조회를 못 했으면 메모 없이 저장한다
     let outcome = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, timing: timing, version: version, confirmed: confirmed,
@@ -117,11 +118,12 @@ enum NotificationActions {
     return rows.reduce(into: [String: String]()) { d, row in if let id = row["id"] as? String, let st = row["status"] as? String { d[id.lowercased()] = st } }
   }
 
-  private struct ServerProposal: Sendable { let status: String?; let version: Int?; let notes: String? }
+  private struct ServerProposal: Sendable { let status: String?; let version: Int?; let notes: String?; let end: String? }
   private static func serverProposal(_ pid: String) async -> ServerProposal? {
     guard let r = await API.send("rest/v1/proposals?id=eq.\(pid)&select=\(ProposalReview.serverSelect)", timeout: 5), r.status == 200,
           let row = (try? JSONSerialization.jsonObject(with: r.data) as? [[String: Any]])?.first else { return nil }
-    return ServerProposal(status: row["status"] as? String, version: row["version"] as? Int, notes: row["notes"] as? String)
+    return ServerProposal(status: row["status"] as? String, version: row["version"] as? Int, notes: row["notes"] as? String,
+                          end: row["end_at"] as? String)
   }
 
   private static func trace(_ result: String, pid: String, started: Date, notice: String? = nil) {
@@ -168,7 +170,7 @@ actor AddEventGate {
       }
       guard let cal = store.defaultCalendarForNewEvents, cal.allowsContentModifications else { return "fail:no_writable_calendar" }  // §10 읽기 전용 제외
       let ev = EKEvent(eventStore: store)
-      // 시각: [start, +1시간). 종일(0.9.1): isAllDay + 서울 날짜를 기기 달력의 같은 날 0시로(하루면 시작 = 끝, 여러 날이면 마지막 날 0시)
+      // 시각: [start, 끝) — 끝이 없으면 +1시간(§10 "일정 종료"). 종일(0.9.1): isAllDay + 서울 날짜를 기기 달력의 같은 날 0시로(하루면 시작 = 끝, 여러 날이면 마지막 날 0시)
       let span = r.timing.eventSpan(deviceZone: .current)
       ev.title = r.title; ev.isAllDay = r.timing.isAllDay; ev.startDate = span.start; ev.endDate = span.end
       ev.location = r.location                                       // 일정 위치(스펙 §10, 0.11.0). 잠금화면 경로는 nil

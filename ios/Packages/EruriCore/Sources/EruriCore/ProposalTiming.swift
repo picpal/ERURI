@@ -1,9 +1,10 @@
 import Foundation
 
-/// 제안 일시(스펙 §10, 0.9.1 사용자 결정 A): 시각 있는 start → 그 시각부터 1시간, 날짜만(YYYY-MM-DD) → 종일 일정(서울 날짜, 뒤 날짜의 end 가 있으면 그날까지).
+/// 제안 일시(스펙 §10, 0.9.1 사용자 결정 A): 시각 있는 start → 그 시각부터 end(시작보다 뒤인 시각일 때, 0.11.3) 또는 1시간, 날짜만(YYYY-MM-DD) → 종일 일정(서울 날짜, 뒤 날짜의 end 가 있으면 그날까지).
 /// 알림 액션(handleAdd)·제안 탭·묶음 시트·채팅 카드가 같은 해석을 쓴다. 입력은 푸시 페이로드·list_pending_proposals(0026)·채팅 payload 의 start·end 문자열
 public enum ProposalTiming: Equatable, Sendable {
-  case timed(Date)
+  /// end = 제안 end 가 시작보다 뒤인 시각일 때만(스펙 §10 "일정 종료", 0.11.3). nil 이면 1시간으로 저장
+  case timed(Date, end: Date? = nil)
   /// 첫날·마지막 날(서울 달력 날짜). 하루면 같다
   case allDay(first: Day, last: Day)
 
@@ -36,10 +37,11 @@ public enum ProposalTiming: Equatable, Sendable {
     }
   }
 
-  /// start: 오프셋 있는 ISO 시각(소수 초 허용 — handleAdd 와 같은 파서) 또는 날짜만. end 는 종일에서만 쓴다: 날짜만이거나 시각의 서울 날짜이고
-  /// 첫날보다 뒤일 때만 마지막 날(그 밖은 하루). 시각 있는 일정의 end 는 쓰지 않는다(§10 — 1시간으로 저장). 못 읽으면 nil(추가 버튼 없음)
+  /// start: 오프셋 있는 ISO 시각(소수 초 허용 — handleAdd 와 같은 파서) 또는 날짜만. 종일의 end: 날짜만이거나 시각의 서울 날짜이고
+  /// 첫날보다 뒤일 때만 마지막 날(그 밖은 하루). 시각 일정의 end: 오프셋 있는 시각이고 시작보다 뒤일 때만 끝(§10 "일정 종료", 0.11.3 —
+  /// 날짜만·시작 이하·못 읽음은 끝 없음 = 1시간). 못 읽으면 nil(추가 버튼 없음)
   public static func parse(start: String, end: String? = nil) -> ProposalTiming? {
-    if let at = parseInstant(start) { return .timed(at) }
+    if let at = parseInstant(start) { return .timed(at, end: end.flatMap(parseInstant).flatMap { $0 > at ? $0 : nil }) }
     guard let first = Day.parse(start) else { return nil }
     let last = end.flatMap { Day.parse($0) ?? parseInstant($0).map(Day.seoulDay(of:)) }.flatMap { $0 > first ? $0 : nil } ?? first
     return .allDay(first: first, last: last)
@@ -50,7 +52,7 @@ public enum ProposalTiming: Equatable, Sendable {
   /// 표식 조회 창(±1일)·카드 날짜의 기준: 시각, 종일은 첫날 서울 0시
   public var anchor: Date {
     switch self {
-    case .timed(let at): return at
+    case .timed(let at, _): return at
     case .allDay(let first, _): return first.start(in: Self.seoul.timeZone)
     }
   }
@@ -59,7 +61,7 @@ public enum ProposalTiming: Equatable, Sendable {
   /// 여러 날 종일 제안의 기간 전체(비슷한 일정, 0.9.2)와 표식 ±1일을 함께 덮는다
   public var searchWindow: (Date, Date) {
     switch self {
-    case .timed(let at): return ProposalFlow.searchWindow(start: at)
+    case .timed(let at, _): return ProposalFlow.searchWindow(start: at)
     case .allDay: let s = seoulDays; return (s.start.addingTimeInterval(-86_400), s.end.addingTimeInterval(86_400))
     }
   }
@@ -67,18 +69,18 @@ public enum ProposalTiming: Equatable, Sendable {
   /// 비슷한 일정을 볼 서울 날짜 구간: 시각은 그 시각의 서울 하루, 종일은 [첫날 0시, 마지막 날 다음 날 0시)(서울)
   public var seoulDays: DateInterval {
     switch self {
-    case .timed(let at): return ScheduleCard.seoulDay(at)
+    case .timed(let at, _): return ScheduleCard.seoulDay(at)
     case .allDay(let first, let last):
       let a = first.start(in: Self.seoul.timeZone)
       return DateInterval(start: a, end: Self.seoul.date(byAdding: .day, value: 1, to: last.start(in: Self.seoul.timeZone))!)
     }
   }
 
-  /// EventKit 저장 구간. 시각: [start, start+1시간)(§10). 종일: 기기 시간대의 첫날 0시 ~ 마지막 날 0시 — isAllDay 이벤트는 날짜만 쓰므로
+  /// EventKit 저장 구간. 시각: [start, end), 끝이 없으면 [start, start+1시간)(§10 "일정 종료"). 종일: 기기 시간대의 첫날 0시 ~ 마지막 날 0시 — isAllDay 이벤트는 날짜만 쓰므로
   /// 서울 날짜를 기기 달력의 같은 날짜로 옮긴다(기기가 다른 시간대여도 날짜가 밀리지 않게). 하루면 시작 = 끝
   public func eventSpan(deviceZone: TimeZone = .current) -> (start: Date, end: Date) {
     switch self {
-    case .timed(let at): return (at, at.addingTimeInterval(ProposalFlow.eventDuration))
+    case .timed(let at, let end): return (at, end ?? at.addingTimeInterval(ProposalFlow.eventDuration))
     case .allDay(let first, let last): return (first.start(in: deviceZone), last.start(in: deviceZone))
     }
   }
@@ -92,10 +94,11 @@ public enum ProposalTiming: Equatable, Sendable {
     return first == last ? a : "\(a)–\(Self.label(last))"
   }
 
-  /// handleAdd 필드(알림 페이로드와 같은 키)의 start·end. 종일은 YYYY-MM-DD(여러 날이면 end), 시각은 ISO(소수 초 없이)
+  /// handleAdd 필드(알림 페이로드와 같은 키)의 start·end. 종일은 YYYY-MM-DD(여러 날이면 end), 시각은 ISO(소수 초 없이, 끝이 있으면 end 도)
   public var fieldValues: [String: String] {
     switch self {
-    case .timed(let at): return ["start": Self.iso.string(from: at)]
+    case .timed(let at, let end):
+      return end.map { ["start": Self.iso.string(from: at), "end": Self.iso.string(from: $0)] } ?? ["start": Self.iso.string(from: at)]
     case .allDay(let first, let last): return first == last ? ["start": first.text] : ["start": first.text, "end": last.text]
     }
   }

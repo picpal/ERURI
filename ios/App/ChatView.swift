@@ -324,7 +324,7 @@ struct ChatView: View {
         if let timing {
           prompt = ProposalFlow.similarCount(outcome) != nil
             ? ProposalFlow.similarConfirmTitle(CalendarLookup.similar(pid: c.id, title: c.fields["title"] ?? "", timing: timing))
-            : ProposalFlow.confirmTitle(timing.isAllDay ? [] : CalendarLookup.conflicts(pid: c.id, start: timing.anchor))
+            : ProposalFlow.confirmTitle(CalendarLookup.conflicts(pid: c.id, timing: timing))
         }
         confirm = ConfirmAdd(id: c.id, fields: c.fields, prompt: prompt)
         refreshCalendars()

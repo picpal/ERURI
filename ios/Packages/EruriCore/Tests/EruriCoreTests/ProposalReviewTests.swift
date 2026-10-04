@@ -86,9 +86,9 @@ final class ProposalReviewTests: XCTestCase {
     XCTAssertNil(ProposalReview.memo(fields: [:], server: ""))
   }
 
-  /// handleAdd 순서 1 조회는 같은 요청에 notes 를 더한다(PostgREST 별칭 — 호스팅 DB 에서 200 확인, 2026-10-04)
+  /// handleAdd 순서 1 조회는 같은 요청에 notes·end 를 더한다(PostgREST 별칭 — notes 는 호스팅 DB 에서 200 확인 2026-10-04, end_at 은 0.11.3)
   func testServerSelect() {
-    XCTAssertEqual(ProposalReview.serverSelect, "status,version,notes:payload->>notes")
+    XCTAssertEqual(ProposalReview.serverSelect, "status,version,notes:payload->>notes,end_at:payload->>end")
   }
 
   /// 0026 종일 행(0.9.1): start·end 는 YYYY-MM-DD, all_day = true. 표시 "10/8(목) · 종일", 추가 필드는 날짜 그대로(여러 날이면 end).

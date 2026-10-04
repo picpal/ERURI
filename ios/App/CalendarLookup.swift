@@ -22,12 +22,12 @@ enum CalendarLookup {
   /// fullAccess 를 확인한 뒤에만 처음 만들어진다(lazy). AddEventGate 는 자체 store 로 저장한다(직렬 구간 유지)
   @MainActor static let store = EKEventStore()
 
-  /// 제안 시각의 겹침(시트·제안 탭·채팅 확인창의 미리 판정). 전체 접근이 없으면 빈 배열 — 최종 판정은 AddEventGate 가 다시 한다.
+  /// 제안 시각의 겹침(채팅 확인창 문구). 시각은 [start, 끝)(§10 "일정 종료"), 종일은 빈 배열. 전체 접근이 없으면 빈 배열 — 최종 판정은 AddEventGate 가 다시 한다.
   /// 메인 스레드 동기 조회(±1일). 느리면 그때 백그라운드로 옮긴다
-  @MainActor static func conflicts(pid: String, start: Date) -> [ProposalFlow.CalendarEvent] {
+  @MainActor static func conflicts(pid: String, timing: ProposalTiming) -> [ProposalFlow.CalendarEvent] {
     guard fullAccess else { return [] }
-    let (from, to) = ProposalFlow.searchWindow(start: start)
-    return ProposalFlow.conflicts(pid: pid, start: start, events: events(store, from: from, to: to))
+    let (from, to) = timing.searchWindow
+    return ProposalFlow.conflicts(pid: pid, timing: timing, events: events(store, from: from, to: to))
   }
 
   /// 미리 판정(제안 시트·제안 탭 행, 0.9.2): 겹침(시각) → 같은 일정을 다른 제안으로 넣음(종일) → 비슷한 일정 → 없음.

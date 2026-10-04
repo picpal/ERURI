@@ -11,7 +11,7 @@ final class ProposalTimingTests: XCTestCase {
   func testParse() {
     XCTAssertEqual(ProposalTiming.parse(start: "2026-10-08T15:00:00+09:00"), .timed(d("2026-10-08T06:00:00Z")))
     XCTAssertEqual(ProposalTiming.parse(start: "2026-10-08T06:00:00.5+00:00"), .timed(d("2026-10-08T06:00:00Z")))
-    XCTAssertEqual(ProposalTiming.parse(start: "2026-10-08T15:00:00+09:00", end: "2026-10-10"), .timed(d("2026-10-08T06:00:00Z")))  // 시각 있으면 end 무시(1시간)
+    XCTAssertEqual(ProposalTiming.parse(start: "2026-10-08T15:00:00+09:00", end: "2026-10-10"), .timed(d("2026-10-08T06:00:00Z")))  // 시각 일정의 날짜만 end 는 끝이 아니다(1시간, 0.11.3 EventEndTests)
     let one = ProposalTiming.parse(start: "2026-10-08")
     XCTAssertEqual(one, .allDay(first: .init(2026, 10, 8), last: .init(2026, 10, 8)))
     XCTAssertEqual(ProposalTiming.parse(start: "2026-10-08", end: "2026-10-10"), .allDay(first: .init(2026, 10, 8), last: .init(2026, 10, 10)))

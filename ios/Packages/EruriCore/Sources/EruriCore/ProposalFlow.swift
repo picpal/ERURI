@@ -42,13 +42,13 @@ public enum ProposalFlow {
       self.listed = listed
     }
   }
-  /// AddEventGate 가 저장하는 길이. 겹침은 이 구간으로 판정한다(제안 end 는 저장에 쓰지 않는다)
+  /// 끝을 모르는 시각 일정의 저장 길이(§10 "일정 종료" — 제안 end 가 시작보다 뒤인 시각이면 그 끝, 0.11.3)
   public static let eventDuration: TimeInterval = 3600
 
-  /// 겹침(스펙 §10 순서 3): 저장 구간 [start, start+1시간)과 겹치는 기존 일정, 시작 순.
+  /// 겹침(스펙 §10 순서 3): 저장 구간 [start, end)(end 없으면 start+1시간)와 겹치는 기존 일정, 시작 순.
   /// 종일·취소·같은 제안 표식(복구 경로)은 제외, 맞닿기만 하면(끝 = 시작) 겹침 아님. 길이 0 일정은 한 시점이라 [start, end) 안이면 겹침
-  public static func conflicts(pid: String, start: Date, events: [CalendarEvent]) -> [CalendarEvent] {
-    let end = start.addingTimeInterval(eventDuration), m = marker(pid)
+  public static func conflicts(pid: String, start: Date, end: Date? = nil, events: [CalendarEvent]) -> [CalendarEvent] {
+    let end = end ?? start.addingTimeInterval(eventDuration), m = marker(pid)
     return events.filter {
       !$0.allDay && !$0.canceled && $0.url != m && $0.start < end && ($0.end > start || ($0.start == $0.end && $0.start >= start))
     }.sorted { $0.start < $1.start }
@@ -56,8 +56,8 @@ public enum ProposalFlow {
 
   /// 제안 일시별 겹침(0.9.1): 종일 제안은 §10 겹침 판정 대상이 아니다(기존 일정 쪽 종일을 빼는 규칙과 같은 이유 — 하루를 차지하지 않는다)
   public static func conflicts(pid: String, timing: ProposalTiming, events: [CalendarEvent]) -> [CalendarEvent] {
-    guard case .timed(let start) = timing else { return [] }
-    return conflicts(pid: pid, start: start, events: events)
+    guard case .timed(let start, let end) = timing else { return [] }
+    return conflicts(pid: pid, start: start, end: end, events: events)
   }
 
   /// 추가 버튼 문구(제안 시트·제안 탭 행): 미리 판정한 겹침을 보였으면 "겹쳐도 추가", 비슷한 일정을 보였으면 "그래도 추가"(0.9.2),

@@ -133,7 +133,7 @@ public enum ScheduleCard {
       return .sameEvent
     }
     if executed || serverStatus == "succeeded" { return .addedMissing }
-    let c = allDay ? [] : ProposalFlow.conflicts(pid: pid, start: start, events: events)
+    let c = allDay ? [] : ProposalFlow.conflicts(pid: pid, timing: timing, events: events)   // 시각은 [start, 끝)(§10 "일정 종료")
     if c.isEmpty { return similar.isEmpty ? .clear : .similar(similar) }
     // 같은 예약의 재안내 → 다른 제안이 이미 넣은 일정(Fable #10). 자동 차단은 하지 않는다 — 오판이면 추가할 길이 없어진다
     let same = c.contains { $0.url?.absoluteString.hasPrefix(markerPrefix) == true && minute($0.start) == minute(start) }
@@ -161,7 +161,7 @@ public enum ScheduleCard {
     public let pid: String; public let itemID: String; public let title: String
     /// 제안 payload 의 start 원문 — handleAdd 에 그대로 넘긴다(같은 파서)
     public let startText: String
-    /// 제안 payload 의 end 원문 — 종일 여러 날의 마지막 날에만 쓴다(addFields)
+    /// 제안 payload 의 end 원문 — 종일 여러 날의 마지막 날, 시각 일정의 끝(addFields, §10 "일정 종료")
     public let endText: String?
     public let kind: Kind; public let start: Date; public let timed: Bool
     /// addable 이고 캘린더를 읽었을 때만
@@ -208,10 +208,10 @@ public enum ScheduleCard {
   }
   /// 화면에 보인 겹침·비슷한 일정을 사용자가 보고 누른 버튼이면 confirmed(ProposalFlow.tapConfirmed)
   public static func confirms(_ a: Action) -> Bool { a != .add }
-  /// handleAdd 입력(알림 페이로드와 같은 키): 시각은 payload start 원문 그대로(같은 파서), 종일은 날짜(여러 날이면 end = 마지막 날)
+  /// handleAdd 입력(알림 페이로드와 같은 키): 시각은 payload start 원문 그대로(같은 파서, 끝이 있으면 end), 종일은 날짜(여러 날이면 end = 마지막 날)
   public static func addFields(_ m: Model) -> [String: String] {
     var f = ["proposal_id": m.pid, "title": m.title, "start": m.startText]
-    if !m.timed, let end = ProposalTiming.parse(start: m.startText, end: m.endText)?.fieldValues["end"] { f["end"] = end }
+    if let end = ProposalTiming.parse(start: m.startText, end: m.endText)?.fieldValues["end"] { f["end"] = end }
     if let l = m.location { f["location"] = l }
     if let n = m.notes { f["notes"] = n }
     return f
