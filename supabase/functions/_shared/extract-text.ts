@@ -8,7 +8,7 @@ export const TEXT_KINDS = ["event", "task", "purchase", "none"] as const;
 export type TextKind = typeof TEXT_KINDS[number];
 export const MAX_TEXT_CHARS = 4000;   // 메일 본문이 길어도 항목당 입력을 스펙 §13 가정(입력 1.5k 토큰) 근처로 묶는다
 export const EVIDENCE_MAX = 300;      // facts.evidence ≤300자(스펙 §8)
-export const NOTES_MAX = 300;         // SHARE 일정 notes(신청·접수 방법) — 지시는 200자, 서버 절단은 evidence 와 같은 300
+export const NOTES_MAX = 300;         // SHARE 일정 notes(신청·접수 방법, 여러 날 공개 행사의 운영 시간) — 지시는 200자, 서버 절단은 evidence 와 같은 300
 
 const S = (description: string) => ({ type: ["string", "null"], description });
 export const MAX_EVENTS = 5;          // 한 항목의 일정 상한(스펙 §7, 2026-10-01 사용자 결정)
@@ -28,11 +28,11 @@ const EVENT_ITEM = {
   },
 } as const;
 
-// SHARE 전용(스펙 §7, 2026-10-03): 일정마다 notes(신청·접수 방법 안내). 비SHARE 요청은 위 EVENT_ITEM·TEXT_SCHEMA 그대로(바이트 불변)
+// SHARE 전용(스펙 §7, 2026-10-03·10-04): 일정마다 notes(신청·접수 방법 안내, 여러 날 공개 행사의 운영 시간). 비SHARE 요청은 위 EVENT_ITEM·TEXT_SCHEMA 그대로(바이트 불변)
 const EVENT_ITEM_SHARE = {
   ...EVENT_ITEM,
   required: [...EVENT_ITEM.required, "notes"],
-  properties: { ...EVENT_ITEM.properties, notes: S("신청·접수 방법(어디서·어떻게 신청하는지, 제출물, 문의처). 원문에 있을 때만 한 일정에 200자 이내, 그 밖은 null") },
+  properties: { ...EVENT_ITEM.properties, notes: S("신청·접수 방법(어디서·어떻게 신청하는지, 제출물, 문의처)과 여러 날 공개 행사의 운영 시간·프로그램별 장소. 원문에 있을 때만 해당 일정에 합쳐 200자 이내, 그 밖은 null") },
 } as const;
 
 export const TEXT_SCHEMA = {
@@ -86,10 +86,11 @@ type RawText = { kind: TextKind; title: string | null; events: RawTextEvent[]; d
   merchant: string | null; products: string[]; ordered_at: string | null; amount: number | null; currency: string | null;
   order_no: string | null; order_status: string | null; evidence: string | null; uncertain: string[]; year_in_text: boolean; lunar: boolean };
 
-// SHARE 에만 끼우는 줄(스펙 §7, 2026-10-03 사용자 결정 — 다건 계획 U2 개정, diag-hackathon B2·diag-restore R2). 각 줄은 기준 줄 바로 뒤에 들어간다
+// SHARE 에만 끼우는 줄(스펙 §7, 2026-10-03 사용자 결정 — 다건 계획 U2 개정, diag-hackathon B2·diag-restore R2; 여러 날 공개 행사 10-04 결정 A·diag-poster2). 각 줄은 기준 줄 바로 뒤에 들어간다
+const SHARE_MULTIDAY = "  · 단, 출처가 SHARE이고 축제·박람회·전시처럼 한 공개 행사가 이틀 이상 이어지면 행사 이름으로 종일 하나만 넣는다: start는 첫날, end는 마지막 날을 YYYY-MM-DD(시각 없이)로 쓰고, 프로그램별·날짜별 운영 시간과 장소는 notes에 적는다(예: '체험마당 10:00~19:00 / 장터 11:00~21:00'). 행사 장소가 있으면 location에 쓴다. 프로그램·날짜마다 나누지 않는다. 하루짜리 행사는 시각을 그대로 쓰고, 대회·공모전·시험·채용 단계별 일정표는 아래 단계 규칙을 따른다.";
 const SHARE_STAGES = "  · 단, 출처가 SHARE(사용자가 직접 공유한 글·링크·사진)이고 대회·공모전·시험·채용처럼 단계별 일정표(접수·제출, 서류·필기·면접, 결과 발표, 본선·시상식 등)가 있으면 날짜가 있는 단계마다 하나씩 넣는다. 같은 날의 단계(본선 발표와 시상식 등)는 하나로 넣는다. 단계 제목마다 대회·행사 이름을 붙인다. 접수·제출 기간은 마감 일시 하나로 넣고 제목에 '마감'을 붙인다(예: '합성 경진대회 접수 마감'). '24시'·'자정까지' 마감은 그날 23:59로 쓴다(다음 날 00:00이 아니다).";
 const SHARE_PUBLIC = "  · 단, 출처가 SHARE이면 날짜와 장소가 함께 있는 공개 행사(축제·전시·체험·공연 등)는 할인·사전예약·'놓치지 마세요' 같은 홍보 문구가 섞여 있어도 event다. 할인·쿠폰 안내만 있고 행사 일시가 없거나, 장소 없이 출연진·날짜만 나열한 라인업은 SHARE여도 none이다.";
-const SHARE_NOTES = "  · notes: 원문에 신청·접수 방법(어디서·어떻게 신청하는지, 제출물, 문의처)이 있으면 한 일정에만 200자 이내로 옮긴다 — 접수·신청 마감 일정이 있으면 그 일정, 없으면 본 행사. 오시는 길·교통·계좌·할인·프로그램 소개 같은 다른 안내는 넣지 않는다. 신청·접수가 없는 일정(결혼식·돌잔치 등)과 나머지 일정은 null이다.";
+const SHARE_NOTES = "  · notes: 원문에 신청·접수 방법(어디서·어떻게 신청하는지, 제출물, 문의처)이 있으면 한 일정에만 옮긴다 — 접수·신청 마감 일정이 있으면 그 일정, 없으면 본 행사. 여러 날 공개 행사는 그 일정의 notes에 운영 시간·프로그램별 장소도 적는다(신청 방법이 있으면 함께). 합쳐 200자 이내. 오시는 길·교통·계좌·할인·프로그램 소개 같은 다른 안내는 넣지 않는다. 신청·접수도 여러 날 운영 시간도 없는 일정(결혼식·돌잔치 등)과 나머지 일정은 null이다.";
 
 const TEXT_INSTRUCTION = (today: string, share: boolean) => [
   `이 메시지를 받은 날은 ${today}(Asia/Seoul)이다. '내일'·'목요일' 같은 상대 날짜는 이 날짜를 기준으로 계산하라.`,
@@ -97,6 +98,7 @@ const TEXT_INSTRUCTION = (today: string, share: boolean) => [
   "- event: 날짜가 정해진 약속·예약·진료·행사. events에 일정마다 하나씩, 최대 5개. 일정이 5개를 넘으면 시작이 이른 5개만 넣는다. 시작 일시가 없는 것은 넣지 않는다.",
   "  · 날짜가 다른 별개 일정(1회차·2회차, 서로 다른 진료·공연·행사)은 각각 넣는다.",
   "  · 한 행사가 여러 날 이어지면 start~end 하나로 넣는다.",
+  ...(share ? [SHARE_MULTIDAY] : []),
   "  · 접수·신청 기간, 마감, 발표, 변경·취소 기한, 준비 안내(금식 등) 같은 부수 일시는 별개 일정이 아니다. 본 행사·약속만 넣는다. 본 행사 없이 마감만 있으면 task다.",
   ...(share ? [SHARE_STAGES] : []),
   "  · '매주 화요일'처럼 반복되는 일정은 첫 회 하나만 넣는다.",
