@@ -61,19 +61,24 @@ Deno.test("link-eval expand: gallery filler", () => {
   assertEquals(expand("본문:\n{{GALLERY:3}}\n끝"), "본문:\n합성 갤러리 사진 설명 1번\n합성 갤러리 사진 설명 2번\n합성 갤러리 사진 설명 3번\n끝");
 });
 
-// 사례 파일: 20종(2026-10-03 SHARE 추출 지시 — contest 3·poster 2 추가, 10-04 notice-hours 끝 시각, 10-04 여러 날 박람회 poster-multiday-programs), id 유일, app_name 은 둘 중 하나, 긴 사례는 펼친 뒤 3,000~4,000자이고 일시 줄이 앞 2,000자 안(F23 — 게이트가 보는 범위)
+// 사례 파일: 22종(2026-10-03 SHARE 추출 지시 — contest 3·poster 2 추가, 10-04 notice-hours 끝 시각, 10-04 여러 날 행사 3종: 프로그램별 시간 박람회·7일 도서전·시각 없는 책 축제), id 유일, app_name 은 둘 중 하나, 긴 사례는 펼친 뒤 3,000~4,000자이고 일시 줄이 앞 2,000자 안(F23 — 게이트가 보는 범위)
 Deno.test("link-cases.json shape", async () => {
   const cases: Case[] = JSON.parse(await Deno.readTextFile(new URL("../eval/link-cases.json", import.meta.url)));
-  assertEquals(cases.length, 20);
-  assertEquals(new Set(cases.map((x) => x.id)).size, 20);
+  assertEquals(cases.length, 22);
+  assertEquals(new Set(cases.map((x) => x.id)).size, 22);
   assert(cases.some((x) => x.id === "notice-hours" && x.expect.ends?.length === 1), "notice-hours");
-  for (const id of ["contest-timeline", "contest-photo", "contest-hiring", "poster-festival", "poster-festival-ocr", "poster-multiday-programs"]) {
+  for (const id of ["contest-timeline", "contest-photo", "contest-hiring", "poster-festival", "poster-festival-ocr", "poster-multiday-programs", "poster-expo-week", "poster-multiday-nohours"]) {
     assert(cases.some((x) => x.id === id && x.expect.status.join() === "extracted" && (x.expect.events ?? 0) >= 1), id);
   }
-  // 여러 날 공개 행사(10-04 결정 A)는 종일 1건(날짜만 시작·끝) + notes 운영 시간, 하루짜리 축제는 시각 + 끝 시각
+  // 여러 날 공개 행사(10-04 결정 A, 같은 날 수정): 운영 시각 있고 5일 이하 → 날짜마다 시각 일정(시작·끝 시각),
+  // 5일 초과·시각 없음 → 종일 1건(날짜만 시작·끝). 하루짜리 축제는 시각 + 끝 시각
   for (const id of ["poster-festival", "poster-multiday-programs"]) {
     const x = cases.find((y) => y.id === id)!.expect;
-    assert(x.events === 1 && x.starts?.[0].length === 10 && x.ends?.[0].length === 10 && [x.notes ?? []].flat().length >= 2, id);
+    assert(x.events === 3 && x.starts?.length === 3 && x.ends?.length === 3 && x.starts.every((s) => s.includes("T")), id);
+  }
+  for (const id of ["poster-expo-week", "poster-multiday-nohours"]) {
+    const x = cases.find((y) => y.id === id)!.expect;
+    assert(x.events === 1 && x.starts?.[0].length === 10 && x.ends?.[0].length === 10, id);
   }
   assert(cases.find((x) => x.id === "poster-festival-ocr")!.expect.ends?.[0].includes("T21:00"));
   // 장소 없는 라인업은 SHARE 예외(날짜+장소 공개 행사)에 들지 않는다 — 기대값 그대로 0건
