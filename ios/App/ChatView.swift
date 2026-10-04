@@ -31,6 +31,7 @@ struct ChatView: View {
   @State private var scrollRequest: ScrollRequest?     // 보낼 때·답이 올 때 그 질문이 보이게(턴이 화면보다 길면 맨 위, 0.8.2 — 카드가 입력 패널·키보드 뒤에 깔리지 않게)
   @State private var confirm: ConfirmAdd?              // 겹침·비슷한 일정 확인창(§10): 저장 직전에 새로 나온 경우만(C2-5). 제안 id·handleAdd 필드·다시 읽은 일정으로 만든 문구
   struct ConfirmAdd: Identifiable { let id: String; let fields: [String: String]; var prompt = "" }
+  @State private var openItem: String?                  // "일정 보기"(이미 읽은 링크, 0.11.4) → 항목 상세
   @State private var dictation = SpeechDictation()     // 기기 안 받아쓰기(§9·§12)
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.colorScheme) private var scheme
@@ -62,6 +63,7 @@ struct ChatView: View {
           Button("취소", role: .cancel) {}
         }
         .navigationTitle("채팅")
+        .navigationDestination(item: $openItem) { ItemDetailView(itemID: $0) }
         .onAppear { dictation.onText = { input = $0 }; dictation.refresh() }
         .onDisappear { dictation.stopIfRecording() }
         // 백그라운드·전화로 비활성이 되면 녹음을 끊고, 돌아오면 권한을 다시 읽는다(설정에서 허용하고 온 경우).
@@ -449,7 +451,8 @@ struct ChatView: View {
   }
 
   /// 링크·사진 턴(§9): 상태 문구 + (큐에 넣었으면) 저장 범위 한 줄 — 일정 카드·보관함 버튼·맞아요 막대 없음(제안은 "제안" 탭·알림).
-  /// 이미 읽은 링크의 항목을 찾았으면 다음 행 "일정 보기" → 항목 상세(일정 절에서 다시 추가, 0.11.4). 행 하나에 탭 경로 하나(카드 출처 행과 같은 NavigationLink)
+  /// 이미 읽은 링크의 항목을 찾았으면 다음 행 "일정 보기" → 항목 상세(일정 절에서 다시 추가, 0.11.4). 자기 제스처를 갖는 borderless 버튼 +
+  /// navigationDestination — 이 행의 NavigationLink 는 시뮬레이터에서 탭해도 열리지 않았다(목록의 키보드 내림 탭 제스처와 겹침으로 추정)
   @ViewBuilder private func linkRow(_ text: String, done: Bool, saved: Bool, itemID: String?) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -461,8 +464,11 @@ struct ChatView: View {
       }
     }
     if let itemID {
-      NavigationLink { ItemDetailView(itemID: itemID) } label: { Text(LinkCaptureText.showEvents).font(.subheadline) }
-        .accessibilityIdentifier("chat-link-show-events")
+      Button { openItem = itemID } label: {
+        HStack { Text(LinkCaptureText.showEvents).font(.subheadline); Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary) }
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.borderless).accessibilityIdentifier("chat-link-show-events")
     }
   }
 }
