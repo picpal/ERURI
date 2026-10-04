@@ -64,8 +64,9 @@ Deno.test("SHARE request: stage timeline, public event and notes rules in the in
   for (const s of ["SHARE", "대회·공모전·시험·채용", "날짜가 있는 단계마다", "마감 일시 하나", "'마감'", "그날 23:59", "다음 날 00:00이 아니다",
     "날짜와 장소가 함께 있는 공개 행사", "축제·전시·체험·공연", "홍보 문구가 섞여 있어도 event", "할인·쿠폰", "SHARE여도 none", "notes", "신청·접수 방법",
     "같은 날의 단계", "한 일정에만", "오시는 길",
-    // 여러 날 공개 행사(10-04 사용자 결정 A): 종일 하나 + 운영 시간은 notes, 하루짜리·단계별 일정표와의 경계
-    "이틀 이상 이어지면", "종일 하나만", "YYYY-MM-DD(시각 없이)", "운영 시간과 장소는 notes", "location", "하루짜리 행사는 시각을 그대로", "운영 시간·프로그램별 장소"]) {
+    // 여러 날 공개 행사(10-04 사용자 결정 A, 같은 날 수정): 시각 있고 5일 이하 → 날짜마다 시각 일정, 아니면 종일 하나; 운영 시간은 notes, 하루짜리·단계별 일정표와의 경계
+    "이틀 이상 이어지면", "날짜 수를 센다", "6일 이상이거나 운영 시각이 없으면", "종일 하나만", "앞 5일만 골라 넣지 않는다",
+    "2~5일이고 운영 시각이 있으면 날짜마다 하나씩", "앞 5개를 고르지 않는다", "시각이 붙은 여러 날 한 일정으로도 넣지 않는다", "'1일차' 같은 표기 없이", "가장 이른 시작~가장 늦은 끝", "10:00~21:00", "운영 시간과 장소는 notes", "location", "하루짜리 행사는 시각을 그대로", "운영 시간·프로그램별 장소"]) {
     assert(ins.includes(s), s);
   }
   // 기존 규칙은 그대로 남는다(부수 일시·광고 none — SHARE 예외는 그 뒤에 붙는다)
@@ -74,6 +75,7 @@ Deno.test("SHARE request: stage timeline, public event and notes rules in the in
   assert(ins.indexOf("광고·홍보성 행사 목록") < ins.indexOf("날짜와 장소가 함께 있는 공개 행사"));
   assert(ins.indexOf("여러 날 이어지면 start~end 하나") < ins.indexOf("이틀 이상 이어지면"));
   assert(ins.indexOf("이틀 이상 이어지면") < ins.indexOf("부수 일시"));
+  assert(ins.indexOf("최대 5개") < ins.indexOf("앞 5개를 고르지 않는다") && ins.indexOf("앞 5개를 고르지 않는다") < ins.indexOf("날짜가 다른 별개 일정"));
   const item = (r.text.format.schema.properties as Record<string, any>).events.items;
   assertEquals(item.additionalProperties, false);
   assertEquals([...item.required].sort(), Object.keys(item.properties).sort());
