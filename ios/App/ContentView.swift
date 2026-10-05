@@ -114,6 +114,7 @@ struct ContentView: View {
     guard let r = await API.send("functions/v1/account/delete", method: "POST", timeout: 60), r.status == 200 else { return "삭제 실패" }
     LocalWipe.runShared()
     ChatLog.shared.clear()
+    ChatLog.shared.forgetOwner()
     APNsDevice.clearRegistration()
     await SupabaseSession.shared.logout()
     await refresh()

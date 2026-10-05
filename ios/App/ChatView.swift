@@ -121,7 +121,7 @@ struct ChatView: View {
     guard let seen = seenClear else { seenClear = now; return }
     guard seen != now else { return }
     seenClear = now
-    turns = []; judged = [:]; judging = []; adds = [:]; copied = nil; loaded = true
+    turns = []; judged = [:]; judging = []; adds = [:]; copied = nil; judgeSheet = nil; confirm = nil; openItem = nil; loaded = true
   }
 
   /// 새 턴을 맨 뒤에 두고 저장한다. 500개 상한은 더할 때도(D1)

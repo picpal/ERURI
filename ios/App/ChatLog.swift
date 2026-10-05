@@ -55,8 +55,12 @@ import EruriCore
   /// 로그인한 사용자가 바뀌면(D7 — 자동 로그아웃 뒤 다른 Apple ID) 앞 사용자의 대화를 지운다. 소유자는 id 만 UserDefaults.standard 에.
   /// 소유자가 없으면(0.12.0 첫 로그인·업그레이드 뒤 첫 재로그인) 누구 기록인지 모르므로 지운다
   func bind(owner: String) {
-    let key = "chat.owner"
-    if UserDefaults.standard.string(forKey: key) != owner { clear(); DiagLog.append("CHAT owner changed") }
-    UserDefaults.standard.set(owner, forKey: key)
+    if UserDefaults.standard.string(forKey: Self.ownerKey) != owner { clear(); DiagLog.append("CHAT owner changed") }
+    UserDefaults.standard.set(owner, forKey: Self.ownerKey)
   }
+
+  /// 계정 삭제·삭제 푸시: 지운 계정의 id 를 기기에 남기지 않는다(로그아웃은 같은 사용자 재로그인 때 기록을 지키려고 남긴다)
+  func forgetOwner() { UserDefaults.standard.removeObject(forKey: Self.ownerKey) }
+
+  private static let ownerKey = "chat.owner"
 }
