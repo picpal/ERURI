@@ -13,9 +13,16 @@ public enum LocalWipe {
     for k in defaults.dictionaryRepresentation().keys { defaults.removeObject(forKey: k) }
     return n
   }
+  /// 채팅 대화 기록(스펙 §9, 앱 전용 Application Support — App Group 밖이라 따로 지운다)
+  @discardableResult
+  public static func removeChatHistory(at url: URL?) -> Int {
+    guard let url, (try? FileManager.default.removeItem(at: url)) != nil else { return 0 }
+    return 1
+  }
   @discardableResult
   public static func runShared() -> Int {
-    guard let c = try? AppGroup.containerURL() else { return 0 }
-    return run(container: c, defaults: IngestSettings.shared)
+    let chat = removeChatHistory(at: try? ChatHistoryStore.defaultURL())
+    guard let c = try? AppGroup.containerURL() else { return chat }
+    return chat + run(container: c, defaults: IngestSettings.shared)
   }
 }

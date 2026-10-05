@@ -18,4 +18,12 @@ final class LocalWipeTests: XCTestCase {
     }
     XCTAssertNil(d.string(forKey: "apnsToken"))
   }
+  func testRemoveChatHistoryDeletesTheAppOnlyFile() throws {
+    let u = FileManager.default.temporaryDirectory.appendingPathComponent("chat-\(UUID().uuidString).json")
+    try Data("{}".utf8).write(to: u)
+    XCTAssertEqual(LocalWipe.removeChatHistory(at: u), 1)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: u.path))
+    XCTAssertEqual(LocalWipe.removeChatHistory(at: u), 0)
+    XCTAssertEqual(LocalWipe.removeChatHistory(at: nil), 0)
+  }
 }
