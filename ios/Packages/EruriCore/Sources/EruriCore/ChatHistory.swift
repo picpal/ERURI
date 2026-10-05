@@ -146,9 +146,14 @@ public struct ChatHistoryStore: Sendable {
   struct File: Codable { let version: Int; let records: [ChatHistory.Record] }
   static let version = 1
 
-  public func load() -> [ChatHistory.Record] {
+  /// 파일 없음·손상·다른 버전 = 빈 기록. 그 밖의 읽기 오류(잠금 중 completeUnlessOpen·권한·IO)는 던진다 —
+  /// 빈 기록으로 돌려주면 불러오기 뒤 정리 저장이 원본을 덮어 기록 전체가 사라진다(H3 리뷰 Important 1). 호출부는 실패하면 불러오지 않은 상태로 두고 저장하지 않는다
+  public func load() throws -> [ChatHistory.Record] {
+    let data: Data
+    do { data = try Data(contentsOf: url) }
+    catch let e as CocoaError where e.code == .fileReadNoSuchFile || e.code == .fileNoSuchFile { return [] }
     let d = JSONDecoder(); d.dateDecodingStrategy = .secondsSince1970
-    guard let data = try? Data(contentsOf: url), let f = try? d.decode(File.self, from: data), f.version == Self.version else { return [] }
+    guard let f = try? d.decode(File.self, from: data), f.version == Self.version else { return [] }
     return f.records
   }
 
@@ -157,7 +162,7 @@ public struct ChatHistoryStore: Sendable {
     var dir = url.deletingLastPathComponent()
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     var v = URLResourceValues(); v.isExcludedFromBackup = true
-    try dir.setResourceValues(v)
+    try dir.setResourceValues(v)            // 이 실패는 테스트로 유도하기 어렵다 — try 라 save 가 쓰기 전에 던지는 것(fail-closed)은 코드 순서로 보장한다
   }
 
   public func save(_ r: [ChatHistory.Record]) throws {
@@ -166,7 +171,20 @@ public struct ChatHistoryStore: Sendable {
     try e.encode(File(version: Self.version, records: r)).write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])
   }
 
-  public func wipe() { try? FileManager.default.removeItem(at: url) }
+  public func wipe() { Self.remove(at: url) }
+
+  public enum Removal: Equatable, Sendable { case removed, absent, failed(String) }
+  /// 지우기: 파일이 없던 것과 지우지 못한 것(개인정보 잔존)을 가른다. 실패는 DiagLog 에 코드만(경로·본문 없음)
+  @discardableResult
+  public static func remove(at url: URL) -> Removal {
+    do { try FileManager.default.removeItem(at: url); return .removed }
+    catch let e as CocoaError where e.code == .fileNoSuchFile { return .absent }
+    catch {
+      let ns = error as NSError, code = "\(ns.domain):\(ns.code)"
+      DiagLog.append("CHAT history wipe failed \(code)")
+      return .failed(code)
+    }
+  }
 }
 
 /// 쓰기 순서 보장(D2): 세대 번호가 마지막으로 쓴 것보다 클 때만 쓴다 — 늦게 도착한 옛 스냅샷이 새 기록·지우기를 덮지 않는다. nil = 지우기

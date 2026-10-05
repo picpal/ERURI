@@ -16,8 +16,8 @@ public enum LocalWipe {
   /// 채팅 대화 기록(스펙 §9, 앱 전용 Application Support — App Group 밖이라 따로 지운다)
   @discardableResult
   public static func removeChatHistory(at url: URL?) -> Int {
-    guard let url, (try? FileManager.default.removeItem(at: url)) != nil else { return 0 }
-    return 1
+    guard let url else { return 0 }
+    return ChatHistoryStore.remove(at: url) == .removed ? 1 : 0
   }
   @discardableResult
   public static func runShared() -> Int {

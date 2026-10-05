@@ -100,14 +100,20 @@ final class ChatHistoryTests: XCTestCase {
     XCTAssertEqual(ChatHistory.judgedMarks([r, q("b", at: 1)]), [ChatFeedback.key(answer: "a1", item: "i1"): true])
   }
 
-  // ── 문구(후보 B) ──
+  // ── 문구(후보 B) — 스펙 §9 "대화 기록·짧은 맥락" 문장 그대로 ──
   func testNoticeCopy() {
-    XCTAssertEqual(ChatHistoryText.emptyLines.count, 3)
-    XCTAssertTrue(ChatHistoryText.emptyLines[0].contains("이 iPhone에만") && ChatHistoryText.emptyLines[0].contains("30일"))
-    XCTAssertTrue(ChatHistoryText.emptyLines[1].contains("3개") && ChatHistoryText.emptyLines[1].contains("30분"))
-    XCTAssertTrue(ChatHistoryText.emptyLines[2].contains("ERURI 서버에 남기지 않아요"))
-    XCTAssertTrue(ChatHistoryText.topNote.contains("30일"))
-    XCTAssertTrue(ChatHistoryText.newConversation.contains("30분"))
+    XCTAssertEqual(ChatHistoryText.emptyLines, [
+      "대화는 이 iPhone에만 저장되고, 30일이 지나면 자동으로 지워져요.",
+      "바로 앞 질문 3개까지 이어서 이해해요 — \"그 일정 몇 시야?\"처럼 물어보세요. 30분 동안 묻지 않으면 새 대화로 시작해요.",
+      "이어 묻기 위해 바로 앞 질문과 답의 일부를 질문과 함께 보내요. 답을 만드는 데만 쓰고 ERURI 서버에 남기지 않아요.",
+    ])
+    XCTAssertEqual(ChatHistoryText.topNote, "대화 기록은 이 iPhone에만 · 30일 뒤 자동 삭제 · 설정에서 지울 수 있어요")
+    XCTAssertEqual(ChatHistoryText.newConversation, "30분이 지나 여기부터 새 대화예요")
+    XCTAssertEqual(ChatHistoryText.settingsTitle, "대화 기록 지우기")
+    XCTAssertEqual(ChatHistoryText.settingsNote, "대화 기록은 이 iPhone에만 있고 30일이 지나면 자동으로 지워져요. 지우면 되돌릴 수 없어요.")
+    XCTAssertEqual(ChatHistoryText.clearConfirm, "이 iPhone의 대화 기록을 모두 지울까요?")
+    XCTAssertEqual(ChatHistoryText.interruptedAnswer, "답을 받기 전에 앱이 닫혔어요. 다시 물어봐 주세요.")
+    XCTAssertEqual(ChatHistoryText.interruptedLink, "앱이 닫혀 결과를 확인하지 못했어요 — '제안' 탭과 알림에서 확인하세요.")
   }
 
   // ── 파일 ──
@@ -120,16 +126,31 @@ final class ChatHistoryTests: XCTestCase {
     var r = q("a", at: 0); r.judged = ["i1": false]
     let link = R(at: t0, kind: .link, question: "https://x.test", link: "끝", linkDone: true, linkSaved: true, seenItemID: "item-9")
     try s.save([r, link])
-    XCTAssertEqual(s.load(), [r, link])
+    XCTAssertEqual(try s.load(), [r, link])
   }
   func testStoreLoadOfMissingOrBrokenFileIsEmpty() throws {
     let s = tempStore(); defer { s.wipe() }
-    XCTAssertEqual(s.load(), [])
+    XCTAssertEqual(try s.load(), [])
     try FileManager.default.createDirectory(at: s.url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try Data("{".utf8).write(to: s.url)
-    XCTAssertEqual(s.load(), [])
+    XCTAssertEqual(try s.load(), [])
     try Data(#"{"version":2,"records":[]}"#.utf8).write(to: s.url)
-    XCTAssertEqual(s.load(), [])
+    XCTAssertEqual(try s.load(), [])
+  }
+  // 잠금 중(completeUnlessOpen)·권한·IO 오류는 "빈 기록"이 아니다 — 빈 배열로 돌려주면 정리 저장이 원본을 덮는다(H3 리뷰 Important 1)
+  func testStoreLoadThrowsWhenFileIsUnreadable() throws {
+    let s = tempStore()
+    try s.save([q("a", at: 0)])
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: s.url.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: s.url.path); s.wipe() }
+    XCTAssertThrowsError(try s.load())
+  }
+  func testSaveUsesCompleteUnlessOpenProtection() throws {
+    let s = tempStore(); defer { s.wipe() }
+    try s.save([q("a", at: 0)])
+    let p = try FileManager.default.attributesOfItem(atPath: s.url.path)[.protectionKey] as? FileProtectionType
+    guard let p else { throw XCTSkip("시뮬레이터가 파일 보호 속성(protectionKey)을 돌려주지 않는다 — 데이터 보호는 실기기에서만 강제된다") }
+    XCTAssertEqual(p, .completeUnlessOpen)
   }
   func testSaveExcludesFromBackup() throws {
     let s = tempStore(); defer { s.wipe() }
@@ -152,6 +173,19 @@ final class ChatHistoryTests: XCTestCase {
     s.wipe()
     XCTAssertFalse(FileManager.default.fileExists(atPath: s.url.path))
   }
+  func testRemoveDistinguishesAbsentFromFailed() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("chat-\(UUID().uuidString)", isDirectory: true)
+    let u = dir.appendingPathComponent("chat-history.json")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    try Data("{}".utf8).write(to: u)
+    XCTAssertEqual(ChatHistoryStore.remove(at: u), .removed)
+    XCTAssertEqual(ChatHistoryStore.remove(at: u), .absent)
+    try Data("{}".utf8).write(to: u)
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)   // 디렉터리 쓰기 금지 → 지우기 실패
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path); try? FileManager.default.removeItem(at: dir) }
+    guard case .failed = ChatHistoryStore.remove(at: u) else { return XCTFail("권한 오류는 failed 여야 한다") }
+    XCTAssertTrue(FileManager.default.fileExists(atPath: u.path))
+  }
   func testDefaultURLIsAppOnlyApplicationSupport() throws {
     let u = try ChatHistoryStore.defaultURL()
     XCTAssertEqual(u.lastPathComponent, "chat-history.json")
@@ -169,6 +203,6 @@ final class ChatHistoryTests: XCTestCase {
     await w.apply([q("a", at: 0), q("b", at: 1)], gen: 2, store: s)   // 늦게 도착한 옛 스냅샷
     XCTAssertFalse(FileManager.default.fileExists(atPath: s.url.path))
     await w.apply([q("c", at: 2)], gen: 4, store: s)
-    XCTAssertEqual(s.load().map(\.question), ["c"])
+    XCTAssertEqual(try s.load().map(\.question), ["c"])
   }
 }
