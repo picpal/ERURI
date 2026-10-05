@@ -322,7 +322,12 @@ struct ChatView: View {
   /// EventKit 변경 알림은 구독하지 않는다
   private func refreshCalendars() {
     let ids = Set(turns.suffix(5).filter { $0.answer != nil }.map(\.id))
-    for i in turns.indices where !ids.contains(turns[i].id) { turns[i].calendar = nil; turns[i].cardsRead = false }
+    // 5개 밖은 화면에 다시 나올 때 onAppear 가 읽는다. 권한이 있으면 보이는 턴의 캘린더 절은 (낡아도) 남긴다
+    let access = CalendarLookup.fullAccess
+    for i in turns.indices where !ids.contains(turns[i].id) {
+      turns[i].cardsRead = false
+      if !access { turns[i].calendar = nil }
+    }
     guard !ids.isEmpty else { return }
     let ex = try? Executions.shared()
     for t in turns.suffix(5) where ids.contains(t.id) { readCalendar(t.id, ex: ex) }
