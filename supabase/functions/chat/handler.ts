@@ -1,5 +1,5 @@
 import { type BudgetDeps, type BudgetLevel, costKrw, Deferred, guarded } from "../_shared/budget.ts";
-import { type ContextTurn, type Filters, formatContext, type Schedule, scheduleOf } from "./filters.ts";
+import { type ContextTurn, escTags, type Filters, formatContext, type Schedule, scheduleOf } from "./filters.ts";
 export type { ContextTurn, Filters, Schedule } from "./filters.ts";
 
 // 채팅(스펙 §9): 필터 추출 → facts SQL(구조화 조건이 있을 때) → 하이브리드 상위 12(기간 필터로 0건이면 기간 없이 1회 더) → gpt-6-sol 답변(예산 80% 이상이면 gpt-6-luna, §13)
@@ -77,7 +77,8 @@ export function systemPrompt(hasContext: boolean): string { return hasContext ? 
 export function answerUserMessage(input: AnswerInput): string {
   const docs = formatDocuments(input.documents);
   if (!input.context?.length) return `오늘: ${input.today}\n질문: ${input.question}\n\n${docs}`;
-  const q = input.query && input.query !== input.question ? `\n풀어 쓴 질문: ${input.query}` : "";
+  // 풀어 쓴 질문은 필터 모델이 <previous> 글로 만든 것이라 같은 꺾쇠 치환(검색에 넘기는 원문은 그대로)
+  const q = input.query && input.query !== input.question ? `\n풀어 쓴 질문: ${escTags(input.query)}` : "";
   return `오늘: ${input.today}\n이전 대화(질문 이해용, 근거 아님):\n${formatContext(input.context)}\n질문: ${input.question}${q}\n\n${docs}`;
 }
 
@@ -136,12 +137,18 @@ function spent(model: string | null, u?: Usage, fu?: Usage): number {
   return f + (model && u ? costKrw(model, { input: u.input_tokens, output: u.output_tokens, cached: u.cached_tokens }) : 0);
 }
 
+// UTF-16 n 단위로 자르되 서로게이트 쌍을 가르지 않는다(외톨이 서로게이트가 p_query·임베딩으로 가지 않게)
+function cut(s: string, n: number): string {
+  const t = s.slice(0, n);
+  return /[\uD800-\uDBFF]$/.test(t) ? t.slice(0, -1) : t;
+}
+
 async function answerOnce(userId: string, question: string, deps: ChatDeps, context: ContextTurn[]): Promise<ChatResult & { rewritten: boolean }> {
   const today = deps.today();
   const { value } = await guarded(deps.budget, userId, "chat", CHAT_EST_KRW, crypto.randomUUID(), async (level) => {
     const { filters, query, usage: fu } = await deps.filters(question, today, context);
     // 맥락이 있으면 검색은 독립 질문으로(스펙 §9) — "거기 주소" 만으로는 키워드·임베딩이 대상을 못 고른다. 비었으면 원 질문
-    const standalone = context.length && query?.trim() ? query.trim().slice(0, 500) : question;
+    const standalone = context.length && query?.trim() ? cut(query.trim(), 500) : question;
     const rewritten = standalone !== question;
     const schedule = scheduleOf(filters);          // 일정 질문이면 앱이 이 기간의 기기 캘린더를 읽는다(§9) — 거절·문서 0건이어도 싣는다
     const factDocs = await deps.facts(userId, filters);

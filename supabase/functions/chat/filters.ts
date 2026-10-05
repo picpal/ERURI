@@ -6,9 +6,9 @@ export type Filters = { date_from: string | null; date_to: string | null; event_
 // 짧은 맥락(스펙 §9 "대화 기록·짧은 맥락", 2026-10-04): 앱이 보낸 직전 질문·답(≤3턴). 서버는 저장·로그하지 않는다
 export type ContextTurn = { question: string; answer: string };
 // 꺾쇠를 바꿔 맥락 안 글이 블록을 닫거나 문서·새 맥락을 흉내 내지 못하게(formatDocuments 와 같은 규칙)
+export const escTags = (s: string) => s.replace(/</g, "‹").replace(/>/g, "›");
 export function formatContext(ctx: ContextTurn[]): string {
-  const esc = (s: string) => s.replace(/</g, "‹").replace(/>/g, "›");
-  return ctx.map((t) => `<previous>\n질문: ${esc(t.question)}\n답: ${esc(t.answer)}\n</previous>`).join("\n");
+  return ctx.map((t) => `<previous>\n질문: ${escTags(t.question)}\n답: ${escTags(t.answer)}\n</previous>`).join("\n");
 }
 // 기간은 메일·문자를 받은/저장한 시각(items.occurred_at)이다. 일정·기한 날짜를 여기에 넣으면 9/10 에 받은 10/20 미팅 메일이 빠진다(Ruling D)
 const RECEIVED_ONLY = "메일·문자를 받은/저장한 기간을 말할 때만(예: 지난달 받은 메일, 어제 온 문자). 일정·약속·기한의 날짜(예: 10월 20일 미팅, 다음 주 약속, 이번 달 납부)는 null.";
