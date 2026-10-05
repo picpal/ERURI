@@ -3,8 +3,8 @@ import { budgetDeps } from "../_shared/budget-deps.ts";
 import { decrypt } from "../_shared/crypto.ts";
 import { embed, toPgVector } from "../_shared/embeddings.ts";
 import { openai } from "../_shared/openai.ts";
-import { ANSWER_SCHEMA, type ChatDeps, type ChatHit, formatDocuments, type Meta, type ProposalCard, type RawAnswer, relevantItems, type ScoredRow,
-  type SearchResult, SYSTEM_PROMPT } from "./handler.ts";
+import { ANSWER_SCHEMA, answerUserMessage, type ChatDeps, type Meta, type ProposalCard, type RawAnswer, relevantItems, type ScoredRow,
+  type SearchResult, systemPrompt } from "./handler.ts";
 import { extractFilters, type Filters } from "./filters.ts";
 
 // 모델 문서는 상위 12 청크. "보관함에서 보기" 후보는 같은 한 번의 검색의 융합 목록(의미 40 ∪ 키워드 40) 중 관련도 컷을 통과한 행(스펙 §9)
@@ -44,7 +44,7 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
   };
   return {
     authUser: async (t) => { const { data, error } = await sb.auth.getUser(t); return error ? null : data.user?.id ?? null; },
-    filters: (q, today) => extractFilters(q, today),
+    filters: (q, today, context) => extractFilters(q, today, context),
     async facts(u, f: Filters) {
       // 받은 기간은 늘 받은 시각, 일정 기간은 event·task 의 start·due 에만(0024, §9)
       const scheduled = f.event_from !== null || f.event_to !== null;
@@ -71,8 +71,8 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
       const model = level === "degraded" ? "gpt-6-luna" : "gpt-6-sol";
       const r = await openai.responses.create({
         model, store: false, reasoning: { effort: "low" },
-        input: [{ role: "system", content: SYSTEM_PROMPT },
-                { role: "user", content: `오늘: ${input.today}\n질문: ${input.question}\n\n${formatDocuments(input.documents)}` }],
+        input: [{ role: "system", content: systemPrompt((input.context?.length ?? 0) > 0) },
+                { role: "user", content: answerUserMessage(input) }],
         text: { format: { type: "json_schema", name: "chat_answer", schema: ANSWER_SCHEMA, strict: true } },
       });
       if (r.status === "incomplete") throw new Error("answer incomplete");
