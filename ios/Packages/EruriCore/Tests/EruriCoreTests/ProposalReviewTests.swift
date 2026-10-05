@@ -18,7 +18,7 @@ final class ProposalReviewTests: XCTestCase {
     XCTAssertEqual(rows[0].id, pid)
     XCTAssertEqual(rows[0].location, "합성 회의실")
     XCTAssertNil(rows[0].end)
-    XCTAssertEqual(rows[0].whenLabel, "2026-10-02 15:30")                 // 서울
+    XCTAssertEqual(rows[0].whenLabel, "10/2(금) 15:30")                    // 서울(시각 범위 표시, 0.12.0)
     XCTAssertEqual(ProposalReview.decodeList(Data("[]".utf8))?.count, 0)
     XCTAssertNil(ProposalReview.decodeList(Data("{\"code\":\"42883\"}".utf8)))   // 오류 본문은 목록이 아니다
   }
@@ -100,7 +100,7 @@ final class ProposalReviewTests: XCTestCase {
        {"proposal_id":"\(p3)","action":"ADD_EVENT","title":"합성 회의","start":"2026-10-02T15:30:00+09:00","end":null,"all_day":false,"location":null,"version":1,"created_at":"x"},
        {"proposal_id":"\(p3)","action":"ADD_EVENT","title":"합성 어긋남","start":"2026-10-02T15:30:00+09:00","end":null,"all_day":true,"location":null,"version":1,"created_at":"x"}]
       """.utf8)))
-    XCTAssertEqual(rows.map(\.whenLabel), ["10/8(목) · 종일", "10/8(목)–10/10(토) · 종일", "2026-10-02 15:30", "2026-10-02 15:30"])
+    XCTAssertEqual(rows.map(\.whenLabel), ["10/8(목) · 종일", "10/8(목)–10/10(토) · 종일", "10/2(금) 15:30", "2026-10-02 15:30"])   // 어긋난 행(timing nil)은 원문 시각
     XCTAssertEqual(rows[0].addFields, ["proposal_id": pid, "title": "합성 공지 행사", "start": "2026-10-08", "version": "1"])
     XCTAssertEqual(rows[1].addFields, ["proposal_id": p2, "title": "합성 축제", "start": "2026-10-08", "end": "2026-10-10", "version": "4"])
     XCTAssertEqual(rows[2].addFields?["start"].flatMap { ISO8601DateFormatter().date(from: $0) }, ISO8601DateFormatter().date(from: "2026-10-02T06:30:00Z"))
@@ -162,7 +162,9 @@ final class ProposalReviewTests: XCTestCase {
 
   func testLinkWhenLabel() {
     XCTAssertEqual(ProposalReview.Link(proposalId: pid, category: "ADD_EVENT", title: "t", start: "2026-10-02T15:30:00+09:00", due: nil, version: nil).whenLabel,
-                   "2026-10-02 15:30")
+                   "10/2(금) 15:30")                                                  // 푸시 값은 시각 일정 end 가 없다 → 시작만
+    XCTAssertEqual(ProposalReview.Link(proposalId: pid, category: "ADD_EVENT", title: "t", start: "2026-10-24T10:00:00+09:00", end: "2026-10-24T21:00:00+09:00",
+                                       due: nil, version: nil).whenLabel, "10/24(토) 10:00–21:00")      // 겹침 로컬 알림처럼 end 가 실리면 범위
     XCTAssertEqual(ProposalReview.Link(proposalId: pid, category: "REVIEW", title: "t", start: "2026-10-24", due: nil, version: nil).whenLabel, "10/24(토)")   // 확인 필요는 종일이라 하지 않는다
     XCTAssertEqual(ProposalReview.Link(proposalId: pid, category: "ADD_EVENT", title: "t", start: "2026-10-24", due: nil, version: nil).whenLabel, "10/24(토) · 종일")
     XCTAssertEqual(ProposalReview.Link(proposalId: pid, category: "ADD_REMINDER", title: "t", start: nil, due: "2026-10-03", version: nil).whenLabel,

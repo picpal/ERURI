@@ -88,7 +88,7 @@ final class EventEndTests: XCTestCase {
       """.utf8)))
     XCTAssertEqual(rows[0].timing, .timed(d("2026-10-05T01:00:00Z"), end: d("2026-10-05T07:00:00Z")))
     XCTAssertEqual(rows[0].addFields?["end"], "2026-10-05T07:00:00Z")
-    XCTAssertEqual(rows[0].whenLabel, ChatReply.seoulLabel("2026-10-05T10:00:00+09:00"))           // 표시 문구는 그대로
+    XCTAssertEqual(rows[0].whenLabel, "10/5(월) 10:00–16:00")                                     // 시각 범위 표시(0.12.0)
   }
 
   /// 채팅 일정 답 카드: payload end 를 추가 필드에 싣고, 겹침 상태도 [start, 끝)으로 판정한다
@@ -101,6 +101,20 @@ final class EventEndTests: XCTestCase {
     let m = ScheduleCard.model(card, events: [lunch], executed: false, deviceZone: seoul)
     XCTAssertEqual(ScheduleCard.addFields(m)["end"], "2026-10-05T07:00:00Z")
     XCTAssertEqual(m.status, .conflict([lunch], maybeSame: false))
-    XCTAssertEqual(ScheduleCard.whenLine(m), "\(ScheduleCard.dayLabel(d("2026-10-05T01:00:00Z"))) 10:00 합성 구민 행사")   // 표시 그대로
+    XCTAssertEqual(ScheduleCard.whenLine(m), "10/5(월) 10:00–16:00 합성 구민 행사")                 // 시각 범위 표시(0.12.0)
+  }
+
+  /// 포스터 "10/24(토)-25(일) 10:00~21:00"(2026-10-05 실기기 보고): 날짜별 제안 카드마다 범위, 날을 넘기는 끝은 날짜까지
+  func testChatCardTimeRange() throws {
+    func line(_ start: String, _ end: String?) throws -> String {
+      var payload: [String: JSONValue] = ["title": .string("합성 광장 장터"), "uncertain": .array([]), "start": .string(start)]
+      if let end { payload["end"] = .string(end) }
+      let p = ChatReply.Proposal(id: "p-\(start)", item_id: "item-1", action: "create_event", status: "proposed", payload: payload)
+      return ScheduleCard.whenLine(ScheduleCard.model(try XCTUnwrap(ScheduleCard.card(p, now: d("2026-10-05T03:00:00Z"))), events: [], executed: false, deviceZone: seoul))
+    }
+    XCTAssertEqual(try line("2026-10-24T10:00:00+09:00", "2026-10-24T21:00:00+09:00"), "10/24(토) 10:00–21:00 합성 광장 장터")
+    XCTAssertEqual(try line("2026-10-25T10:00:00+09:00", "2026-10-25T21:00:00+09:00"), "10/25(일) 10:00–21:00 합성 광장 장터")
+    XCTAssertEqual(try line("2026-10-24T22:00:00+09:00", "2026-10-25T02:00:00+09:00"), "10/24(토) 22:00–10/25(일) 02:00 합성 광장 장터")
+    XCTAssertEqual(try line("2026-10-24T10:00:00+09:00", nil), "10/24(토) 10:00 합성 광장 장터")
   }
 }

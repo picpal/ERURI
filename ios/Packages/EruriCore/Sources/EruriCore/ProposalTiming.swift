@@ -85,13 +85,23 @@ public enum ProposalTiming: Equatable, Sendable {
     }
   }
 
-  /// 종일 표시 "10/8(목) · 종일", 여러 날 "10/8(목)–10/10(토) · 종일". 시각 있으면 nil(기존 표기)
+  /// 종일 표시 "10/8(목) · 종일", 여러 날 "10/8(목)–10/10(토) · 종일". 시각 있으면 nil(timeLabel)
   public var allDayLabel: String? { dayLabel.map { "\($0) · 종일" } }
   /// 날짜 부분만 "10/8(목)" · "10/8(목)–10/10(토)"(확인 필요 일정 표시용). 시각 있으면 nil
   public var dayLabel: String? {
     guard case .allDay(let first, let last) = self else { return nil }
     let a = Self.label(first)
     return first == last ? a : "\(a)–\(Self.label(last))"
+  }
+
+  /// 시각 일정 표시(스펙 §10 "시각 범위 표시", 0.12.0, 서울): 같은 날 "10/24(토) 10:00–21:00", 날을 넘기면 "10/24(토) 22:00–10/25(일) 02:00"
+  /// (다음 날 0시에 끝나면 그날 안 "23:00–00:00", §9), 끝이 없거나 시작 이하면 시작만 "10/24(토) 10:00". 종일이면 nil(allDayLabel)
+  public var timeLabel: String? {
+    guard case .timed(let at, let end) = self else { return nil }
+    let head = "\(ScheduleCard.dayLabel(at)) \(Self.hm.string(from: at))"
+    guard let end, end > at else { return head }
+    let sameDay = end <= ScheduleCard.seoulDay(at).end
+    return "\(head)–\(sameDay ? "" : ScheduleCard.dayLabel(end) + " ")\(Self.hm.string(from: end))"
   }
 
   /// handleAdd 필드(알림 페이로드와 같은 키)의 start·end. 종일은 YYYY-MM-DD(여러 날이면 end), 시각은 ISO(소수 초 없이, 끝이 있으면 end 도)
@@ -109,6 +119,11 @@ public enum ProposalTiming: Equatable, Sendable {
   }
   // handleAdd·ChatReply 와 같은 파서. SDK 가 Sendable 표시를 안 해서 unsafe(설정 후 읽기·쓰기만)
   nonisolated(unsafe) private static let iso = ISO8601DateFormatter()
+  private static let hm: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(identifier: "Asia/Seoul"); f.dateFormat = "HH:mm"
+    return f
+  }()
   private static let seoul: Calendar = {
     var c = Calendar(identifier: .gregorian)
     c.timeZone = TimeZone(identifier: "Asia/Seoul")!

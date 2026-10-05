@@ -54,6 +54,22 @@ final class ProposalTimingTests: XCTestCase {
     XCTAssertNil(ProposalTiming.parse(start: "2026-10-08T15:00:00+09:00")?.dayLabel)
   }
 
+  /// 시각 범위 표시(스펙 §10 "시각 범위 표시", 0.12.0): 같은 날 "10/24(토) 10:00–21:00", 날 넘김 끝에 날짜, 끝 없음·끝 ≤ 시작이면 시작만(서울). 종일은 nil
+  func testTimeLabel() {
+    XCTAssertEqual(ProposalTiming.parse(start: "2026-10-24T10:00:00+09:00", end: "2026-10-24T21:00:00+09:00")?.timeLabel, "10/24(토) 10:00–21:00")
+    XCTAssertEqual(ProposalTiming.parse(start: "2026-10-24T01:00:00Z", end: "2026-10-24T12:00:00.5Z")?.timeLabel, "10/24(토) 10:00–21:00")   // 오프셋 달라도 서울
+    XCTAssertEqual(ProposalTiming.parse(start: "2026-10-24T22:00:00+09:00", end: "2026-10-25T02:00:00+09:00")?.timeLabel, "10/24(토) 22:00–10/25(일) 02:00")
+    XCTAssertEqual(ProposalTiming.parse(start: "2026-10-24T23:00:00+09:00", end: "2026-10-25T00:00:00+09:00")?.timeLabel, "10/24(토) 23:00–00:00")  // 다음 날 0시 = 그날 안(§9)
+    XCTAssertEqual(ProposalTiming.parse(start: "2026-10-24T10:00:00+09:00")?.timeLabel, "10/24(토) 10:00")                                  // 끝 없음
+    XCTAssertEqual(ProposalTiming.parse(start: "2026-10-24T10:00:00+09:00", end: "2026-10-24T10:00:00+09:00")?.timeLabel, "10/24(토) 10:00")  // 끝 = 시작
+    XCTAssertEqual(ProposalTiming.parse(start: "2026-10-24T10:00:00+09:00", end: "2026-10-24T09:00:00+09:00")?.timeLabel, "10/24(토) 10:00")  // 끝 < 시작
+    XCTAssertEqual(ProposalTiming.parse(start: "2026-10-24T10:00:00+09:00", end: "2026-10-25")?.timeLabel, "10/24(토) 10:00")                 // 날짜만 end 는 끝 아님
+    let at = ProposalTiming.parse(start: "2026-10-24T10:00:00+09:00")!.anchor
+    XCTAssertEqual(ProposalTiming.timed(at, end: at.addingTimeInterval(-60)).timeLabel, "10/24(토) 10:00")                                    // 직접 만든 거꾸로 끝도 시작만
+    XCTAssertNil(ProposalTiming.parse(start: "2026-10-24")?.timeLabel)
+    XCTAssertNil(ProposalTiming.parse(start: "2026-10-24", end: "2026-10-25")?.timeLabel)
+  }
+
   /// handleAdd 필드의 start·end: 종일은 YYYY-MM-DD(여러 날이면 end), 시각은 ISO(소수 초 제거) — 알림 페이로드와 같은 키
   func testFieldValues() {
     let a = ProposalTiming.parse(start: "2026-10-08", end: "2026-10-10")!

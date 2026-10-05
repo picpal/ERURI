@@ -21,17 +21,8 @@ public enum ItemEvents {
     public var timing: ProposalTiming? { action == "create_event" ? ProposalTiming.parse(start: start, end: end) : nil }
 
     /// 시각 "10/8(목) 10:00–16:00"(끝 없으면 시작만, 날을 넘기면 끝에 날짜), 종일 "10/8(목) · 종일"·"10/8(목)–10/10(토) · 종일". 못 읽으면 원문
-    public var whenLabel: String {
-      switch timing {
-      case .allDay?: return timing?.allDayLabel ?? start
-      case .timed(let at, let end)?:
-        let head = "\(ScheduleCard.dayLabel(at)) \(ItemEvents.hm.string(from: at))"
-        guard let end else { return head }
-        let sameDay = end <= ScheduleCard.seoulDay(at).end                  // 다음 날 0시에 끝나면 그날 안(§9 "23:00–00:00")
-        return "\(head)–\(sameDay ? "" : ScheduleCard.dayLabel(end) + " ")\(ItemEvents.hm.string(from: end))"
-      case nil: return start
-      }
-    }
+    /// 제안 탭·채팅 카드와 같은 라벨(ProposalTiming, §10 "시각 범위 표시" 0.12.0)
+    public var whenLabel: String { timing.flatMap { $0.allDayLabel ?? $0.timeLabel } ?? start }
 
     /// handleAdd 입력(제안 탭 행 addFields 와 같은 키 — 위치·메모·끝). 못 읽으면 nil
     public var addFields: [String: String]? {
@@ -118,10 +109,4 @@ public enum ItemEvents {
     default: ChatReply.addFeedback(outcome)
     }
   }
-
-  private static let hm: DateFormatter = {
-    let f = DateFormatter()
-    f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(identifier: "Asia/Seoul"); f.dateFormat = "HH:mm"
-    return f
-  }()
 }

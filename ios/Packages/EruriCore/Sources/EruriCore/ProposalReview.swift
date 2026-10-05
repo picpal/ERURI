@@ -19,7 +19,8 @@ public enum ProposalReview {
       return t
     }
     public var isAllDay: Bool { timing?.isAllDay ?? false }
-    public var whenLabel: String { timing?.allDayLabel ?? ChatReply.seoulLabel(start) }
+    /// 종일 "10/8(목) · 종일", 시각 "10/8(목) 10:00–16:00"(끝 없으면 시작만, §10 "시각 범위 표시" 0.12.0). 못 읽으면 서울 원문 시각
+    public var whenLabel: String { timing.flatMap { $0.allDayLabel ?? $0.timeLabel } ?? ChatReply.seoulLabel(start) }
     /// handleAdd 입력(알림 페이로드와 같은 키). 시각은 Postgres 소수 초를 떼고 handleAdd 의 파서가 읽는 형식으로, 종일은 날짜 그대로(여러 날이면 end).
     /// 못 읽으면 nil(버튼 없음)
     public var addFields: [String: String]? {
@@ -106,11 +107,11 @@ public enum ProposalReview {
       self.proposalId = proposalId; self.category = category; self.title = title; self.start = start; self.due = due; self.version = version
       self.end = end; self.events = events
     }
-    /// 시각이 있으면 서울 벽시계, 날짜만이면 종일("10/8(목) · 종일", 확인 필요는 날짜만), 할 일은 "…까지"
+    /// 시각이 있으면 "10/8(목) 10:00"(end 가 실리면 범위 — 푸시 값은 시각 일정 end 가 없다, §10 "시각 범위 표시" 0.12.0), 날짜만이면 종일("10/8(목) · 종일", 확인 필요는 날짜만), 할 일은 "…까지"
     public var whenLabel: String {
       if let start {
-        if let t = ProposalTiming.parse(start: start, end: end), t.isAllDay { return (category == "REVIEW" ? t.dayLabel : t.allDayLabel) ?? start }
-        return ChatReply.seoulLabel(start)
+        guard let t = ProposalTiming.parse(start: start, end: end) else { return ChatReply.seoulLabel(start) }
+        return (t.isAllDay ? (category == "REVIEW" ? t.dayLabel : t.allDayLabel) : t.timeLabel) ?? start
       }
       if let due { return "\(ChatReply.seoulLabel(due))까지" }
       return ""

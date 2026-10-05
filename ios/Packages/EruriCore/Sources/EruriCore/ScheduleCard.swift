@@ -226,9 +226,11 @@ public enum ScheduleCard {
     }
   }
   public static func isWarning(_ m: Model) -> Bool { if case .conflict? = m.status { return true }; return false }
-  /// "10/4(일) 15:30 제목", 날짜만(종일)이면 "10/4(일) 종일 제목"·여러 날 "10/4(일)–10/6(화) 종일 제목"
+  /// "10/4(일) 15:30 제목"(끝이 있으면 "10/4(일) 15:30–17:00 제목", 0.12.0 ProposalTiming.timeLabel), 날짜만(종일)이면 "10/4(일) 종일 제목"·여러 날 "10/4(일)–10/6(화) 종일 제목"
   public static func whenLine(_ m: Model) -> String {
-    if !m.timed, let days = ProposalTiming.parse(start: m.startText, end: m.endText)?.dayLabel { return "\(days) 종일 \(m.title)" }
+    let t = ProposalTiming.parse(start: m.startText, end: m.endText)
+    if !m.timed, let days = t?.dayLabel { return "\(days) 종일 \(m.title)" }
+    if m.timed, let when = t?.timeLabel { return "\(when) \(m.title)" }
     return "\(dayLabel(m.start)) \(m.timed ? hm.string(from: m.start) : "종일") \(m.title)"
   }
   public static func moreText(_ n: Int) -> String { "일정 제안 \(n)건 더 있음" }
