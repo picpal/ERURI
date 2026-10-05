@@ -37,8 +37,11 @@ final class AppleSignIn: NSObject, ASAuthorizationControllerDelegate, ASAuthoriz
     Task {
       let ok = await SupabaseSession.shared.signInWithApple(idToken: token, rawNonce: nonce)
       let why = await SupabaseSession.shared.lastError ?? "unknown"
-      // 다른(또는 모르는) 사용자가 로그인하면 앞 사용자의 대화 기록을 지운다(D7) — "로그인됨"을 알리기 전에
-      if ok, let uid = await SupabaseSession.shared.userID { await MainActor.run { ChatLog.shared.bind(owner: uid) } }
+      // 다른(또는 모르는) 사용자가 로그인하면 앞 사용자의 대화 기록을 지운다(D7) — "로그인됨"을 알리기 전에.
+      // 성공했는데 사용자 id 를 못 읽으면 소유자를 모르므로 지운다(fail-closed)
+      if ok {
+        if let uid = await SupabaseSession.shared.userID { ChatLog.shared.bind(owner: uid) } else { ChatLog.shared.clear() }
+      }
       finish(ok ? "로그인됨" : "로그인 실패: \(why)")
       if ok { await DeviceRegistrar.shared.register(force: true); Uploader.shared.flush() }
     }

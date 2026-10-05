@@ -21,6 +21,7 @@ struct ChatView: View {
   @FocusState private var inputFocused: Bool           // 키보드가 탭 막대를 가리므로 스크롤·빈 곳 탭으로 내린다(키보드 툴바 "완료"는 가려져 0.7.1 에서 뺐다)
   @State private var turns: [Turn] = []
   @State private var loaded = false                    // 대화 기록을 불러왔다(탭을 오가도 @State 가 남는다). 못 읽었으면 false 로 남아 저장·30일 정리·맥락 전송을 하지 않고 다음 표시·활성화 때 다시 읽는다
+  @State private var seenClear: Int?                   // 화면이 마지막으로 반영한 log.clearCount. nil = 아직 표시 전(그때 화면 턴은 없다)
   private var log: ChatLog { ChatLog.shared }
   @State private var busy = false
   @State private var showPhotos = false                // "+" → 사진에서 일정 읽기(§9 채팅 사진 첨부, 0.11.0)
@@ -92,15 +93,15 @@ struct ChatView: View {
         }
         .navigationTitle("채팅")
         .navigationDestination(item: $openItem) { ItemDetailView(itemID: $0) }
-        .onAppear { dictation.onText = { input = $0 }; dictation.refresh(); loadHistory() }
+        .onAppear { dictation.onText = { input = $0 }; dictation.refresh(); syncClear(); loadHistory() }
         .onDisappear { dictation.stopIfRecording() }
         // 설정·로그아웃·계정 삭제·삭제 푸시에서 지웠다(D7) — 화면도 바로 비운다. 지운 뒤에는 빈 기록을 불러온 것과 같다
-        .onChange(of: log.clearCount) { _, _ in turns = []; judged = [:]; judging = []; adds = [:]; copied = nil; loaded = true }
+        .onChange(of: log.clearCount) { _, _ in syncClear() }
         // 백그라운드·전화로 비활성이 되면 녹음을 끊고, 돌아오면 권한을 다시 읽는다(설정에서 허용하고 온 경우).
         // 캘린더 절·카드도 다시 읽는다(설정에서 캘린더 권한·캘린더 앱에서 일정을 바꾸고 온 경우, Codex #6).
         // 기록: 불러왔으면 30일 지난 턴을 빼고(D7), 못 불러왔으면(잠금 중 보호 파일) 다시 불러온다
         .onChange(of: scenePhase) { _, p in
-          if p == .active { dictation.refresh(); if loaded { pruneExpired() } else { loadHistory() }; refreshCalendars() } else { dictation.stopIfRecording() }
+          if p == .active { dictation.refresh(); syncClear(); if loaded { pruneExpired() } else { loadHistory() }; refreshCalendars() } else { dictation.stopIfRecording() }
         }
         // 새 행이 목록에 놓인 다음 턴에 스크롤한다 — 같은 갱신에서 부르면 옛 높이로 계산돼 카드가 패널 뒤에 남을 수 있다
         .onChange(of: scrollRequest) { _, r in
@@ -113,8 +114,19 @@ struct ChatView: View {
 
   private func scroll(to id: UUID) { scrollRequest = ScrollRequest(id: id, seq: (scrollRequest?.seq ?? 0) + 1) }
 
+  /// 지우기(ChatLog.clearCount)를 화면에 반영한다: 바뀌었으면 화면 상태를 비운다(지운 뒤에는 빈 기록을 불러온 것과 같다).
+  /// onChange 만이 아니라 불러오기·활성화·턴 더하기 앞에서도 부른다 — onChange 가 늦게 돌아도 지우기 전 턴을 병합·저장·맥락으로 쓰지 않게(H4 리뷰 Important 1)
+  private func syncClear() {
+    let now = log.clearCount
+    guard let seen = seenClear else { seenClear = now; return }
+    guard seen != now else { return }
+    seenClear = now
+    turns = []; judged = [:]; judging = []; adds = [:]; copied = nil; loaded = true
+  }
+
   /// 새 턴을 맨 뒤에 두고 저장한다. 500개 상한은 더할 때도(D1)
   @discardableResult private func append(_ r: ChatHistory.Record) -> UUID {
+    syncClear()
     turns.append(Turn(record: r))
     if turns.count > ChatHistory.maxRecords { turns.removeFirst(turns.count - ChatHistory.maxRecords) }
     scroll(to: r.id)
@@ -134,6 +146,7 @@ struct ChatView: View {
   /// 첫 표시: 기록을 불러와 마지막 턴으로(D1). 맞아요·틀렸어요 표시도 기록에서.
   /// 못 읽으면(잠금 중 보호 파일 등) 불러오지 않은 상태로 두고 다음 표시·활성화 때 다시 — 그 사이 화면에 더한 턴은 불러온 기록 뒤에 붙여 저장한다
   private func loadHistory() {
+    syncClear()                                                       // 지우기 전 화면 턴은 fresh 로 병합하지 않는다
     guard !loaded, let records = log.load() else { return }
     loaded = true
     let fresh = turns, freshIDs = Set(fresh.map(\.id))
@@ -288,11 +301,12 @@ struct ChatView: View {
 
   /// 기기 캘린더(§9·§12 통제 2): 일정 답 카드(그날 일정·등록 판정)와 넓은 기간의 "기기 캘린더" 절을 기기 안에서만 읽어 턴에 둔다.
   /// 서버로 보내지 않는다. 전체 접근이 없으면 카드는 줄·상태 없이(안내 자리), 절은 지운다. 진단 로그에는 개수만
-  private func readCalendar(_ id: UUID) {
+  private func readCalendar(_ id: UUID) { readCalendar(id, ex: try? Executions.shared()) }
+  /// ex: 실행 기록 SQLite — 카드마다·턴마다 새로 열지 않는다(refreshCalendars 는 한 번 열어 넘긴다)
+  private func readCalendar(_ id: UUID, ex: Executions?) {
     guard let idx = turns.firstIndex(where: { $0.id == id }), let a = turns[idx].answer else { return }
     let range = a.schedule?.interval
     let picked = ScheduleCard.pick(a.proposals, schedule: range)
-    let ex = try? Executions.shared()                     // 카드마다 SQLite 를 새로 열지 않는다(활성화마다 최대 5턴 × 3장)
     turns[idx].cards = picked.cards.map { ScheduleCard.model($0, events: CalendarLookup.cardEvents(day: $0.day), executed: executed(ex, $0.proposal.id)) }
     turns[idx].cardsMore = picked.more
     turns[idx].cardsRead = true
@@ -304,12 +318,14 @@ struct ChatView: View {
   }
 
   /// 앱 활성화(설정에서 권한을 바꾸고 돌아옴·캘린더 앱에서 일정을 바꿈)·카드 추가 성공 뒤(Codex #6): 마지막 5개 턴만 다시 읽는다(EventKit 조회 비용).
-  /// 전체 접근이 없으면 조회가 없으므로 모든 턴에서 캘린더 줄·상태·버튼을 걷는다. EventKit 변경 알림은 구독하지 않는다.
-  /// 그 밖의 복원 턴은 화면에 다시 나올 때 읽도록 표시만 지운다
+  /// 그 밖의 턴(복원 턴 최대 500)은 절을 걷고 화면에 다시 나올 때 읽도록 표시만 지운다 — 권한이 없어도 같다(카드의 캘린더 줄·상태는 그릴 때 권한을 다시 본다).
+  /// EventKit 변경 알림은 구독하지 않는다
   private func refreshCalendars() {
-    let ids = (CalendarLookup.fullAccess ? Array(turns.suffix(5)) : turns).filter { $0.answer != nil }.map(\.id)
-    for i in turns.indices where !ids.contains(turns[i].id) { turns[i].cardsRead = false }
-    for id in ids { readCalendar(id) }
+    let ids = Set(turns.suffix(5).filter { $0.answer != nil }.map(\.id))
+    for i in turns.indices where !ids.contains(turns[i].id) { turns[i].calendar = nil; turns[i].cardsRead = false }
+    guard !ids.isEmpty else { return }
+    let ex = try? Executions.shared()
+    for t in turns.suffix(5) where ids.contains(t.id) { readCalendar(t.id, ex: ex) }
   }
 
   /// 권한 안내에서 허용·거부한 뒤 다시 읽는다(권한 상태는 관찰되지 않는다 — 다시 그려 "설정에서 허용하기"로 바뀌게).
@@ -451,6 +467,7 @@ struct ChatView: View {
     guard q.utf16.count <= 500 else { append(ChatHistory.Record(at: Date(), kind: .question, question: q, error: ChatReply.errorMessage(status: 400))); return }
     input = ""
     if !keepFocus { inputFocused = false }                 // 보내면 키보드를 내린다(답·카드가 키보드 뒤에 깔리지 않게, 0.8.2). 하드웨어 Return 은 남긴다
+    syncClear()                                             // 지운 뒤 아직 비우지 않은 턴을 맥락으로 보내지 않는다
     // 짧은 맥락(§9): 이 턴을 넣기 전의 기록에서 — 직전 3턴·30분 구간. 기록을 불러오지 못했으면 보내지 않는다(화면 턴이 기록의 일부뿐). 진단에는 개수만
     let ctx = loaded ? ChatHistory.context(turns.map(\.record), now: Date()) : []
     DiagLog.append("CHAT ctx n=\(ctx.count)")
