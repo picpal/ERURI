@@ -5,20 +5,23 @@ import PhotosUI
 /// 채팅(스펙 §9): 질문 → 답변 + 인용 항목의 제안 카드(Ruling 8) + 답 맨 아래 텍스트 버튼 막대(맞아요·틀렸어요·복사 — eval_judgments, §9 평가 절차 4, 0.9.0)
 /// + 일정 질문이면 "기기 캘린더" 절(§9 일정 질문과 기기 캘린더 — 기기 안에서만 읽는다)
 struct ChatView: View {
+  /// 화면 턴 = 저장 기록(ChatHistory.Record, 스펙 §9 "대화 기록·짧은 맥락") + 다시 계산하는 것(답 해석·카드·기기 캘린더 — 저장하지 않는다)
   struct Turn: Identifiable {
-    let id = UUID(); let question: String; var answer: ChatReply.Answer?; var error: String?
+    var record: ChatHistory.Record
+    var id: UUID { record.id }
+    var answer: ChatReply.Answer?                 // record.reply 해석
     var calendar: [ProposalFlow.CalendarEvent]?   // "기기 캘린더" 절(§9): 일정 기간의 기기 일정. nil = 일정 질문 아님·읽지 않음·카드가 그 하루를 대신함
     var cards: [ScheduleCard.Model] = []          // 일정 답 카드(§9, 0.8.2): 시작 순 최대 3
     var cardsMore = 0                             // 카드로 못 보인 제안 수
-    var link: String?                             // 링크·사진 턴(§9, 0.11.0): 상태 문구. nil = 질문 턴
-    var linkDone = false
-    var linkSaved = false                         // 큐에 넣었다 — 저장 범위 한 줄(메인 판정 MR1)을 보인다
-    var seenItemID: String?                       // 이미 읽은 링크의 항목(§9, 0.11.4) — "일정 보기" → 항목 상세
+    var cardsRead = false                         // 카드·절을 읽었다 — 복원한 턴은 화면에 나올 때 읽는다(F8)
+    init(record: ChatHistory.Record) { self.record = record; answer = record.reply.flatMap(ChatReply.decode) }
   }
 
   @State private var input = ""
   @FocusState private var inputFocused: Bool           // 키보드가 탭 막대를 가리므로 스크롤·빈 곳 탭으로 내린다(키보드 툴바 "완료"는 가려져 0.7.1 에서 뺐다)
   @State private var turns: [Turn] = []
+  @State private var loaded = false                    // 대화 기록을 불러왔다(탭을 오가도 @State 가 남는다). 못 읽었으면 false 로 남아 저장·30일 정리·맥락 전송을 하지 않고 다음 표시·활성화 때 다시 읽는다
+  private var log: ChatLog { ChatLog.shared }
   @State private var busy = false
   @State private var showPhotos = false                // "+" → 사진에서 일정 읽기(§9 채팅 사진 첨부, 0.11.0)
   @State private var photoItems: [PhotosPickerItem] = []
@@ -41,14 +44,39 @@ struct ChatView: View {
     NavigationStack {
       ScrollViewReader { proxy in
         List {
-          ForEach(turns) { t in
+          // 안내 문구(스펙 §9·§12 통제 5, 후보 B): ② 기록 맨 위 한 줄 — 위로 다 쓸어 올리면 보인다
+          if !turns.isEmpty {
+            Text(ChatHistoryText.topNote).font(.caption2).foregroundStyle(.secondary)
+              .frame(maxWidth: .infinity).listRowBackground(Color.clear)
+              .accessibilityIdentifier("chat-top-note")
+          }
+          ForEach(Array(turns.enumerated()), id: \.element.id) { pair in
+            let i = pair.offset, t = pair.element                  // 기존 카드 ForEach 와 같은 pair 형식
             Section {
-              Text(t.question).font(.subheadline).foregroundStyle(.secondary).id(t.id)
-              if let e = t.error { Text(e).foregroundStyle(.red) }
-              if let l = t.link { linkRow(l, done: t.linkDone, saved: t.linkSaved, itemID: t.seenItemID) }
+              Text(t.record.question).font(.subheadline).foregroundStyle(.secondary).id(t.id).accessibilityIdentifier("chat-question")
+                .onAppear { if !t.cardsRead, t.answer != nil { readCalendar(t.id) } }   // 복원한 턴의 카드는 화면에 나올 때(F8). Section 이 아니라 행에 단다
+              if let e = t.record.error { Text(e).foregroundStyle(.red) }
+              if let l = t.record.link { linkRow(l, done: t.record.linkDone, saved: t.record.linkSaved, itemID: t.record.seenItemID) }
               else if let a = t.answer { answerRows(t, a) }
-              else if t.error == nil { ProgressView() }
+              else if t.record.error == nil { ProgressView() }
+            } header: {
+              // ③ 맥락 끊김 구분선: 앞 턴과 30분 넘게 떨어졌다(이 턴부터 앞 대화를 맥락으로 보내지 않았다)
+              if ChatHistory.isBreak(previous: i > 0 ? turns[i - 1].record.at : nil, current: t.record.at) {
+                Text(ChatHistoryText.newConversation).font(.caption2).foregroundStyle(.secondary)
+                  .frame(maxWidth: .infinity).accessibilityIdentifier("chat-new-conversation")
+              }
             }
+          }
+        }
+        .overlay {
+          // ① 빈 화면 안내 — 목록 탭(키보드 내림)을 막지 않는다
+          if loaded && turns.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+              ForEach(ChatHistoryText.emptyLines, id: \.self) { Text($0) }
+            }
+            .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 32)
+            .allowsHitTesting(false)
+            .accessibilityElement(children: .combine).accessibilityIdentifier("chat-empty-notice")
           }
         }
         .scrollDismissesKeyboard(.interactively)
@@ -64,11 +92,16 @@ struct ChatView: View {
         }
         .navigationTitle("채팅")
         .navigationDestination(item: $openItem) { ItemDetailView(itemID: $0) }
-        .onAppear { dictation.onText = { input = $0 }; dictation.refresh() }
+        .onAppear { dictation.onText = { input = $0 }; dictation.refresh(); loadHistory() }
         .onDisappear { dictation.stopIfRecording() }
+        // 설정·로그아웃·계정 삭제·삭제 푸시에서 지웠다(D7) — 화면도 바로 비운다. 지운 뒤에는 빈 기록을 불러온 것과 같다
+        .onChange(of: log.clearCount) { _, _ in turns = []; judged = [:]; judging = []; adds = [:]; copied = nil; loaded = true }
         // 백그라운드·전화로 비활성이 되면 녹음을 끊고, 돌아오면 권한을 다시 읽는다(설정에서 허용하고 온 경우).
-        // 캘린더 절·카드도 다시 읽는다(설정에서 캘린더 권한·캘린더 앱에서 일정을 바꾸고 온 경우, Codex #6)
-        .onChange(of: scenePhase) { _, p in if p == .active { dictation.refresh(); refreshCalendars() } else { dictation.stopIfRecording() } }
+        // 캘린더 절·카드도 다시 읽는다(설정에서 캘린더 권한·캘린더 앱에서 일정을 바꾸고 온 경우, Codex #6).
+        // 기록: 불러왔으면 30일 지난 턴을 빼고(D7), 못 불러왔으면(잠금 중 보호 파일) 다시 불러온다
+        .onChange(of: scenePhase) { _, p in
+          if p == .active { dictation.refresh(); if loaded { pruneExpired() } else { loadHistory() }; refreshCalendars() } else { dictation.stopIfRecording() }
+        }
         // 새 행이 목록에 놓인 다음 턴에 스크롤한다 — 같은 갱신에서 부르면 옛 높이로 계산돼 카드가 패널 뒤에 남을 수 있다
         .onChange(of: scrollRequest) { _, r in
           guard let r else { return }
@@ -79,6 +112,44 @@ struct ChatView: View {
   }
 
   private func scroll(to id: UUID) { scrollRequest = ScrollRequest(id: id, seq: (scrollRequest?.seq ?? 0) + 1) }
+
+  /// 새 턴을 맨 뒤에 두고 저장한다. 500개 상한은 더할 때도(D1)
+  @discardableResult private func append(_ r: ChatHistory.Record) -> UUID {
+    turns.append(Turn(record: r))
+    if turns.count > ChatHistory.maxRecords { turns.removeFirst(turns.count - ChatHistory.maxRecords) }
+    scroll(to: r.id)
+    persist()
+    return r.id
+  }
+  /// id 로 턴을 고친다 — 그 사이 기록을 지웠으면(epoch = 보낼 때 잡은 log.clearCount 가 바뀜) 또는 정리로 빠졌으면 아무것도 하지 않는다.
+  /// clear() 뒤 화면 비우기(.onChange)는 다음 렌더라 그 사이 도착한 답이 persist 로 기록을 되살리지 않게 epoch 로 막는다. await 뒤에 색인을 쓰지 않는다(F7)
+  private func settle(_ id: UUID, _ epoch: Int, save: Bool = true, _ f: (inout Turn) -> Void) {
+    guard log.clearCount == epoch, let i = turns.firstIndex(where: { $0.id == id }) else { return }
+    f(&turns[i])
+    if save { persist() }
+  }
+  /// 불러오지 않은 상태면 ChatLog.save 가 쓰지 않는다(파일의 기록을 이 화면의 일부 턴으로 덮지 않게)
+  private func persist() { log.save(turns.map(\.record)) }
+
+  /// 첫 표시: 기록을 불러와 마지막 턴으로(D1). 맞아요·틀렸어요 표시도 기록에서.
+  /// 못 읽으면(잠금 중 보호 파일 등) 불러오지 않은 상태로 두고 다음 표시·활성화 때 다시 — 그 사이 화면에 더한 턴은 불러온 기록 뒤에 붙여 저장한다
+  private func loadHistory() {
+    guard !loaded, let records = log.load() else { return }
+    loaded = true
+    let fresh = turns, freshIDs = Set(fresh.map(\.id))
+    turns = records.filter { !freshIDs.contains($0.id) }.map(Turn.init(record:)) + fresh
+    if turns.count > ChatHistory.maxRecords { turns.removeFirst(turns.count - ChatHistory.maxRecords) }
+    judged = ChatHistory.judgedMarks(records).merging(judged) { _, now in now }
+    if !fresh.isEmpty { persist() }
+    else if let last = turns.last { scroll(to: last.id) }              // 마지막 질문 행을 위에 — 그 답·카드가 보인다(D1)
+  }
+  /// 활성화 때 30일 지난 턴을 뺀다(D7). 불러온 뒤에만(호출부)
+  private func pruneExpired() {
+    let kept = Set(ChatHistory.prune(turns.map(\.record), now: Date()).map(\.id))
+    guard kept.count != turns.count else { return }
+    turns.removeAll { !kept.contains($0.id) }
+    persist()
+  }
 
   private var canSend: Bool { !busy && !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -142,10 +213,10 @@ struct ChatView: View {
 
   @ViewBuilder private func answerRows(_ t: Turn, _ a: ChatReply.Answer) -> some View {
     // 거절이어도 답 문구는 그대로(Codex #4). 기기 캘린더 절이 아래에서 "이 기간 일정 N건"을 따로 알린다
-    Text(a.answer)
+    Text(a.answer).accessibilityIdentifier("chat-answer")
     // 스펙 §9 채팅 → 보관함 보기: 인용 ∪ 구별 facts ∪ 관련도 컷(서버 S1). 거절 답변·후보 없음이면 숨긴다(0.7.1)
     if let ids = a.archiveIDs {
-      let scope = Archive.Scope(question: t.question, ids: ids)
+      let scope = Archive.Scope(question: t.record.question, ids: ids)
       Button("보관함에서 보기 (\(scope.ids.count)건)") { ArchiveRouter.shared.open(scope) }
         .font(.caption).buttonStyle(.borderless)
     }
@@ -217,12 +288,14 @@ struct ChatView: View {
 
   /// 기기 캘린더(§9·§12 통제 2): 일정 답 카드(그날 일정·등록 판정)와 넓은 기간의 "기기 캘린더" 절을 기기 안에서만 읽어 턴에 둔다.
   /// 서버로 보내지 않는다. 전체 접근이 없으면 카드는 줄·상태 없이(안내 자리), 절은 지운다. 진단 로그에는 개수만
-  private func readCalendar(_ idx: Int, _ a: ChatReply.Answer) {
+  private func readCalendar(_ id: UUID) {
+    guard let idx = turns.firstIndex(where: { $0.id == id }), let a = turns[idx].answer else { return }
     let range = a.schedule?.interval
     let picked = ScheduleCard.pick(a.proposals, schedule: range)
     let ex = try? Executions.shared()                     // 카드마다 SQLite 를 새로 열지 않는다(활성화마다 최대 5턴 × 3장)
     turns[idx].cards = picked.cards.map { ScheduleCard.model($0, events: CalendarLookup.cardEvents(day: $0.day), executed: executed(ex, $0.proposal.id)) }
     turns[idx].cardsMore = picked.more
+    turns[idx].cardsRead = true
     // 기간 종류는 진단 로그에도 남긴다(T3 G5 가 분기를 가른다) — 일정 내용은 아니다
     let sched = range == nil ? "none" : ScheduleCard.showsRangeSection(schedule: range, cardDays: picked.cards.map(\.day)) ? "wide" : "day"
     let wide = CalendarLookup.fullAccess && sched == "wide"
@@ -231,17 +304,19 @@ struct ChatView: View {
   }
 
   /// 앱 활성화(설정에서 권한을 바꾸고 돌아옴·캘린더 앱에서 일정을 바꿈)·카드 추가 성공 뒤(Codex #6): 마지막 5개 턴만 다시 읽는다(EventKit 조회 비용).
-  /// 전체 접근이 없으면 조회가 없으므로 모든 턴에서 캘린더 줄·상태·버튼을 걷는다. EventKit 변경 알림은 구독하지 않는다
+  /// 전체 접근이 없으면 조회가 없으므로 모든 턴에서 캘린더 줄·상태·버튼을 걷는다. EventKit 변경 알림은 구독하지 않는다.
+  /// 그 밖의 복원 턴은 화면에 다시 나올 때 읽도록 표시만 지운다
   private func refreshCalendars() {
-    let idx = CalendarLookup.fullAccess ? Array(turns.indices.suffix(5)) : Array(turns.indices)
-    for i in idx { if let a = turns[i].answer { readCalendar(i, a) } }
+    let ids = (CalendarLookup.fullAccess ? Array(turns.suffix(5)) : turns).filter { $0.answer != nil }.map(\.id)
+    for i in turns.indices where !ids.contains(turns[i].id) { turns[i].cardsRead = false }
+    for id in ids { readCalendar(id) }
   }
 
   /// 권한 안내에서 허용·거부한 뒤 다시 읽는다(권한 상태는 관찰되지 않는다 — 다시 그려 "설정에서 허용하기"로 바뀌게).
   /// 마지막 5개 턴과 같이 그 턴도 — 5개 밖이어도 안내를 누른 턴은 바로 바뀐다
   private func recheck(_ id: UUID) {
     refreshCalendars()
-    if let i = turns.firstIndex(where: { $0.id == id }), i < turns.count - 5, let a = turns[i].answer { readCalendar(i, a) }
+    readCalendar(id)
   }
 
   /// 이 기기에서 넣은 적 있는 제안(§10 실행 기록). 등록 판정의 보조 근거 — 캘린더에서 지웠으면 "이전에 추가한 일정"
@@ -347,13 +422,16 @@ struct ChatView: View {
       let before = judged[key]
       judged[key] = ok
       judging.insert(key)
+      let epoch = log.clearCount                              // 요청 중에 지우면 표시도 기록도 되살리지 않는다(settle)
       Task {
         defer { judging.remove(key) }
         // 같은 인용을 다시 고르면 바꾼다(unique user_id·question_id·item_id, merge-duplicates). 실패하면 표시를 되돌린다
         let r = await API.send("rest/v1/eval_judgments?on_conflict=user_id,question_id,item_id", method: "POST",
                                json: ["question_id": answer, "item_id": item, "ok": ok],
                                headers: ["Prefer": "resolution=merge-duplicates,return=minimal"])
+        guard log.clearCount == epoch else { return }
         if !(200..<300).contains(r?.status ?? -1) { judged[key] = before }
+        else if let tid = turns.first(where: { $0.answer?.answer_id == answer })?.id { settle(tid, epoch) { $0.record.judged[item] = ok } }   // 정리로 빠졌으면 턴이 없어 무시된다
       }
     }
   }
@@ -366,23 +444,28 @@ struct ChatView: View {
     // 긴 글·날짜 있는 글 + 주소는 지금처럼 질문(LinkText.linkCandidate)
     switch LinkText.chatIntent(q) {
     case .link(let url, let note): sendLink(q, url: url, note: note, keepFocus: keepFocus); return
-    case .tooMany: turns.append(Turn(question: q, error: LinkCaptureText.tooMany)); return
+    case .tooMany: append(ChatHistory.Record(at: Date(), kind: .question, question: q, error: LinkCaptureText.tooMany)); return
     case .none: break
     }
     // 서버 한도(⑧b bad_question). 넘으면 입력을 지우지 않고 고칠 수 있게 둔다
-    guard q.utf16.count <= 500 else { turns.append(Turn(question: q, error: ChatReply.errorMessage(status: 400))); return }
+    guard q.utf16.count <= 500 else { append(ChatHistory.Record(at: Date(), kind: .question, question: q, error: ChatReply.errorMessage(status: 400))); return }
     input = ""
     if !keepFocus { inputFocused = false }                 // 보내면 키보드를 내린다(답·카드가 키보드 뒤에 깔리지 않게, 0.8.2). 하드웨어 Return 은 남긴다
-    turns.append(Turn(question: q))
-    let idx = turns.count - 1
-    scroll(to: turns[idx].id)
+    // 짧은 맥락(§9): 이 턴을 넣기 전의 기록에서 — 직전 3턴·30분 구간. 기록을 불러오지 못했으면 보내지 않는다(화면 턴이 기록의 일부뿐). 진단에는 개수만
+    let ctx = loaded ? ChatHistory.context(turns.map(\.record), now: Date()) : []
+    DiagLog.append("CHAT ctx n=\(ctx.count)")
+    let id = append(ChatHistory.Record(at: Date(), kind: .question, question: q))
+    let epoch = log.clearCount                              // 답이 오기 전에 지우면 이 턴을 고치지 않는다(settle)
     busy = true
     Task {
       defer { busy = false }
       var attempt = 0
+      var withContext = !ctx.isEmpty
       while true {
-        guard let r = await API.send("functions/v1/chat", method: "POST", json: ["question": q], timeout: 60) else {
-          turns[idx].error = "연결 실패"; return
+        var body: [String: Any] = ["question": q]
+        if withContext { body["context"] = ctx.map(\.json) }     // 맥락이 없으면 키를 넣지 않는다(0.11.x 와 같은 요청)
+        guard let r = await API.send("functions/v1/chat", method: "POST", json: body, timeout: 60) else {
+          settle(id, epoch) { $0.record.error = "연결 실패" }; return
         }
         // llm_busy(503): 한 번만 짧게 기다렸다 다시(M2-⑦ LLM 동시 2)
         if let wait = ChatReply.retryDelay(status: r.status, attempt: attempt) {
@@ -390,10 +473,17 @@ struct ChatView: View {
           try? await Task.sleep(for: .seconds(wait))
           continue
         }
-        if r.status == 200 {
-          if let a = ChatReply.decode(r.data) { turns[idx].answer = a; readCalendar(idx, a); scroll(to: turns[idx].id) } else { turns[idx].error = "응답을 읽지 못했습니다" }
+        // 맥락 형식을 서버가 거절(400 bad_context)했을 때만 맥락 없이 한 번 더 — 다른 400(bad_question 등)은 다시 보내지 않는다
+        if r.status == 400, withContext, ((try? JSONSerialization.jsonObject(with: r.data)) as? [String: Any])?["error"] as? String == "bad_context" {
+          withContext = false; DiagLog.append("CHAT ctx rejected"); continue
+        }
+        if r.status == 200, let a = ChatReply.decode(r.data) {
+          guard log.clearCount == epoch else { return }         // 지운 뒤 도착한 답 — 카드·스크롤도 하지 않는다
+          settle(id, epoch) { $0.record.reply = r.data; $0.answer = a }
+          readCalendar(id)
+          scroll(to: id)
         } else {
-          turns[idx].error = ChatReply.errorMessage(status: r.status)
+          settle(id, epoch) { $0.record.error = r.status == 200 ? ChatHistoryText.unreadableReply : ChatReply.errorMessage(status: r.status) }
         }
         return
       }
@@ -404,25 +494,26 @@ struct ChatView: View {
   private func sendLink(_ q: String, url: URL, note: String?, keepFocus: Bool) {
     input = ""
     if !keepFocus { inputFocused = false }
-    var t = Turn(question: q)
-    t.link = LinkCaptureText.reading
-    turns.append(t)
-    let idx = turns.count - 1
-    scroll(to: turns[idx].id)
+    let id = append(ChatHistory.Record(at: Date(), kind: .link, question: q, link: LinkCaptureText.reading))
+    let epoch = log.clearCount
     busy = true
     Task {
       let read = await LinkCapture.shared.chatRead(url: url, note: note)
-      turns[idx].link = read.text
+      settle(id, epoch) { $0.record.link = read.text }
       busy = false
       // 이미 읽은 링크: 그 항목을 찾으면 문구를 줄이고 "일정 보기"(다시 추가는 항목 상세, §10 0.11.4). 못 찾으면 보관함 안내 문구 그대로
       if let seen = read.seenCaptureID {
-        if let item = await LinkCapture.shared.itemID(captureID: seen) { turns[idx].seenItemID = item; turns[idx].link = LinkCaptureText.duplicateFound }
-        turns[idx].linkDone = true; return
+        let item = await LinkCapture.shared.itemID(captureID: seen)
+        settle(id, epoch) {
+          if let item { $0.record.seenItemID = item; $0.record.link = LinkCaptureText.duplicateFound }
+          $0.record.linkDone = true
+        }
+        return
       }
-      guard let id = read.captureID else { turns[idx].linkDone = true; return }
-      turns[idx].linkSaved = true
-      turns[idx].link = await LinkCapture.shared.chatResult(captureID: id, subject: .page)
-      turns[idx].linkDone = true
+      guard let cid = read.captureID else { settle(id, epoch) { $0.record.linkDone = true }; return }
+      settle(id, epoch) { $0.record.linkSaved = true }
+      let result = await LinkCapture.shared.chatResult(captureID: cid, subject: .page)
+      settle(id, epoch) { $0.record.link = result; $0.record.linkDone = true }
     }
   }
 
@@ -433,20 +524,18 @@ struct ChatView: View {
     input = ""
     inputFocused = false
     let n = min(items.count, ImageText.maxImages)
-    var t = Turn(question: note.isEmpty ? "사진 \(n)장" : "사진 \(n)장 · \(note)")
-    t.link = LinkCaptureText.imageReading
-    turns.append(t)
-    let idx = turns.count - 1
-    scroll(to: turns[idx].id)
+    let id = append(ChatHistory.Record(at: Date(), kind: .image, question: note.isEmpty ? "사진 \(n)장" : "사진 \(n)장 · \(note)",
+                                       link: LinkCaptureText.imageReading))
+    let epoch = log.clearCount
     busy = true
     Task {
       let read = await LinkCapture.shared.chatImages(Array(items.prefix(n)), note: note.isEmpty ? nil : note)
-      turns[idx].link = read.text
+      settle(id, epoch) { $0.record.link = read.text }
       busy = false
-      guard let id = read.captureID else { turns[idx].linkDone = true; return }
-      turns[idx].linkSaved = true
-      turns[idx].link = await LinkCapture.shared.chatResult(captureID: id, subject: .image)
-      turns[idx].linkDone = true
+      guard let cid = read.captureID else { settle(id, epoch) { $0.record.linkDone = true }; return }
+      settle(id, epoch) { $0.record.linkSaved = true }
+      let result = await LinkCapture.shared.chatResult(captureID: cid, subject: .image)
+      settle(id, epoch) { $0.record.link = result; $0.record.linkDone = true }
     }
   }
 

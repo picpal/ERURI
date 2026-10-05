@@ -16,6 +16,7 @@ struct ContentView: View {
   @State private var confirmAccount = false
   @State private var deleteResult = ""
   @State private var usage = ""
+  @State private var confirmChat = false
 
   var body: some View {
     NavigationStack {
@@ -23,7 +24,7 @@ struct ContentView: View {
         Section("계정") {
           Text(account).font(.caption).foregroundStyle(account.hasPrefix("로그인 실패") ? .red : .secondary)
           Button("Apple로 로그인") { busy = true; Task { account = await AppleSignIn.shared.run(); busy = false; await refresh() } }.disabled(busy)
-          Button("로그아웃", role: .destructive) { Task { await SupabaseSession.shared.logout(); APNsDevice.clearRegistration(); account = "로그인 필요"; await refresh() } }
+          Button("로그아웃", role: .destructive) { Task { await SupabaseSession.shared.logout(); APNsDevice.clearRegistration(); ChatLog.shared.clear(); account = "로그인 필요"; await refresh() } }
         }
         Section("권한") {
           Button("권한 요청 (알림·캘린더·연락처)") { requestPermissions() }
@@ -35,6 +36,11 @@ struct ContentView: View {
           Button("다시 연결 (동의 다시 받기)") { connectGmail(true) }.disabled(busy || !GmailConnect.configured)
           NavigationLink("광고 메일 구독 해지") { UnsubscribeView() }        // 스펙 §7 광고 구독 해지(0.10.0)
             .accessibilityIdentifier("settings-unsubscribe")
+        }
+        Section("채팅") {                                                       // 스펙 §9 "대화 기록·짧은 맥락"·§12 통제 5
+          Button(ChatHistoryText.settingsTitle, role: .destructive) { confirmChat = true }
+            .accessibilityIdentifier("settings-clear-chat")
+          Text(ChatHistoryText.settingsNote).font(.caption2).foregroundStyle(.secondary)
         }
         Section("이번 달 사용") {                                              // 스펙 §13 월 상한(M2-⑦)
           Text(usage.isEmpty ? "-" : usage).font(.caption).foregroundStyle(usage.contains("중단") ? .red : .secondary)
@@ -64,6 +70,10 @@ struct ContentView: View {
       }
       .alert("모든 데이터와 계정을 지울까요? 되돌릴 수 없습니다.", isPresented: $confirmAccount) {
         Button("전체 삭제", role: .destructive) { Task { deleteResult = await deleteAccount() } }
+        Button("취소", role: .cancel) {}
+      }
+      .alert(ChatHistoryText.clearConfirm, isPresented: $confirmChat) {
+        Button("지우기", role: .destructive) { ChatLog.shared.clear() }
         Button("취소", role: .cancel) {}
       }
       .task { await refresh() }
@@ -103,6 +113,7 @@ struct ContentView: View {
   private func deleteAccount() async -> String {
     guard let r = await API.send("functions/v1/account/delete", method: "POST", timeout: 60), r.status == 200 else { return "삭제 실패" }
     LocalWipe.runShared()
+    ChatLog.shared.clear()
     APNsDevice.clearRegistration()
     await SupabaseSession.shared.logout()
     await refresh()
