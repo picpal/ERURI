@@ -133,7 +133,7 @@ export function buildQuery(c: MailConditions, starred = false): string;
 | `mail_action_begin(p_user, p_id, p_phase text)` | jsonb `{status, action, method, connection_id, ids, cursor}` 또는 `{status}`(끝난 행) 또는 null | 워커: pending→running / undo_pending→undoing |
 | `mail_action_set_method(p_user, p_id, p_method text)` | void | null·batch → batch/single |
 | `mail_action_progress(p_user, p_id, p_phase, p_from int, p_cursor int, p_ok text[], p_failed text[])` | boolean | 커서 비교(D8) |
-| `mail_action_quota(p_user, p_id)` | timestamptz | `quota_since` 처음이면 지금으로, 그 값을 돌려줌 |
+| `mail_action_quota(p_user, p_id)` | timestamptz | `quota_since` 처음이면 지금으로, 그 값을 돌려줌 — 행이 running·undoing 이 아니면 null(M3 리뷰 7a61fe1, 호출자는 `?? now()`) |
 | `mail_action_finish(p_user, p_id, p_phase, p_code text default null)` | jsonb counts 또는 null | 남은 id 실패·종료 상태·감사(멱등). 남은 id가 0이면 `p_code`를 적지 않는다. 되돌리기에서 `p_code` ∈ (`reauth_required`, `no_connection`)이고 `undo_cursor = 0`이면 실행 종료 상태로 되돌리고 `error_code = 'undo_' \|\| p_code`(감사 없음, D11) |
 | `purge_mail_actions(p_user uuid default null)` | jsonb `{mail_actions, gmail_units, lost}` | cron `mail-actions-purge-daily`(UTC 04:53). 생성 8일 지났고 살아 있는 잡이 없는 진행 중 행을 먼저 `job_lost`로 마감(`lost`) |
 | 트리거 `jobs_mail_action_dead` | — | kind `mail-action`이 dead가 되면 `mail_action_finish(…, 'job_dead')` |
