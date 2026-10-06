@@ -147,6 +147,9 @@ export const CASES: { name: string; run(c: Ctx): Promise<void> }[] = [
     assertEquals((await one(c.q, "select status from jobs where id = $1::uuid", [j.id])).status, "dead");
     const r = await row(c, id);
     assertEquals([r.status, r.error_code, r.failed_ids.length, r.ok_ids], ["partial", "job_dead", 2, [a]]);
+    const [, b, d] = ids3(c);
+    assertEquals(await progress(c, id, "execute", 1, 3, [b, d], []), false);          // 마감 뒤 늦게 깬 워커: 기록 없음
+    assertEquals((await row(c, id)).ok_ids, [a]);
     const other = (await one(c.q, "select enqueue_job($1::uuid, 'process', $2, $3::jsonb) as id", [c.user, c.prefix + "p", JSON.stringify({ id })])).id;
     await dead(c, other);
     assertEquals((await row(c, id)).status, "partial");
@@ -173,7 +176,7 @@ export const CASES: { name: string; run(c: Ctx): Promise<void> }[] = [
     assertEquals([r.undo_cursor, r.undo_failed_ids, r.undone_at], [0, [], null]);
     assertEquals((await audits(c, id)).map((x) => x.action), ["mail_trash"]);                // 되돌리기 감사 없음
     const u2 = await undo(c, id);
-    assertEquals([u2.result, u2.status], ["started", "undo_pending"]);                       // 다시 연결한 뒤 되돌릴 수 있다
+    assertEquals([u2.result, u2.status, u2.code], ["started", "undo_pending", null]);        // 다시 연결한 뒤 되돌릴 수 있다(옛 undo_ 코드는 지운다)
     await begin(c, id, "undo");
     await progress(c, id, "undo", 0, 1, [a], []);
     const f2 = await finish(c, id, "undo", "no_connection");                                 // 진행 뒤 = 보통 마감
@@ -181,6 +184,38 @@ export const CASES: { name: string; run(c: Ctx): Promise<void> }[] = [
     const n = await done(c, [a]);
     await undo(c, n);
     assertEquals((await finish(c, n, "undo", "no_connection")).code, "undo_no_connection");  // undo_pending(시작 전)도 같다
+    await undo(c, n); await begin(c, n, "undo");                                             // 다시 시작해 남김없이 끝나면 코드 없음
+    await progress(c, n, "undo", 0, 1, [a], []);
+    const f3 = await finish(c, n, "undo");
+    assertEquals([f3.status, f3.code], ["undone", null]);
+  } },
+  { name: "dead trigger in the undo phase: a dead undo job closes the undo (rest undo-failed, job_dead, audit mail_undo)", run: async (c) => {
+    const [a, b] = ids3(c);
+    const id = await done(c, [a, b]);
+    await undo(c, id); await begin(c, id, "undo");
+    await progress(c, id, "undo", 0, 1, [a], []);
+    const uj = (await jobs(c, id)).find((j) => j.payload.phase === "undo")!;
+    await dead(c, uj.id);
+    const r = await row(c, id);
+    assertEquals([r.status, r.error_code, r.undo_cursor, r.undo_failed_ids], ["undo_partial", "job_dead", 2, [b]]);
+    assertEquals((await audits(c, id)).map((x) => x.action), ["mail_trash", "mail_undo"]);
+  } },
+  { name: "another user: preview on someone else's connection → null (no row); begin/progress/finish/set_method/quota by another user → null/false, nothing changes", run: async (c) => {
+    const [a] = ids3(c), other = crypto.randomUUID();
+    assertEquals((await one(c.q, "select mail_action_preview($1::uuid, $2::uuid, 'trash', $3::text[]) as id", [other, c.conn, arr([a])])).id, null);
+    assertEquals((await c.q("select 1 from mail_actions where connection_id = $1::uuid", [c.conn])).length, 0);
+    const id = await preview(c);
+    await start(c, id);
+    assertEquals(await call(c, "mail_action_begin", "$1::uuid, $2::uuid, 'execute'", [other, id]), null);
+    assertEquals((await row(c, id)).status, "pending");
+    await begin(c, id, "execute");
+    assertEquals(await call(c, "mail_action_progress", "$1::uuid, $2::uuid, 'execute', 0, 1, $3::text[], '{}'::text[]", [other, id, arr([a])]), false);
+    await c.q("select mail_action_set_method($1::uuid, $2::uuid, 'batch')", [other, id]);
+    assertEquals(await call(c, "mail_action_quota", "$1::uuid, $2::uuid", [other, id]), null);
+    assertEquals(await call(c, "mail_action_finish", "$1::uuid, $2::uuid, 'execute', 'x'", [other, id]), null);
+    const r = await row(c, id);
+    assertEquals([r.status, r.cursor, r.ok_ids, r.method, r.quota_since, r.error_code], ["running", 0, [], null, null, null]);
+    assertEquals((await audits(c, id)).length, 0);
   } },
   { name: "privileges: every 0030 function is not executable by anon or authenticated; both tables have RLS on and no policy", run: async (c) => {
     const rows = await c.q(`select p.proname, has_function_privilege('anon', p.oid, 'execute') as anon,
@@ -203,6 +238,9 @@ export const CASES: { name: string; run(c: Ctx): Promise<void> }[] = [
     assertEquals(await take(400), true);
     const u = await one(c.q, "select used, mail_used from gmail_units where user_id = $1::uuid", [c.user]);
     assertEquals([u.used, u.mail_used], [5400, 400]);
+    assertEquals([await take(0), await take(-100)], [true, true]);                    // 가져갈 것 없음: 카운터를 줄이지 않는다
+    const u2 = await one(c.q, "select used, mail_used from gmail_units where user_id = $1::uuid", [c.user]);
+    assertEquals([u2.used, u2.mail_used], [5400, 400]);
   } },
   { name: "replace token: active connection only — vault, scopes, expires_at change, cursor untouched; another user or a reauth_required connection → false and nothing changes", run: async (c) => {
     const conn = (await one(c.q, "select gmail_save_connection($1::uuid, $2, 'rt-old', '700') as id", [c.user, `${c.tag}-rt@example.com`])).id as string;
@@ -215,7 +253,7 @@ export const CASES: { name: string; run(c: Ctx): Promise<void> }[] = [
     assertEquals((await one(c.q, "select cursor from sync_states where connection_id = $1::uuid", [conn])).cursor, "700");
     await c.q("update connections set status = 'reauth_required' where id = $1::uuid", [conn]);
     assertEquals(await call(c, "gmail_replace_token", "$1::uuid, $2::uuid, 'rt-z', $3::text[]", [c.user, conn, arr(["z"])]), false);
-    const z = await one(c.q, "select c.status, c.scopes, s.secret from connections c join vault.secrets s on s.name = 'gmail_rt:' || c.id where c.id = $1::uuid", [conn]);
+    const z = await one(c.q, "select c.status, c.scopes, s.decrypted_secret as secret from connections c join vault.decrypted_secrets s on s.name = 'gmail_rt:' || c.id where c.id = $1::uuid", [conn]);
     assertEquals([z.status, z.scopes, z.secret], ["reauth_required", ["a", "b"], "rt-new"]);   // 끊긴 연결은 되살리지 않는다(D12)
   } },
   { name: "mail_connection returns the newest Gmail connection with account and scopes; gmail_set_scopes writes them", run: async (c) => {
@@ -239,13 +277,16 @@ export const CASES: { name: string; run(c: Ctx): Promise<void> }[] = [
     assertEquals((await audits(c, lost)).map((x) => x.target), [`mail_action:${lost} ok=0 failed=3`]);   // 마감 감사는 남는다
     assertEquals((await one(c.q, "select schedule from cron.job where jobname = 'mail-actions-purge-daily'")).schedule, "53 4 * * *");
   } },
-  { name: "cascade and columns: deleting the connection deletes its rows; mail_actions has no title/sender/body/query column", run: async (c) => {
+  { name: "cascade and columns: deleting the connection deletes its rows (connection_id index); mail_actions has no title/sender/body/query column", run: async (c) => {
     const id = await preview(c);
     await c.q("delete from connections where id = $1::uuid", [c.conn]);
     assertEquals((await c.q("select 1 from mail_actions where id = $1::uuid", [id])).length, 0);
     const cols = (await c.q("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'mail_actions' order by ordinal_position")).map((r) => r.column_name);
     assertEquals(cols, ["id", "user_id", "connection_id", "action", "msg_ids", "count", "method", "status", "cursor", "ok_ids", "failed_ids",
       "undo_cursor", "undo_failed_ids", "error_code", "quota_since", "created_at", "executed_at", "undone_at"]);
+    const ix = await c.q("select indexdef from pg_indexes where schemaname = 'public' and tablename = 'mail_actions' and indexname = 'mail_actions_connection'");
+    assertEquals(ix.length, 1);                                                       // 연결 삭제 cascade 가 표를 훑지 않게
+    assert(String(ix[0].indexdef).endsWith("(connection_id)"));
   } },
   { name: "priority: mail-action 20; backfill 40, gmail-fetch 20, process 30 unchanged", run: async (c) => {
     const pr = async (kind: string, payload: Record<string, unknown>) => {          // 넣기와 읽기를 나눈다 — WHERE 안의 volatile 호출은 행마다 돈다
@@ -266,13 +307,21 @@ export const CASES: { name: string; run(c: Ctx): Promise<void> }[] = [
     assertEquals((await call(c, "mail_action_status", "$1::uuid, $2::uuid", [c.user, id])).method, "single");
     assertEquals(await call(c, "mail_action_status", "$1::uuid, $2::uuid", [crypto.randomUUID(), id]), null);
   } },
-  { name: "quota: first call sets quota_since, later calls keep it; a progressed batch clears it", run: async (c) => {
+  { name: "quota: only while running/undoing — first call sets quota_since, later calls keep it; a progressed batch clears it; other states → null", run: async (c) => {
     const [a] = ids3(c), id = await preview(c);
-    await start(c, id); await begin(c, id, "execute");
+    const quota = () => call(c, "mail_action_quota", "$1::uuid, $2::uuid", [c.user, id]);
+    assertEquals(await quota(), null);                                                // previewed
+    await start(c, id);
+    assertEquals(await quota(), null);                                                // pending
+    assertEquals((await row(c, id)).quota_since, null);
+    await begin(c, id, "execute");
     const q1 = await call(c, "mail_action_quota", "$1::uuid, $2::uuid", [c.user, id]);
     const q2 = await call(c, "mail_action_quota", "$1::uuid, $2::uuid", [c.user, id]);
     assertEquals(new Date(q1).getTime(), new Date(q2).getTime());
     await progress(c, id, "execute", 0, 1, [a], []);
+    assertEquals((await row(c, id)).quota_since, null);
+    await finish(c, id, "execute");
+    assertEquals(await quota(), null);                                                // 끝난 행
     assertEquals((await row(c, id)).quota_since, null);
   } },
 ];

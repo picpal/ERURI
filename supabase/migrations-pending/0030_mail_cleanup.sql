@@ -27,8 +27,9 @@ create table mail_actions (
   undone_at timestamptz
   -- 제목·발신자·본문·검색 칸은 두지 않는다(§12 통제 2)
 );
-create index mail_actions_user_time on mail_actions (user_id, created_at);
-create index mail_actions_created on mail_actions (created_at);
+create index mail_actions_user_time on mail_actions (user_id, created_at);   -- 계정 삭제(auth.users) cascade·purge 의 p_user 범위
+create index mail_actions_created on mail_actions (created_at);              -- purge 7·8일 범위
+create index mail_actions_connection on mail_actions (connection_id);        -- 출처 삭제(connections) cascade
 alter table mail_actions enable row level security;
 
 -- 사용자 Gmail units 분 카운터(§7 "속도"): 수집·미리보기는 기록만, 메일 정리 잡은 합계 5,400·자기 몫 4,000 안에서만 가져간다
@@ -59,6 +60,7 @@ $$;
 create or replace function gmail_take_units(p_user uuid, p_units int) returns boolean language plpgsql as $$
 declare m timestamptz := date_trunc('minute', now()); v_used int; v_mail int;
 begin
+  if p_units <= 0 then return true; end if;                          -- 가져갈 것 없음: 카운터를 줄이지 않는다
   insert into gmail_units (user_id, minute) values (p_user, m) on conflict (user_id, minute) do nothing;
   select used, mail_used into v_used, v_mail from gmail_units where user_id = p_user and minute = m for update;
   if v_used + p_units > 5400 or v_mail + p_units > 4000 then return false; end if;
@@ -137,7 +139,9 @@ begin
     return jsonb_build_object('result', 'nothing_to_undo') || mail_action_counts(r);
   end if;
   if r.created_at < now() - interval '7 days' then return jsonb_build_object('result', 'expired'); end if;
-  update mail_actions set status = 'undo_pending' where id = p_id returning * into r;
+  -- 연결 문제로 돌려받은 되돌리기(undo_<코드>)를 다시 시작하면 그 코드는 지운다 — 새 되돌리기 결과에 낡은 코드가 실리지 않게
+  update mail_actions set status = 'undo_pending', error_code = case when error_code like 'undo_%' then null else error_code end
+  where id = p_id returning * into r;
   perform enqueue_job(p_user, 'mail-action', p_lease_prefix || 'mail:' || p_user,
     jsonb_build_object('id', p_id, 'phase', 'undo', 'connection_id', r.connection_id));
   return jsonb_build_object('result', 'started') || mail_action_counts(r);
@@ -192,9 +196,10 @@ begin
   return found;
 end $$;
 
--- 쿼터 미루기 시작 시각(30분 판정, 계획 D7). 처음이면 지금으로 두고 그 값을 돌려준다
+-- 쿼터 미루기 시작 시각(30분 판정, 계획 D7). 처음이면 지금으로 두고 그 값을 돌려준다. 진행 중(running·undoing)이 아니면 null
 create or replace function mail_action_quota(p_user uuid, p_id uuid) returns timestamptz language sql as $$
-  update mail_actions set quota_since = coalesce(quota_since, now()) where id = p_id and user_id = p_user returning quota_since;
+  update mail_actions set quota_since = coalesce(quota_since, now())
+  where id = p_id and user_id = p_user and status in ('running', 'undoing') returning quota_since;
 $$;
 
 -- 마감(§7): 커서 뒤 남은 id 를 실패로 적고 종료 상태·감사(개수만). 이미 끝났으면 바꾸지 않는다(멱등).

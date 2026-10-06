@@ -5,12 +5,14 @@ create role anon; create role authenticated; create role service_role;
 create schema auth;
 create table auth.users (id uuid primary key);
 create schema vault;
+-- 진짜 Vault 의 vault.secrets.secret 은 암호문이고 평문은 vault.decrypted_secrets.decrypted_secret 에만 있다.
+-- 스텁도 secret 에 평문을 두지 않는다(base64) — 사례는 decrypted_secrets 만 읽는다(M3 리뷰 I1: 평문 스텁이 호스팅 실패를 가렸다)
 create table vault.secrets (id uuid primary key default gen_random_uuid(), name text unique not null, secret text not null);
-create view vault.decrypted_secrets as select id, name, secret as decrypted_secret from vault.secrets;
+create view vault.decrypted_secrets as select id, name, convert_from(decode(secret, 'base64'), 'UTF8') as decrypted_secret from vault.secrets;
 create function vault.create_secret(p_secret text, p_name text) returns uuid language sql as
-  $$ insert into vault.secrets (name, secret) values (p_name, p_secret) returning id $$;
+  $$ insert into vault.secrets (name, secret) values (p_name, encode(convert_to(p_secret, 'UTF8'), 'base64')) returning id $$;
 create function vault.update_secret(p_id uuid, p_secret text) returns void language sql as
-  $$ update vault.secrets set secret = p_secret where id = p_id $$;
+  $$ update vault.secrets set secret = encode(convert_to(p_secret, 'UTF8'), 'base64') where id = p_id $$;
 create schema cron;
 create table cron.job (jobid bigserial primary key, jobname text unique, schedule text, command text);
 create function cron.schedule(p_name text, p_schedule text, p_command text) returns bigint language sql as
