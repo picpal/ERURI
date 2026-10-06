@@ -9,6 +9,8 @@ import { nextDeferredWait, runBatches, SOON_WINDOW_MS } from "./batch.ts";
 import { embedItem } from "./embed.ts";
 import { embedDeps } from "./embed-deps.ts";
 import { extractMedia } from "./extract.ts";
+import { mailActionJob } from "./mail-action.ts";
+import { mailJobDeps } from "./mail-action-deps.ts";
 import { mediaDeps } from "./media-deps.ts";
 import { notifyProposal } from "./notify.ts";
 import { notifyDeps } from "./notify-deps.ts";
@@ -31,6 +33,7 @@ const text = textDeps(sb, { classifier: classifierOrNone(env), threshold: classi
 const notify = notifyDeps(sb);
 const reauth = reauthDeps(sb);
 const emb = embedDeps(sb);
+const mail = mailJobDeps(sb);
 const handlers: Record<string, (job: Job) => Promise<string>> = {
   noop: async () => "done",
   sleep: async (j) => { await new Promise((r) => setTimeout(r, Number(j.payload.ms ?? 0))); return "done"; },
@@ -50,6 +53,8 @@ const handlers: Record<string, (job: Job) => Promise<string>> = {
   "gmail-unsub-fetch": (j) => gmailUnsubFetch(sb, j),
   // 재인증 푸시(스펙 §7): 연결·사유·만료 창마다 1회
   "gmail-reauth": (j) => reauthPush(reauth, j),
+  // 메일 정리 실행·되돌리기(스펙 §7): 묶음마다 Gmail → id별 결과. 보관함은 건드리지 않는다
+  "mail-action": (j) => mailActionJob(mail, j),
   // 원문 만료(스펙 §8): 기한 지난 이미지·PDF 의 Storage 객체. purge-expired-daily cron 이 넣는다
   "purge-media": () => purgeMedia(sb),
 };
