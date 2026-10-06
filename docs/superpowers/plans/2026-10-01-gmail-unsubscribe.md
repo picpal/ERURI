@@ -2748,6 +2748,17 @@ Expected: 0 실패(ignored 수는 직전 기록과 같음), 무오류. 실패가
 
 **SHARE 변경은 10-04 선배포됨**(gates.md `SHARE-deploy`, 2026-10-04 02:00:58 KST worker v17 = 기준선 `39728f3` + `a17bc61`·`51229cb`·`b3caac8` cherry-pick, 사용자 승인 B — gmail 경로 파일은 바이트 동일). 그래서 아래 diff 의 기준은 `39728f3` 이고, SHARE 3파일(`_shared/extract-text.ts`·`_shared/facts.ts`·`worker/text.ts`)은 이미 배포본과 같으므로 이번 배포의 새 변경은 이 계획의 gmail·unsub 커밋뿐이다(그 사이 SHARE 파일이 또 바뀌었으면 그것도 새 변경으로 본다). **두 번째 SHARE 선배포**(gates.md `SHARE-deploy-2`, 2026-10-04 14:22:43 KST worker v19 = v17 + `a8c6231`·`05d2a25` — SHARE 여러 날 공개 행사: 시각 있고 2~5일이면 날짜마다 시각 일정, 아니면 종일 1건 + notes)도 이미 배포됐다 — `_shared/extract-text.ts` 는 v19 배포본과 같아야 한다(다르면 새 변경).
 
+**메일 정리 격리(계획 `2026-10-06-mail-cleanup.md` D2, 2026-10-06 리뷰 반영):** main에 메일 정리 서버 커밋(`supabase/functions/_shared/mail-query.ts`를 처음 더한 커밋 — 메일 정리 M1)이 있으면 **이 Step의 diff·배포·회귀는 main HEAD가 아니라 기준 커밋 `B` = 그 커밋의 부모의 worktree에서 한다**. 메일 정리 워커(수집 경로 units 기록·`mail-action` 잡)는 ③c2·이 U6b 뒤 메일 정리 계획 M10이 따로 배포한다(회귀 귀속). 메일 정리 커밋이 없으면 `B` = main HEAD(지금 절차 그대로).
+
+```bash
+ROOT=$PWD; REF=$(cat supabase/.temp/project-ref)                 # .temp·.env 는 gitignore — worktree 에는 없다
+M1=$(git log --diff-filter=A --format=%h -1 -- supabase/functions/_shared/mail-query.ts)
+if [ -n "$M1" ]; then B=$(git rev-parse --short "$M1^"); else B=$(git rev-parse --short HEAD); fi
+WT="$TMPDIR/u6b-worker-$B" && git worktree add --detach "$WT" "$B" && cd "$WT" && cp -R "$ROOT/supabase/.temp" supabase/ && git log --oneline -1   # .temp(pooler-url 등)를 읽는 스크립트용 — gitignore라 커밋되지 않는다
+```
+
+그 트리에서 아래 `git diff --stat 39728f3..HEAD …`(HEAD = `B`)·`supabase functions deploy worker --project-ref "$REF"`·회귀 스크립트(`smoke-gate`·`gmail-gate status`·`eval-link`·`run-multi-event-eval`, 모두 `--env-file="$ROOT/supabase/.env"`)를 실행한다 — 회귀가 배포본과 같은 코드를 본다. `UNS-server`에 적는 배포 HEAD는 `B`다(메일 정리 M10 Step 4가 `$U6B`로 쓴다). 끝나면 `cd "$ROOT" && git worktree remove "$WT"` — Step 3b부터는 main(`$ROOT`)에서 한다. 채팅 일정 등록(0.13.0)은 `_shared`·`worker`를 바꾸지 않으므로 Expected 목록은 그대로다 — `B`까지의 diff에 이 계획·SHARE 밖 변경이 보이면 멈추고 메인에게 알린다.
+
 Run: `git log --oneline -1 && git diff --stat 39728f3..HEAD -- supabase/functions/_shared supabase/functions/worker`
 Expected: 이 계획의 커밋(U1·U2·U4 등)과 **SHARE 게이트 생략 `a17bc61`(`worker/text.ts`, 스펙 §7·§16 2026-10-03 사용자 결정 — 함께 배포한다)**, **SHARE 추출 지시·empty 사유 로그 `51229cb`·`b3caac8`(`_shared/extract-text.ts`·`_shared/facts.ts`·`worker/text.ts`, 스펙 §7 2026-10-03 사용자 결정 — 함께 배포한다)**, **SHARE 여러 날 행사 `a8c6231`·`05d2a25`(`_shared/extract-text.ts`, 스펙 §7 2026-10-04 결정 A 수정 — v19 로 선배포됨)**만 보인다. 그 밖의 서버 변경이 함께 배포되면 멈추고 메인에게 알린다(최종 리뷰 권고).
 
@@ -2826,6 +2837,8 @@ Expected: `senders_with_ads_30d ≥ 1`, `ads_30d ≥ 1`. `method_of_senders_with
 **채팅 기록(계획 `2026-10-04-chat-history.md` D10, 2026-10-05 리뷰 반영):** main에 `feat(ios): chat history` 커밋이 있는데 `gates.md`에 `CHAT-sim` 통과 행이 없으면 main HEAD를 올리지 않는다 — 그 커밋의 부모(`git log --format=%h -1 --grep '^feat(ios): chat history'`의 `^`)에서 worktree를 만들어(`Config/Secrets.xcconfig`는 `sim.sh config`로 생성) 그 트리에서 아래 명령을 실행한다. 미검증 채팅 기록 기능이 0.11.x 이름으로 나가지 않게.
 
 **채팅 일정 등록(계획 `2026-10-06-chat-add-event.md` D14):** main에 `feat(core): chat add-event` 커밋이 있는데 `gates.md`에 `ADD-sim` 통과 행이 없으면 main HEAD를 올리지 않는다 — 그 커밋의 부모(`git log --format=%h -1 --grep '^feat(core): chat add-event'`의 `^`)에서 위와 같은 방식으로 worktree를 만들어 올린다. 미검증 채팅 일정 등록이 0.12.x 이름으로 나가지 않게.
+
+**메일 정리(계획 `2026-10-06-mail-cleanup.md` D17):** main에 `feat(core): mail cleanup` 커밋이 있는데 `gates.md`에 `MAIL-sim` 통과 행이 없으면 main HEAD를 올리지 않는다 — 그 커밋의 부모(`git log --format=%h -1 --grep '^feat(core): mail cleanup'`의 `^`)에서 위와 같은 방식으로 worktree를 만들어 올린다(main의 `testflight.sh`도 0.14.0 전 버전 이름이면 멈춘다). 위 채팅 기록·일정 등록 규칙과 함께 걸리면 **더 이른 커밋**에서 올린다. 미검증 메일 정리가 0.13.x 이름으로, 그리고 `upgrade`를 모르는 구 `gmail-connect`와 함께 사용자 기기에 나가지 않게. 이 계획(메일 정리)의 배포(M10)는 U6b Step 3b(0029 적용)가 끝난 뒤에 시작한다.
 
 Run: `vm_stat | grep -E 'free|compressor'; pgrep -x deno || echo none; grep -n 'MARKETING_VERSION' ios/project.yml; cd ios && ./scripts/sim.sh gen && ./scripts/testflight.sh`
 Expected: `none`, `MARKETING_VERSION: 0.11.0` 뒤 0.11.0(빌드 번호 `YYYYMMDDHHMM`) 업로드 성공, App Store Connect 처리 VALID. 0.11.0이 아니면(그 사이 0.11.x·0.12.0이 들어갔으면) 올리지 않고 메인에게 알린다. 이 빌드를 U10과 링크 계획 L9가 쓴다.
