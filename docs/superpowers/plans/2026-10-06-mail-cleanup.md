@@ -1069,7 +1069,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: 기존 `connections`·`sync_states`·`jobs`(`priority`·`not_before`·`claimed_at`)·`audit_log`·`enqueue_job`·`fail_job`·`jobs_set_priority`·`gmail_save_connection`·`gmail_get_refresh_token`·vault·pg_cron(F7·F9·F13·F22).
-- Produces: "이 계획이 만드는 인터페이스" DB 표 전부(이름·인자·반환 그대로) — M4b·M5·M6·M10이 쓴다. `supabase/tests/_mail-sql.ts`의 `MIGRATION_0030`(M10이 경로를 바꾼다)·`CASES`(19)·`setupCtx`·`MAIL_FUNCTIONS`.
+- Produces: "이 계획이 만드는 인터페이스" DB 표 전부(이름·인자·반환 그대로) — M4b·M5·M6·M10이 쓴다. `supabase/tests/_mail-sql.ts`의 `MIGRATION_0030`(M10이 경로를 바꾼다)·`CASES`(21 — M3 리뷰 수정 7a61fe1)·`setupCtx`·`MAIL_FUNCTIONS`.
 
 - [ ] **Step 1: 마이그레이션 파일**
 
@@ -4607,7 +4607,7 @@ Expected: 0 실패(ignored 수는 직전 기록과 같음), 무오류. 실패가
 
 - [ ] **Step 3: 호스팅 트랜잭션 DB 테스트 → `0030` 적용**
 
-Run: `deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/mail-actions-db.test.ts`
+Run: `MAIL_DB_TEST=1 deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/mail-actions-db.test.ts`
 Expected: `hosted: 0030 cases in one rolled-back transaction` 1 통과(단계 19 — 0030을 트랜잭션 하나 안에서 한 번만 적용, 사례마다 savepoint로 되감고 끝에서 롤백 — 아직 운영 DB에 없다). **그 수 초 동안 이 트랜잭션이 `connections`(열 추가 — ACCESS EXCLUSIVE)·`jobs`(트리거 — SHARE ROW EXCLUSIVE) 잠금을 쥐어 운영 수집·워커 클레임이 기다린다**(Fable N-M8 — 사례마다 적용하던 것을 한 번으로 줄였다). `lock_timeout` 3초에 걸리면(운영 잠금이 길다) 1분 뒤 한 번 더, 그래도면 멈추고 메인에게 알린다. 실패면 멈춘다(PGlite와 Supabase의 차이 — SQL을 고치고 M3 Step 5부터 다시, 권한 사례를 PGlite에서 건너뛰었으면 여기서 판정한다).
 
 Run: `git mv supabase/migrations-pending/0030_mail_cleanup.sql supabase/migrations/ && sed -i '' 's#"../migrations-pending/0030_mail_cleanup.sql"#"../migrations/0030_mail_cleanup.sql"#' supabase/tests/_mail-sql.ts && rmdir supabase/migrations-pending 2>/dev/null; git status --short`
@@ -4616,7 +4616,7 @@ Expected: `R  …/0030_mail_cleanup.sql`·`M supabase/tests/_mail-sql.ts`만. `m
 Run: `supabase db push --dry-run`
 Expected: 적용 대상이 `0030_mail_cleanup.sql` **하나뿐**. 다른 파일이 보이면 push하지 않고 멈춰 메인에게 알린다.
 
-Run: `supabase db push --yes && deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/mail-actions-db.test.ts supabase/tests/mail-sql.test.ts supabase/tests/unsub-db.test.ts supabase/tests/jobs-priority-db.test.ts supabase/tests/retention-db.test.ts`
+Run: `supabase db push --yes && MAIL_DB_TEST=1 deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/mail-actions-db.test.ts supabase/tests/mail-sql.test.ts supabase/tests/unsub-db.test.ts supabase/tests/jobs-priority-db.test.ts supabase/tests/retention-db.test.ts`
 Expected: 적용 성공, 테스트 전부 통과(이제 `mail-actions-db`는 배포본을 그대로 쓰고 롤백, PGlite는 옮긴 경로를 읽는다, 기존 우선순위·보관·광고 DB 테스트 회귀 없음). `cron.job`에 `mail-actions-purge-daily`(`53 4 * * *`). cron을 수동으로 돌리지 않는다. 0030은 추가형(새 표·함수·열·`mail-action` 전용 트리거)이라 아래 배포가 실패해도 되돌리지 않는다 — U6b 워커는 이 함수들을 부르지 않는다.
 
 ```bash
