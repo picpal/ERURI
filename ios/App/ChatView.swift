@@ -374,7 +374,8 @@ struct ChatView: View {
   /// 마지막 5개 턴과 같이 그 턴도 — 5개 밖이어도 안내를 누른 턴은 바로 바뀐다
   private func recheck(_ id: UUID) {
     refreshCalendars()
-    readCalendar(id)
+    // 등록 턴은 5개 밖이면 refreshCalendars 가 제안을 비우므로 제안부터 다시 읽는다(A5 리뷰 Minor 1)
+    if turns.first(where: { $0.id == id })?.record.kind == .addEvent { loadAddEventCards(id) } else { readCalendar(id) }
   }
 
   /// 이 기기에서 넣은 적 있는 제안(§10 실행 기록). 등록 판정의 보조 근거 — 캘린더에서 지웠으면 "이전에 추가한 일정"
