@@ -1,11 +1,12 @@
 // 배포된 chat 의 후보(스펙 §9, 2026-10-01 검색·캘린더 S1) 스모크. 전용 테스트 사용자·합성 문구만, 출력은 상태·개수·불리언만(AGENTS.md §7)
-// 근거 있는 질문: 답함·후보 ≤ 20·인용 ⊆ 후보·근거 3건 모두 후보·무관 12건은 후보 아님. 근거 없는 질문: 거절·후보 0 일정 질문: schedule = 그날 하루(서울).
+// 근거 있는 질문: 답함·후보 ≤ 20·인용 ⊆ 후보·근거 3건 모두 후보·무관 12건은 후보 아님. 근거 없는 질문: 거절·후보 0 일정 질문: schedule = 그날 하루(서울). SMOKE_INTENTS=add_event 면 0.13.0 앱처럼 intents 를 실어 같은 기대를 본다(계획 D13 — intent 칸이 붙은 필터의 질문 회귀).
 // 사용: deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/smoke-chat.ts
 import { encrypt, toBytea } from "../functions/_shared/crypto.ts";
 import { RUN, service as sb, userClient } from "../tests/_testenv.ts";
 
-type Reply = { refused: boolean; candidates?: string[]; source_item_ids?: string[]; schedule?: { from: string; to: string } | null };
+type Reply = { refused: boolean; candidates?: string[]; source_item_ids?: string[]; schedule?: { from: string; to: string } | null; intent?: string };
 const { u, c } = await userClient();
+const intents = Deno.env.get("SMOKE_INTENTS")?.split(",").filter((s) => s.length > 0);
 const ids: string[] = [], relevant: string[] = [];
 async function add(tag: string, title: string, text: string): Promise<string> {
   const { data: id, error } = await sb.rpc("insert_item", { p_user: u.id, p_source: "SHARE", p_idempotency_key: `${RUN}:smokechat:${tag}`,
@@ -27,7 +28,7 @@ try {
   const ask = async (question: string) => {
     const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/chat`, { method: "POST",
       headers: { authorization: `Bearer ${sess.session!.access_token}`, apikey: Deno.env.get("SUPABASE_ANON_KEY")!, "content-type": "application/json" },
-      body: JSON.stringify({ question }) });
+      body: JSON.stringify(intents ? { question, intents } : { question }) });
     return { status: r.status, j: (await r.json()) as Reply };
   };
   const a = await ask("합성스모크치과 스케일링 예약 언제야");
@@ -35,9 +36,10 @@ try {
   const b = await ask("합성스모크치과 화성 탐사선 발사 일정");
   const dated = await ask("2026년 10월 7일 합성스모크치과 일정 있어?");
   console.log(JSON.stringify({
+    intents: intents ?? null,
     answered: { status: a.status, refused: a.j.refused, candidates: ac.length, relevant: relevant.filter((id) => ac.includes(id)).length,
       noise: ac.filter((id) => !relevant.includes(id)).length, cited_subset: (a.j.source_item_ids ?? []).every((id) => ac.includes(id)),
-      schedule_null: a.j.schedule === null },
+      schedule_null: a.j.schedule === null, intent: a.j.intent ?? null },
     unanswered: { status: b.status, refused: b.j.refused, candidates: (b.j.candidates ?? []).length },
     dated: { status: dated.status, schedule_ok: JSON.stringify(dated.j.schedule) ===
       JSON.stringify({ from: "2026-10-07T00:00:00+09:00", to: "2026-10-07T23:59:59+09:00" }) },
