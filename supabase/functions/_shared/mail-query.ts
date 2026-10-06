@@ -12,7 +12,9 @@ export type CheckResult =
 
 export const SENDER_MAX = 100, WORD_MAX = 30, WORDS_MAX = 3;
 export const YEAR_MIN = 2004;                                         // Gmail 출시 전 날짜는 거절(음수 epoch — Gmail 이 무시하면 범위가 넓어진다, D21)
-const DROP = /[^\p{L}\p{M}\p{N}\s@._+-]/gu;
+// 비표시 문자(\p{Default_Ignorable_Code_Point} — 한글 채움 U+115F·U+1160·U+3164·U+FFA0 은 \p{Lo} 라 따로 적는다, ZWSP·ZWJ·BOM 포함)도 지운다.
+// 그것만 남으면 Gmail 이 그 구를 무시할 수 있어(미확인) 기호뿐인 값처럼 거절돼야 한다(D21, 리뷰 I1)
+const DROP = /[^\p{L}\p{M}\p{N}\s@._+-]|[\p{Default_Ignorable_Code_Point}\u115F\u1160\u3164\uFFA0]/gu;
 const WORDY = /[\p{L}\p{N}]/u;                                         // 정제 뒤 글자·숫자가 하나는 있어야 한다(기호만 남은 구는 거절, D21)
 const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -87,12 +89,15 @@ export function checkConditions(raw: unknown): CheckResult {
 }
 
 // 늘 in:inbox -is:starred(별표 수는 starred = true 로 is:starred). 스팸·휴지통은 includeSpamTrash 기본값(false)으로 빠진다
+// checkConditions 의 ok 결과만 받는다 — 따옴표가 남은 값·달력 밖 날짜는 호출 규약 위반이라 throw(조립이 연산자를 만들지 않게, 리뷰 Minor 1)
 export function buildQuery(c: MailConditions, starred = false): string {
+  const quoted = (v: string): string => { if (v.includes('"')) throw new Error("buildQuery: unchecked value"); return `"${v}"`; };
+  const epoch = (d: string): number => { const t = seoulMidnight(d); if (t === null) throw new Error("buildQuery: unchecked date"); return t; };
   const q = ["in:inbox", starred ? "is:starred" : "-is:starred"];
-  if (c.sender) q.push(`from:"${c.sender}"`);
-  for (const w of c.subject_words) q.push(`subject:"${w}"`);
-  if (c.received_from) q.push(`after:${seoulMidnight(c.received_from)}`);
-  if (c.received_to) q.push(`before:${seoulMidnight(c.received_to)! + 86_400}`);
+  if (c.sender) q.push(`from:${quoted(c.sender)}`);
+  for (const w of c.subject_words) q.push(`subject:${quoted(w)}`);
+  if (c.received_from) q.push(`after:${epoch(c.received_from)}`);
+  if (c.received_to) q.push(`before:${epoch(c.received_to) + 86_400}`);
   if (c.promotions) q.push("category:promotions");
   if (c.unread_only || c.action === "read") q.push("is:unread");
   return q.join(" ");

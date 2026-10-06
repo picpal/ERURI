@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals, assertThrows } from "jsr:@std/assert";
 import type { MailFields } from "../functions/chat/filters.ts";
 import { buildQuery, checkConditions, type MailConditions, sanitize, seoulMidnight } from "../functions/_shared/mail-query.ts";
 
@@ -35,10 +35,13 @@ Deno.test("sanitize: keeps letters, digits, spaces and @._+- only; quotes, paren
   assertEquals(sanitize("cafe\u0301"), "café");                     // 결합 문자는 NFC 로 합친 뒤 남는다
   for (const x of ["e🙂\u0301", "합성\"상점\"", "a  {b}  c", "❤️x"]) assertEquals(sanitize(sanitize(x)), sanitize(x), x);   // 멱등(D15·D21): 지운 뒤 NFC
   assertEquals(sanitize("e🙂\u0301"), "é");
+  assertEquals(sanitize("합성\u3164상점\u200B"), "합성상점");          // 비표시 문자는 지운다(리뷰 I1)
+  for (const x of ["\u3164a\u0301", "a\u200B\u0301", "\uFFA0ㅤ합성"]) assertEquals(sanitize(sanitize(x)), sanitize(x), x);
 });
 
 Deno.test("symbol-only values and pre-2004 dates are rejected (they could make Gmail ignore the term and widen the range)", () => {
-  for (const s of ["-", ".", "@._+-", "❤️", "--", "_"]) {
+  // 비표시 문자(한글 채움 U+3164·U+FFA0·U+115F·U+1160, ZWSP·ZWJ·BOM)는 \p{L} 이어도 지운다 — 그것만 있으면 기호뿐인 값과 같다(리뷰 I1)
+  for (const s of ["-", ".", "@._+-", "❤️", "--", "_", "\u3164", "\uFFA0", "\u115F\u1160", "\u200B", "\u200D\uFEFF", "-\u3164"]) {
     assertEquals(checkConditions({ ...base, sender: s }), { ok: false, code: "bad_condition", fields: ["sender"] }, s);
     assertEquals(checkConditions({ ...base, promotions: true, subject_words: [s] }), { ok: false, code: "bad_condition", fields: ["subject_words"] }, s);
   }
@@ -108,5 +111,22 @@ Deno.test("conditions round-trip: checking the returned conditions again gives t
 
 Deno.test("chat MailFields (0.13.0) passes as-is", () => {
   const f: MailFields = { action: "read", sender: "뉴스레터", subject_words: [], received_from: "2026-09-28", received_to: "2026-10-04", promotions: false, unread_only: true };
+  const _c: MailConditions = f;                                                                 // 컴파일 단계 타입 호환(리뷰 Minor 4)
   assertEquals(checkConditions(f).ok, true);
+});
+
+Deno.test("injection strings end to end: quotes of any kind, operators, newlines and tabs end up inside one quoted term", () => {
+  assertEquals(buildQuery(ok({ sender: `x" OR in:anywhere "y` })), `in:inbox -is:starred from:"x OR inanywhere y"`);
+  assertEquals(buildQuery(ok({ sender: "＂a＂ OR ＂b＂" })), `in:inbox -is:starred from:"a OR b"`);
+  assertEquals(buildQuery(ok({ sender: "“a” in:anywhere ‘b’" })), `in:inbox -is:starred from:"a inanywhere b"`);
+  assertEquals(buildQuery(ok({ sender: "a\nb\tc", subject_words: ["x\n-in:trash", "y\" OR \"z"] })),
+    `in:inbox -is:starred from:"a b c" subject:"x -intrash" subject:"y OR z"`);
+});
+
+Deno.test("buildQuery refuses conditions that did not come from checkConditions (bad date, leftover quote)", () => {
+  const c = ok({ promotions: true });
+  assertThrows(() => buildQuery({ ...c, sender: 'a" OR "b' }));
+  assertThrows(() => buildQuery({ ...c, subject_words: ['a"'] }));
+  assertThrows(() => buildQuery({ ...c, received_from: "2026-02-30" }));
+  assertThrows(() => buildQuery({ ...c, received_to: "2026-9-1" }));
 });
