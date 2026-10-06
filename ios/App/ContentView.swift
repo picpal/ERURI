@@ -67,6 +67,8 @@ struct ContentView: View {
       .alert("Gmail에서 가져온 메일과 추출 결과를 모두 지우고 연결을 끊을까요?", isPresented: $confirmSource) {
         Button("삭제", role: .destructive) { Task { deleteResult = await deleteSource() } }
         Button("취소", role: .cancel) {}
+      } message: {
+        Text(ChatHistoryText.gmailDeleteNote)                          // 출처 삭제는 기기 채팅 기록을 지우지 않는다(§9 "경계" (b), 0.13.0)
       }
       .alert("모든 데이터와 계정을 지울까요? 되돌릴 수 없습니다.", isPresented: $confirmAccount) {
         Button("전체 삭제", role: .destructive) { Task { deleteResult = await deleteAccount() } }

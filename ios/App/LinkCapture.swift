@@ -134,15 +134,40 @@ import EruriCore
     return rows.first?["id"] as? String
   }
 
-  private func result(captureID: String, subject: LinkCaptureText.Subject) async -> String? {
+  /// 본인 items 행(서버 멱등 키, RLS): id·status·gate_label + extracted 면 facts 종류. 행이 없으면 nil.
+  /// kinds = nil 은 facts 조회 실패("일정 없음" = 빈 배열과 구분 — 등록 경로는 다시 조회, 링크·사진은 `?? []`로 지금 동작)
+  private struct ItemRow { let itemID: String; let status: String; let gateLabel: String?; let kinds: [String]? }
+  private func itemRow(captureID: String) async -> ItemRow? {
     guard let r = await API.send(LinkFlow.itemQuery(captureID: captureID, select: "id,status,gate_label")), r.status == 200,
           let rows = (try? JSONSerialization.jsonObject(with: r.data)) as? [[String: Any]], let row = rows.first,
           let itemID = row["id"] as? String, let status = row["status"] as? String else { return nil }
-    var kinds: [String] = []
-    if status == "extracted", let f = await API.send("rest/v1/facts?select=kind&status=eq.active&item_id=eq.\(itemID)"), f.status == 200,
-       let fr = (try? JSONSerialization.jsonObject(with: f.data)) as? [[String: Any]] {
-      kinds = fr.compactMap { $0["kind"] as? String }
+    var kinds: [String]? = []
+    if status == "extracted" {
+      if let f = await API.send("rest/v1/facts?select=kind&status=eq.active&item_id=eq.\(itemID)"), f.status == 200,
+         let fr = (try? JSONSerialization.jsonObject(with: f.data)) as? [[String: Any]] { kinds = fr.compactMap { $0["kind"] as? String } }
+      else { kinds = nil }
     }
-    return LinkCaptureText.chatResult(status: status, gateLabel: row["gate_label"] as? String, kinds: kinds, subject: subject)
+    return ItemRow(itemID: itemID, status: status, gateLabel: row["gate_label"] as? String, kinds: kinds)
+  }
+
+  private func result(captureID: String, subject: LinkCaptureText.Subject) async -> String? {
+    guard let r = await itemRow(captureID: captureID) else { return nil }
+    return LinkCaptureText.chatResult(status: r.status, gateLabel: r.gateLabel, kinds: r.kinds ?? [], subject: subject)   // 링크·사진 턴은 지금 동작 그대로
+  }
+
+  /// 채팅 일정 등록 결과(스펙 §9 "턴 표시"): 3초마다, 시작부터 60초까지. 일정이면 그 항목 id(카드가 제안을 읽는다), 60초 넘으면 "아직 처리 중이에요".
+  /// 반복 횟수가 아니라 종료 시각으로 끝낸다 — 조회가 매번 타임아웃(8초)이어도 60초 + 진행 중 요청 하나(Codex C4)
+  func addEventResult(captureID: String, withContext: Bool) async -> (text: String, itemID: String?) {
+    let end = ContinuousClock.now + .seconds(60)
+    while ContinuousClock.now < end {
+      try? await Task.sleep(for: .seconds(3))
+      guard let row = await itemRow(captureID: captureID), let kinds = row.kinds else { continue }   // 행 없음·facts 조회 실패는 다시(실패를 "일정 없음"으로 확정하지 않는다, Codex C2)
+      switch ChatAddEvent.result(status: row.status, kinds: kinds, withContext: withContext) {
+      case .events(let n)?: return (ChatAddEventText.found(n), row.itemID)
+      case .text(let t)?: return (t, nil)
+      case nil: continue
+      }
+    }
+    return (ChatAddEventText.pending, nil)
   }
 }
