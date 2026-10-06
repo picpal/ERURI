@@ -200,6 +200,21 @@ export const CASES: { name: string; run(c: Ctx): Promise<void> }[] = [
     assertEquals([r.status, r.error_code, r.undo_cursor, r.undo_failed_ids], ["undo_partial", "job_dead", 2, [b]]);
     assertEquals((await audits(c, id)).map((x) => x.action), ["mail_trash", "mail_undo"]);
   } },
+  { name: "dead undo before any undo progress (e.g. token refresh kept failing) gives the undo back: done/partial, no code, no undo audit, undo can start again", run: async (c) => {
+    const [a, b, d] = ids3(c);
+    const id = await done(c, [a, b], [d]);
+    await undo(c, id); await begin(c, id, "undo");
+    await dead(c, (await jobs(c, id)).find((j) => j.payload.phase === "undo")!.id);
+    const r = await row(c, id);
+    assertEquals([r.status, r.error_code, r.undo_cursor, r.undo_failed_ids, r.undone_at], ["partial", null, 0, [], null]);
+    assertEquals((await audits(c, id)).map((x) => x.action), ["mail_trash"]);                // Gmail 이 바뀌지 않았다 — 되돌리기 감사 없음
+    const u2 = await undo(c, id);
+    assertEquals([u2.result, u2.status], ["started", "undo_pending"]);                       // 한 번뿐인 되돌리기를 쓰지 않은 것으로
+    const n = await done(c, [a]);
+    await undo(c, n);                                                                        // undo_pending(begin 전)에 dead 도 같다
+    await dead(c, (await jobs(c, n)).find((j) => j.payload.phase === "undo")!.id);
+    assertEquals([(await row(c, n)).status, (await undo(c, n)).result], ["done", "started"]);
+  } },
   { name: "another user: preview on someone else's connection → null (no row); begin/progress/finish/set_method/quota by another user → null/false, nothing changes", run: async (c) => {
     const [a] = ids3(c), other = crypto.randomUUID();
     assertEquals((await one(c.q, "select mail_action_preview($1::uuid, $2::uuid, 'trash', $3::text[]) as id", [other, c.conn, arr([a])])).id, null);
