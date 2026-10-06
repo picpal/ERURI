@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import type { GmailClient, GmailMessage } from "../functions/_shared/gmail.ts";
-import { gmailFetch, type GmailJobDeps, gmailSync, gmailUnsubFetch, noteGmailUnits, type RpcClient } from "../functions/_shared/gmail-jobs.ts";
+import { gmailFetch, type GmailJobDeps, gmailSync, gmailUnsubFetch, noteGmailUnits, type RpcClient, unitsNoter } from "../functions/_shared/gmail-jobs.ts";
 import type { Job } from "../functions/_shared/job.ts";
 
 // 수집 경로 units 기록(스펙 §7 "속도", 계획 D6): 기록만, fail-open, 잡당 차단기. 가짜 RPC·Gmail
@@ -79,4 +79,27 @@ Deno.test("noteGmailUnits: ok → true; RPC error (e.g. function missing before 
   const hang = await noteGmailUnits({ rpc: () => new Promise(() => {}) }, USER, 20, 50);
   assertEquals([ok, bad, hang], [true, false, false]);
   assert(performance.now() - t0 < 1000);
+});
+
+Deno.test("unitsNoter: slow but successful notes stop once the job's total note time passes the budget, one log line", async () => {
+  let calls = 0;
+  const slow: GmailJobDeps["noteUnits"] = () => { calls++; return new Promise((r) => setTimeout(() => r(true), 60)); };
+  const { r: _r, lines } = await quiet(async () => {
+    const note = unitsNoter(rpcFake().rpc, { noteUnits: slow }, USER, CONN, 100);
+    for (let i = 0; i < 4; i++) await note(20);   // 60ms, 120ms(> 100 → off), 건너뜀, 건너뜀
+  });
+  assertEquals(calls, 2);
+  assertEquals(lines.filter((l) => l.includes("units_note_slow")).length, 1);
+  assertEquals(lines.filter((l) => l.includes("units_note_error")).length, 0);
+});
+
+Deno.test("a hanging gmail_note_units holds a 23-message fetch for one budget only (≈1 s), every message still stored", async () => {
+  let hung = 0;
+  const { rpc, calls: rc } = rpcFake();
+  const hang: RpcClient = { rpc: () => { hung++; return new Promise(() => {}); } };
+  const t0 = performance.now();
+  const { r } = await quiet(() => gmailFetch(rpc, job("gmail-fetch", { ids: ids(23) }), deps((_s, u, n) => noteGmailUnits(hang, u, n))));
+  const ms = performance.now() - t0;
+  assertEquals([r, hung, rc.filter((c) => c.fn === "insert_item").length], ["fetched", 1, 23]);
+  assert(ms >= 900 && ms < 1900, `fetch took ${ms}ms`);
 });

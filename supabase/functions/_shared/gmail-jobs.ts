@@ -106,14 +106,22 @@ export async function noteGmailUnits(sb: RpcClient, user: string, units: number,
     clearTimeout(timer);
   }
 }
-// 잡 하나의 기록기: 첫 실패·초과 뒤 그 잡의 나머지 기록은 건너뛴다(광고 기록 차단기와 같은 이유 — 멈춘 RPC 가 잡을 붙잡지 않게)
-export function unitsNoter(sb: RpcClient, deps: Pick<GmailJobDeps, "noteUnits">, user: string, conn: string): (units: number) => Promise<void> {
-  let off = false;
+// 잡 하나의 기록기: 첫 실패·초과 뒤 그 잡의 나머지 기록은 건너뛴다(광고 기록 차단기와 같은 이유 — 멈춘 RPC 가 잡을 붙잡지 않게).
+// 느리지만 성공하는 RPC 도 잡 안 누적 기록 시간이 예산을 넘으면 끈다 → 기록이 잡에 더하는 지연은 어느 경우든 ≈ 예산 1번(M4a 리뷰 Minor 1)
+export function unitsNoter(sb: RpcClient, deps: Pick<GmailJobDeps, "noteUnits">, user: string, conn: string,
+                           budgetMs = NOTE_BUDGET_MS): (units: number) => Promise<void> {
+  let off = false, spent = 0;
   return async (units) => {
     if (off || !deps.noteUnits) return;
-    if (!await deps.noteUnits(sb, user, units)) {
+    const t0 = performance.now();
+    const ok = await deps.noteUnits(sb, user, units);
+    spent += performance.now() - t0;
+    if (!ok) {
       off = true;
       console.log(JSON.stringify({ connection_id: conn, code: "units_note_error" }));   // 코드만
+    } else if (spent > budgetMs) {
+      off = true;
+      console.log(JSON.stringify({ connection_id: conn, code: "units_note_slow" }));    // 코드만
     }
   };
 }
