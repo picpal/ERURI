@@ -205,4 +205,39 @@ final class ChatHistoryTests: XCTestCase {
     await w.apply([q("c", at: 2)], gen: 4, store: s)
     XCTAssertEqual(try s.load().map(\.question), ["c"])
   }
+
+  // ── 채팅 일정 등록 턴(0.13.0, 스펙 §9 "대화 기록") ──
+  func testAddEventRecordRoundTripsAndOldFilesStillDecode() throws {
+    var r = R(at: t0, kind: .question, question: "합성 치과 10/20 등록해줘")
+    r.kind = .addEvent; r.link = "일정 1건을 찾았어요"; r.linkDone = true; r.itemID = "item-9"
+    let e = JSONEncoder(); e.dateEncodingStrategy = .secondsSince1970
+    let d = JSONDecoder(); d.dateDecodingStrategy = .secondsSince1970
+    XCTAssertEqual(try d.decode(R.self, from: e.encode(r)), r)
+    // 0.12.0 기록(itemID 키 없음)도 읽힌다
+    let old = #"{"id":"\#(UUID().uuidString)","at":1790000000,"kind":"question","question":"q","linkDone":false,"linkSaved":false,"judged":{}}"#
+    XCTAssertNil(try d.decode(R.self, from: Data(old.utf8)).itemID)
+  }
+  func testRestoredEndsUnfinishedAddEvent() {
+    let r = R(at: t0, kind: .addEvent, question: "합성 등록해줘", link: ChatAddEventText.registering)
+    var done = R(at: t0, kind: .addEvent, question: "합성 등록해줘 2", link: "일정 1건을 찾았어요", linkDone: true)
+    done.itemID = "item-9"
+    let out = ChatHistory.restored([r, done])
+    XCTAssertEqual([out[0].link, out[1].link], [ChatHistoryText.interruptedLink, "일정 1건을 찾았어요"])
+    XCTAssertEqual([out[0].linkDone, out[1].linkDone], [true, true])
+    XCTAssertEqual(out[1].itemID, "item-9")
+  }
+  func testAddEventTurnsKeepSegmentButAreNotContext() {
+    let a = q("합성치과 예약 언제야?", at: -1500)
+    let add = R(at: t0.addingTimeInterval(-900), kind: .addEvent, question: "그 약속 등록해줘", link: ChatAddEventText.noEvent, linkDone: true)
+    let b = q("거기 주소는?", at: -60)
+    // a(-25분)·add(-15분)·b(-1분): add 가 없으면 a↔b 는 24분이라 어차피 이어지지만, add 를 끼워도 맥락은 질문 턴 둘뿐
+    XCTAssertEqual(ChatHistory.context([a, add, b], now: t0).map(\.question), ["합성치과 예약 언제야?", "거기 주소는?"])
+    // add 가 다리 역할: a(-50분)·add(-25분)·지금 질문 → 구간 시작은 a(각 간격 ≤ 30분)
+    let far = q("합성세미나 언제야?", at: -3000), mid = R(at: t0.addingTimeInterval(-1500), kind: .addEvent, question: "그거 등록해줘", linkDone: true)
+    XCTAssertEqual(ChatHistory.segmentStart([far, mid], now: t0), 0)
+    XCTAssertEqual(ChatHistory.context([far, mid], now: t0).map(\.question), ["합성세미나 언제야?"])
+  }
+  func testGmailDeleteNote() {
+    XCTAssertEqual(ChatHistoryText.gmailDeleteNote, "채팅 기록은 설정 › 채팅에서 따로 지워요")
+  }
 }

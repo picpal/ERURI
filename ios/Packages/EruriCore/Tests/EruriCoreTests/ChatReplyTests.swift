@@ -116,4 +116,14 @@ final class ChatReplyTests: XCTestCase {
     let long = body.replacingOccurrences(of: #""hits":"#, with: #""schedule":{"from":"2026-10-01T00:00:00+09:00","to":"2026-11-29T23:59:59+09:00"},"hits":"#)
     XCTAssertNil(try XCTUnwrap(ChatReply.decode(Data(long.utf8))).schedule?.interval)          // 60일 → 읽지 않는다(Codex #8)
   }
+
+  /// 의도 판별(스펙 §9, 0.13.0): 서버가 주면 intent, 0.12.x 서버(필드 없음)는 nil = 질문
+  func testIntentDecodes() throws {
+    let act = try XCTUnwrap(ChatReply.decode(Data(#"{"answer_id":"x","answer":"","refused":false,"source_item_ids":[],"citations":[],"proposals":[],"hits":[],"candidates":[],"schedule":null,"intent":"add_event","mail":null}"#.utf8)))
+    XCTAssertEqual(act.intent, "add_event")
+    XCTAssertTrue(ChatAddEvent.isAddEvent(act.intent))
+    let old = try XCTUnwrap(ChatReply.decode(Data(#"{"answer_id":"x","answer":"합성","refused":false,"source_item_ids":[],"citations":[],"proposals":[],"hits":[]}"#.utf8)))
+    XCTAssertNil(old.intent)
+    XCTAssertFalse(ChatAddEvent.isAddEvent(old.intent))
+  }
 }

@@ -83,6 +83,8 @@ final class ScheduleCardTests: XCTestCase {
     XCTAssertEqual(ScheduleCard.sourceLine(cite("GMAIL")), "메일에서 찾은 일정")
     XCTAssertEqual(ScheduleCard.sourceLine(cite("SHARE")), "공유한 내용에서 찾은 일정")
     XCTAssertEqual(ScheduleCard.sourceLine(nil), "저장된 정보에서 찾은 일정")
+    XCTAssertEqual(ScheduleCard.sourceLine(cite("SHARE", app: "채팅")), "채팅에서 등록한 일정")          // 0.13.0 — 질문 답이 채팅 등록 항목을 인용해도 같다
+    XCTAssertEqual(ScheduleCard.receivedLine(cite("SHARE", app: "채팅")), "10/1 등록")
     XCTAssertEqual(ScheduleCard.receivedLine(cite("MESSAGES")), "10/1 받은 문자")
     XCTAssertEqual(ScheduleCard.receivedLine(cite("GMAIL", at: "2026-09-30T15:30:00+00:00")), "10/1 받은 메일")     // UTC 9/30 → 서울 10/1
     XCTAssertEqual(ScheduleCard.receivedLine(cite("NOTIFICATION", app: "카카오톡")), "10/1 받은 알림")

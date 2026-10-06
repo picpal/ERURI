@@ -43,7 +43,10 @@ public enum ScheduleCard {
   // MARK: ① 찾은 곳
 
   /// "문자에서 찾은 일정" — 같은 응답의 인용(item_id 일치)에서. 인용이 없으면 "저장된 정보에서 찾은 일정"
-  public static func sourceLine(_ c: ChatReply.Citation?) -> String { "\(origin(c).found)에서 찾은 일정" }
+  public static func sourceLine(_ c: ChatReply.Citation?) -> String {
+    if let c, c.source == "SHARE", c.app_name == ChatAddEvent.appName { return "채팅에서 등록한 일정" }      // 0.13.0(§9 출처 표기)
+    return "\(origin(c).found)에서 찾은 일정"
+  }
   /// "10/1 받은 문자"(서울). 인용이 없거나 출처를 모르거나 시각을 못 읽으면 nil(스펙 §9 에 없는 문구를 만들지 않는다)
   public static func receivedLine(_ c: ChatReply.Citation?) -> String? {
     guard let c, let received = origin(c).received, let at = iso.date(from: c.occurred_at.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)) else { return nil }
@@ -58,6 +61,7 @@ public enum ScheduleCard {
       return ("\(c.app_name.flatMap { $0.isEmpty ? nil : $0 } ?? "앱") 알림", "받은 알림")
     case "GMAIL": return ("메일", "받은 메일")
     case "SHARE":                                                         // 링크·사진 읽기(스펙 §6, 0.11.0)
+      if c.app_name == ChatAddEvent.appName { return ("채팅", "등록") }               // "10/6 등록"(보낸 날, 0.13.0)
       if c.app_name == LinkText.appName { return ("공유한 링크", "공유한 링크") }
       if c.app_name == ImageText.appName { return ("공유한 이미지", "공유한 이미지") }
       return ("공유한 내용", "공유함")

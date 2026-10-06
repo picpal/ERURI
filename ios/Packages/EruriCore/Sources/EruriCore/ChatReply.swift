@@ -20,6 +20,8 @@ public enum ChatReply {
     public var archiveIDs: [String]? { refused || candidateIDs.isEmpty ? nil : candidateIDs }
     /// 일정 질문의 일정 기간(스펙 §9 "일정 질문과 기기 캘린더", 서버 S3). 앱이 이 기간의 기기 캘린더를 읽는다. 0.7.x 서버·일정 질문이 아니면 nil
     public let schedule: Schedule?
+    /// 채팅 의도(스펙 §9 "채팅 의도 판별", 0.13.0): question · add_event(· mail_action 0.14.0). 0.12.x 서버면 nil = 질문
+    public let intent: String?
   }
   public struct Schedule: Decodable, Sendable, Equatable {
     public let from: String; public let to: String

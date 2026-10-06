@@ -9,7 +9,8 @@ public enum SourceLabel {
     case "MESSAGES": return "문자"
     case "NOTIFICATION": return messageApps.contains(app) ? "문자" : (appName ?? "알림")
     case "GMAIL": return "메일"
-    case "SHARE": return appName == LinkText.appName ? "공유한 링크" : appName == ImageText.appName ? "공유한 이미지" : "공유"   // 0.11.0
+    case "SHARE":                                                                    // 0.11.0 링크·사진, 0.13.0 채팅 일정 등록
+      return appName == LinkText.appName ? "공유한 링크" : appName == ImageText.appName ? "공유한 이미지" : appName == ChatAddEvent.appName ? "채팅에서 등록" : "공유"
     case "CHAT": return "채팅"
     default: return source
     }

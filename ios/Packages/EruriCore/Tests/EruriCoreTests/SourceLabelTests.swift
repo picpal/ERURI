@@ -17,5 +17,6 @@ final class SourceLabelTests: XCTestCase {
     XCTAssertEqual(SourceLabel.label(source: "SHARE", appName: "웹 링크"), "공유한 링크")
     XCTAssertEqual(SourceLabel.label(source: "SHARE", appName: "이미지"), "공유한 이미지")
     XCTAssertEqual(SourceLabel.label(source: "SHARE", appName: nil), "공유")
+    XCTAssertEqual(SourceLabel.label(source: "SHARE", appName: "채팅"), "채팅에서 등록")       // 0.13.0 채팅 일정 등록
   }
 }

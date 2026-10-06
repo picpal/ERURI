@@ -3,12 +3,12 @@ import Foundation
 /// 채팅 대화 기록·짧은 맥락(스펙 §9 "대화 기록·짧은 맥락", 2026-10-04 사용자 결정 B): 대화 하나가 이어지고, 기록은 기기에만 30일.
 /// 질문 턴의 서버 응답은 받은 그대로(JSON) 둔다 — 다시 열 때 같은 해석(ChatReply.decode)·카드 계산(기기 캘린더는 다시 읽음)을 거친다
 public enum ChatHistory {
-  public enum Kind: String, Codable, Sendable { case question, link, image }
+  public enum Kind: String, Codable, Sendable { case question, link, image, addEvent }   // addEvent = 채팅 일정 등록(0.13.0)
 
   public struct Record: Codable, Sendable, Equatable, Identifiable {
     public let id: UUID
     public let at: Date                    // 보낸 시각 — 30일·맥락 30분의 기준
-    public let kind: Kind
+    public var kind: Kind                  // 질문 턴으로 시작해 의도(add_event)를 받으면 addEvent 로 바뀐다(0.13.0)
     public let question: String            // 질문 글 · 링크 턴 입력 · 사진 턴 "사진 N장 · 메모"
     public var reply: Data?                // 질문 턴: /chat 200 응답 본문 그대로
     public var error: String?
@@ -16,12 +16,13 @@ public enum ChatHistory {
     public var linkDone: Bool
     public var linkSaved: Bool             // 저장 범위 한 줄(링크 계획 MR1)
     public var seenItemID: String?         // 이미 읽은 링크의 항목(0.11.4 "일정 보기")
+    public var itemID: String?               // 채팅 일정 등록: 일정을 찾은 항목(카드가 그 항목의 제안을 다시 읽는다, 0.13.0)
     public var judged: [String: Bool]      // 인용 item_id → 관련 있음(맞아요·틀렸어요 — 서버 eval_judgments 와 같은 값)
 
     public init(id: UUID = UUID(), at: Date, kind: Kind, question: String, reply: Data? = nil, error: String? = nil, link: String? = nil,
-                linkDone: Bool = false, linkSaved: Bool = false, seenItemID: String? = nil, judged: [String: Bool] = [:]) {
+                linkDone: Bool = false, linkSaved: Bool = false, seenItemID: String? = nil, itemID: String? = nil, judged: [String: Bool] = [:]) {
       self.id = id; self.at = at; self.kind = kind; self.question = question; self.reply = reply; self.error = error; self.link = link
-      self.linkDone = linkDone; self.linkSaved = linkSaved; self.seenItemID = seenItemID; self.judged = judged
+      self.linkDone = linkDone; self.linkSaved = linkSaved; self.seenItemID = seenItemID; self.itemID = itemID; self.judged = judged
     }
   }
 
@@ -51,7 +52,7 @@ public enum ChatHistory {
         if x.reply == nil && x.error == nil { x.error = ChatHistoryText.interruptedAnswer }
         // 응답이 있는데 읽을 수 없다(형식 변경·손상) — 진행 표시가 영원히 돌지 않게
         else if let d = x.reply, x.error == nil, ChatReply.decode(d) == nil { x.error = ChatHistoryText.unreadableReply }
-      case .link, .image:
+      case .link, .image, .addEvent:
         if !x.linkDone { x.link = ChatHistoryText.interruptedLink; x.linkDone = true }
       }
       return x
@@ -118,6 +119,7 @@ public enum ChatHistory {
 
 /// 채팅 안내 문구(스펙 §9·§12 통제 5, 계획 UQ1 후보 B). 후보를 바꾸면 이 파일과 그 테스트만 고친다
 public enum ChatHistoryText {
+  public static let gmailDeleteNote = "채팅 기록은 설정 › 채팅에서 따로 지워요"   // Gmail 데이터 삭제 확인창(§9 "경계" (b), 0.13.0)
   public static let emptyLines = [
     "대화는 이 iPhone에만 저장되고, 30일이 지나면 자동으로 지워져요.",
     "바로 앞 질문 3개까지 이어서 이해해요 — \"그 일정 몇 시야?\"처럼 물어보세요. 30분 동안 묻지 않으면 새 대화로 시작해요.",

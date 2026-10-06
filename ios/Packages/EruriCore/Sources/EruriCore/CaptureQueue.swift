@@ -88,6 +88,15 @@ public final class CaptureQueue {
     }
   }
 
+  /// 이 캡처 항목이 아직 큐에 있다(업로드 전·실패 백오프·background 세션에 넘김) — 채팅 일정 등록의 오프라인 판정(계획 D7)
+  public func contains(id: String) throws -> Bool {
+    var s: OpaquePointer?
+    guard sqlite3_prepare_v2(db, "SELECT 1 FROM queue WHERE id = ? AND kind = 'capture'", -1, &s, nil) == SQLITE_OK, let st = s else { throw Error.sqlite(msg) }
+    defer { sqlite3_finalize(st) }
+    sqlite3_bind_text(st, 1, id, -1, Self.transient)
+    return sqlite3_step(st) == SQLITE_ROW
+  }
+
   // MARK: - 진단 trace (kind = 'trace', payload 는 `Trace.payload` 가 만든 JSON 객체)
 
   public func enqueueTrace(id: String, payload: Data, at: Date) throws {

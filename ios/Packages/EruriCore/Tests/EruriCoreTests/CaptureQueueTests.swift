@@ -103,6 +103,20 @@ final class CaptureQueueTests: XCTestCase {
     let id = try p.enqueue(source: "NOTIFICATION", appName: "Slack", title: nil, sender: nil, masked: "합성 본문", deviceFilter: "rules")
     XCTAssertEqual(try p.queue.pending(limit: 10).map(\.id), [id])
   }
+
+  /// 채팅 일정 등록 오프라인 판정(계획 D7): 업로드 전·실패 백오프면 있음, 보내면 없음, trace 행은 캡처가 아니다
+  func testContainsCapture() throws {
+    let q = try makeQueue(), it = Self.item("합성")
+    XCTAssertFalse(try q.contains(id: it.id))
+    try q.enqueue(it)
+    XCTAssertTrue(try q.contains(id: it.id))
+    try q.markFailed(id: it.id)
+    XCTAssertTrue(try q.contains(id: it.id))
+    try q.markSent(id: it.id)
+    XCTAssertFalse(try q.contains(id: it.id))
+    try q.enqueueTrace(id: "trace-1", payload: Data("{}".utf8), at: Date())
+    XCTAssertFalse(try q.contains(id: "trace-1"))
+  }
 }
 
 final class Failures: @unchecked Sendable {   // 테스트 전용 수집기: NSLock 으로 보호
