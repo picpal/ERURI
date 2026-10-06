@@ -217,6 +217,23 @@ final class ChatHistoryTests: XCTestCase {
     let old = #"{"id":"\#(UUID().uuidString)","at":1790000000,"kind":"question","question":"q","linkDone":false,"linkSaved":false,"judged":{}}"#
     XCTAssertNil(try d.decode(R.self, from: Data(old.utf8)).itemID)
   }
+  // 모르는 kind(0.14.0 → 0.13.0 으로 내림)는 그 레코드만 빠지고 나머지 기록은 남는다. 아는 kind 의 깨진 레코드는 전처럼 빈 기록(최종 리뷰 Minor 3)
+  func testStoreLoadDropsOnlyRecordsOfUnknownKind() throws {
+    let s = tempStore(); defer { s.wipe() }
+    let r = q("a", at: 0), add = R(at: t0, kind: .addEvent, question: "합성 등록해줘", link: "끝", linkDone: true, itemID: "item-9")
+    try s.save([r, add])
+    let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: s.url)) as? [String: Any])
+    var recs = try XCTUnwrap(raw["records"] as? [[String: Any]])
+    var future = recs[0]; future["id"] = UUID().uuidString; future["kind"] = "mailAction"
+    recs.insert(future, at: 1)
+    try JSONSerialization.data(withJSONObject: ["version": 1, "records": recs]).write(to: s.url)
+    XCTAssertEqual(try s.load(), [r, add])
+    var broken = recs[0]; broken["at"] = "어제"
+    try JSONSerialization.data(withJSONObject: ["version": 1, "records": [broken] + recs]).write(to: s.url)
+    XCTAssertEqual(try s.load(), [])
+    try JSONSerialization.data(withJSONObject: ["version": 1, "records": [["id": UUID().uuidString, "at": 1, "question": "q"]]]).write(to: s.url)
+    XCTAssertEqual(try s.load(), [])                                   // kind 가 없으면 손상
+  }
   func testRestoredEndsUnfinishedAddEvent() {
     let r = R(at: t0, kind: .addEvent, question: "합성 등록해줘", link: ChatAddEventText.registering)
     var done = R(at: t0, kind: .addEvent, question: "합성 등록해줘 2", link: "일정 1건을 찾았어요", linkDone: true)

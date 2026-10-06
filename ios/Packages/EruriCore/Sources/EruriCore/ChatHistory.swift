@@ -145,7 +145,25 @@ public struct ChatHistoryStore: Sendable {
       .appendingPathComponent("chat", isDirectory: true).appendingPathComponent("chat-history.json")
   }
 
-  struct File: Codable { let version: Int; let records: [ChatHistory.Record] }
+  struct File: Codable {
+    let version: Int; let records: [ChatHistory.Record]
+    init(version: Int, records: [ChatHistory.Record]) { self.version = version; self.records = records }
+    /// 모르는 kind(새 버전에서 더한 턴, 예: 0.14.0 메일 정리)는 그 레코드만 뺀다 — 앱을 내려도 30일 기록 전체가 비지 않게(최종 리뷰 Minor 3, D9).
+    /// 아는 kind 인데 다른 칸이 깨진 레코드는 전과 같이 파일 손상(빈 기록)이다
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      version = try c.decode(Int.self, forKey: .version)
+      records = try c.decode([Entry].self, forKey: .records).compactMap(\.record)
+    }
+    private struct Entry: Decodable {
+      let record: ChatHistory.Record?
+      private enum K: String, CodingKey { case kind }
+      init(from decoder: Decoder) throws {
+        let kind = try decoder.container(keyedBy: K.self).decode(String.self, forKey: .kind)
+        if ChatHistory.Kind(rawValue: kind) == nil { record = nil } else { record = try ChatHistory.Record(from: decoder) }
+      }
+    }
+  }
   static let version = 1
 
   /// 파일 없음·손상·다른 버전 = 빈 기록. 그 밖의 읽기 오류(잠금 중 completeUnlessOpen·권한·IO)는 던진다 —
