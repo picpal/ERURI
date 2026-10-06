@@ -1,6 +1,6 @@
 import { encrypt, toBytea } from "./crypto.ts";
 import {
-  collectNewMessageIds, type GmailClient, gmailApi, GmailHttpError, type GmailMessage, gmailToItem, ReauthRequired, refreshAccessToken,
+  collectNewMessageIds, type GmailApi, type GmailClient, gmailApi, GmailHttpError, type GmailMessage, gmailToItem, ReauthRequired, refreshAccessToken,
 } from "./gmail.ts";
 import type { Job } from "./job.ts";
 import { hasListUnsub, isAdMail, unsubMeta } from "./unsub.ts";
@@ -18,6 +18,7 @@ export type GmailJobDeps = {
   topic(): string;
   onResync?(sb: RpcClient, user: string, conn: string, lastSuccessAt: string): Promise<void>;   // 재동기화 공백의 광고 헤더 스캔(스펙 §7)
   unsubBudgetMs?: number;                                                                     // recordUnsub 예산(기본 2000)
+  noteUnits?(sb: RpcClient, user: string, units: number): Promise<boolean>;                   // 사용자 units 기록(스펙 §7 "속도", 0030). 없으면 기록 안 함(테스트 가짜)
 };
 export const defaultGmailDeps: GmailJobDeps = {
   refresh: refreshAccessToken,
@@ -26,6 +27,7 @@ export const defaultGmailDeps: GmailJobDeps = {
   pause: (ms) => new Promise((r) => setTimeout(r, ms)),
   topic: () => Deno.env.get("GMAIL_PUBSUB_TOPIC")!,
   onResync: enqueueUnsubRescan,
+  noteUnits: (sb, user, units) => noteGmailUnits(sb, user, units),
 };
 
 const FETCH_BATCH = 50;
@@ -88,11 +90,46 @@ async function call(sb: RpcClient, fn: string, args: Record<string, unknown>) {
   if (error) throw new Error(fn + " " + (error.code ?? "error"));
   return data;
 }
-// refresh 실패(invalid_grant) → connections.status = reauth_required, 잡은 정상 종료해 재시도하지 않는다(스펙 §7)
-async function accessToken(sb: RpcClient, deps: GmailJobDeps, user: string, conn: string): Promise<string | null> {
+// ── 사용자 Gmail units 기록(스펙 §7 "속도", 계획 D6): 수집 경로는 더하기만. 기록은 수집을 늦추거나 실패시키지 않는다(fail-open) ──
+export const NOTE_BUDGET_MS = 1000;
+const GET_UNITS = 20;   // messages.get(공식 쿼터 표)
+export async function noteGmailUnits(sb: RpcClient, user: string, units: number, budgetMs = NOTE_BUDGET_MS): Promise<boolean> {
+  let timer: number | undefined;
+  try {
+    const work = Promise.resolve(sb.rpc("gmail_note_units", { p_user: user, p_units: units })).then((r) => { if (r.error) throw new Error("note"); });
+    work.catch(() => {});
+    await Promise.race([work, new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("note_timeout")), budgetMs); })]);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+// 잡 하나의 기록기: 첫 실패·초과 뒤 그 잡의 나머지 기록은 건너뛴다(광고 기록 차단기와 같은 이유 — 멈춘 RPC 가 잡을 붙잡지 않게)
+export function unitsNoter(sb: RpcClient, deps: Pick<GmailJobDeps, "noteUnits">, user: string, conn: string): (units: number) => Promise<void> {
+  let off = false;
+  return async (units) => {
+    if (off || !deps.noteUnits) return;
+    if (!await deps.noteUnits(sb, user, units)) {
+      off = true;
+      console.log(JSON.stringify({ connection_id: conn, code: "units_note_error" }));   // 코드만
+    }
+  };
+}
+// history.list 2, messages.list 5, profile 1 units(공식 쿼터 표)를 호출 전에 기록한다
+export function meteredApi(api: GmailApi, note: (units: number) => Promise<void>): GmailApi {
+  return {
+    history: async (s, p) => { await note(2); return await api.history(s, p); },
+    listMessageIds: async (q, p) => { await note(5); return await api.listMessageIds(q, p); },
+    profile: async () => { await note(1); return await api.profile(); },
+  };
+}
+// refresh 실패(invalid_grant) → connections.status = reauth_required, 재인증 푸시(스펙 §7). 메일 정리 함수·잡도 쓴다
+export async function gmailAccessToken(sb: RpcClient, refresh: (rt: string) => Promise<string>, user: string, conn: string): Promise<string | null> {
   const rt = await call(sb, "gmail_get_refresh_token", { p_user: user, p_connection: conn });
   if (!rt) return null;                   // 비활성 연결 또는 refresh token 없음
-  try { return await deps.refresh(rt as string); }
+  try { return await refresh(rt as string); }
   catch (e) {
     if (!(e instanceof ReauthRequired)) throw e;
     await call(sb, "gmail_update", { p_user: user, p_connection: conn, p_status: "reauth_required" });
@@ -101,6 +138,7 @@ async function accessToken(sb: RpcClient, deps: GmailJobDeps, user: string, conn
     return null;
   }
 }
+const accessToken = (sb: RpcClient, deps: GmailJobDeps, user: string, conn: string) => gmailAccessToken(sb, deps.refresh, user, conn);
 
 export async function gmailSync(sb: RpcClient, job: Job, deps = defaultGmailDeps): Promise<string> {
   const { user, conn } = ids(job);
@@ -108,7 +146,8 @@ export async function gmailSync(sb: RpcClient, job: Job, deps = defaultGmailDeps
   if (!token) return "skipped";
   const st = (await call(sb, "gmail_state", { p_user: user, p_connection: conn }) as { cursor: string; last_success_at: string }[])[0];
   if (!st) throw new Error("gmail_state not_found");
-  const r = await collectNewMessageIds(deps.api(token), { cursor: st.cursor, lastSuccessAt: st.last_success_at });
+  const note = unitsNoter(sb, deps, user, conn);
+  const r = await collectNewMessageIds(meteredApi(deps.api(token), note), { cursor: st.cursor, lastSuccessAt: st.last_success_at });
   for (let i = 0; i < r.ids.length; i += FETCH_BATCH) {
     await call(sb, "enqueue_job", { p_user: user, p_kind: "gmail-fetch", p_lease_key: "gmail:" + conn,
       p_payload: { connection_id: conn, ids: r.ids.slice(i, i + FETCH_BATCH) } });
@@ -125,6 +164,7 @@ export async function gmailFetch(sb: RpcClient, job: Job, deps = defaultGmailDep
   const token = await accessToken(sb, deps, user, conn);
   if (!token) return "skipped";
   const api = deps.api(token);
+  const note = unitsNoter(sb, deps, user, conn);
   let stored = 0, discarded = 0, gone = 0;
   let n = 0;
   // 잡 로컬 차단기(리뷰 U4-I1): 기록 예산은 호출당이라 RPC 가 계통적으로 멈추면 잡 지연이 예산 × 기록 수가 된다.
@@ -134,10 +174,12 @@ export async function gmailFetch(sb: RpcClient, job: Job, deps = defaultGmailDep
     if (recordOff) { recordSkipped++; return; }
     if (await recordUnsub(sb, deps, user, conn, msg, itemId) === "error") recordOff = true;
   };
-  for (const id of job.payload.ids as string[]) {
+  const all = job.payload.ids as string[];
+  for (const id of all) {
     if (n++ % 10 === 0) {
       const st = await call(sb, "gmail_state", { p_user: user, p_connection: conn }) as unknown[];
       if (st.length === 0) { console.log(JSON.stringify({ connection_id: conn, gmail_fetch: "connection_gone" })); return "connection_gone"; }
+      await note(GET_UNITS * Math.min(10, all.length - n + 1));   // 이번 10통 몫(호출 전 기록, D6)
     }
     let msg: GmailMessage;
     try { msg = await api.getMessage(id); }
@@ -207,8 +249,11 @@ export async function gmailUnsubFetch(sb: RpcClient, job: Job, deps = defaultGma
   const token = await accessToken(sb, deps, user, conn);
   if (!token) return "skipped";
   const api = deps.api(token);
+  const note = unitsNoter(sb, deps, user, conn);
+  const msgs = job.payload.msgs as { id: string; item: string | null }[]; let n = 0;
   let recorded = 0, skipped = 0, gone = 0;
-  for (const { id, item } of job.payload.msgs as { id: string; item: string | null }[]) {
+  for (const { id, item } of msgs) {
+    if (n++ % 10 === 0) await note(GET_UNITS * Math.min(10, msgs.length - n + 1));
     let msg: GmailMessage;
     try { msg = await api.getMessageMeta(id); }
     catch (e) {
