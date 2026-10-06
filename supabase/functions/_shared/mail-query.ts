@@ -1,0 +1,99 @@
+// 메일 정리 지목(스펙 §7 "메일 정리"): 칸 검사·정제·검색어 조립을 한 곳에서 한다. chat 은 모델 출력 그대로 넘기고 앱이 보낸 칸도 믿지 않는다.
+// 모델·앱이 쓴 검색어 문자열(q 등 모르는 키)은 읽지 않는다. 잘못된 칸은 버리지 않고 거절한다 — 버리면 범위가 넓어진다(리뷰 #1)
+export type MailAction = "trash" | "read";
+export type MailConditions = {
+  action: MailAction; sender: string | null; subject_words: string[];
+  received_from: string | null; received_to: string | null; promotions: boolean; unread_only: boolean;
+};
+export type CheckResult =
+  | { ok: true; c: MailConditions }
+  | { ok: false; code: "bad_condition"; fields: string[] }
+  | { ok: false; code: "needs_target" };
+
+export const SENDER_MAX = 100, WORD_MAX = 30, WORDS_MAX = 3;
+export const YEAR_MIN = 2004;                                         // Gmail 출시 전 날짜는 거절(음수 epoch — Gmail 이 무시하면 범위가 넓어진다, D21)
+const DROP = /[^\p{L}\p{M}\p{N}\s@._+-]/gu;
+const WORDY = /[\p{L}\p{N}]/u;                                         // 정제 뒤 글자·숫자가 하나는 있어야 한다(기호만 남은 구는 거절, D21)
+const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+// 글자·숫자·공백과 @._+- 만 남긴다(따옴표·괄호·중괄호·콜론·역슬래시 등은 지운다). 결과는 늘 따옴표로 감싸 쓴다.
+// 지운 뒤 NFC — 지우기가 결합 문자를 앞 글자에 붙여 주므로 이 순서여야 멱등이다(다시 미리보기, D15)
+export function sanitize(v: string): string {
+  return v.replace(DROP, "").normalize("NFC").replace(/\s+/g, " ").trim();
+}
+
+// 서울 날짜(YYYY-MM-DD)의 0시 epoch 초. 달력에 없는 날(2026-02-30)·다른 모양은 null
+export function seoulMidnight(day: string): number | null {
+  const m = DAY.exec(day);
+  if (!m) return null;
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+  const t = Date.UTC(y, mo - 1, d), back = new Date(t);
+  if (back.getUTCFullYear() !== y || back.getUTCMonth() !== mo - 1 || back.getUTCDate() !== d) return null;
+  return t / 1000 - 9 * 3600;
+}
+
+export function checkConditions(raw: unknown): CheckResult {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, code: "bad_condition", fields: ["mail"] };
+  const r = raw as Record<string, unknown>;
+  const bad: string[] = [];
+  const action = r.action === "trash" || r.action === "read" ? r.action : null;
+  if (!action) bad.push("action");
+
+  let sender: string | null = null;
+  if (r.sender !== null && r.sender !== undefined) {
+    if (typeof r.sender !== "string" || r.sender.length > SENDER_MAX) bad.push("sender");
+    else if (r.sender.trim() !== "") {
+      const s = sanitize(r.sender);
+      if (!WORDY.test(s)) bad.push("sender"); else sender = s;
+    }
+  }
+
+  const words: string[] = [];
+  if (r.subject_words !== null && r.subject_words !== undefined) {
+    const w = r.subject_words;
+    if (!Array.isArray(w) || w.length > WORDS_MAX || w.some((x) => typeof x !== "string" || x.length > WORD_MAX)) bad.push("subject_words");
+    else {
+      for (const x of w as string[]) {
+        if (x.trim() === "") continue;
+        const s = sanitize(x);
+        if (!WORDY.test(s)) { bad.push("subject_words"); break; }
+        if (!words.includes(s)) words.push(s);
+      }
+    }
+  }
+
+  const day = (k: "received_from" | "received_to"): string | null => {
+    const v = r[k];
+    if (v === null || v === undefined) return null;
+    if (typeof v !== "string" || seoulMidnight(v) === null || Number(v.slice(0, 4)) < YEAR_MIN) { bad.push(k); return null; }
+    return v;
+  };
+  const from = day("received_from"), to = day("received_to");
+  if (from && to && from > to) bad.push("received_from", "received_to");
+
+  const flag = (k: "promotions" | "unread_only"): boolean => {
+    const v = r[k];
+    if (v === null || v === undefined) return false;
+    if (typeof v !== "boolean") { bad.push(k); return false; }
+    return v;
+  };
+  const promotions = flag("promotions"), unread = flag("unread_only");
+
+  if (bad.length) return { ok: false, code: "bad_condition", fields: [...new Set(bad)] };
+  // 휴지통 범위 하한: 받은편지함 전체를 휴지통으로 보내지 않게(안 읽음만으로는 부족). 읽음은 되돌릴 수 있고 메일이 없어지지 않는다
+  if (action === "trash" && !sender && words.length === 0 && !from && !to && !promotions) return { ok: false, code: "needs_target" };
+  return { ok: true, c: { action: action!, sender, subject_words: words, received_from: from, received_to: to, promotions,
+                          unread_only: action === "read" ? true : unread } };
+}
+
+// 늘 in:inbox -is:starred(별표 수는 starred = true 로 is:starred). 스팸·휴지통은 includeSpamTrash 기본값(false)으로 빠진다
+export function buildQuery(c: MailConditions, starred = false): string {
+  const q = ["in:inbox", starred ? "is:starred" : "-is:starred"];
+  if (c.sender) q.push(`from:"${c.sender}"`);
+  for (const w of c.subject_words) q.push(`subject:"${w}"`);
+  if (c.received_from) q.push(`after:${seoulMidnight(c.received_from)}`);
+  if (c.received_to) q.push(`before:${seoulMidnight(c.received_to)! + 86_400}`);
+  if (c.promotions) q.push("category:promotions");
+  if (c.unread_only || c.action === "read") q.push("is:unread");
+  return q.join(" ");
+}
