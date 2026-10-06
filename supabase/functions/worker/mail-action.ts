@@ -45,6 +45,7 @@ export function opFor(action: Action, phase: Phase): Op {
     return { batch: (a, ids) => a.batchModify(ids, [], ["TRASH"]), single: (a, id) => a.untrash(id),
              singleUnits: UNITS.untrash, reached: (l) => !l.includes("TRASH") };
   }
+  if (action !== "read") throw new Error("mail_bad_action");          // 모르는 동작을 읽음으로 떨어뜨리지 않는다(M4b 리뷰 Minor 7)
   if (phase === "execute") {
     return { batch: (a, ids) => a.batchModify(ids, [], ["UNREAD"]), single: (a, id) => a.modify(id, [], ["UNREAD"]),
              singleUnits: UNITS.modify, reached: (l) => !l.includes("UNREAD") };
@@ -94,13 +95,14 @@ export async function mailActionJob(d: MailJobDeps, job: Job): Promise<string> {
   const row = await d.begin(user, id, phase);
   if (!row) { d.log({ mail_action: "gone", phase }); return "gone"; }                    // 정리·출처 삭제로 행이 없음
   if (row.status !== (phase === "execute" ? "running" : "undoing")) { d.log({ mail_action: "noop", phase, status: row.status }); return "noop"; }
+  const o = opFor(row.action as Action, phase);                       // 모르는 action 이면 토큰·Gmail 전에 던진다
   const t = await d.token(user, row.connection_id!);                  // deps 가 갱신을 15초에서 끊는다
   if (typeof t !== "string") {
     await d.finish(user, id, phase, t.code);                           // 되돌리기에서 진행 0 이면 SQL 이 되돌리기를 되살린다(D11)
     d.log({ mail_action: "closed", phase, code: t.code });
     return t.code;
   }
-  const api = d.api(t), o = opFor(row.action!, phase), ids = row.ids ?? [];
+  const api = d.api(t), ids = row.ids ?? [];
   let cursor = row.cursor ?? 0;
   const start = cursor, last = job.attempts >= MAX_ATTEMPTS;          // start: 이번 실행이 진행했는지(진행 뒤 결과 불명은 미룸, D7)
   // 되돌리기는 실행 방식을 따른다: 휴지통 single 이면 처음부터 untrash, 읽음은 늘 batch 먼저(D9)

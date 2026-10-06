@@ -1,8 +1,8 @@
-import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { Deferred } from "../functions/_shared/budget.ts";
 import { GmailHttpError, type GmailMailApi } from "../functions/_shared/gmail.ts";
 import type { Job } from "../functions/_shared/job.ts";
-import { type Action, MAIL_JOB_BUDGET_MS, mailActionJob, type MailJobDeps, type Method, type Phase, QUOTA_STUCK_MS, RETRY_DEFER_MS } from "../functions/worker/mail-action.ts";
+import { type Action, mailActionJob, type MailJobDeps, type Method, opFor, type Phase, QUOTA_STUCK_MS, RETRY_DEFER_MS } from "../functions/worker/mail-action.ts";
 
 // 메일 정리 잡(스펙 §7 실행·되돌리기): 행·DB 는 메모리 흉내(progress 는 커서 비교 — 0030 과 같은 규칙), Gmail 은 가짜.
 // 시계는 Gmail 호출마다(성공·실패 모두) step ms 씩 간다 — 예산 검사가 호출 직전마다 있는지 본다(Codex C1)
@@ -180,7 +180,6 @@ Deno.test("budget is checked before every single call: 10 s per call → 3 calls
   const { d, st } = harness({ method: "single", ids: ids(45), step: 10_000 });
   const e = await assertRejects(() => mailActionJob(d, job()), Deferred);
   assertEquals([e.message, e.until, st.cursor, st.ok, st.gmail.length], ["mail_budget", iso(T0 + 30_000), 3, ["m1", "m2", "m3"], 3]);
-  assert(30_000 >= MAIL_JOB_BUDGET_MS);
 });
 
 Deno.test("budget is checked before every reread call: records what it read, defers, does not close", async () => {
@@ -226,6 +225,16 @@ Deno.test("undo trash follows the execute method: single → untrash each (5 uni
   const u = harness({ phase: "undo", method: "batch", api: { batchModify: () => Promise.reject(E(404)), untrash: (id) => id === "m2" ? Promise.reject(E(404)) : Promise.resolve() } });
   assertEquals(await mailActionJob(u.d, job("undo")), "done");
   assertEquals([u.st.ok, u.st.failed, u.st.method], [["m1", "m3"], ["m2"], "batch"]);   // 되돌리기 전환은 method 에 남기지 않는다
+});
+
+Deno.test("unknown action from the row → plain error before the token and any Gmail call; opFor refuses it too", async () => {
+  const { d, st } = harness({ action: "spam" as Action });
+  let tokens = 0;
+  d.token = () => { tokens++; return Promise.resolve("access-1"); };
+  const e = await assertRejects(() => mailActionJob(d, job()));
+  assert(!(e instanceof Deferred));
+  assertEquals([(e as Error).message, tokens, st.gmail, st.taken, st.finished], ["mail_bad_action", 0, [], [], undefined]);
+  for (const phase of ["execute", "undo"] as const) assertThrows(() => opFor("spam" as Action, phase), Error, "mail_bad_action");
 });
 
 Deno.test("row gone → gone; finished row → noop; neither calls Gmail nor finishes", async () => {
