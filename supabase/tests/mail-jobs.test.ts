@@ -124,6 +124,19 @@ Deno.test("last attempt with an unknown result and no progress → reread labels
   assertEquals([st.ok, st.failed, st.finished, st.taken], [["m1"], ["m2", "m3"], null, [50, 60]]);
 });
 
+Deno.test("single mode, last attempt, unknown result on the first call → reread only that id, record it, carry on with the rest (never fail unsent ids)", async () => {
+  for (const [labelIds, ok, failed] of [[["TRASH"], ["m1"], []], [["INBOX"], [], ["m1"]]] as const) {
+    const read: string[] = [];
+    const { d, st } = harness({ method: "single", ids: ids(100),
+      api: { trash: (id) => id === "m1" ? Promise.reject(E(500)) : Promise.resolve(), labels: (id) => { read.push(id); return Promise.resolve({ id, labelIds: [...labelIds] }); } } });
+    const e = await assertRejects(() => mailActionJob(d, job("execute", 5)), Deferred);
+    assertEquals([e.message, e.until, st.cursor, st.ok, st.failed, st.finished, st.taken], ["mail_retry", iso(T0 + RETRY_DEFER_MS), 1, ok, failed, undefined, [400, 20]]);
+    assertEquals(read, ["m1"]);
+    assertEquals(await mailActionJob(d, job("execute", 5)), "done");             // defer_job −1·클레임 +1 = 다음도 5: 나머지 99건을 보낸다
+    assertEquals([st.ok.length + st.failed.length, st.failed, read], [100, failed, ["m1"]]);
+  }
+});
+
 Deno.test("reread hits quota → records what it read and defers (quota rule), never marks the rest failed", async () => {
   const { d, st } = harness({ api: { batchModify: () => Promise.reject(E(503)),
     labels: (id) => id === "m2" ? Promise.reject(E(429)) : Promise.resolve({ id, labelIds: ["TRASH"] }) } });

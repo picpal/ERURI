@@ -141,7 +141,13 @@ export async function mailActionJob(d: MailJobDeps, job: Job): Promise<string> {
       // 결과 불명: 이번 실행에서 진행했으면 attempts 를 쓰지 않고 1분 뒤(흩어진 일시 오류가 마지막 시도로 몰지 않게, D7)
       if (cursor > start) throw new Deferred(iso(d.now() + RETRY_DEFER_MS), "mail_retry");
       if (!last) throw new Error("mail_unknown " + codeOf(err));       // 진행 없음: fail_job 백오프 뒤 같은 묶음(멱등)
-      // 마지막 시도(D10): 남은 묶음을 다시 읽어 목표 상태면 성공, 아니면 실패로 적고 마감(커서 뒤는 finish 가 실패로)
+      // 건별 마지막 시도: 결과 불명인 그 id 만 다시 읽어 적고 나머지는 이어 간다 — 보내지 않은 id 를 실패로 적지 않는다(M4b 리뷰 Minor 3).
+      // 매번 한 id 씩은 진행하므로 미루기가 끝없이 돌지 않는다
+      if (method === "single") {
+        if (!await lookup(d, api, user, id, phase, o, ids.slice(cursor, cursor + 1), cursor, over)) return stale(d, phase);
+        throw new Deferred(iso(d.now() + RETRY_DEFER_MS), "mail_retry");
+      }
+      // batch 마지막 시도(D10): 남은 묶음을 다시 읽어 목표 상태면 성공, 아니면 실패로 적고 마감(커서 뒤는 finish 가 실패로)
       if (!await lookup(d, api, user, id, phase, o, ids.slice(cursor, end), cursor, over)) return stale(d, phase);
       await d.finish(user, id, phase, null);
       d.log({ mail_action: "verified", phase, method, elapsed_ms: d.now() - t0 });
