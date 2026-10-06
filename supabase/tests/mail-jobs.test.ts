@@ -2,7 +2,8 @@ import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/asse
 import { Deferred } from "../functions/_shared/budget.ts";
 import { GmailHttpError, type GmailMailApi } from "../functions/_shared/gmail.ts";
 import type { Job } from "../functions/_shared/job.ts";
-import { type Action, mailActionJob, type MailJobDeps, type Method, opFor, type Phase, QUOTA_STUCK_MS, RETRY_DEFER_MS } from "../functions/worker/mail-action.ts";
+import { mailJobDeps } from "../functions/worker/mail-action-deps.ts";
+import { type Action, mailActionJob, type MailJobDeps, type Method, opFor, type Phase, QUOTA_STUCK_MS, RETRY_DEFER_MS, UNITS } from "../functions/worker/mail-action.ts";
 
 // 메일 정리 잡(스펙 §7 실행·되돌리기): 행·DB 는 메모리 흉내(progress 는 커서 비교 — 0030 과 같은 규칙), Gmail 은 가짜.
 // 시계는 Gmail 호출마다(성공·실패 모두) step ms 씩 간다 — 예산 검사가 호출 직전마다 있는지 본다(Codex C1)
@@ -259,4 +260,46 @@ Deno.test("logs carry codes and counts only (no message ids); the job's deps nev
   assert(!/m\d/.test(text), text);
   const src = await Deno.readTextFile(new URL("../functions/worker/mail-action-deps.ts", import.meta.url));
   assert(!/insert_item|save_fact|worker_set_item_status|delete_gmail_source|from\("items"\)|from\("facts"\)/.test(src));
+});
+
+Deno.test("deps token → code (D11): no refresh token + this connection not active → reauth_required; active, missing or another connection → no_connection", async () => {
+  const cases: [unknown, "reauth_required" | "no_connection"][] = [
+    [[{ connection_id: "conn-1", status: "reauth_required" }], "reauth_required"],
+    [[{ connection_id: "conn-1", status: "active" }], "no_connection"],
+    [[{ connection_id: "conn-2", status: "reauth_required" }], "no_connection"],
+    [[], "no_connection"],
+    [null, "no_connection"],
+  ];
+  for (const [rows, want] of cases) {
+    const calls: [string, Record<string, unknown> | undefined][] = [];
+    const sb = { rpc: (fn: string, args?: Record<string, unknown>) => {
+      calls.push([fn, args]);
+      return Promise.resolve({ data: fn === "mail_connection" ? rows : null, error: null });
+    } };
+    // deno-lint-ignore no-explicit-any
+    assertEquals(await mailJobDeps(sb as any).token(USER, "conn-1"), { code: want });
+    assertEquals(calls, [["gmail_get_refresh_token", { p_user: USER, p_connection: "conn-1" }], ["mail_connection", { p_user: USER }]]);
+  }
+});
+
+Deno.test("undo quota (429 batch, 403 rate reason on untrash) → defer one minute, nothing recorded, row stays open", async () => {
+  const b = harness({ phase: "undo", method: "batch", api: { batchModify: () => Promise.reject(E(429)) } });
+  const e1 = await assertRejects(() => mailActionJob(b.d, job("undo")), Deferred);
+  assertEquals([e1.message, e1.until, b.st.cursor, b.st.finished, b.st.gmail], ["mail_quota", iso(T0 + 60_000), 0, undefined, []]);
+  const s = harness({ phase: "undo", method: "single", api: { untrash: (id) => id === "m2" ? Promise.reject(E(403, "userRateLimitExceeded")) : Promise.resolve() } });
+  const e2 = await assertRejects(() => mailActionJob(s.d, job("undo")), Deferred);
+  assertEquals([e2.message, s.st.cursor, s.st.ok, s.st.failed, s.st.finished], ["mail_quota", 1, ["m1"], [], undefined]);
+});
+
+Deno.test("reread with no units left this minute → defer to the next minute, no label read, nothing recorded or closed", async () => {
+  const { d, st } = harness({ take: (u) => u === UNITS.batch, api: { batchModify: () => Promise.reject(E(503)) } });
+  const e = await assertRejects(() => mailActionJob(d, job("execute", 5)), Deferred);
+  assertEquals([e.message, e.until, st.cursor, st.ok, st.failed, st.finished, st.gmail.filter((x) => x.startsWith("labels:"))],
+    ["mail_units", iso(Math.floor(T0 / 60_000) * 60_000 + 60_000), 0, [], [], undefined, []]);
+});
+
+Deno.test("403 insufficientPermissions in the middle of single mode → record what was done, then close as scope_missing (rest failed)", async () => {
+  const { d, st } = harness({ method: "single", api: { trash: (id) => id === "m2" ? Promise.reject(E(403, "insufficientPermissions")) : Promise.resolve() } });
+  assertEquals(await mailActionJob(d, job()), "scope_missing");
+  assertEquals([st.ok, st.failed, st.finished, st.method], [["m1"], ["m2", "m3"], "scope_missing", "single"]);
 });
