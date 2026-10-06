@@ -2825,6 +2825,8 @@ Expected: `senders_with_ads_30d ≥ 1`, `ads_30d ≥ 1`. `method_of_senders_with
 
 **채팅 기록(계획 `2026-10-04-chat-history.md` D10, 2026-10-05 리뷰 반영):** main에 `feat(ios): chat history` 커밋이 있는데 `gates.md`에 `CHAT-sim` 통과 행이 없으면 main HEAD를 올리지 않는다 — 그 커밋의 부모(`git log --format=%h -1 --grep '^feat(ios): chat history'`의 `^`)에서 worktree를 만들어(`Config/Secrets.xcconfig`는 `sim.sh config`로 생성) 그 트리에서 아래 명령을 실행한다. 미검증 채팅 기록 기능이 0.11.x 이름으로 나가지 않게.
 
+**채팅 일정 등록(계획 `2026-10-06-chat-add-event.md` D14):** main에 `feat(core): chat add-event` 커밋이 있는데 `gates.md`에 `ADD-sim` 통과 행이 없으면 main HEAD를 올리지 않는다 — 그 커밋의 부모(`git log --format=%h -1 --grep '^feat(core): chat add-event'`의 `^`)에서 위와 같은 방식으로 worktree를 만들어 올린다. 미검증 채팅 일정 등록이 0.12.x 이름으로 나가지 않게.
+
 Run: `vm_stat | grep -E 'free|compressor'; pgrep -x deno || echo none; grep -n 'MARKETING_VERSION' ios/project.yml; cd ios && ./scripts/sim.sh gen && ./scripts/testflight.sh`
 Expected: `none`, `MARKETING_VERSION: 0.11.0` 뒤 0.11.0(빌드 번호 `YYYYMMDDHHMM`) 업로드 성공, App Store Connect 처리 VALID. 0.11.0이 아니면(그 사이 0.11.x·0.12.0이 들어갔으면) 올리지 않고 메인에게 알린다. 이 빌드를 U10과 링크 계획 L9가 쓴다.
 
