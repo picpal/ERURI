@@ -519,6 +519,9 @@ Deno.test("answerQuestion add_event: no facts, search, answer or audit; empty re
   assertEquals({ ...r, rewritten: undefined, raw_intent: undefined }, { ...actionResult("add_event", null), rewritten: undefined, raw_intent: undefined });
   assertEquals(seen.settled, [0]);                                              // 가짜 필터는 usage 가 없다 — 답변 비용 0
   assertEquals(seen.withIntent, [true]);
+  // 모델이 add_event 에 mail 객체를 내도 응답 mail 은 null(actionResult — 0.14.0 계약)
+  const stray = deps({ intent: "add_event", mail: MAIL });
+  assertEquals((await answerQuestion("user-1", "합성치과 등록해줘", stray.d, [], new Set(["add_event", "mail_action"]))).mail, null);
 });
 
 Deno.test("answerQuestion: without intents the filter is asked without intent and the question path runs (intent question, mail null)", async () => {
@@ -533,7 +536,8 @@ Deno.test("answerQuestion: action not in the list or mail flag off → normal an
   const a = await answerQuestion("user-1", "합성상점 광고 메일 지워줘", notListed.d, [], new Set(["add_event"]));
   assertEquals([a.intent, a.mail, a.raw_intent, notListed.seen.answer.length], ["question", null, "mail_action", 1]);
   const off = deps({ intent: "mail_action", mail: MAIL, mailOn: false });
-  assertEquals((await answerQuestion("user-1", "q", off.d, [], new Set(["add_event", "mail_action"]))).intent, "question");
+  const o = await answerQuestion("user-1", "q", off.d, [], new Set(["add_event", "mail_action"]));
+  assertEquals([o.intent, o.mail, o.answer.length > 0, off.seen.answer.length], ["question", null, true, 1]);   // 플래그 꺼짐 = 보통 답, 메일 칸 없음
   const on = deps({ intent: "mail_action", mail: MAIL, mailOn: true });
   const m = await answerQuestion("user-1", "q", on.d, [], new Set(["add_event", "mail_action"]));
   assertEquals([m.intent, m.mail, on.seen.search.length], ["mail_action", MAIL, 0]);
