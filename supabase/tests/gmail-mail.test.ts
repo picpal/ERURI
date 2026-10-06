@@ -36,6 +36,7 @@ Deno.test("headers: format=metadata with From and Subject only; labels: format=m
     await gmailMailApi("at").labels("m 1");
     assertEquals(s.calls[0].url.pathname, "/gmail/v1/users/me/messages/m%201");
     assertEquals([s.calls[0].url.searchParams.get("format"), s.calls[0].url.searchParams.getAll("metadataHeaders")], ["metadata", ["From", "Subject"]]);
+    assertEquals(s.calls[0].url.searchParams.get("fields"), "id,internalDate,labelIds,payload/headers");   // snippet(본문 앞부분)이 오지 않게
     assertEquals(s.calls[1].url.searchParams.get("format"), "minimal");
   } finally { s.restore(); }
 });
@@ -87,6 +88,13 @@ Deno.test("classifyGmailError: 429 and quota reasons → quota, permission reaso
   assertEquals(classifyGmailError(E(403, "quotaExceeded")), "quota");
   assertEquals(classifyGmailError(E(403, "insufficientPermissions")), "scope");
   assertEquals(classifyGmailError(E(403, "forbidden")), "unknown");              // 403 을 일괄 미지원으로 보지 않는다
+  assertEquals(classifyGmailError(E(403)), "unknown");                           // reason 없는 403 도 단정하지 않는다
+  assertEquals(classifyGmailError(E(403, "dailyLimitExceeded")), "quota");
+  assertEquals(classifyGmailError(E(403, "RATE_LIMIT_EXCEEDED")), "quota");         // 새 형식(error.details[].reason)
+  assertEquals(classifyGmailError(E(403, "ACCESS_TOKEN_SCOPE_INSUFFICIENT")), "scope");
+  // 쿼터·권한이 함께 오면 쿼터 — 미루기는 30분 뒤 실패로 끝나 되돌릴 수 있지만, scope 는 재시도 없이 남은 id 를 실패로 마감한다
+  assertEquals(classifyGmailError(E(403, "insufficientPermissions", "rateLimitExceeded")), "quota");
+  assertEquals(classifyGmailError(E(403, "RATE_LIMIT_EXCEEDED", "ACCESS_TOKEN_SCOPE_INSUFFICIENT")), "quota");
   assertEquals(classifyGmailError(E(400, "invalidArgument")), "rejected");
   assertEquals(classifyGmailError(E(404)), "gone");
   assertEquals(classifyGmailError(E(500)), "unknown");

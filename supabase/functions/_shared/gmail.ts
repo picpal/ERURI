@@ -186,7 +186,7 @@ async function resync(api: GmailApi, lastSuccessAt: string) {
 // ── 메일 정리(스펙 §7 "메일 정리"): 목록·메타·라벨 변경·휴지통. 영구 삭제 API(delete·batch delete)는 두지 않는다 ──
 export const MAIL_CALL_TIMEOUT_MS = 15_000;
 // 403 은 쿼터일 수도 권한일 수도 있다(스펙 §7 오류 reason 분기). 새 오류 형식(error.details[].reason)도 함께 읽는다
-export const QUOTA_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded", "RATE_LIMIT_EXCEEDED"]);
+export const QUOTA_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded", "dailyLimitExceeded", "RATE_LIMIT_EXCEEDED"]);
 export const SCOPE_REASONS = new Set(["insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"]);
 export type GmailFailure = "quota" | "scope" | "rejected" | "gone" | "unknown";
 export function classifyGmailError(e: unknown): GmailFailure {
@@ -227,9 +227,11 @@ export async function listMessages(accessToken: string, q: string, maxResults: n
   return await r.json() as ListPage;
 }
 export const PREVIEW_HEADERS = ["From", "Subject"];   // 미리보기 표본: 본문 없이 헤더만
+const PREVIEW_FIELDS = "id,internalDate,labelIds,payload/headers";   // format=metadata 도 snippet(본문 앞부분)을 주므로 응답 칸을 좁힌다(스펙 §12)
 export async function getMessageHeaders(accessToken: string, id: string): Promise<GmailMessage> {
   const u = new URL(msgUrl(id)); u.searchParams.set("format", "metadata");
   for (const h of PREVIEW_HEADERS) u.searchParams.append("metadataHeaders", h);
+  u.searchParams.set("fields", PREVIEW_FIELDS);
   const r = await mailFetch(accessToken, u);
   if (!r.ok) throw await mailError("messages.get", r);
   return await r.json() as GmailMessage;
