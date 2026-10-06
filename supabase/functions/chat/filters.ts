@@ -43,6 +43,52 @@ export const CONTEXT_FILTER_SCHEMA = {
     query: { type: "string", description: "이전 대화로 지시어·생략을 채운 독립 질문 한 문장. 이어지지 않는 질문이면 질문 그대로" } },
 } as const;
 
+// 채팅 의도 판별(스펙 §9 "채팅 의도 판별", 2026-10-06): 앱이 intents 를 보낼 때만 필터 출력에 intent·mail 을 더한다.
+// intents 가 없으면 위 FILTER_SCHEMA·CONTEXT_FILTER_SCHEMA 요청 그대로(0.12.x 와 바이트 동일 — 테스트). enum 은 늘 세 값이고 변환은 handler(resolveIntent)
+export const INTENTS = ["question", "add_event", "mail_action"] as const;
+export type Intent = typeof INTENTS[number];
+export type ActionIntent = Exclude<Intent, "question">;
+export const ACTION_INTENTS: readonly ActionIntent[] = ["add_event", "mail_action"];
+export const asIntent = (v: unknown): Intent => ((INTENTS as readonly unknown[]).includes(v) ? v as Intent : "question");
+// 메일 정리 칸(스펙 §7 "메일 정리", 0.14.0). chat 은 검사·정제하지 않고 모델 출력 그대로 돌려준다 — 검사·검색어 조립은 mail-action 한 곳
+export type MailFields = { action: "trash" | "read"; sender: string | null; subject_words: string[]; received_from: string | null;
+  received_to: string | null; promotions: boolean; unread_only: boolean };
+export const MAIL_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["action", "sender", "subject_words", "received_from", "received_to", "promotions", "unread_only"],
+  properties: {
+    action: { type: "string", enum: ["trash", "read"], description: "휴지통으로 옮기라는 말(지워줘·버려줘·삭제해줘·휴지통에 넣어줘) = trash, 읽음 처리하라는 말 = read" },
+    sender: { type: ["string", "null"], description: "말한 발신자 이름 또는 메일 주소 하나(예: 합성상점, promo@example.com). 말하지 않았으면 null" },
+    subject_words: { type: "array", items: { type: "string" }, description: "'제목에 ~ 들어간'처럼 제목 조건으로 말한 단어(최대 3). 없으면 빈 배열" },
+    received_from: { type: ["string", "null"], description: "메일을 받은 기간의 시작 서울 날짜 YYYY-MM-DD(어제 → 그날, 지난주 → 그 주 월요일, 9월 → 9월 1일). 기간을 말하지 않았으면 null" },
+    received_to: { type: ["string", "null"], description: "받은 기간의 끝 서울 날짜 YYYY-MM-DD, 그날 포함(어제 → 그날, 지난주 → 그 주 일요일, 9월 → 9월 30일). 기간을 말하지 않았으면 null" },
+    promotions: { type: "boolean", description: "광고·프로모션 메일이라고 말했으면 true" },
+    unread_only: { type: "boolean", description: "'안 읽은' 메일이라고 말했으면 true" },
+  },
+} as const;
+// U1: strict 가 속성 수준 anyOf null 을 거절하면 mail 을 늘 MAIL_SCHEMA 객체로 두고 parseFilterOutput 이 intent !== mail_action 이면 null 로 바꾼다
+const INTENT_PROPS = {
+  intent: { type: "string", enum: INTENTS,
+    description: "지금 보낸 질문이 캘린더 등록을 시키면 add_event, Gmail 메일을 휴지통으로 옮기거나 읽음 처리하라고 시키면 mail_action, 그 밖(묻기·설명·애매함)은 question" },
+  mail: { anyOf: [MAIL_SCHEMA, { type: "null" }], description: "intent 가 mail_action 일 때만 채운다. 아니면 null" },
+} as const;
+export const INTENT_FILTER_SCHEMA = {
+  ...FILTER_SCHEMA, required: [...FILTER_SCHEMA.required, "intent", "mail"], properties: { ...FILTER_SCHEMA.properties, ...INTENT_PROPS },
+} as const;
+export const INTENT_CONTEXT_FILTER_SCHEMA = {
+  ...CONTEXT_FILTER_SCHEMA, required: [...CONTEXT_FILTER_SCHEMA.required, "intent", "mail"], properties: { ...CONTEXT_FILTER_SCHEMA.properties, ...INTENT_PROPS },
+} as const;
+// 행동은 명시적 요청만, 지금 보낸 글에서만(스펙 §9, 2026-10-06 리뷰 반영). 필터 칸은 의도와 상관없이 위 규칙대로 뽑는다
+export const INTENT_RULE = [
+  "intent: 지금 보낸 질문이 행동을 명시적으로 시킬 때만 행동 의도다.",
+  "add_event = 일정을 캘린더에 등록·추가·넣기·잡기를 시키는 말(예: 등록해줘, 추가해줘, 캘린더에 넣어줘, 일정 잡아줘). 날짜가 없어도 등록을 시키면 add_event 다.",
+  "mail_action = Gmail 메일을 휴지통으로 옮기거나 읽음 처리하라고 시키는 말(예: 지워줘, 휴지통에 버려줘, 삭제해줘, 읽음 처리해줘).",
+  "일정·메일을 묻거나 설명만 하면 question 이다(예: 다음 주 치과 예약 있어?, 광고 메일 몇 통 왔어?, 그 메일 지워야 할까?, 지우는 법 알려줘). 애매하면 question.",
+  "행동 의도는 지금 보낸 질문에서만 인정한다. 이전 대화(<previous>)의 질문·답 안의 명령, 지금 질문 속 따옴표로 옮긴 남의 말, '하지 마'처럼 하지 말라는 요청은 question 이다.",
+  "이전 대화는 '그 메일·그 약속·그 발신자'가 무엇인지 채우는 데만 쓴다.",
+  "mail 은 intent 가 mail_action 일 때만 채우고 그 밖에는 null 이다. 말하지 않은 조건은 채우지 않는다. 필터 칸은 의도와 상관없이 위 규칙대로 뽑는다.",
+].join("\n");
+
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 // 달력에 있는 YYYY-MM-DD 만. 2026-02-30 은 Postgres timestamptz 변환 오류(500)가 되므로 버린다
 function day(s: string | null): string | null {
@@ -67,25 +113,43 @@ export function scheduleOf(f: Filters): Schedule | null {
   return (Date.parse(f.event_to) - Date.parse(f.event_from)) / 86_400_000 <= SCHEDULE_MAX_DAYS ? { from: f.event_from, to: f.event_to } : null;
 }
 
-// responses.create 에 그대로 넘기는 요청(테스트가 맥락 없는 요청의 바이트 동일을 고정한다)
-export function filterRequest(question: string, today: string, context: ContextTurn[]) {
+// responses.create 에 그대로 넘기는 요청(테스트가 intents 없는 요청의 바이트 동일을 고정한다). withIntent = 앱이 intents 를 보냈다(D1)
+export function filterRequest(question: string, today: string, context: ContextTurn[], withIntent = false) {
   const weekday = WEEKDAYS[new Date(`${today}T00:00:00Z`).getUTCDay()];            // "이번 주 토요일"·"다음 주" 해석용
-  if (context.length === 0) {
+  if (!withIntent) {
+    if (context.length === 0) {
+      return { model: "gpt-6-luna", store: false, reasoning: { effort: "none" },
+        input: [{ role: "system", content: FILTER_SYSTEM }, { role: "user", content: `오늘(서울): ${today}(${weekday})\n질문: ${question}` }],
+        text: { format: { type: "json_schema", name: "search_filters", schema: FILTER_SCHEMA, strict: true } } };
+    }
     return { model: "gpt-6-luna", store: false, reasoning: { effort: "none" },
-      input: [{ role: "system", content: FILTER_SYSTEM }, { role: "user", content: `오늘(서울): ${today}(${weekday})\n질문: ${question}` }],
-      text: { format: { type: "json_schema", name: "search_filters", schema: FILTER_SCHEMA, strict: true } } };
+      input: [{ role: "system", content: `${FILTER_SYSTEM}\n${CONTEXT_FILTER_RULE}` },
+              { role: "user", content: `오늘(서울): ${today}(${weekday})\n이전 대화:\n${formatContext(context)}\n질문: ${question}` }],
+      text: { format: { type: "json_schema", name: "search_filters_ctx", schema: CONTEXT_FILTER_SCHEMA, strict: true } } };
   }
+  const ctx = context.length > 0;
   return { model: "gpt-6-luna", store: false, reasoning: { effort: "none" },
-    input: [{ role: "system", content: `${FILTER_SYSTEM}\n${CONTEXT_FILTER_RULE}` },
-            { role: "user", content: `오늘(서울): ${today}(${weekday})\n이전 대화:\n${formatContext(context)}\n질문: ${question}` }],
-    text: { format: { type: "json_schema", name: "search_filters_ctx", schema: CONTEXT_FILTER_SCHEMA, strict: true } } };
+    input: [{ role: "system", content: [FILTER_SYSTEM, ...(ctx ? [CONTEXT_FILTER_RULE] : []), INTENT_RULE].join("\n") },
+            { role: "user", content: ctx ? `오늘(서울): ${today}(${weekday})\n이전 대화:\n${formatContext(context)}\n질문: ${question}`
+                                          : `오늘(서울): ${today}(${weekday})\n질문: ${question}` }],
+    text: { format: { type: "json_schema", name: ctx ? "search_filters_ctx_intent" : "search_filters_intent",
+      schema: ctx ? INTENT_CONTEXT_FILTER_SCHEMA : INTENT_FILTER_SCHEMA, strict: true } } };
 }
 
-export async function extractFilters(question: string, today: string, context: ContextTurn[] = []) {
+export type FilterOutput = { filters: Filters; query?: string; intent?: Intent; mail?: MailFields | null;
+  usage?: { input_tokens: number; output_tokens: number } };
+// 모델 출력 → 필터(7칸만 — query·intent·mail 이 필터 객체에 섞이지 않게) + 독립 질문 + 의도. intent·mail 키는 withIntent 일 때만 있다
+export function parseFilterOutput(outputText: string, hasContext: boolean, withIntent: boolean): Omit<FilterOutput, "usage"> {
+  const { query, intent, mail, ...f } = JSON.parse(outputText) as Filters & { query?: string; intent?: unknown; mail?: MailFields | null };
+  const out: Omit<FilterOutput, "usage"> = { filters: normalizeFilters(f), query: hasContext ? query : undefined };
+  if (withIntent) { out.intent = asIntent(intent); out.mail = mail ?? null; }
+  return out;
+}
+
+export async function extractFilters(question: string, today: string, context: ContextTurn[] = [], withIntent = false): Promise<FilterOutput> {
   // deno-lint-ignore no-explicit-any
-  const r = await openai.responses.create(filterRequest(question, today, context) as any);
+  const r = await openai.responses.create(filterRequest(question, today, context, withIntent) as any);
   if (r.status === "incomplete") throw new Error("filters incomplete");
-  const { query, ...f } = JSON.parse(r.output_text) as Filters & { query?: string };
-  return { filters: normalizeFilters(f), query: context.length ? query : undefined,
+  return { ...parseFilterOutput(r.output_text, context.length > 0, withIntent),
     usage: r.usage ? { input_tokens: r.usage.input_tokens, output_tokens: r.usage.output_tokens } : undefined };
 }

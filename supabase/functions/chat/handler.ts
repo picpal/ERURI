@@ -1,10 +1,12 @@
 import { type BudgetDeps, type BudgetLevel, costKrw, Deferred, guarded } from "../_shared/budget.ts";
-import { type ContextTurn, escTags, type Filters, formatContext, type Schedule, scheduleOf } from "./filters.ts";
-export type { ContextTurn, Filters, Schedule } from "./filters.ts";
+import { type ActionIntent, ACTION_INTENTS, type ContextTurn, escTags, type FilterOutput, type Filters, formatContext, type Intent, type MailFields,
+  type Schedule, scheduleOf } from "./filters.ts";
+export type { ActionIntent, ContextTurn, Filters, Intent, MailFields, Schedule } from "./filters.ts";
 
 // 채팅(스펙 §9): 필터 추출 → facts SQL(구조화 조건이 있을 때) → 하이브리드 상위 12(기간 필터로 0건이면 기간 없이 1회 더) → gpt-6-sol 답변(예산 80% 이상이면 gpt-6-luna, §13)
 // → 서버 인용 검증(이번 문서 집합에 없는 id 제거, 근거 0개면 거절) → 출처 메타·제안 카드·보관함 후보(인용 ∪ 구별 facts ∪ 관련도 컷, 거절이면 없음) · 일정 질문이면 schedule(기간만, 앱이 기기 캘린더를 읽는다). 수집 문서 안의 지시는 데이터(<document> 블록).
 // 로그에 질문·문서·답변 본문을 남기지 않는다. 문서로 읽은 item_id 목록은 감사(read)
+// 의도 판별(§9, 2026-10-06): intents 가 있는 요청만 필터가 intent·mail 도 뽑고, 행동 의도면 검색·답변 없이 의도만 돌려준다(앱이 처리)
 export type ChatHit = { item_id: string; text: string; occurred_at: string };
 export type RawAnswer = { answer: string; source_item_ids: string[]; refused: boolean };
 export type Usage = { input_tokens: number; output_tokens: number; cached_tokens?: number; reasoning_tokens?: number };
@@ -16,7 +18,7 @@ export type ScoredRow = { item_id: string; sem_sim: number | null; kw_score: num
 export type AnswerInput = { question: string; today: string; documents: ChatHit[]; context?: ContextTurn[]; query?: string };
 export type ChatDeps = {
   authUser(token: string): Promise<string | null>;
-  filters(question: string, today: string, context: ContextTurn[]): Promise<{ filters: Filters; query?: string; usage?: Usage }>;
+  filters(question: string, today: string, context: ContextTurn[], withIntent?: boolean): Promise<FilterOutput>;   // withIntent 없음 = false(기존 테스트의 3인자 호출 그대로)
   facts(userId: string, f: Filters): Promise<ChatHit[]>;
   search(userId: string, q: { question: string; from: string | null; to: string | null; sources: string[] }): Promise<SearchResult>;
   answer(input: AnswerInput, level: BudgetLevel): Promise<RawAnswer & { usage?: Usage; model: string }>;
@@ -27,9 +29,12 @@ export type ChatDeps = {
   budget: BudgetDeps;
   today(): string;
   sleep?(ms: number): Promise<void>;
+  /** 메일 정리 플래그(스펙 §7 "켜기" — Edge secret MAIL_ACTIONS=on). 꺼져 있으면 mail_action → question */
+  mailActions(): boolean;
 };
 export type ChatResult = RawAnswer & { forced_refusal: boolean; dropped_ids: number; hits: string[]; candidates: string[]; citations: Meta[];
-  proposals: ProposalCard[]; model: string | null; schedule: Schedule | null };
+  proposals: ProposalCard[]; model: string | null; schedule: Schedule | null; intent: Intent; mail: MailFields | null };
+export type ChatOutcome = ChatResult & { rewritten: boolean; raw_intent?: Intent };
 
 export const REFUSAL = "저장된 정보에서 확인되지 않음";
 
@@ -82,7 +87,7 @@ export function answerUserMessage(input: AnswerInput): string {
   return `오늘: ${input.today}\n이전 대화(질문 이해용, 근거 아님):\n${formatContext(input.context)}\n질문: ${input.question}${q}\n\n${docs}`;
 }
 
-export function validateAnswer(raw: RawAnswer, hits: ChatHit[]): Omit<ChatResult, "hits" | "candidates" | "citations" | "proposals" | "model" | "schedule"> {
+export function validateAnswer(raw: RawAnswer, hits: ChatHit[]): Omit<ChatResult, "hits" | "candidates" | "citations" | "proposals" | "model" | "schedule" | "intent" | "mail"> {
   const allowed = new Set(hits.map((h) => h.item_id));
   const ids = [...new Set(raw.source_item_ids)].filter((id) => allowed.has(id));
   const dropped = new Set(raw.source_item_ids).size - ids.length;
@@ -142,11 +147,32 @@ function cut(s: string, n: number): string {
   const t = s.slice(0, n);
   return /[\uD800-\uDBFF]$/.test(t) ? t.slice(0, -1) : t;
 }
+// 하위 호환(스펙 §9): 앱이 처리하는 행동 목록. 없음·빈 배열·형식 오류·아는 값 없음 → null(분류하지 않음 — 0.12.x 요청과 바이트 동일, D1). 모르는 값은 무시
+export function parseIntents(v: unknown): Set<ActionIntent> | null {
+  if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) return null;
+  const s = new Set((v as string[]).filter((x): x is ActionIntent => (ACTION_INTENTS as readonly string[]).includes(x)));
+  return s.size ? s : null;
+}
+// 모델 의도(세 값) → 이 요청의 의도: 앱 목록에 없거나 메일 정리 플래그가 꺼져 있으면 question(D2)
+export function resolveIntent(raw: Intent, allowed: Set<ActionIntent>, mailOn: boolean): Intent {
+  if (raw === "question" || !allowed.has(raw)) return "question";
+  return raw === "mail_action" && !mailOn ? "question" : raw;
+}
+// 행동 의도 응답(스펙 §9 "응답"): 검색·답변 없이 빈 목록. mail 은 mail_action 일 때만 모델 출력 그대로
+export function actionResult(intent: ActionIntent, mail: MailFields | null): ChatResult {
+  return { answer: "", source_item_ids: [], refused: false, forced_refusal: false, dropped_ids: 0, hits: [], candidates: [], citations: [], proposals: [],
+    model: null, schedule: null, intent, mail: intent === "mail_action" ? mail : null };
+}
 
-async function answerOnce(userId: string, question: string, deps: ChatDeps, context: ContextTurn[]): Promise<ChatResult & { rewritten: boolean }> {
+async function answerOnce(userId: string, question: string, deps: ChatDeps, context: ContextTurn[], allowed: Set<ActionIntent> | null): Promise<ChatOutcome> {
   const today = deps.today();
   const { value } = await guarded(deps.budget, userId, "chat", CHAT_EST_KRW, crypto.randomUUID(), async (level) => {
-    const { filters, query, usage: fu } = await deps.filters(question, today, context);
+    const { filters, query, intent: raw, mail, usage: fu } = await deps.filters(question, today, context, allowed !== null);
+    const intent = allowed ? resolveIntent(raw ?? "question", allowed, deps.mailActions()) : "question";
+    // 행동 의도: 검색·facts·답변 모델을 부르지 않는다 — 문서를 읽지 않으므로 감사 read 도 없다. 예약은 같고 정산은 필터 비용만(스펙 §9 "응답")
+    if (intent !== "question") {
+      return { value: { ...actionResult(intent, mail ?? null), rewritten: false, raw_intent: raw } as ChatOutcome, actualKrw: spent(null, undefined, fu) };
+    }
     // 맥락이 있으면 검색은 독립 질문으로(스펙 §9) — "거기 주소" 만으로는 키워드·임베딩이 대상을 못 고른다. 비었으면 원 질문
     const standalone = context.length && query?.trim() ? cut(query.trim(), 500) : question;
     const rewritten = standalone !== question;
@@ -158,29 +184,32 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps, cont
     if (s.docs.length === 0 && (q.from !== null || q.to !== null)) s = await deps.search(userId, { ...q, from: null, to: null });
     const read = dedupe([...mergeFactDocs(factDocs), ...s.docs]);
     const docs = read.slice(0, 12);
+    const asked = { intent: "question" as const, mail: null, raw_intent: raw };
     if (docs.length === 0) {
       return { value: { answer: REFUSAL, source_item_ids: [], refused: true, forced_refusal: false, dropped_ids: 0, hits: [], candidates: [],
-        citations: [], proposals: [], model: null, schedule, rewritten } as ChatResult & { rewritten: boolean }, actualKrw: spent(null, undefined, fu) };
+        citations: [], proposals: [], model: null, schedule, rewritten, ...asked } as ChatOutcome, actualKrw: spent(null, undefined, fu) };
     }
     await deps.audit(userId, read.map((d) => d.item_id));                // 모델에 넣지 않고 버린 것까지 서버가 읽은 전부(§12 통제 4)
-    const raw = await deps.answer({ question, today, documents: docs, context, query: rewritten ? standalone : undefined }, level);
-    const v = validateAnswer(raw, docs);
+    const raw2 = await deps.answer({ question, today, documents: docs, context, query: rewritten ? standalone : undefined }, level);
+    const v = validateAnswer(raw2, docs);
     const candidates = pickCandidates({ refused: v.refused, cited: v.source_item_ids,
       facts: factsDistinct(filters) ? factDocs.map((d) => d.item_id) : [], searched: s.candidates });
     const [meta, proposals] = v.refused ? [[], []] as [Meta[], ProposalCard[]]
       : await Promise.all([deps.meta(userId, v.source_item_ids), deps.proposals(userId, v.source_item_ids)]);
     const byId = new Map(meta.map((m) => [m.item_id, m]));
     const citations = v.source_item_ids.map((id) => byId.get(id)).filter((m): m is Meta => m !== undefined);   // 답변의 인용 순서
-    return { value: { ...v, hits: docs.map((d) => d.item_id), candidates, citations, proposals, model: raw.model, schedule, rewritten }, actualKrw: spent(raw.model, raw.usage, fu) };
+    return { value: { ...v, hits: docs.map((d) => d.item_id), candidates, citations, proposals, model: raw2.model, schedule, rewritten, ...asked },
+      actualKrw: spent(raw2.model, raw2.usage, fu) };
   });
   return value;
 }
 
-export async function answerQuestion(userId: string, question: string, deps: ChatDeps, context: ContextTurn[] = []): Promise<ChatResult & { rewritten: boolean }> {
+export async function answerQuestion(userId: string, question: string, deps: ChatDeps, context: ContextTurn[] = [],
+  intents: Set<ActionIntent> | null = null): Promise<ChatOutcome> {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   for (let attempt = 0; ; attempt++) {
     try {
-      return await answerOnce(userId, question, deps, context);
+      return await answerOnce(userId, question, deps, context, intents);
     } catch (e) {
       if (!(e instanceof Deferred && e.message === "llm_busy" && attempt < BUSY_RETRY_MS.length)) throw e;
       await sleep(BUSY_RETRY_MS[attempt]);
@@ -192,7 +221,7 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
   const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
   const user = token ? await deps.authUser(token) : null;
   if (!user) return new Response(null, { status: 401 });
-  let b: { question?: unknown; item_id?: unknown; context?: unknown };
+  let b: { question?: unknown; item_id?: unknown; context?: unknown; intents?: unknown };
   try { b = await req.json(); } catch { return Response.json({ error: "bad_json" }, { status: 400 }); }
   if (/\/chat\/item\/?$/.test(new URL(req.url).pathname)) {
     if (typeof b.item_id !== "string") return Response.json({ error: "bad_item" }, { status: 400 });
@@ -204,13 +233,18 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
   }
   const context = parseContext(b.context);
   if (context === null) return Response.json({ error: "bad_context" }, { status: 400 });
+  const intents = parseIntents(b.intents);
   try {
-    const r = await answerQuestion(user, b.question, deps, context);
-    console.log(JSON.stringify({ chat: r.refused ? "refused" : "answered", forced: r.forced_refusal, cited: r.source_item_ids.length,
-      dropped: r.dropped_ids, hits: r.hits.length, candidates: r.candidates.length, schedule: r.schedule !== null, model: r.model,
-      context: context.length, rewritten: r.rewritten }));   // id 목록·날짜·질문·맥락은 로그에 넣지 않는다
+    const r = await answerQuestion(user, b.question, deps, context, intents);
+    if (r.intent !== "question") {
+      console.log(JSON.stringify({ chat: "intent", intent: r.intent, context: context.length }));   // 의도 값·맥락 턴 수만(스펙 §9) — 글·칸 값 없음
+    } else {
+      console.log(JSON.stringify({ chat: r.refused ? "refused" : "answered", forced: r.forced_refusal, cited: r.source_item_ids.length,
+        dropped: r.dropped_ids, hits: r.hits.length, candidates: r.candidates.length, schedule: r.schedule !== null, model: r.model,
+        context: context.length, rewritten: r.rewritten, intent_raw: r.raw_intent ?? null }));   // id 목록·날짜·질문·맥락은 로그에 넣지 않는다
+    }
     return Response.json({ answer_id: crypto.randomUUID(), answer: r.answer, refused: r.refused, source_item_ids: r.source_item_ids,
-      citations: r.citations, proposals: r.proposals, hits: r.hits, candidates: r.candidates, schedule: r.schedule });
+      citations: r.citations, proposals: r.proposals, hits: r.hits, candidates: r.candidates, schedule: r.schedule, intent: r.intent, mail: r.mail });
   } catch (e) {
     if (e instanceof Deferred) {
       console.log(JSON.stringify({ chat: e.message }));

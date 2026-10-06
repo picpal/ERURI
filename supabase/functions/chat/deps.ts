@@ -44,7 +44,7 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
   };
   return {
     authUser: async (t) => { const { data, error } = await sb.auth.getUser(t); return error ? null : data.user?.id ?? null; },
-    filters: (q, today, context) => extractFilters(q, today, context),
+    filters: (q, today, context, withIntent) => extractFilters(q, today, context, withIntent),
     async facts(u, f: Filters) {
       // 받은 기간은 늘 받은 시각, 일정 기간은 event·task 의 start·due 에만(0024, §9)
       const scheduled = f.event_from !== null || f.event_to !== null;
@@ -94,5 +94,6 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
     },
     budget: budgetDeps(sb),
     today: () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10),
+    mailActions: () => Deno.env.get("MAIL_ACTIONS") === "on",        // 스펙 §7 "켜기" — 0.14.0 전에는 설정하지 않는다
   };
 }

@@ -1,8 +1,9 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import type { BudgetDeps } from "../functions/_shared/budget.ts";
-import { answerQuestion, answerUserMessage, type ChatDeps, type ChatHit, CONTEXT_RULE, type Filters, factsDistinct, formatDocuments, handleChat, mergeFactDocs,
-  parseContext, REFUSAL, relevantItems, SYSTEM_PROMPT, systemPrompt, validateAnswer } from "../functions/chat/handler.ts";
-import { CONTEXT_FILTER_SCHEMA, extractFilters, FILTER_SCHEMA, FILTER_SYSTEM, filterRequest, formatContext, normalizeFilters, scheduleOf } from "../functions/chat/filters.ts";
+import { actionResult, answerQuestion, answerUserMessage, type ChatDeps, type ChatHit, CONTEXT_RULE, type Filters, factsDistinct, formatDocuments, handleChat,
+  mergeFactDocs, parseContext, parseIntents, REFUSAL, relevantItems, resolveIntent, SYSTEM_PROMPT, systemPrompt, validateAnswer } from "../functions/chat/handler.ts";
+import { CONTEXT_FILTER_RULE, CONTEXT_FILTER_SCHEMA, extractFilters, FILTER_SCHEMA, FILTER_SYSTEM, filterRequest, formatContext, INTENT_CONTEXT_FILTER_SCHEMA,
+  INTENT_FILTER_SCHEMA, INTENT_RULE, type MailFields, MAIL_SCHEMA, normalizeFilters, parseFilterOutput, scheduleOf } from "../functions/chat/filters.ts";
 
 const hits: ChatHit[] = [
   { item_id: "i1", occurred_at: "2026-07-03T12:14:00Z", text: "[쿠팡] 에어팟 프로 2세대 주문 329,000원" },
@@ -31,16 +32,21 @@ Deno.test("documents are wrapped as <document id date> blocks and cannot close t
 
 function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; searches?: ChatHit[][]; candidates?: string[][];
   raw?: { answer: string; source_item_ids: string[]; refused: boolean };
-  level?: "ok" | "degraded" | "refused"; filters?: Partial<Filters>; slots?: (number | null)[] } = {}) {
+  level?: "ok" | "degraded" | "refused"; filters?: Partial<Filters>; slots?: (number | null)[];
+  intent?: "question" | "add_event" | "mail_action"; mail?: MailFields | null; mailOn?: boolean } = {}) {
   const seen = { answer: [] as { docs: string[]; level: string }[], audit: [] as string[][], search: [] as unknown[], sleeps: [] as number[],
-    settled: [] as number[] };
+    settled: [] as number[], facts: 0, withIntent: [] as boolean[] };
   const slots = [...(o.slots ?? [])];
   const budget: BudgetDeps = { reserve: async () => o.level ?? "ok", settle: async (_u, _k, _e, actual) => { seen.settled.push(actual); },
     acquire: async () => (slots.length ? slots.shift()! : 1), release: async () => {}, now: () => new Date("2026-10-01T00:00:00Z") };
   const d: ChatDeps = {
     authUser: async (t) => (t === "good" ? "user-1" : null),
-    filters: async () => ({ filters: { date_from: null, date_to: null, event_from: null, event_to: null, sources: [], kinds: [], merchant: null, ...o.filters } }),
-    facts: async () => o.facts ?? [],
+    filters: async (_q, _t, _c, withIntent) => {
+      seen.withIntent.push(withIntent === true);
+      const f = { filters: { date_from: null, date_to: null, event_from: null, event_to: null, sources: [], kinds: [], merchant: null, ...o.filters } };
+      return withIntent ? { ...f, intent: o.intent ?? "question", mail: o.mail ?? null } : f;
+    },
+    facts: async () => { seen.facts++; return o.facts ?? []; },
     search: async (_u, q) => {
       seen.search.push(q);
       const docs = o.searches ? o.searches.shift() ?? [] : o.hits ?? hits;
@@ -56,6 +62,7 @@ function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; searches?: ChatHit[][]; 
     budget,
     today: () => "2026-10-01",
     sleep: async (ms) => { seen.sleeps.push(ms); },
+    mailActions: () => o.mailOn ?? false,
   };
   return { d, seen };
 }
@@ -437,4 +444,133 @@ Deno.test({ name: "extractFilters (live): context fills the pronoun into query; 
   assert(a.query?.includes("합성치과"));
   const b = await extractFilters("합성카드로 얼마 결제했어?", "2026-10-04", ctx1);
   assert(b.query !== undefined && !b.query.includes("치과"));
+} });
+
+// ── 채팅 의도 판별(스펙 §9 "채팅 의도 판별", 2026-10-06) ──
+const MAIL: MailFields = { action: "trash", sender: "합성상점", subject_words: [], received_from: "2026-02-30", received_to: null, promotions: true, unread_only: false };
+
+// 수정 전(26e47bb, 배포된 0.12.0) 필터 요청의 SHA-256 — A1 Step 1 첫 명령으로 뽑은 값. 새 코드끼리 비교하면 두 경로가 함께 바뀌어도 통과하므로 고정값과 비교한다
+const PRE_A1_PLAIN = "afd4a3b9cb6bb986c81f69b83348929206730a75b00623011f39a63fcf67b22c", PRE_A1_CTX = "b15917dbbb1246b35b2327c53a7cd26036ac032d2b24309f1c6fc2c7895fb002";
+const sha = async (o: unknown) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(o)))))
+  .map((b) => b.toString(16).padStart(2, "0")).join("");
+Deno.test("filterRequest: without intents both requests are byte-identical to 0.12.0 (hashes taken from 26e47bb before this change)", async () => {
+  assertEquals(await sha(filterRequest("q", "2026-10-04", [])), PRE_A1_PLAIN);
+  assertEquals(await sha(filterRequest("q", "2026-10-04", ctx1)), PRE_A1_CTX);
+  assertEquals(await sha(filterRequest("q", "2026-10-04", ctx1, false)), await sha(filterRequest("q", "2026-10-04", ctx1)));
+  assert(!("intent" in FILTER_SCHEMA.properties) && !("mail" in CONTEXT_FILTER_SCHEMA.properties));
+});
+
+Deno.test("filterRequest with intents: intent (three values) and nullable mail added; system gets INTENT_RULE; context keeps query", () => {
+  const r = filterRequest("합성치과 예약 등록해줘", "2026-10-07", [], true) as { input: { content: string }[]; text: { format: { name: string; schema: typeof INTENT_FILTER_SCHEMA } } };
+  assertEquals(r.input[0].content, `${FILTER_SYSTEM}\n${INTENT_RULE}`);
+  assertEquals(r.input[1].content, "오늘(서울): 2026-10-07(수)\n질문: 합성치과 예약 등록해줘");
+  assertEquals(r.text.format.name, "search_filters_intent");
+  assertEquals(r.text.format.schema, INTENT_FILTER_SCHEMA);
+  assertEquals([...r.text.format.schema.properties.intent.enum], ["question", "add_event", "mail_action"]);
+  assert(r.text.format.schema.required.includes("intent") && r.text.format.schema.required.includes("mail"));
+  assertEquals(r.text.format.schema.properties.mail.anyOf, [MAIL_SCHEMA, { type: "null" }]);
+  assertEquals(Object.keys(r.text.format.schema.properties).filter((k) => k !== "intent" && k !== "mail"), Object.keys(FILTER_SCHEMA.properties));
+  const c = filterRequest("그 약속 등록해줘", "2026-10-07", ctx1, true) as { input: { content: string }[]; text: { format: { name: string; schema: typeof INTENT_CONTEXT_FILTER_SCHEMA } } };
+  assertEquals(c.input[0].content, `${FILTER_SYSTEM}\n${CONTEXT_FILTER_RULE}\n${INTENT_RULE}`);
+  assertEquals(c.input[1].content, `오늘(서울): 2026-10-07(수)\n이전 대화:\n${formatContext(ctx1)}\n질문: 그 약속 등록해줘`);
+  assertEquals(c.text.format.name, "search_filters_ctx_intent");
+  assert(c.text.format.schema.required.includes("query") && c.text.format.schema.required.includes("intent") && c.text.format.schema.required.includes("mail"));
+});
+
+Deno.test("INTENT_RULE and mail schema carry the spec rules (explicit request only, current message only, quoted/previous/negated → question)", () => {
+  for (const s of ["명시적으로", "애매하면 question", "지금 보낸 질문에서만", "따옴표", "하지 마", "이전 대화", "mail_action 일 때만"]) assert(INTENT_RULE.includes(s), s);
+  assertEquals(MAIL_SCHEMA.required, ["action", "sender", "subject_words", "received_from", "received_to", "promotions", "unread_only"]);
+  assertEquals(MAIL_SCHEMA.additionalProperties, false);
+  assertEquals([...MAIL_SCHEMA.properties.action.enum], ["trash", "read"]);
+});
+
+Deno.test("parseFilterOutput: filters keep exactly the seven filter keys; intent/mail only with intents; unknown intent → question", () => {
+  const base = { date_from: null, date_to: null, event_from: "2026-10-20", event_to: "2026-10-20", sources: [], kinds: ["event"], merchant: null };
+  const a = parseFilterOutput(JSON.stringify({ ...base, intent: "add_event", mail: null }), false, true);
+  assertEquals(Object.keys(a.filters).sort(), ["date_from", "date_to", "event_from", "event_to", "kinds", "merchant", "sources"]);
+  assertEquals([a.intent, a.mail, a.query, a.filters.event_from], ["add_event", null, undefined, "2026-10-20T00:00:00+09:00"]);
+  const m = parseFilterOutput(JSON.stringify({ ...base, intent: "mail_action", mail: MAIL }), false, true);
+  assertEquals(m.mail, MAIL);                                                   // 검사·정제 없음(§7 — mail-action 한 곳)
+  assertEquals(parseFilterOutput(JSON.stringify({ ...base, intent: "delete_everything", mail: null }), false, true).intent, "question");
+  const n = parseFilterOutput(JSON.stringify(base), false, false);
+  assert(!("intent" in n) && !("mail" in n));
+  assertEquals(parseFilterOutput(JSON.stringify({ ...base, query: "합성 질문", intent: "question", mail: null }), true, true).query, "합성 질문");
+});
+
+Deno.test("parseIntents: absent, empty, malformed or no known action → null (no classification); unknown values ignored", () => {
+  for (const v of [undefined, null, [], "add_event", [1], ["add_event", 2], {}, ["delete_everything"]]) assertEquals(parseIntents(v), null, JSON.stringify(v));
+  assertEquals(parseIntents(["add_event"]), new Set(["add_event"]));
+  assertEquals(parseIntents(["add_event", "mail_action", "future_thing"]), new Set(["add_event", "mail_action"]));
+});
+
+Deno.test("resolveIntent: not in the app's list → question; mail_action needs MAIL_ACTIONS on; question stays", () => {
+  const add = new Set(["add_event"] as const), both = new Set(["add_event", "mail_action"] as const);
+  assertEquals(resolveIntent("add_event", add, false), "add_event");
+  assertEquals(resolveIntent("mail_action", add, true), "question");
+  assertEquals(resolveIntent("mail_action", both, false), "question");
+  assertEquals(resolveIntent("mail_action", both, true), "mail_action");
+  assertEquals(resolveIntent("question", both, true), "question");
+});
+
+Deno.test("answerQuestion add_event: no facts, search, answer or audit; empty result; budget settles the filter cost only", async () => {
+  const { d, seen } = deps({ intent: "add_event" });
+  const r = await answerQuestion("user-1", "합성치과 10/20 15시 등록해줘", d, [], new Set(["add_event"]));
+  assertEquals([seen.facts, seen.search.length, seen.answer.length, seen.audit.length], [0, 0, 0, 0]);
+  assertEquals({ ...r, rewritten: undefined, raw_intent: undefined }, { ...actionResult("add_event", null), rewritten: undefined, raw_intent: undefined });
+  assertEquals(seen.settled, [0]);                                              // 가짜 필터는 usage 가 없다 — 답변 비용 0
+  assertEquals(seen.withIntent, [true]);
+});
+
+Deno.test("answerQuestion: without intents the filter is asked without intent and the question path runs (intent question, mail null)", async () => {
+  const { d, seen } = deps({ intent: "add_event" });
+  const r = await answerQuestion("user-1", "합성치과 10/20 15시 등록해줘", d);
+  assertEquals(seen.withIntent, [false]);
+  assertEquals([r.intent, r.mail, seen.answer.length], ["question", null, 1]);
+});
+
+Deno.test("answerQuestion: action not in the list or mail flag off → normal answer; mail_action with flag on echoes mail as-is", async () => {
+  const notListed = deps({ intent: "mail_action", mail: MAIL });
+  const a = await answerQuestion("user-1", "합성상점 광고 메일 지워줘", notListed.d, [], new Set(["add_event"]));
+  assertEquals([a.intent, a.mail, a.raw_intent, notListed.seen.answer.length], ["question", null, "mail_action", 1]);
+  const off = deps({ intent: "mail_action", mail: MAIL, mailOn: false });
+  assertEquals((await answerQuestion("user-1", "q", off.d, [], new Set(["add_event", "mail_action"]))).intent, "question");
+  const on = deps({ intent: "mail_action", mail: MAIL, mailOn: true });
+  const m = await answerQuestion("user-1", "q", on.d, [], new Set(["add_event", "mail_action"]));
+  assertEquals([m.intent, m.mail, on.seen.search.length], ["mail_action", MAIL, 0]);
+});
+
+Deno.test("handleChat: intents in the body; action response keeps the answer shape with empty lists; question response adds intent question and mail null", async () => {
+  const act = deps({ intent: "add_event" });
+  const r = await handleChat(req("chat", { question: "합성치과 10/20 15시 등록해줘", intents: ["add_event"] }), act.d);
+  const j = await r.json();
+  assertEquals(r.status, 200);
+  assertEquals({ ...j, answer_id: "x" }, { answer_id: "x", answer: "", refused: false, source_item_ids: [], citations: [], proposals: [], hits: [],
+    candidates: [], schedule: null, intent: "add_event", mail: null });
+  const q = deps({ intent: "add_event" });
+  const k = await (await handleChat(req("chat", { question: "에어팟 어디서 샀어?" }), q.d)).json();
+  assertEquals([k.intent, k.mail, k.refused, q.seen.withIntent], ["question", null, false, [false]]);
+  const bad = deps({ intent: "add_event" });
+  const b = await (await handleChat(req("chat", { question: "합성치과 등록해줘", intents: "add_event" }), bad.d)).json();
+  assertEquals([b.intent, bad.seen.withIntent], ["question", [false]]);          // 형식 오류 = 분류 안 함(400 없음, D1)
+});
+
+Deno.test("handleChat action log line: intent and context count only — no question text or mail values", async () => {
+  const { d } = deps({ intent: "mail_action", mail: { ...MAIL, sender: "합성비밀발신자" }, mailOn: true });
+  const lines: string[] = [];
+  const orig = console.log;
+  console.log = (...a: unknown[]) => { lines.push(a.map(String).join(" ")); };
+  try {
+    await handleChat(req("chat", { question: "합성비밀질문 지워줘", intents: ["add_event", "mail_action"], context: ctx1 }), d);
+  } finally { console.log = orig; }
+  assert(lines.includes('{"chat":"intent","intent":"mail_action","context":1}'), lines.join("\n"));
+  assert(!/합성비밀/.test(lines.join("\n")));
+});
+
+Deno.test({ name: "extractFilters (live): explicit add request → add_event; asking about a schedule or a quoted command → question", ignore: Deno.env.get("LIVE_LLM") !== "1", fn: async () => {
+  const add = await extractFilters("합성 치과 예약 10/20 15:00–16:00 캘린더에 등록해줘", "2026-10-07", [], true);
+  assertEquals(add.intent, "add_event");
+  assertEquals((await extractFilters("다음 주 합성 치과 예약 있어?", "2026-10-07", [], true)).intent, "question");
+  assertEquals((await extractFilters("엄마가 \"광고 메일 지워줘\"래, 무슨 뜻이야?", "2026-10-07", [], true)).intent, "question");
+  const mail = await extractFilters("합성상점에서 온 광고 메일 휴지통에 버려줘", "2026-10-07", [], true);
+  assertEquals([mail.intent, mail.mail?.action, mail.mail?.promotions], ["mail_action", "trash", true]);
 } });
