@@ -138,6 +138,22 @@ Deno.test("single mode, last attempt, unknown result on the first call → rerea
   }
 });
 
+Deno.test("reread stopped by the budget before reading anything (slow refresh + first call timeout) → defer RETRY_DEFER_MS, not now, nothing recorded", async () => {
+  for (const method of ["single", "batch"] as const) {
+    const { d, st } = harness({ method, ids: ids(20) });
+    const now0 = d.now;
+    let extra = 0;
+    d.now = () => now0() + extra;
+    d.token = () => { extra += 11_000; return Promise.resolve("access-1"); };   // 갱신 11초
+    const timeout = () => { extra += 15_000; return Promise.reject(new DOMException("t", "TimeoutError")); };   // 첫 호출 15초 타임아웃
+    if (method === "single") d.api = (t) => ({ ...harness().d.api(t), trash: timeout });
+    else d.api = (t) => ({ ...harness().d.api(t), batchModify: timeout });
+    const e = await assertRejects(() => mailActionJob(d, job("execute", 5)), Deferred);
+    assertEquals([e.message, e.until, st.cursor, st.ok, st.failed, st.finished, st.taken],
+      ["mail_budget", iso(T0 + 26_000 + RETRY_DEFER_MS), 0, [], [], undefined, method === "single" ? [400, 20] : [50, 400]]);   // 건별은 그 id 하나만 다시 읽는다
+  }
+});
+
 Deno.test("reread hits quota → records what it read and defers (quota rule), never marks the rest failed", async () => {
   const { d, st } = harness({ api: { batchModify: () => Promise.reject(E(503)),
     labels: (id) => id === "m2" ? Promise.reject(E(429)) : Promise.resolve({ id, labelIds: ["TRASH"] }) } });

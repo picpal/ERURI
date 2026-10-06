@@ -144,7 +144,8 @@ export async function mailActionJob(d: MailJobDeps, job: Job): Promise<string> {
       if (cursor > start) throw new Deferred(iso(d.now() + RETRY_DEFER_MS), "mail_retry");
       if (!last) throw new Error("mail_unknown " + codeOf(err));       // 진행 없음: fail_job 백오프 뒤 같은 묶음(멱등)
       // 건별 마지막 시도: 결과 불명인 그 id 만 다시 읽어 적고 나머지는 이어 간다 — 보내지 않은 id 를 실패로 적지 않는다(M4b 리뷰 Minor 3).
-      // 매번 한 id 씩은 진행하므로 미루기가 끝없이 돌지 않는다
+      // 재조회가 그 id 를 적으면 실행마다 한 id 씩 나아간다. 예산에 걸려 못 적으면 RETRY_DEFER_MS 뒤 다시(lookup) — attempts 를 쓰지 않으므로
+      // 갱신 지연·타임아웃이 끝없이 이어지면 끝나지 않지만, 1분 간격이라 Gmail·토큰이 회복되면 이어 간다(장애 중 처리량은 1분에 1건 수준)
       if (method === "single") {
         if (!await lookup(d, api, user, id, phase, o, ids.slice(cursor, cursor + 1), cursor, over)) return stale(d, phase);
         throw new Deferred(iso(d.now() + RETRY_DEFER_MS), "mail_retry");
@@ -186,7 +187,9 @@ async function lookup(d: MailJobDeps, api: GmailMailApi, user: string, id: strin
       if (!await d.progress(user, id, phase, cur, cur + n, ok, failed)) return false;
       cur += n;
     }
-    if (stop === "budget") throw new Deferred(iso(d.now()), "mail_budget");
+    // 예산 끝: 읽은 게 있으면 곧 다시. 이번 실행이 하나도 못 적었으면(lookup 은 이번 실행 진행 0 일 때만 불린다 — cur = from)
+    // RETRY_DEFER_MS 뒤로 — 느린 갱신·타임아웃이 이어지는 동안 attempts 도 진행도 없이 곧바로 다시 도는 루프를 막는다(M4b 재리뷰 Minor 1)
+    if (stop === "budget") throw new Deferred(iso(d.now() + (cur === from ? RETRY_DEFER_MS : 0)), "mail_budget");
     if (stop === "quota") return await quotaDefer(d, user, id);
   }
   return true;

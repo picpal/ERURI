@@ -223,9 +223,10 @@ begin
   elsif p_phase = 'undo' then
     if r.status not in ('undo_pending', 'undoing') then return mail_action_counts(r); end if;
     -- 연결 문제로 하나도 되돌리지 못했으면 되돌리기를 쓰지 않은 것으로 돌린다 — 다시 연결한 뒤 되돌릴 수 있게(계획 D11, Fable N-H1).
-    -- 상태는 실행 종료 상태로, 코드는 undo_<코드>(앱 문구), 감사 없음(Gmail 이 바뀌지 않았다).
+    -- 상태는 실행 종료 상태로, 코드는 undo_<코드>(앱 문구), 감사 없음(기록된 되돌리기가 없다).
     -- 잡이 진행 0 으로 dead(토큰 갱신 일시 오류 5번 등)여도 같이 돌린다 — 한 번뿐인 되돌리기가 시도 없이 소진되지 않게(M4b 리뷰 Minor 2).
-    -- 이때 코드는 남기지 않는다(앱은 undo_ 를 "다시 연결" 문구로 읽는다). 되돌리기 재전송은 멱등
+    -- 이때 코드는 남기지 않는다(앱은 undo_ 를 "다시 연결" 문구로 읽는다). job_dead 는 앞선 시도의 결과 불명 호출로 일부 메일이 이미
+    -- 받은편지함(안 읽음)으로 돌아갔을 수 있다 — 행은 실행 종료 상태로 보이지만 다시 [되돌리기]는 멱등이고, 어긋나도 메일이 복원된 안전한 쪽이다(M4b 재리뷰)
     if p_code in ('reauth_required', 'no_connection', 'job_dead') and r.undo_cursor = 0 then
       update mail_actions set status = case when cardinality(r.failed_ids) = 0 then 'done' else 'partial' end,
         error_code = case when p_code = 'job_dead' then error_code else 'undo_' || p_code end, quota_since = null
