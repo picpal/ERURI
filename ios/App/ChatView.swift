@@ -103,7 +103,9 @@ struct ChatView: View {
         }
         .navigationTitle("채팅")
         .navigationDestination(item: $openItem) { ItemDetailView(itemID: $0) }
-        .onAppear { dictation.onText = { input = $0 }; dictation.refresh(); syncClear(); loadHistory() }
+        // 다시 나올 때(다른 탭·항목 상세에서 돌아옴 — scenePhase 는 그대로)는 카드·제안을 다시 읽는다(§10 "다음에 화면에 나올 때", 최종 리뷰 Minor 1).
+        // 첫 표시는 행 onAppear 가 읽는다
+        .onAppear { let back = loaded; dictation.onText = { input = $0 }; dictation.refresh(); syncClear(); loadHistory(); if back { refreshCalendars() } }
         .onDisappear { dictation.stopIfRecording() }
         // 설정·로그아웃·계정 삭제·삭제 푸시에서 지웠다(D7) — 화면도 바로 비운다. 지운 뒤에는 빈 기록을 불러온 것과 같다
         .onChange(of: log.clearCount) { _, _ in syncClear() }
@@ -338,8 +340,10 @@ struct ChatView: View {
   }
 
   /// 일정 등록 턴의 카드(D8): 항목 id 로 그 항목의 제안(항목 상세 "일정" 절과 같은 조회)을 읽고 카드·캘린더를 계산한다.
-  /// 제안은 저장하지 않는다 — 다시 열면·앱 활성화·카드 추가 뒤(refreshCalendars) 다시 읽는다. 못 읽으면 읽어 둔 제안을 그대로 두고, 처음이면 다음에 화면에 나올 때 다시
-  private func loadAddEventCards(_ id: UUID) {
+  /// 제안은 저장하지 않는다 — 다시 열면·앱 활성화·카드 추가 뒤(refreshCalendars) 다시 읽는다. 못 읽으면 읽어 둔 제안을 그대로 두고, 처음이면 다음에 화면에 나올 때 다시.
+  /// scroll: 등록 결과(registerEvent)에서만 — 카드가 붙은 뒤 그 턴을 다시 위로 올린다(기록이 길면 새 턴이 패널 바로 위에 멈춰 카드가 패널 아래에 깔린다, 최종 리뷰 Important 2).
+  /// 복원 턴의 onAppear·활성화 재조회는 스크롤하지 않는다(읽던 자리를 옮기지 않게)
+  private func loadAddEventCards(_ id: UUID, scroll scrollAfter: Bool = false) {
     guard let t = turns.first(where: { $0.id == id }), t.record.kind == .addEvent, let item = t.record.itemID, !t.cardsLoading else { return }
     let epoch = log.clearCount
     settle(id, epoch, save: false) { $0.cardsLoading = true }
@@ -347,7 +351,9 @@ struct ChatView: View {
       let r = await API.send(ItemEvents.query(itemID: item))
       let ps = r.flatMap { $0.status == 200 ? ChatAddEvent.proposals(itemID: item, data: $0.data) : nil }
       settle(id, epoch, save: false) { if let ps { $0.addProposals = ps }; $0.cardsLoading = false }   // 재조회 실패가 읽어 둔 제안을 지우지 않게
-      if ps != nil, log.clearCount == epoch { readCalendar(id) }                                       // 지운 뒤 도착하면 카드도 계산하지 않는다
+      guard ps != nil, log.clearCount == epoch else { return }                                         // 지운 뒤 도착하면 카드도 계산하지 않는다
+      readCalendar(id)
+      if scrollAfter { scroll(to: id) }
     }
   }
 
@@ -589,7 +595,7 @@ struct ChatView: View {
         let r = await LinkCapture.shared.addEventResult(captureID: cid, withContext: withContext)
         DiagLog.append("CHAT add done events=\(r.itemID != nil ? 1 : 0)")
         settle(id, epoch) { $0.record.link = r.text; $0.record.itemID = r.itemID; $0.record.linkDone = true }
-        if r.itemID != nil { loadAddEventCards(id) }
+        if r.itemID != nil { loadAddEventCards(id, scroll: true) }
       }
     }
   }
