@@ -1069,7 +1069,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: 기존 `connections`·`sync_states`·`jobs`(`priority`·`not_before`·`claimed_at`)·`audit_log`·`enqueue_job`·`fail_job`·`jobs_set_priority`·`gmail_save_connection`·`gmail_get_refresh_token`·vault·pg_cron(F7·F9·F13·F22).
-- Produces: "이 계획이 만드는 인터페이스" DB 표 전부(이름·인자·반환 그대로) — M4b·M5·M6·M10이 쓴다. `supabase/tests/_mail-sql.ts`의 `MIGRATION_0030`(M10이 경로를 바꾼다)·`CASES`(21 — M3 리뷰 수정 7a61fe1)·`setupCtx`·`MAIL_FUNCTIONS`.
+- Produces: "이 계획이 만드는 인터페이스" DB 표 전부(이름·인자·반환 그대로) — M4b·M5·M6·M10이 쓴다. `supabase/tests/_mail-sql.ts`의 `MIGRATION_0030`(M10이 경로를 바꾼다)·`CASES`(22 — M3 리뷰 7a61fe1·M4b 리뷰 5c84734)·`setupCtx`·`MAIL_FUNCTIONS`.
 
 - [ ] **Step 1: 마이그레이션 파일**
 
