@@ -7,8 +7,18 @@ export type Got = { intent: Intent; mail: MailFields | null };
 export type Row = { id: string; group: string; expected: Intent; got: Intent; mail_ok: boolean | null };
 
 // 스펙 §15 구성. 사례를 더하면 이 수도 같이 고친다
-const WANT = { question: 39, add_event: 15, mail_action: 15 } as const;
-const GROUP_MIN: Record<string, number> = { confusable_ctx: 5, quoted: 3, prev_command: 3, negation: 3, add_ctx: 3, mail_ctx: 2 };
+const WANT = { question: 41, add_event: 18, mail_action: 17 } as const;
+const GROUP_MIN: Record<string, number> = { confusable_ctx: 5, quoted: 3, prev_command: 3, negation: 3, ability: 2, add_ctx: 3, add_polite: 3, mail_ctx: 2, mail_polite: 2 };
+// ADD-sim 문장(G1 = a01, G3 = a12, G7 = a13, G4 = q04)은 3회 모두 기대값이어야 A6 를 돌린다 — 재현율 0.9 합격선은 특정 문장의 실패를 허용한다(Fable F2)
+export const GATE = ["a01", "a12", "a13", "q04"] as const;
+
+// --runs N: 1 이상 정수만(없으면 1). NaN 이면 0행이 되어 gate_cases 가 빈 every 로 참이 된다(최종 리뷰 Minor 2)
+export function parseRuns(args: string[]): number | null {
+  const i = args.indexOf("--runs");
+  if (i < 0) return 1;
+  const v = args[i + 1];
+  return v !== undefined && /^[1-9]\d*$/.test(v) ? Number(v) : null;
+}
 
 export function validateCases(f: CaseFile): string[] {
   const p: string[] = [];
@@ -29,6 +39,7 @@ export function validateCases(f: CaseFile): string[] {
     if ((c.intent === "mail_action") !== (c.mail !== null)) p.push(`${c.id} mail must be set only for mail_action`);
     if (c.group.endsWith("_ctx") || c.group === "prev_command") { if (!c.context?.length) p.push(`${c.id} needs context`); }
   }
+  for (const id of GATE) if (!ids.has(id)) p.push(`gate ${id} missing`);
   return p;
 }
 

@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | A0 | 스펙 세부 반영(§9 하위 호환·같은 글·오프라인·카드 제안 상태·대화 기록, §15 게이트 이름 `ADD-sim`·⑦⑧, §16) + 광고 해지 계획 U6b 업로드 기준 한 줄 | 이 계획 커밋 | 무관(문서) | — |
 | A1 | 서버 `chat`: `intents` 받기 → 필터 출력에 `intent`·`mail`(같은 gpt-6-luna 한 번) → 목록·`MAIL_ACTIONS` 변환 → 행동 의도면 검색·답변 없이 `{answer_id, intent, mail}`. **`intents` 없는 요청은 필터 요청 바이트 동일**(맥락 있음·없음 둘 다, 테스트) | A0 | Step 1~6 무관(순수 테스트). **Step 7 전체 회귀(임베딩 실호출·호스팅 DB)와 Step 8 `LIVE_LLM=1`은 측정 창 밖** | — |
-| A2 | `INTENT-eval`: 합성 69문장(`supabase/eval/intent-cases.json`, 커밋) + 순수 판정(`_intent-eval.ts`) + 러너(`eval-intent.ts`, 필터 함수 직접 호출) × 3회 | A1 | **실호출** — 10-07·10-08 14:30~16:30 KST 금지, 그날 13:45 이후 시작 금지 | `INTENT-eval` |
+| A2 | `INTENT-eval`: 합성 76문장(최초 69, 2026-10-06 최종 리뷰 Important 1로 요청 물음 add 3·mail 2·기능 질문 2 추가)(`supabase/eval/intent-cases.json`, 커밋) + 순수 판정(`_intent-eval.ts`) + 러너(`eval-intent.ts`, 필터 함수 직접 호출) × 3회 | A1 | **실호출** — 10-07·10-08 14:30~16:30 KST 금지, 그날 13:45 이후 시작 금지 | `INTENT-eval` |
 | A3 | `chat` 배포(배포본 기준선 확인 → main 또는 스크래치 worktree) + 배포 후 다운로드 대조 + `smoke-chat` 회귀 두 번(`intents` 없음·있음) + `smoke-intent`(테스트 사용자 19, 하위 호환 4요청) | A2 `INTENT-eval` 통과 | **배포는 측정 무관**(gmail-*·worker 아님). 스모크 호출만 A2와 같은 창 규칙 | (`INTENT-eval` 행 근거 칸에 배포 기록) |
 | A4 | EruriCore: `ChatAddEvent`(캡처 id·접수·결과 판정·카드 제안·인용) + `ChatAddEventText` + `ChatHistory`(`.addEvent`·`itemID`) + `SourceLabel`·`ScheduleCard` 출처 "채팅에서 등록" + `CaptureQueue.contains(id:)` + `ChatReply.Answer.intent` + `ChatHistoryText.gmailDeleteNote` | A0 | 무관(시뮬레이터 단위 테스트) | — |
 | A5 | 앱: `ChatView`(`intents` 전송·`add_event` 분기·접수·업로드·결과 대기·채팅 일정 카드·복원 턴 카드) + `LinkCapture.addEventResult` + Gmail 삭제 확인창 문구 | A4(A1과 독립 — 배포 전 서버는 `intents`를 무시하고 답한다) | 무관(빌드·단위 테스트) | — |
@@ -190,7 +190,7 @@ supabase/functions/chat/handler.ts                             # A1 parseIntents
 supabase/functions/chat/deps.ts                                # A1 filters(withIntent)·mailActions()
 supabase/functions/chat/index.ts                               # A1 주석
 supabase/tests/chat.test.ts                                    # A1 테스트 추가
-supabase/eval/intent-cases.json                                # A2 신규(합성 69, 커밋)
+supabase/eval/intent-cases.json                                # A2 신규(합성 76 — 최초 69 + 최종 리뷰 7, 커밋)
 supabase/scripts/_intent-eval.ts                               # A2 신규(순수: validateCases·sameMail·judge·summarize)
 supabase/scripts/eval-intent.ts                                # A2 신규(러너)
 supabase/tests/intent-eval.test.ts                             # A2 신규
@@ -945,7 +945,7 @@ const file = JSON.parse(await Deno.readTextFile(new URL("../eval/intent-cases.js
 const M = (o: Partial<MailFields> = {}): MailFields => ({ action: "trash", sender: "합성상점", subject_words: [], received_from: null, received_to: null,
   promotions: true, unread_only: false, ...o });
 
-Deno.test("case file meets the spec composition (question 39 with confusable ≥15 incl. context 5, quoted 3, previous 3, negation 3; add 15 incl. context 3; mail 15 incl. context 2)", () => {
+Deno.test("case file meets the spec composition (question 41 with confusable ≥15 incl. context 5, quoted 3, previous 3, negation 3, ability 2; add 18 incl. context 3, polite 3; mail 17 incl. context 2, polite 2)", () => {
   assertEquals(validateCases(file), []);
   assertEquals(file.today, "2026-10-07");
 });
@@ -1003,8 +1003,8 @@ export type Got = { intent: Intent; mail: MailFields | null };
 export type Row = { id: string; group: string; expected: Intent; got: Intent; mail_ok: boolean | null };
 
 // 스펙 §15 구성. 사례를 더하면 이 수도 같이 고친다
-const WANT = { question: 39, add_event: 15, mail_action: 15 } as const;
-const GROUP_MIN: Record<string, number> = { confusable_ctx: 5, quoted: 3, prev_command: 3, negation: 3, add_ctx: 3, mail_ctx: 2 };
+const WANT = { question: 41, add_event: 18, mail_action: 17 } as const;
+const GROUP_MIN: Record<string, number> = { confusable_ctx: 5, quoted: 3, prev_command: 3, negation: 3, ability: 2, add_ctx: 3, add_polite: 3, mail_ctx: 2, mail_polite: 2 };
 
 export function validateCases(f: CaseFile): string[] {
   const p: string[] = [];
@@ -1102,10 +1102,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 5: 실행(측정 창 밖)**
 
-메인에게 지금이 10-07·10-08 14:30~16:30 KST 밖이고 그날 13:45 이전인지 확인받는다(예상 ≈ 5분 — 69 × 3 = 207호출). `pgrep -x xcodebuild`가 비었는지 본다.
+메인에게 지금이 10-07·10-08 14:30~16:30 KST 밖이고 그날 13:45 이전인지 확인받는다(예상 ≈ 7분 — 76 × 3 = 228호출). `pgrep -x xcodebuild`가 비었는지 본다.
 
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/eval-intent.ts --runs 3 | tee .context/intent-eval.log | tail -1`
-Expected: `{"gate":"pass","runs":3,"cases":69,"false_positive":0,"recall_add":≥0.9,"recall_mail":≥0.9,"confusion":0,"mail_match":<측정>,"mail_judged":false,"gate_cases":true}`.
+Expected: `{"gate":"pass","runs":3,"cases":76,"false_positive":0,"recall_add":≥0.9,"recall_mail":≥0.9,"confusion":0,"mail_match":<측정>,"mail_judged":false,"gate_cases":true}`.
 
 실패하면(U2): `grep '"expected":"question","got":"\(add_event\|mail_action\)"' .context/intent-eval.log`처럼 실패 줄의 id·그룹만 모아 기록하고, `INTENT_RULE`(와 `INTENT_PROPS.intent.description`)을 고쳐 A1 Step 6~8 → 이 Step을 다시 한다(최대 2회, 매번 A1 수정 커밋 `fix(chat): intent rule — <요지>`). 그래도 실패면 멈추고 메인에게 보고한다. `mail_match`는 이번 판정에 쓰지 않지만 0.9 미만이면 칸별(`action`·`sender`·…) 실패 수를 따로 세어 보고에 적는다(0.14.0 계획 입력) — 칸 값은 적지 않는다. `gate_cases`가 false면 INTENT-eval 판정(`gate`)과 별개로 A6를 시작하지 않고, 3회 중 기대값이 아니었던 게이트 문장 id를 메인에게 보고한다(문장 교체는 스펙 §15 ③부터 — 이 계획에서 바꾸지 않는다).
 
@@ -1114,7 +1114,7 @@ Expected: `{"gate":"pass","runs":3,"cases":69,"false_positive":0,"recall_add":�
 `docs/superpowers/phase1/gates.md` 표 끝에 행을 더한다(배포 칸은 A3가 채운다):
 
 ```text
-| INTENT-eval | 채팅 의도 판별(스펙 §9·§15) — 합성 69문장(`supabase/eval/intent-cases.json`: question 39 = 헷갈리는 16(맥락 5)·인용문 명령 3·이전 답 속 명령 3·부정 3·일반 14, add_event 15(앞 답 지시 3), mail_action 15(맥락 대상 2))을 chat 필터 함수에 직접(변환 전 의도) × 3회: 오탐 0 · 재현율 add_event·mail_action 각 ≥ 0.9 · 두 행동 혼동 0. mail 칸 일치는 측정(0.14.0 판정) | <통과/실패> | <날짜 KST>, HEAD `<A1 해시>`. `<summarize 줄>`(gate_cases <true/false>). 지시 조정 <0~2>회(<요지>). 배포: (A3) | | <날짜> |
+| INTENT-eval | 채팅 의도 판별(스펙 §9·§15) — 합성 76문장(`supabase/eval/intent-cases.json`: question 41 = 헷갈리는 16(맥락 5)·인용문 명령 3·이전 답 속 명령 3·부정 3·기능 질문 2·일반 14, add_event 18(앞 답 지시 3·요청 물음 3), mail_action 17(맥락 대상 2·요청 물음 2))을 chat 필터 함수에 직접(변환 전 의도) × 3회: 오탐 0 · 재현율 add_event·mail_action 각 ≥ 0.9 · 두 행동 혼동 0. mail 칸 일치는 측정(0.14.0 판정) | <통과/실패> | <날짜 KST>, HEAD `<A1 해시>`. `<summarize 줄>`(gate_cases <true/false>). 지시 조정 <0~2>회(<요지>). 배포: (A3) | | <날짜> |
 ```
 
 ```bash

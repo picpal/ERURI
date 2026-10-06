@@ -40,6 +40,8 @@
     { "id": "q37", "group": "negation", "text": "그 메일 지우지 마", "intent": "question", "mail": null },
     { "id": "q38", "group": "negation", "text": "합성치과 예약은 아직 등록하지 마", "intent": "question", "mail": null },
     { "id": "q39", "group": "negation", "text": "합성레터 메일 읽음 처리는 하지 마", "intent": "question", "mail": null },
+    { "id": "q40", "group": "ability", "text": "캘린더에 등록할 수 있어?", "intent": "question", "mail": null },
+    { "id": "q41", "group": "ability", "text": "메일도 지울 수 있어?", "intent": "question", "mail": null },
     { "id": "a01", "group": "add", "text": "합성 치과 예약 10/20 15:00–16:00 캘린더에 등록해줘", "intent": "add_event", "mail": null },
     { "id": "a02", "group": "add", "text": "내일 오후 3시 합성상사 회의 일정 잡아줘", "intent": "add_event", "mail": null },
     { "id": "a03", "group": "add", "text": "10월 24일 토요일 합성친구 결혼식 캘린더에 넣어줘", "intent": "add_event", "mail": null },
@@ -55,6 +57,9 @@
     { "id": "a13", "group": "add_ctx", "text": "그 약속 등록해줘", "context": [{ "question": "합성치과 예약 언제야?", "answer": "10월 13일 오후 3시예요.\n일정: 합성치과 스케일링 · 2026-10-13T15:00:00+09:00" }], "intent": "add_event", "mail": null },
     { "id": "a14", "group": "add_ctx", "text": "그거 일정에 추가해줘", "context": [{ "question": "합성세미나 언제야?", "answer": "10월 20일 오후 2시예요." }], "intent": "add_event", "mail": null },
     { "id": "a15", "group": "add_ctx", "text": "그 회의 등록해줘", "context": [{ "question": "다음 주 약속 있어?", "answer": "10월 15일 합성상사 회의가 있어요." }], "intent": "add_event", "mail": null },
+    { "id": "a16", "group": "add_polite", "text": "합성안과 검진 10/27 오전 10시 캘린더에 등록해 줄래?", "intent": "add_event", "mail": null },
+    { "id": "a17", "group": "add_polite", "text": "11월 5일 저녁 7시 합성극장 영화 일정에 넣어 줄 수 있어?", "intent": "add_event", "mail": null },
+    { "id": "a18", "group": "add_polite", "text": "합성세무사 상담 10/29 오후 2시 일정 추가해 주실래요?", "intent": "add_event", "mail": null },
     { "id": "m01", "group": "mail", "text": "합성상점에서 온 광고 메일 휴지통에 버려줘", "intent": "mail_action", "mail": { "action": "trash", "sender": "합성상점", "subject_words": [], "received_from": null, "received_to": null, "promotions": true, "unread_only": false } },
     { "id": "m02", "group": "mail", "text": "광고 메일 전부 지워줘", "intent": "mail_action", "mail": { "action": "trash", "sender": null, "subject_words": [], "received_from": null, "received_to": null, "promotions": true, "unread_only": false } },
     { "id": "m03", "group": "mail", "text": "9월에 받은 합성뉴스 메일 휴지통으로 옮겨줘", "intent": "mail_action", "mail": { "action": "trash", "sender": "합성뉴스", "subject_words": [], "received_from": "2026-09-01", "received_to": "2026-09-30", "promotions": false, "unread_only": false } },
@@ -69,6 +74,8 @@
     { "id": "m12", "group": "mail", "text": "10월 1일부터 5일까지 받은 합성카페 메일 버려줘", "intent": "mail_action", "mail": { "action": "trash", "sender": "합성카페", "subject_words": [], "received_from": "2026-10-01", "received_to": "2026-10-05", "promotions": false, "unread_only": false } },
     { "id": "m13", "group": "mail", "text": "제목에 주간리포트 들어간 메일 읽음 처리해줘", "intent": "mail_action", "mail": { "action": "read", "sender": null, "subject_words": ["주간리포트"], "received_from": null, "received_to": null, "promotions": false, "unread_only": false } },
     { "id": "m14", "group": "mail_ctx", "text": "그 발신자 광고 메일 휴지통에 버려줘", "context": [{ "question": "합성상점 광고 메일 몇 통 왔어?", "answer": "합성상점 광고 메일이 12통 왔어요." }], "intent": "mail_action", "mail": { "action": "trash", "sender": "합성상점", "subject_words": [], "received_from": null, "received_to": null, "promotions": true, "unread_only": false } },
-    { "id": "m15", "group": "mail_ctx", "text": "그 발신자 메일 읽음 처리해줘", "context": [{ "question": "합성레터 메일 왔어?", "answer": "어제 합성레터 메일이 왔어요." }], "intent": "mail_action", "mail": { "action": "read", "sender": "합성레터", "subject_words": [], "received_from": null, "received_to": null, "promotions": false, "unread_only": false } }
+    { "id": "m15", "group": "mail_ctx", "text": "그 발신자 메일 읽음 처리해줘", "context": [{ "question": "합성레터 메일 왔어?", "answer": "어제 합성레터 메일이 왔어요." }], "intent": "mail_action", "mail": { "action": "read", "sender": "합성레터", "subject_words": [], "received_from": null, "received_to": null, "promotions": false, "unread_only": false } },
+    { "id": "m16", "group": "mail_polite", "text": "합성상점 광고 메일 지워 줄 수 있어?", "intent": "mail_action", "mail": { "action": "trash", "sender": "합성상점", "subject_words": [], "received_from": null, "received_to": null, "promotions": true, "unread_only": false } },
+    { "id": "m17", "group": "mail_polite", "text": "합성레터 메일 읽음 처리해 줄래?", "intent": "mail_action", "mail": { "action": "read", "sender": "합성레터", "subject_words": [], "received_from": null, "received_to": null, "promotions": false, "unread_only": false } }
   ]
 }

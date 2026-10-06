@@ -1,12 +1,12 @@
 import { assert, assertEquals } from "jsr:@std/assert";
-import { type CaseFile, judge, type Row, sameMail, summarize, validateCases } from "../scripts/_intent-eval.ts";
+import { type CaseFile, judge, parseRuns, type Row, sameMail, summarize, validateCases } from "../scripts/_intent-eval.ts";
 import type { MailFields } from "../functions/chat/filters.ts";
 
 const file = JSON.parse(await Deno.readTextFile(new URL("../eval/intent-cases.json", import.meta.url))) as CaseFile;
 const M = (o: Partial<MailFields> = {}): MailFields => ({ action: "trash", sender: "합성상점", subject_words: [], received_from: null, received_to: null,
   promotions: true, unread_only: false, ...o });
 
-Deno.test("case file meets the spec composition (question 39 with confusable ≥15 incl. context 5, quoted 3, previous 3, negation 3; add 15 incl. context 3; mail 15 incl. context 2)", () => {
+Deno.test("case file meets the spec composition (question 41 with confusable ≥15 incl. context 5, quoted 3, previous 3, negation 3, ability 2; add 18 incl. context 3, polite 3; mail 17 incl. context 2, polite 2)", () => {
   assertEquals(validateCases(file), []);
   assertEquals(file.today, "2026-10-07");
 });
@@ -15,6 +15,22 @@ Deno.test("validateCases reports a broken composition and a mail/intent mismatch
   const broken: CaseFile = { today: "2026-10-07", cases: file.cases.filter((c) => c.id !== "q01").map((c) => c.id === "a01" ? { ...c, mail: M() } : c) };
   const p = validateCases(broken);
   assert(p.some((x) => x.startsWith("question")) && p.some((x) => x.startsWith("a01")), JSON.stringify(p));
+});
+
+Deno.test("validateCases fails when a gate sentence id is missing (renamed case)", () => {
+  const renamed: CaseFile = { today: "2026-10-07", cases: file.cases.map((c) => c.id === "a12" ? { ...c, id: "a12x" } : c) };
+  assertEquals(validateCases(renamed), ["gate a12 missing"]);
+});
+
+Deno.test("parseRuns: positive integer only, default 1 without --runs", () => {
+  assertEquals(parseRuns([]), 1);
+  assertEquals(parseRuns(["--mail-judged"]), 1);
+  assertEquals(parseRuns(["--runs", "3", "--mail-judged"]), 3);
+  assertEquals(parseRuns(["--runs", "--mail-judged"]), null);
+  assertEquals(parseRuns(["--runs"]), null);
+  assertEquals(parseRuns(["--runs", "0"]), null);
+  assertEquals(parseRuns(["--runs", "2.5"]), null);
+  assertEquals(parseRuns(["--runs", "abc"]), null);
 });
 
 Deno.test("sameMail: sender trim/case-insensitive, subject words as a set, dates and booleans exact, read implies unread", () => {
@@ -44,6 +60,7 @@ Deno.test("summarize: any false positive or confusion fails; recall below 0.9 fa
   assertEquals([s.gate, s.false_positive, s.recall_add, s.recall_mail, s.confusion, s.mail_match, s.mail_judged], ["pass", 0, 1, 1, 0, 0.5, false]);
   assertEquals(summarize(base, 1, true).gate, "fail");
   assertEquals(summarize([...base, ok("q2", "question", "add_event")], 1, false).gate, "fail");
-  assertEquals(summarize([...base, ok("a9x", "add_event", "mail_action")], 1, false).confusion, 1);
+  const confused = summarize([...base, ok("a9x", "add_event", "mail_action")], 1, false);
+  assertEquals([confused.confusion, confused.gate], [1, "fail"]);
   assertEquals(summarize(base.map((r) => r.id === "a0" || r.id === "a1" ? { ...r, got: "question" as const } : r), 1, false).gate, "fail");   // 8/10
 });
