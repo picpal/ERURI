@@ -120,7 +120,7 @@ struct ContentView: View {
   }
   /// 연결 상태(RLS: 자기 connections). 계정 주소는 사용자 본인 화면에만 보인다
   private func gmailStatus() async -> String {
-    guard let r = await API.send("rest/v1/connections?select=account_ref,status,expires_at&provider=eq.gmail"), r.status == 200,
+    guard let r = await API.send("rest/v1/connections?select=account_ref,status,expires_at&provider=eq.gmail&order=created_at.desc&limit=1"), r.status == 200,
           let rows = try? JSONSerialization.jsonObject(with: r.data) as? [[String: Any]] else { return "" }
     guard let c = rows.first else { return "연결 안 됨" }
     let st = c["status"] as? String ?? "-"
@@ -151,7 +151,7 @@ struct ContentView: View {
   }
   /// [권한 업데이트] 표시(D16): scopes 를 상태 줄과 따로 읽는다 — 열이 없는 서버(0030 전, 400)면 숨긴다. 판단은 EruriCore(needsUpgrade)
   private func gmailNeedsUpgrade() async -> Bool {
-    guard let r = await API.send("rest/v1/connections?select=status,scopes&provider=eq.gmail"), r.status == 200,
+    guard let r = await API.send("rest/v1/connections?select=status,scopes&provider=eq.gmail&order=created_at.desc&limit=1"), r.status == 200,
           let rows = try? JSONSerialization.jsonObject(with: r.data) as? [[String: Any]] else { return false }
     return MailCleanup.needsUpgrade(rows: rows)
   }

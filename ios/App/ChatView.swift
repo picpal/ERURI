@@ -688,7 +688,7 @@ struct ChatView: View {
       }
       let code = r.flatMap { MailCleanup.errorCode($0.data) }
       Trace.log("chat.mail", ["stage": "execute", "result": "error", "code": code ?? "http_\(r?.status ?? -1)"])
-      if let r, MailCleanup.executeIsDefinite(status: r.status) {               // 행이 바뀌지 않았다
+      if let r, MailCleanup.executeIsDefinite(status: r.status, code: code) {               // 행이 바뀌지 않았다
         let n = MailCleanup.executeError(status: r.status, code: code)
         settle(id, epoch) {
           if n.repreview { $0.record.mail?.phase = .preview; $0.record.mail?.repreview = true }   // 카드가 "미리보기가 만료됐어요" + [다시 미리보기]

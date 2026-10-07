@@ -92,8 +92,9 @@ final class MailCleanupTests: XCTestCase {
     XCTAssertEqual(MailCleanup.executeError(status: 404, code: "no_connection").text, MailCleanupText.noConnection)
     XCTAssertEqual(MailCleanup.executeError(status: 409, code: "reauth_required"), MailCleanup.Note(MailCleanupText.reauth, settings: true))
     XCTAssertEqual(MailCleanup.executeError(status: 403, code: "scope_missing"), MailCleanup.Note(MailCleanupText.scopeMissing, settings: true))
-    XCTAssertEqual([400, 403, 404, 409, 410, 503].map { MailCleanup.executeIsDefinite(status: $0) }, Array(repeating: true, count: 6))
-    XCTAssertEqual([nil, -1, 401, 500, 502, 504].map { MailCleanup.executeIsDefinite(status: $0) }, Array(repeating: false, count: 6))
+    XCTAssertEqual([400, 403, 404, 409, 410].map { MailCleanup.executeIsDefinite(status: $0, code: "x") }, Array(repeating: true, count: 5))
+    XCTAssertEqual([nil, -1, 401, 500, 502, 504].map { MailCleanup.executeIsDefinite(status: $0, code: nil) }, Array(repeating: false, count: 6))
+    XCTAssertEqual(MailCleanup.executeError(status: 503, code: "disabled"), MailCleanup.Note(MailCleanupText.disabled))
     // 되돌리기
     XCTAssertEqual(MailCleanup.undoError(status: 410, code: "undo_expired", action: "trash").text, "되돌리기 기간(7일)이 지났어요 — Gmail 휴지통에서 직접 복원할 수 있어요")
     XCTAssertEqual(MailCleanup.undoError(status: 410, code: "undo_expired", action: "read").text, "되돌리기 기간(7일)이 지났어요 — Gmail에서 직접 안 읽음으로 바꿀 수 있어요")
@@ -179,6 +180,48 @@ final class MailCleanupTests: XCTestCase {
     XCTAssertFalse(MailTurn(phase: .ended, status: st("done", done: 3)).needsStatusRead)
     XCTAssertFalse(MailTurn(phase: .preview).needsStatusRead)
     XCTAssertFalse(MailTurn(phase: .ended, note: MailCleanupText.cancelled).needsStatusRead)
+  }
+
+  func testExecute503IsDefiniteOnlyWhenDisabled() {
+    // 함수의 503 은 disabled 뿐 — 게이트웨이 503(코드 없음·다른 코드)은 확정이 아니라 토큰 상태를 먼저 읽는다(0.14.0 최종 리뷰 Minor 1)
+    XCTAssertTrue(MailCleanup.executeIsDefinite(status: 503, code: "disabled"))
+    XCTAssertFalse(MailCleanup.executeIsDefinite(status: 503, code: nil))
+    XCTAssertFalse(MailCleanup.executeIsDefinite(status: 503, code: "BOOT_ERROR"))
+  }
+
+  func testUndoResultWithPermissionCodeAddsTheExplanationLine() {
+    // M8 리뷰 Minor 3: 되돌리기 중 권한·연결이 끊김 → 실행 결과와 같은 설명 줄(K = 되돌리기 실패 수) + [설정 열기]
+    XCTAssertEqual(MailCleanup.result(st("undo_partial", done: 3, undone: 1, undoFailed: 2, code: "reauth_required"), action: "trash"),
+                   MailCleanup.Note("1건 되돌렸어요 · 2건 실패 — Gmail 휴지통에서 직접 복원할 수 있어요\nGmail 권한(연결)이 바뀌어 2건을 처리하지 못했어요", settings: true))
+    XCTAssertEqual(MailCleanup.result(st("undo_failed", done: 3, undoFailed: 3, code: "scope_missing"), action: "read"),
+                   MailCleanup.Note("되돌리지 못했어요 — Gmail에서 직접 안 읽음으로 바꿀 수 있어요\nGmail 권한(연결)이 바뀌어 3건을 처리하지 못했어요", settings: true))
+    XCTAssertEqual(MailCleanup.result(st("undo_partial", done: 3, undone: 2, undoFailed: 1, code: "job_dead"), action: "trash"),
+                   MailCleanup.Note("2건 되돌렸어요 · 1건 실패 — Gmail 휴지통에서 직접 복원할 수 있어요"))
+  }
+
+  func testUndoBouncedBackWithoutCodeLeavesTheRetryNote() {
+    // 되돌리기 단계였는데 실행 종료 상태로 돌아옴(잡이 진행 0 으로 dead, 코드 없음 — 스펙 §7·§9): "되돌리기를 마치지 못했어요" + [되돌리기] 남음
+    var a = MailTurn(phase: .running, previewAt: t0, status: st("undoing", done: 3))
+    a.afterStatusRead(st("done", done: 3))
+    XCTAssertEqual([a.phase == .ended, a.note == MailCleanupText.undoIncomplete], [true, true])
+    XCTAssertEqual(MailCleanupText.undoIncomplete, "되돌리기를 마치지 못했어요 — 다시 눌러 주세요")
+    XCTAssertTrue(MailCleanup.canUndo(a.status!, previewAt: t0, now: t0))
+    // 되돌리기 요청 뒤 닫혀 저장 상태가 실행 결과(done)인 채 진행 중 → 다시 읽어도 done(partial): 같은 안내
+    var b = MailTurn(phase: .running, status: st("partial", done: 2, failed: 1))
+    b.afterStatusRead(st("partial", done: 2, failed: 1))
+    XCTAssertEqual(b.note, MailCleanupText.undoIncomplete)
+    // 연결 반송(undo_ 코드)은 result 가 연결 문구를 낸다 — 덧붙이지 않는다
+    var c = MailTurn(phase: .running, status: st("undo_pending", done: 3))
+    c.afterStatusRead(st("done", done: 3, code: "undo_reauth_required"))
+    XCTAssertNil(c.note)
+    // 실행 진행 → 실행 결과는 반송이 아니다
+    var d = MailTurn(phase: .running, status: st("running", done: 1))
+    d.afterStatusRead(st("done", done: 3))
+    XCTAssertNil(d.note)
+    // 되돌리기 진행 → 되돌리기 결과도 반송이 아니다
+    var e = MailTurn(phase: .running, status: st("undoing", done: 3))
+    e.afterStatusRead(st("undone", done: 3, undone: 3))
+    XCTAssertNil(e.note)
   }
 
   func testAfterStatusRead() {

@@ -79,8 +79,12 @@ public enum MailCleanup {
     default: return Note(MailCleanupText.failed)
     }
   }
-  /// 실행 요청 응답이 "행이 바뀌지 않았다"가 확실한 코드인가. 아니면(네트워크·5xx·401) 앱은 문구 전에 토큰 상태를 먼저 읽는다(D22 — 요청이 서버에 닿았으면 잡은 돈다)
-  public static func executeIsDefinite(status: Int?) -> Bool { status.map { [400, 403, 404, 409, 410, 503].contains($0) } ?? false }
+  /// 실행 요청 응답이 "행이 바뀌지 않았다"가 확실한 코드인가. 아니면(네트워크·5xx·401) 앱은 문구 전에 토큰 상태를 먼저 읽는다(D22 — 요청이 서버에 닿았으면 잡은 돈다).
+  /// 503 은 함수가 돌려주는 `disabled` 만 확정 — 게이트웨이 503(BOOT_ERROR 같은 일시 장애)은 상태를 읽어 버튼으로 돌린다(0.14.0 최종 리뷰 Minor 1)
+  public static func executeIsDefinite(status: Int?, code: String?) -> Bool {
+    guard let status else { return false }
+    return status == 503 ? code == "disabled" : [400, 403, 404, 409, 410].contains(status)
+  }
   /// 확정 코드의 문구(executeIsDefinite 가 참일 때만 부른다)
   public static func executeError(status: Int, code: String?) -> Note {
     switch (status, code) {
@@ -88,7 +92,7 @@ public enum MailCleanup {
     case (403, "scope_missing"?): return Note(MailCleanupText.scopeMissing, settings: true)
     case (404, _): return Note(MailCleanupText.noConnection)
     case (409, _): return Note(MailCleanupText.reauth, settings: true)
-    case (503, _): return Note(MailCleanupText.disabled)
+    case (503, "disabled"?): return Note(MailCleanupText.disabled)
     default: return Note(MailCleanupText.failed)
     }
   }
@@ -179,7 +183,7 @@ public enum MailCleanup {
       } else {
         lines.append((action == "read" ? "읽음으로 바꾸지 못했어요" : "휴지통으로 옮기지 못했어요") + " (\(grouped(s.failed))건 실패)")
       }
-      if perm && s.failed > 0 { lines.append("Gmail 권한(연결)이 바뀌어 \(grouped(s.failed))건을 처리하지 못했어요") }
+      if perm && s.failed > 0 { lines.append(MailCleanupText.permLost(s.failed)) }
       // 잡이 끝까지 못 감: 실패로 적힌 id 중 실제로 바뀐 메일이 있을 수 있다(스펙 §7 결과 불명·재개, N-M12)
       if ["job_dead", "job_lost"].contains(code) { lines.append("\(MailCleanupText.maybeChanged) — \(MailCleanupText.manual(action))") }
       // 연결 끊김으로 되돌리기가 시작되지 않음(D11) — [되돌리기]는 남는다(canUndo)
@@ -187,9 +191,13 @@ public enum MailCleanup {
       if bounced { lines.append(MailCleanupText.undoReconnect) }
       return Note(lines.joined(separator: "\n"), settings: (perm && s.failed > 0) || bounced)
     case "undone": return Note(MailCleanupText.undone)
-    case "undo_partial":
-      return Note("\(grouped(s.undone))건 되돌렸어요 · \(grouped(s.undo_failed))건 실패 — \(MailCleanupText.manual(action))", settings: perm)
-    case "undo_failed": return Note("되돌리지 못했어요 — \(MailCleanupText.manual(action))", settings: perm)
+    case "undo_partial", "undo_failed":
+      var lines = [s.status == "undo_partial"
+        ? "\(grouped(s.undone))건 되돌렸어요 · \(grouped(s.undo_failed))건 실패 — \(MailCleanupText.manual(action))"
+        : "되돌리지 못했어요 — \(MailCleanupText.manual(action))"]
+      // 되돌리기 중 권한·연결이 끊김: 실행 결과와 같은 설명 줄(K = 되돌리기 실패 수, 스펙 §9 — M8 리뷰 Minor 3)
+      if perm && s.undo_failed > 0 { lines.append(MailCleanupText.permLost(s.undo_failed)) }
+      return Note(lines.joined(separator: "\n"), settings: perm)
     default: return Note(progress(s, action: action))
     }
   }
@@ -231,6 +239,9 @@ public enum MailCleanupText {
   public static let maybeChanged = "일부는 이미 바뀌었을 수 있어요"
   public static let undoReconnect = "Gmail 연결이 끊겨 되돌리지 못했어요 — 설정 › Gmail에서 다시 연결한 뒤 되돌려 주세요"
   public static let nothingToUndo = "되돌릴 메일이 없어요"
+  /// 되돌리기가 하나도 되돌리지 못한 채 실행 결과로 돌아옴(잡 dead, 코드 없음 — 스펙 §7·§9). [되돌리기]는 남는다
+  public static let undoIncomplete = "되돌리기를 마치지 못했어요 — 다시 눌러 주세요"
+  public static func permLost(_ n: Int) -> String { "Gmail 권한(연결)이 바뀌어 \(MailCleanup.grouped(n))건을 처리하지 못했어요" }
   public static let trashing = "휴지통으로 옮기는 중", reading = "읽음으로 바꾸는 중", undoing = "되돌리는 중"
   public static let undo = "되돌리기", undone = "되돌렸어요", nextPage = "다음 1,000건 보기"
   public static func manual(_ action: String) -> String {
@@ -281,10 +292,14 @@ public struct MailTurn: Codable, Sendable, Equatable {
   public mutating func apply(_ n: MailCleanup.Note) { note = n.text; settings = n.settings; repreview = n.repreview }
   /// 서버 상태를 먼저 읽어야 하는 턴(D22): 진행 중(실행·되돌리기 요청 중 닫힘 포함)이거나 저장된 상태가 아직 끝나지 않음(20분 상한·옛 기록)
   public var needsStatusRead: Bool { phase == .running || (status.map { !$0.finished } ?? false) }
-  /// 서버 상태를 읽은 뒤: previewed = 실행 요청이 닿지 않음 → 미리보기(버튼)로. 그 밖은 그 상태로(끝났으면 ended)
+  /// 서버 상태를 읽은 뒤: previewed = 실행 요청이 닿지 않음 → 미리보기(버튼)로. 그 밖은 그 상태로(끝났으면 ended).
+  /// 되돌리기 단계였는데(저장 상태가 되돌리기, 또는 저장 상태가 실행 결과인 채 요청 중) 실행 종료 상태로 돌아왔으면 되돌리기가 진행 0 으로 끝난 것 —
+  /// "되돌리기를 마치지 못했어요"를 남긴다([되돌리기]는 남는다, 스펙 §9). 연결 반송(undo_ 코드)은 result 가 연결 문구를 내므로 덧붙이지 않는다
   public mutating func afterStatusRead(_ s: MailCleanup.Status) {
     if s.status == "previewed" { phase = .preview; status = nil; note = MailCleanupText.failed; settings = false; return }
-    status = s; phase = s.finished ? .ended : .running; note = nil; settings = false
+    let wasUndo = status?.undoPhase == true || (phase == .running && status.map { $0.finished && !$0.undoPhase } == true)
+    let bounced = wasUndo && ["done", "partial"].contains(s.status) && !(s.code ?? "").hasPrefix("undo_")
+    status = s; phase = s.finished ? .ended : .running; note = bounced ? MailCleanupText.undoIncomplete : nil; settings = false
   }
 }
 
