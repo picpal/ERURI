@@ -53,8 +53,21 @@ function maskDigits(raw: string): string {
   return raw.replace(/\d/g, (d) => (++seen > total - 4 ? d : "*"));
 }
 
-function replaceRange(s: string, r: Range, f: (raw: string) => string): string {
-  return s.slice(0, r.start) + f(s.slice(r.start, r.end)) + s.slice(r.end);
+// 범위를 한 번에 바꾼다(길이 보존 마스킹). 범위마다 문자열 전체를 다시 만들면 민감 숫자가 많은 긴 글에서 O(글 길이 × 개수)다.
+// 겹치는 범위는 하나로 합친다 — 승인번호는 키워드 창마다 부분 문자열에 정규식을 돌려 창 끝에서 잘린 부분 일치와 다른 창의 전체 일치가
+// 같은 시작·다른 끝으로 같이 올 수 있다. 승인번호 f 는 숫자마다 *라 합쳐도 옛 replaceRange 반복과 결과가 같고, 카드·계좌 범위는 전체 문자열 matchAll 이라 겹치지 않는다
+function rebuild(s: string, rs: Range[], f: (raw: string) => string): string {
+  if (rs.length === 0) return s;
+  const merged: Range[] = [];
+  for (const r of [...rs].sort((a, b) => a.start - b.start)) {
+    const last = merged[merged.length - 1];
+    if (last && r.start <= last.end) last.end = Math.max(last.end, r.end); else merged.push({ ...r });
+  }
+  const parts: string[] = [];
+  let i = 0;
+  for (const r of merged) { parts.push(s.slice(i, r.start), f(s.slice(r.start, r.end))); i = r.end; }
+  parts.push(s.slice(i));
+  return parts.join("");
 }
 
 // OTP 폐기 판정 + 승인번호·카드·계좌 마스킹 (RuleFilter.mask). otp면 null (maskOnly면 판정 없이 마스킹만)
@@ -71,24 +84,22 @@ function scan(text: string, maskOnly = false): string | null {
     }
     if (!maskOnly) return null;
   }
-  let out = text;
-  for (const r of approval.sort((a, b) => b.start - a.start)) out = replaceRange(out, r, (raw) => raw.replace(/\d/g, "*"));
+  let out = rebuild(text, approval, (raw) => raw.replace(/\d/g, "*"));
   // 카드번호: Luhn 통과하는 13~19자리만
-  for (const m of matchesIn(CARD_LIKE, out).reverse()) {
+  const cards = matchesIn(CARD_LIKE, out).filter((m) => {
     const digits = out.slice(m.start, m.end).replace(/\D/g, "");
-    if (digits.length < 13 || digits.length > 19 || !luhn(digits)) continue;
-    out = replaceRange(out, m, maskDigits);
-  }
-  // 계좌번호: 앞뒤 20자 안에 은행·계좌 키워드
-  for (const m of matchesIn(ACCOUNT_LIKE, out).reverse()) {
+    return digits.length >= 13 && digits.length <= 19 && luhn(digits);
+  });
+  out = rebuild(out, cards, maskDigits);
+  // 계좌번호: 앞뒤 20자 안에 은행·계좌 키워드(키워드에 숫자가 없어 앞선 마스킹이 판정을 바꾸지 않는다)
+  const accounts = matchesIn(ACCOUNT_LIKE, out).filter((m) => {
     const raw = out.slice(m.start, m.end);
     const n = raw.replace(/\D/g, "").length;
-    if (raw.includes("-") ? n < 10 || n > 14 : n < 10 || n > 16) continue;
+    if (raw.includes("-") ? n < 10 || n > 14 : n < 10 || n > 16) return false;
     const w = windowAround(m, ACCOUNT_WINDOW, out.length);
-    if (!ACCOUNT_KEYWORD.test(out.slice(w.start, w.end))) continue;
-    out = replaceRange(out, m, maskDigits);
-  }
-  return out;
+    return ACCOUNT_KEYWORD.test(out.slice(w.start, w.end));
+  });
+  return rebuild(out, accounts, maskDigits);
 }
 
 export function isOtp(s: string): boolean {
@@ -110,4 +121,12 @@ export function applyRules(text: string, meta: RuleMeta = {}): RuleVerdict {
   if ([text, title ?? "", meta.sender ?? ""].some((s) => AD_MARK.test(s))) return { kind: "discard", reason: "promotion" };
   if (title === null) return { kind: "pass", masked };
   return { kind: "pass", masked: masked.slice(title.length + 1), maskedTitle: masked.slice(0, title.length) };
+}
+
+// 메일 요약(스펙 §7 "가림", 0.15.0): 원래 제목 + "\n" + 추출한 본문 전체를 한 글로 OTP 판정·가림 한 번 → 길이가 보존되므로 제목 길이로 다시 나눈다.
+// applyRules 와 같은 방식이지만 광고 규칙은 적용하지 않는다(광고도 요약 대상, Q1). 자르기(12,000·4,000자)는 호출부가 이 뒤에 한다
+export function maskMail(title: string, body: string): { otp: true } | { otp: false; title: string; body: string } {
+  const masked = scan(title + "\n" + body);
+  if (masked === null) return { otp: true };
+  return { otp: false, title: masked.slice(0, title.length), body: masked.slice(title.length + 1) };
 }

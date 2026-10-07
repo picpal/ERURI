@@ -72,7 +72,8 @@ export async function history(accessToken: string, startHistoryId: string, pageT
   if (!r.ok) { await r.body?.cancel(); throw new GmailHttpError("history", r.status); }
   return await r.json() as HistoryPage;
 }
-type Part = { mimeType?: string; filename?: string; headers?: { name: string; value: string }[]; body?: { data?: string; attachmentId?: string }; parts?: Part[] };
+export type MessagePart = { mimeType?: string; filename?: string; headers?: { name: string; value: string }[]; body?: { data?: string; attachmentId?: string }; parts?: MessagePart[] };
+type Part = MessagePart;
 export type GmailMessage = { id: string; internalDate: string; labelIds?: string[]; payload?: Part };
 export async function getMessage(accessToken: string, id: string) {
   const r = await fetch(`${G}/messages/${encodeURIComponent(id)}?format=full`, { headers: { authorization: `Bearer ${accessToken}` } });
@@ -101,7 +102,7 @@ function findBody(p: Part | undefined, mime: string): string | null {
   return null;
 }
 const ENTITIES: Record<string, string> = { nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", "#39": "'" };
-function decodeEntities(s: string) {
+export function decodeEntities(s: string) {
   return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+|#39);/gi, (m, e: string) => {
     if (e[0] === "#" && e !== "#39") {
       const n = e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);

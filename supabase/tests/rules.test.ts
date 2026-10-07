@@ -1,5 +1,5 @@
-import { assertEquals } from "jsr:@std/assert";
-import { applyRules, luhn, maskSensitive } from "../functions/_shared/rules.ts";
+import { assert, assertEquals } from "jsr:@std/assert";
+import { applyRules, luhn, maskMail, maskSensitive } from "../functions/_shared/rules.ts";
 
 // Task 2 RuleFilterTests와 같은 케이스 (연락처 규칙 제외)
 Deno.test("OTP (Korean) discarded", () => {
@@ -113,4 +113,46 @@ Deno.test("OTP: year of an English date after 'd, ' passes; other 4-digit or non
   for (const t of ["Your code is 2026.", "Your code, 2026", "code 12, 482913", "code Oct 3, 202611", "code 3, 3026"]) {
     assertEquals(applyRules(t), { kind: "discard", reason: "otp" }, t);
   }
+});
+
+// ── 메일 요약 통합 가림(스펙 §7 "가림", Codex 리뷰 #3): 제목 + "\n" + 본문 전체를 한 번 판정·가림 → 다시 나눔. 자르기는 그 뒤 ──
+Deno.test("maskMail: OTP keyword in the subject and digits in the body → otp (whole text, even past 12,000)", () => {
+  assertEquals(maskMail("[합성은행] 인증번호 안내", "482913"), { otp: true });
+  assertEquals(maskMail("합성 안내", "가".repeat(13_000) + " 인증번호 482913 입력"), { otp: true });
+});
+Deno.test("maskMail: an account split between subject keyword and body number is masked (masking the body alone would not)", () => {
+  assertEquals(maskSensitive("123-456-789012"), "123-456-789012");
+  assertEquals(maskMail("입금 계좌", "123-456-789012"), { otp: false, title: "입금 계좌", body: "***-***-**9012" });
+});
+Deno.test("maskMail: card (Luhn) in the subject is masked; lengths are preserved so the split is exact", () => {
+  const r = maskMail("결제 카드 4111-1111-1111-1111", "합성 결제 안내 35,000원");
+  assertEquals(r, { otp: false, title: "결제 카드 ****-****-****-1111", body: "합성 결제 안내 35,000원" });
+});
+// 병목은 정규식이 아니라 가릴 번호마다 글 전체를 다시 만드는 것 — 번호가 없는 글은 빠르다. 그래서 민감 숫자가 빽빽한 글로 잰다(Codex 계획 리뷰 4:
+// 옛 scan 은 합성 카드번호를 반복한 999,994자에 2,624ms. 2026-10-07 로컬 재현 old 2,585ms → rebuild 25ms, 계좌 2,655 → 33ms, 결과 문자열 동일)
+Deno.test("maskMail: 1,000,000-char synthetic texts — plain, dense cards, dense accounts — are judged and masked in under 1 s each (min of 3, local)", () => {
+  const bodies: Record<string, string> = {
+    plain: "합성 안내 10/20(화) 15:00 참가비 35,000원 신청서 제출. ".repeat(25_000).slice(0, 1_000_000),
+    cards: "결제 카드 4111-1111-1111-1111 ".repeat(50_000).slice(0, 1_000_000),
+    accounts: "신한 계좌 110-123-456789 입금 ".repeat(50_000).slice(0, 1_000_000),
+  };
+  const ms: Record<string, number> = {};
+  for (const [k, body] of Object.entries(bodies)) {
+    let best = Infinity, r: ReturnType<typeof maskMail> = { otp: true };
+    for (let i = 0; i < 3; i++) { const t0 = performance.now(); r = maskMail("합성 안내", body); best = Math.min(best, performance.now() - t0); }
+    ms[k] = Math.round(best);
+    assert(!r.otp && r.body.length === body.length, k);                                  // 길이 보존 — 제목 경계로 다시 나눌 수 있다
+    if (k === "cards") assertEquals(r.body.match(/4111-1111-1111-1111/g), null);         // 빽빽해도 하나도 빠짐없이
+    if (k === "accounts") assertEquals(r.body.match(/110-123-456789/g), null);
+  }
+  console.log(JSON.stringify({ mask_ms: ms }));
+  assert(Object.values(ms).every((x) => x < 1000), JSON.stringify(ms));
+});
+// rebuild 가 옛 replaceRange 반복과 같은 결과인지: 같은 승인번호를 두 키워드가 가리키는 겹침, 카드·계좌가 섞인 글
+Deno.test("maskSensitive: one-pass rebuild matches the old per-range result (duplicate and overlapping approval ranges, card + account in one text)", () => {
+  assertEquals(maskSensitive("승인번호 승인코드 123456 결제 1,000원"), "승인번호 승인코드 ****** 결제 1,000원");   // 두 키워드가 같은 숫자를 가리킨다
+  assertEquals(maskSensitive("승인번호 123456 결제 30,000원 승인번호 654321"), "승인번호 ****** 결제 30,000원 승인번호 ******");
+  assertEquals(maskSensitive("카드 4111 1111 1111 1111 계좌 국민 110-123-456789"), "카드 **** **** **** 1111 계좌 국민 ***-***-**6789");
+  // 창 경계에서 잘린 부분 일치(첫 키워드 창 끝 → "1234")와 다른 키워드 창의 전체 일치("123456")가 같은 시작·다른 끝 — 둘 다 가린다(옛 구현과 같다, Fable 계획 리뷰 H1)
+  assertEquals(maskSensitive("승인번호 결제 1,000원 ㄱㄴㄷㄹㅁ승인번호 코드 : 123456 끝"), "승인번호 결제 1,000원 ㄱㄴㄷㄹㅁ승인번호 코드 : ****** 끝");
 });
