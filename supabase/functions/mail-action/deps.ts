@@ -2,13 +2,13 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { gmailMailApi, MAIL_CALL_TIMEOUT_MS, refreshAccessToken } from "../_shared/gmail.ts";
 import { gmailAccessToken, noteGmailUnits } from "../_shared/gmail-jobs.ts";
 import { kickInBackground } from "../_shared/kick-worker.ts";
-import type { Counts, MailActionDeps, MailConnection, RowResult } from "./handler.ts";
+import { type Counts, type MailActionDeps, type MailConnection, type RowResult, RpcError } from "./handler.ts";
 
 // service role. 모든 RPC 에 user_id 를 넘긴다(스펙 §12 통제 4). 행·연결은 그 user_id 로만 찾는다
 export function mailActionDeps(sb: SupabaseClient): MailActionDeps {
   const rpc = async (fn: string, args: Record<string, unknown>) => {
     const { data, error } = await sb.rpc(fn, args);
-    if (error) throw new Error(fn + " " + (error.code ?? "error"));
+    if (error) throw new RpcError(fn, error.code ?? "error");
     return data;
   };
   return {

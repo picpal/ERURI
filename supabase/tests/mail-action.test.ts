@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import { GmailHttpError, type GmailMessage } from "../functions/_shared/gmail.ts";
-import { type Counts, handleMailAction, type MailActionDeps, type MailConnection, type RowResult, sampleOf } from "../functions/mail-action/handler.ts";
+import { type Counts, handleMailAction, type MailActionDeps, type MailConnection, type RowResult, RpcError, sampleOf } from "../functions/mail-action/handler.ts";
 
 // 메일 정리 함수(스펙 §7): 가짜 deps(DB·Gmail 없음). 미리보기 글·조건 값이 로그에 남지 않는지도 본다
 const MOD = "https://www.googleapis.com/auth/gmail.modify", RO = "https://www.googleapis.com/auth/gmail.readonly";
@@ -82,6 +82,7 @@ Deno.test("preview: conditions are the server-confirmed ones (sanitized), a mode
   const j = await (await call(d, req("preview", mail({ sender: `합성"상점"`, q: "in:anywhere" })))).json();
   assertEquals(j.conditions.sender, "합성상점");
   assert(!calls.list[0].q.includes("anywhere"));
+  assertEquals(calls.list[1].q, `in:inbox is:starred from:"합성상점" category:promotions`);   // 별표 질의도 정제된 칸으로
 });
 
 Deno.test("preview paging: stops at 1,000 ids (has_more, estimate floor = count), exactly 1,000 with no next page is exact, 5-page cap", async () => {
@@ -161,6 +162,8 @@ Deno.test("contract: execute/undo with a non-JSON body → 400 bad_json; 401 and
   assertEquals([u.status, await u.text()], [401, ""]);
   const m = await call(d, req("status?id=" + TOKEN, {}));
   assertEquals([m.status, await m.text()], [405, ""]);
+  const g = await call(d, req("preview"));
+  assertEquals([g.status, await g.text()], [405, ""]);
 });
 
 Deno.test("empty preview: 200 token null, count 0, no row, no header reads", async () => {
@@ -190,9 +193,10 @@ Deno.test("Gmail errors map: 429/403 rate → 429, 403 permissions → 403 scope
 });
 
 Deno.test("MAIL_ACTIONS off: preview and execute 503 disabled; undo and status still work", async () => {
-  const { d } = fake({ enabled: false });
+  const { d, calls } = fake({ enabled: false });
   assertEquals((await call(d, req("preview", mail()))).status, 503);
   assertEquals((await call(d, req("execute", { token: TOKEN }))).status, 503);
+  assertEquals([calls.list.length, calls.starts.length, calls.kicks], [0, 0, 0]);
   assertEquals((await call(d, req("undo", { id: TOKEN }))).status, 202);
   assertEquals((await call(d, req("status?id=" + TOKEN))).status, 200);
 });
@@ -248,4 +252,32 @@ Deno.test("sampleOf: display name, else address; subject clipped to 100; no head
   assertEquals(sampleOf(mk("x", "shop@example.com", "y".repeat(150))).from, "shop@example.com");
   assertEquals(sampleOf(mk("x", "합성상점 <shop@example.com>", "y".repeat(150))).subject.length, 100);
   assertEquals(sampleOf({ id: "x", internalDate: "0" }), { from: "", subject: "", date: new Date(0).toISOString() });
+});
+
+Deno.test("sampleOf: clipping never splits a surrogate pair (iOS JSON decode rejects a lone surrogate)", () => {
+  const s = sampleOf(mk("x", "n".repeat(59) + "🎉 <shop@example.com>", "y".repeat(99) + "🎉"));
+  assertEquals([s.subject.length, s.from.length], [99, 59]);
+  assert(!JSON.stringify(s).includes("\\ud8"), JSON.stringify(s));
+  assertEquals(sampleOf(mk("x", "shop@example.com", "y".repeat(98) + "🎉")).subject.length, 100);   // 다 들어가면 그대로
+});
+
+Deno.test("sampleOf: a missing or non-numeric internalDate gives date \"\" — one bad sample does not fail the preview", async () => {
+  assertEquals(sampleOf({ id: "x", internalDate: "abc" }).date, "");
+  assertEquals(sampleOf({ id: "x" } as GmailMessage).date, "");
+  const { d } = fake({ headers: (id) => Promise.resolve(id === "b" ? { ...mk(id), internalDate: "" } : mk(id)) });
+  const r = await call(d, req("preview", mail()));
+  assertEquals(r.status, 200);
+  assertEquals((await r.json()).sample.map((x: { date: string }) => x.date === ""), [false, true, false]);
+});
+
+Deno.test("an RPC error is logged with its function name and SQLSTATE only (no user data) → 500 internal", async () => {
+  const { d } = fake();
+  d.start = () => Promise.reject(new RpcError("mail_action_start", "40001"));
+  const { r, lines } = await quiet(() => handleMailAction(req("execute", { token: TOKEN }), d));
+  assertEquals([r.status, await r.json()], [500, { error: "internal" }]);
+  const last = JSON.parse(lines.at(-1)!);
+  assertEquals([last.result, last.error], ["internal", "mail_action_start 40001"]);
+  assert(!lines.join("\n").includes(TOKEN) && !lines.join("\n").includes(USER));
+  const { lines: other } = await quiet(() => handleMailAction(req("execute", { token: TOKEN }), { ...d, start: () => Promise.reject(new Error("secret detail")) }));
+  assert(!other.join("\n").includes("secret detail"));                   // 그 밖의 오류는 여전히 이름만
 });
