@@ -133,7 +133,7 @@ export function maskMail(title: string, body: string): { otp: true } | { otp: fa
 // _shared/gmail.ts (S3)
 export type MessagePart;  export function decodeEntities(s: string): string;   // 기존 비공개를 공개
 export async function getMessageFull(accessToken: string, id: string): Promise<GmailMessage>;   // 15초, 오류 reasons
-export interface GmailReadApi { list(q, maxResults, pageToken?): Promise<ListPage>; headers(id): Promise<GmailMessage>; full(id): Promise<GmailMessage> }
+export interface GmailReadApi { list(q, maxResults, pageToken?, timeoutMs?): Promise<ListPage>; headers(id, timeoutMs?): Promise<GmailMessage>; full(id): Promise<GmailMessage> }   // timeoutMs = 검색 남은 예산(S3)
 export function gmailReadApi(accessToken: string): GmailReadApi;
 // _shared/mail-token.ts (S3)
 export const TOKEN_TTL_S = 600;  export type TokenClaims = { u: string; c: string; m: string; e: number };
@@ -173,7 +173,7 @@ UsageStatus.breakdown(_ data: Data) -> [String]?                    // [월 예�
 - **호스팅 DB(AGENTS.md §7):** 테스트 사용자 21(트랜잭션 롤백만)·22·23의 행만, 이번 실행 증가분만 정리(**`usage_ledger` 전체 삭제 금지** — D17). 실측 사용자(`ERURI_USER_ID`)의 행은 만들거나 지우지 않는다(D1 관찰은 숫자 읽기만). `truncate`·조건 없는 `delete` 금지. `LOCAL_FILTER`·`MAIL_DB_TEST=1` 관례는 0.14.0 계획대로 — 이 계획의 호스팅 SQL 테스트는 `USAGE_DB_TEST=1`일 때만 돈다.
 - **Swift 6 동시성:** `ChatView` 상태는 메인 액터. 모든 비동기 갱신은 `settle(id, epoch)` — `await` 뒤 색인으로 턴을 고치지 않는다. `MailSummary`는 값·순수 함수만.
 - **기계(AGENTS.md §6):** 빌드·시뮬레이터·deno 전 `vm_stat | grep -E 'free|compressor'`. 시뮬레이터 빌드와 deno 테스트를 동시에 돌리지 않는다. 시뮬레이터는 pane 전용 UDID(`.context/gate0150/udid`). Docker 없음.
-- **테스트 명령:** 서버 로컬 `deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/<파일>`(저장소 루트). 이 계획의 새 테스트 파일은 호스팅 DB를 쓰지 않는다(호스팅 SQL `usage-ledger-db.test.ts`는 `USAGE_DB_TEST=1`일 때만). 기존 파일을 돌릴 때 호스팅 DB 사례가 섞인 파일(`gmail.test.ts` 등)은 0.14.0 Global Constraints의 `LOCAL_FILTER`를 쓴다 — 이 계획이 고치는 기존 테스트 파일(`budget.test.ts`·`chat.test.ts`·`text.test.ts`·`embed.test.ts`·`extract.test.ts`·`rules.test.ts`·`mail-query.test.ts`·`mail-action.test.ts`·`intent-eval.test.ts`)은 `grep -n '_testenv' supabase/tests/<파일>`이 0줄이어야 하고(구현 때 다시 본다), `chat-db.test.ts`는 호스팅이라 가짜 `BudgetDeps` 모양만 고치고 D1에서 돈다. 전체 `deno check supabase/functions/{worker,chat,mail-read,mail-action,gmail-connect}/index.ts supabase/scripts/*.ts`. 앱 `cd ios && ./scripts/sim.sh gen && ./scripts/sim.sh test EruriCoreTests/<클래스>`, 빌드 `./scripts/sim.sh build`.
+- **테스트 명령:** 서버 로컬 `deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/<파일>`(저장소 루트). 이 계획의 새 테스트 파일은 호스팅 DB를 쓰지 않는다(호스팅 SQL `usage-ledger-db.test.ts`는 `USAGE_DB_TEST=1`일 때만). 기존 파일을 돌릴 때 호스팅 DB 사례가 섞인 파일(`gmail.test.ts` 등)은 0.14.0 Global Constraints의 `LOCAL_FILTER`를 쓴다 — 이 계획이 고치는 기존 테스트 파일(`budget.test.ts`·`chat.test.ts`·`text.test.ts`·`embed.test.ts`·`extract.test.ts`·`rules.test.ts`·`mail-query.test.ts`·`mail-action.test.ts`·`intent-eval.test.ts`)은 `grep -n '_testenv' supabase/tests/<파일>`이 0줄이어야 하고(구현 때 다시 본다), `chat-db.test.ts`는 호스팅이라 가짜 `BudgetDeps` 모양만 고치고 D1에서 돈다. 실제 `budgetDeps`·`record_usage`를 부르는 호스팅 파일(`usage-db`·`embed-db`·`text-db`·`extract-db`)은 0032 적용 전에는 `deno check`만 하고 D1 Step 3(0032 적용 직후)에서 돈다(Codex 계획 리뷰 1). 전체 `deno check supabase/functions/{worker,chat,mail-read,mail-action,gmail-connect}/index.ts supabase/scripts/*.ts`. 앱 `cd ios && ./scripts/sim.sh gen && ./scripts/sim.sh test EruriCoreTests/<클래스>`, 빌드 `./scripts/sim.sh build`.
 - **TDD:** 태스크마다 실패하는 테스트 → 최소 구현 → 통과 → 커밋(1~2개). 서버·DB·앱·평가·배포·게이트를 리뷰어가 따로 승인/거절할 수 있는 단위로 나눴다.
 - **모델(AGENTS.md §3):** S0 `opus`/`high`. L1~L3·S1~S5·A1~A4 구현·리뷰 `opus`/`high`. S6·S7 실행 `opus`/`medium`, S7 수동 검토 리뷰어 pane `opus`/`high`. D1·G1 `opus`/`medium`. G2 실기기 세션 `sonnet`/`medium`(사람이 옆에서 조작), 판정 기록은 메인이 확인.
 - **기록:** `docs/superpowers/phase1/gates.md`에 행 `SUMMARY-server`(S5 끝)·`USAGE-ledger`(L3·A2 끝, D1 호스팅 SQL을 근거 칸에 덧붙임)·`INTENT-eval`(0.15.0 판정을 기존 행 근거 칸에, S6)·`SUMMARY-eval`(S7)·`USAGE-deploy`·`SUMMARY-deploy`(D1)·`SUMMARY-sim`(G1)·`SUMMARY-real`(G2). `docs/superpowers/poc/results.md`에 SUMMARY-eval ② 판정표·SUMMARY-real 단계별 판정. 상태는 통과·실패·대기만("부분"은 마감 아님, AGENTS.md §5-8).
@@ -212,7 +212,7 @@ UsageStatus.breakdown(_ data: Data) -> [String]?                    // [월 예�
 
 | # | 전제 | 상태 | 흡수 게이트 | 실패하면 |
 |---|---|---|---|---|
-| U1 | 부정 연산자(`-in:sent`)가 API에서 메시지 단위로 맞는다 | 문서 미확정(§3, Codex #7) | SUMMARY-real ⓪ probe(D15) | 대화 단위(안내 1이 빠짐)면 지금 코드(라벨 거르기) 유지. 메시지 단위면 G2 Step 6이 `buildReadQuery`에 `-in:sent -in:drafts -in:chats`를 더하는 수정(상수 하나 + 테스트) → `mail-read` 재배포, `results.md`·§16에 적는다 |
+| U1 | 부정 연산자(`-in:sent`)가 API에서 메시지 단위로 맞는다 | 문서 미확정(§3, Codex #7) | SUMMARY-real ⓪ probe(D15) | 대화 단위(안내 1이 빠짐)면 지금 코드(라벨 거르기) 유지. 메시지 단위면 G2 Step 4(①~⑥ 실측 전)가 `buildReadQuery`에 `-in:sent -in:drafts -in:chats`를 더하는 수정(상수 하나 + 테스트) → `mail-read` 재배포, `results.md`·§16에 적는다 |
 | U2 | Gmail `body.data`가 원래 charset 바이트(전송 인코딩만 풀림)로 온다 | 문서 미명시 | S2 합성 EUC-KR·ISO-2022-JP 픽스처(디코드 고정), SUMMARY-real ②(UTF-8 합성 메일) | 실 메일에서 깨진 한글이 보이면 기록하고 메인이 사용자에게 보고(수집 경로 디코드는 범위 밖, §16) |
 | U3 | 실 메일에서 본문 파트가 `attachmentId`만으로 오는 빈도 | 문서 미명시 | SUMMARY-real에서 `no_body` 수를 로그 코드로 센다(판정 아님) | 잦으면 `attachments.get` 폴백 여부를 사용자 결정으로(스펙 변경부터) |
 | U4 | `after:<epoch>`가 받은 시각(`internalDate`) 기준이다 | 0.14.0 받은 기간과 같은 전제 | SUMMARY-real ③(`latest` — 보낸 답장을 건너뛰고 Synthetic notice) | 다른 메일을 요약하면 실패로 적고 `MAIL_READ` 끔, 메인 보고 |
@@ -246,6 +246,7 @@ U1·U2(일부)·U4는 실제 Google 계정의 Gmail에서만 재현된다(테스
 | `supabase/tests/usage-ledger-db.test.ts` (새) | 호스팅 트랜잭션(롤백) 같은 사례, `USAGE_DB_TEST=1` | L1(파일)·D1(실행) |
 | `supabase/functions/_shared/budget.ts` (고침) | 원소 타입·`bill`·예약 월·`responseUsage`·`ledgerLine` | L2 |
 | `supabase/functions/_shared/budget-deps.ts` (고침) | 새 RPC 연결, `recordUsage` | L2·L3 |
+| `supabase/functions/_shared/embeddings.ts`·`worker/embed-deps.ts` (고침) | `embedWithUsage(texts, type, onUsage?, create?)` — 응답 직후(데이터 꺼내기 전) 토큰 | L2 |
 | `supabase/functions/chat/query-vector.ts` (새) | 질의 임베딩 재사용·기록 | L2 |
 | `supabase/functions/chat/{handler,deps,filters}.ts` (고침) | `bill` 전달·어댑터 기록(L2), 의도 `mail_summary`·`mail_read`(S5) | L2·S5 |
 | `supabase/functions/_shared/{extract,extract-text}.ts` (고침) | `onUsage` 콜백(파싱 전) | L2·L3 |
@@ -254,12 +255,14 @@ U1·U2(일부)·U4는 실제 Google 계정의 Gmail에서만 재현된다(테스
 | `supabase/functions/_shared/mail-meta.ts` (새) | `clip16`·`sampleOf`(이동)·`candidateMeta` | S1 |
 | `supabase/functions/mail-action/handler.ts` (고침) | `sampleOf`를 `mail-meta.ts`에서 다시 내보냄(동작 불변) | S1 |
 | `supabase/functions/_shared/mail-body.ts` (새) | 본문 추출·charset·HTML → 글·자르기 | S2 |
-| `supabase/functions/_shared/rules.ts` (고침) | `maskMail` 더함(기존 함수 불변) | S2 |
-| `supabase/functions/_shared/gmail.ts` (고침) | `MessagePart`·`decodeEntities` 공개, `getMessageFull`·`GmailReadApi` | S3 |
+| `supabase/functions/_shared/rules.ts` (고침) | `maskMail` 더함, `scan` 마스킹을 단계당 한 번 재조립(`rebuild` — 결과 불변) | S2 |
+| `supabase/functions/_shared/gmail.ts` (고침) | `MessagePart`·`decodeEntities` 공개, 목록·메타 `timeoutMs` 인자(기본 15초), `getMessageFull`·`GmailReadApi` | S2·S3 |
 | `supabase/functions/_shared/mail-token.ts` (새) | HMAC 후보 토큰 | S3 |
 | `supabase/functions/mail-read/{handler,search,deps,index}.ts` (새) | 라우팅·공통 오류·검색 | S3 |
 | `supabase/functions/mail-read/{read,summary}.ts` (새) | 읽기·요약 모델 | S4 |
 | `supabase/tests/{budget,chat,text,embed,extract,chat-db}.test.ts` (고침) | 새 `BudgetDeps` 모양, 원소 사례 | L2·L3 |
+| `supabase/tests/embeddings.test.ts` (새) | 실제 임베딩 어댑터에 잘못된 응답 주입 — 토큰이 먼저 넘어감 | L2 |
+| `supabase/tests/usage-db.test.ts` (고침) | 슬롯 사례를 새 `bill` 계약으로(호스팅 — D1 0032 뒤 실행) | L2·D1 |
 | `supabase/tests/query-vector.test.ts` (새) | 질의 임베딩 원소 | L2 |
 | `supabase/tests/{mail-query,mail-action,rules}.test.ts` (고침) | 읽기 칸·`sampleOf` 이동·`maskMail` | S1·S2 |
 | `supabase/tests/mail-body.test.ts`·`mail-token.test.ts`·`mail-read.test.ts`·`mail-summary.test.ts` (새) | S2~S4 | S2~S4 |
@@ -851,8 +854,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `supabase/functions/_shared/budget.ts`(전체 교체 — 아래), `supabase/functions/_shared/budget-deps.ts`(전체 교체)
 - Create: `supabase/functions/chat/query-vector.ts`
 - Modify: `supabase/functions/chat/handler.ts:1,99,140-143,167-205`(`spent` 삭제·`answerOnce`), `supabase/functions/chat/deps.ts:2-5,35-48,57,70-82`, `supabase/functions/chat/filters.ts:1,96-129,149-155`
-- Modify: `supabase/functions/_shared/extract-text.ts:200-204`, `supabase/functions/worker/text.ts:1,82-87`, `supabase/functions/worker/text-deps.ts:28`, `supabase/functions/worker/embed.ts:1,11,34-45`
-- Test: `supabase/tests/budget.test.ts`(가짜 교체·사례 추가), `supabase/tests/query-vector.test.ts`(새), `supabase/tests/chat.test.ts`(가짜 `budget`·사례 추가), `supabase/tests/text.test.ts`·`embed.test.ts`(가짜·사례), `supabase/tests/chat-db.test.ts:90`(가짜 모양만)
+- Modify: `supabase/functions/_shared/extract-text.ts:200-204`, `supabase/functions/_shared/embeddings.ts:13-19`(`onUsage`·`create` 주입), `supabase/functions/worker/text.ts:1,82-87`, `supabase/functions/worker/text-deps.ts:28`, `supabase/functions/worker/embed.ts:1,11,34-45`, `supabase/functions/worker/embed-deps.ts:17`
+- Test: `supabase/tests/budget.test.ts`(가짜 교체·사례 추가), `supabase/tests/query-vector.test.ts`(새), `supabase/tests/embeddings.test.ts`(새 — 실제 어댑터에 잘못된 응답 주입), `supabase/tests/chat.test.ts`(가짜 `budget`·사례 추가), `supabase/tests/text.test.ts`·`embed.test.ts`(가짜·사례), `supabase/tests/chat-db.test.ts:90`(가짜 모양만), `supabase/tests/usage-db.test.ts:81-95`(슬롯 사례 콜백을 새 계약으로 — 실행은 D1 0032 뒤)
 
 **Interfaces:**
 - Consumes: L1 RPC 이름 `reserve_usage_month`(→ `[{status, month}]`)·`settle_usage_lines(p_user, p_kind, p_est_krw, p_month, p_lines)`·`record_usage(p_user, p_lines)`.
@@ -1098,11 +1101,14 @@ import { assertEquals, assertRejects } from "jsr:@std/assert";
 import type { LedgerKind, TokenUsage } from "../functions/_shared/budget.ts";
 import { queryEmbedder } from "../functions/chat/query-vector.ts";
 
-function fakeEmbed(fail = false) {
+// 실제 어댑터(embedWithUsage)처럼 응답을 받은 직후 onUsage 를 부르고 그 뒤 벡터를 꺼낸다. fail = 응답 없음(네트워크), badData = 응답은 왔지만 꺼내기 실패
+function fakeEmbed(fail: false | "network" | "badData" = false) {
   const calls: string[][] = [];
-  const embed = async (texts: string[]) => {
+  const embed = async (texts: string[], onUsage?: (u: TokenUsage | null) => void) => {
     calls.push(texts);
-    if (fail) throw new TypeError("fetch failed");
+    if (fail === "network") throw new TypeError("fetch failed");
+    onUsage?.({ input: 7, cached: 0, output: 0 });
+    if (fail === "badData") throw new TypeError("embedding data missing");
     return { vectors: texts.map(() => [0.1, 0.2]), tokens: 7 };
   };
   return { embed, calls };
@@ -1135,32 +1141,90 @@ Deno.test("queryEmbedder: a later request reusing the cached vector bills nothin
   await qv("같은 질문", second.bill);
   assertEquals([first.xs.length, second.xs.length], [1, 0]);
 });
-Deno.test("queryEmbedder: an embedding failure bills nothing and is not cached", async () => {
-  const bad = fakeEmbed(true);
+Deno.test("queryEmbedder: an embedding failure without a response bills nothing and is not cached", async () => {
+  const bad = fakeEmbed("network");
   const qv = queryEmbedder(bad.embed);
   const b = billed();
   await assertRejects(() => qv("합성", b.bill), TypeError);
   await assertRejects(() => qv("합성", b.bill), TypeError);
   assertEquals([bad.calls.length, b.xs.length], [2, 0]);
 });
+// 스펙 §13 "응답이 온 실패도 청구된 토큰": 응답은 왔는데 벡터를 못 꺼내면 원소는 남고 캐시는 비운다(Codex 계획 리뷰 2)
+Deno.test("queryEmbedder: a response that fails after arriving is billed once per call and is not cached", async () => {
+  const bad = fakeEmbed("badData");
+  const qv = queryEmbedder(bad.embed);
+  const b = billed();
+  await assertRejects(() => qv("합성", b.bill), TypeError);
+  await assertRejects(() => qv("합성", b.bill), TypeError);
+  assertEquals([bad.calls.length, b.xs.length], [2, 2]);
+});
 ```
 
-Run: `deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/query-vector.test.ts`
-Expected: FAIL — 모듈 없음.
+`supabase/tests/embeddings.test.ts`(새 — 실제 어댑터에 잘못된 응답을 주입. API 호출 없음, 호스팅 DB 없음):
+
+```ts
+import { assertEquals, assertRejects } from "jsr:@std/assert";
+import type { TokenUsage } from "../functions/_shared/budget.ts";
+import { embedWithUsage } from "../functions/_shared/embeddings.ts";
+
+const got = () => { const xs: (TokenUsage | null)[] = []; return { xs, on: (u: TokenUsage | null) => { xs.push(u); } }; };
+// 스펙 §13: 임베딩 응답을 받은 직후(정렬·매핑보다 먼저) 토큰을 넘긴다 — 꺼내기가 실패해도 청구된 토큰이 남는다
+Deno.test("embedWithUsage: onUsage fires before data is read — a malformed response still reports its tokens", async () => {
+  const g = got();
+  const create = async () => ({ usage: { prompt_tokens: 9, total_tokens: 9 }, data: null }) as never;
+  await assertRejects(() => embedWithUsage(["합성"], "query", g.on, create), TypeError);
+  assertEquals(g.xs, [{ input: 9, cached: 0, output: 0 }]);
+});
+Deno.test("embedWithUsage: a normal response reports tokens once and returns vectors in index order", async () => {
+  const g = got();
+  const create = async () => ({ usage: { prompt_tokens: 4, total_tokens: 4 }, data: [{ index: 1, embedding: [2] }, { index: 0, embedding: [1] }] }) as never;
+  assertEquals(await embedWithUsage(["가", "나"], "document", g.on, create), { vectors: [[1], [2]], tokens: 4 });
+  assertEquals(g.xs, [{ input: 4, cached: 0, output: 0 }]);
+});
+Deno.test("embedWithUsage: usage missing → onUsage(null) (calls counted, usage_missing)", async () => {
+  const g = got();
+  const create = async () => ({ data: [{ index: 0, embedding: [1] }] }) as never;
+  assertEquals((await embedWithUsage(["가"], "query", g.on, create)).tokens, 0);
+  assertEquals(g.xs, [null]);
+});
+```
+
+Run: `deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/query-vector.test.ts supabase/tests/embeddings.test.ts`
+Expected: FAIL — 모듈 없음(`query-vector`), `embedWithUsage` 3·4번째 인자 없음.
+
+`supabase/functions/_shared/embeddings.ts`의 `embedWithUsage`(import `type TokenUsage` from `./budget.ts` — budget.ts 는 import 가 없어 순환 없음):
+
+```ts
+type EmbedCreate = (body: { model: string; input: string[]; dimensions: number; encoding_format: "float" }) =>
+  Promise<{ usage?: { total_tokens?: number } | null; data: { index: number; embedding: number[] }[] }>;
+// 호출 1건의 토큰(비용 정산용). onUsage 는 응답을 받은 직후 — 정렬·매핑(잘못된 응답이면 여기서 던짐)보다 먼저(스펙 §13). create 는 테스트 주입용
+export async function embedWithUsage(texts: string[], _inputType: "document" | "query", onUsage?: (u: TokenUsage | null) => void,
+  create: EmbedCreate = (b) => openai.embeddings.create(b)): Promise<{ vectors: number[][]; tokens: number }> {
+  const r = await create({ model: EMBED_MODEL, input: texts, dimensions: EMBED_DIMENSIONS, encoding_format: "float" });
+  const tokens = r.usage?.total_tokens ?? 0;
+  onUsage?.(r.usage ? { input: tokens, cached: 0, output: 0 } : null);
+  embedStats.calls++;
+  embedStats.tokens += tokens;
+  return { vectors: [...r.data].sort((a, b) => a.index - b.index).map((d) => d.embedding), tokens };
+}
+```
+
+(`embed(texts, inputType)`는 그대로 `embedWithUsage(texts, inputType)` — onUsage 없음.)
 
 - [ ] **Step 4: `chat/query-vector.ts`**
 
 ```ts
-import type { Bill } from "../_shared/budget.ts";
+import type { Bill, TokenUsage } from "../_shared/budget.ts";
 import { EMBED_MODEL } from "../_shared/embeddings.ts";
 
 // 채팅 질의 임베딩(스펙 §9·§13 "채팅 검색 질의 임베딩"): isolate 안에서 마지막 질의 벡터만 기억한다 — 기간 폴백 재검색이 같은 문장을 두 번 임베딩하지 않게
 // (같은 문장이면 사용자와 무관하게 같은 벡터). 임베딩 API 응답을 실제로 받은 요청만 bill(예약 chat·집계 chat) — 재사용한 요청은 비용이 없다(D13)
-export function queryEmbedder(embed: (texts: string[]) => Promise<{ vectors: number[][]; tokens: number }>) {
+// bill 은 어댑터가 응답을 받은 직후 onUsage 로 부른다 — 벡터 꺼내기가 실패해도 원소가 남는다(§13)
+export function queryEmbedder(embed: (texts: string[], onUsage?: (u: TokenUsage | null) => void) => Promise<{ vectors: number[][]; tokens: number }>) {
   let last: { text: string; v: Promise<number[]> } | null = null;
   return (text: string, bill?: Bill): Promise<number[]> => {
     if (last?.text !== text) {
-      const v = embed([text]).then((r) => { bill?.("chat", EMBED_MODEL, { input: r.tokens, cached: 0, output: 0 }); return r.vectors[0]; });
+      const v = embed([text], (u) => bill?.("chat", EMBED_MODEL, u)).then((r) => r.vectors[0]);
       v.catch(() => { if (last?.v === v) last = null; });
       last = { text, v };
     }
@@ -1169,7 +1233,7 @@ export function queryEmbedder(embed: (texts: string[]) => Promise<{ vectors: num
 }
 ```
 
-Run: 위 테스트 → 4 passed.
+Run: 위 두 파일 → `query-vector` 5 passed, `embeddings` 3 passed.
 
 - [ ] **Step 5: chat — 실패하는 테스트**
 
@@ -1328,7 +1392,7 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps, cont
 
 ```ts
   // 기간 폴백 재검색이 같은 질문을 두 번 임베딩하지 않게 마지막 질의 벡터만 기억한다 — 임베딩을 실제로 부른 요청만 원소 하나(D13)
-  const queryVector = queryEmbedder((texts) => embedWithUsage(texts, "query"));
+  const queryVector = queryEmbedder((texts, onUsage) => embedWithUsage(texts, "query", onUsage));
 ```
 
 `filters`·`search`·`answer`:
@@ -1398,7 +1462,13 @@ Deno.test("text billing: the extraction response arrives but parsing fails → t
 });
 ```
 
-`supabase/tests/embed.test.ts`의 `fake()` 예산:
+`supabase/tests/embed.test.ts`의 `fake()` — 가짜 `embed`는 실제 어댑터처럼 응답 직후 `onUsage`를 부른다(19행):
+
+```ts
+    embed: async (texts, onUsage) => { batches.push(texts.length); onUsage?.({ input: 40, cached: 0, output: 0 }); return { vectors: texts.map(() => Array(512).fill(0.01)), tokens: 40 }; },
+```
+
+예산:
 
 ```ts
   const lines: [string, number][][] = [];
@@ -1465,8 +1535,7 @@ export async function extractTextDetailed(text: string, meta: TextMeta, today: s
     // 요청당 입력 2,048개·30만 토큰 한도 → BATCH 청크씩(512자 × 256 ≈ 15만 토큰 이하). 묶음(API 응답)마다 원소 하나(§13)
     const r = { vectors: [] as number[][], tokens: 0 };
     for (let i = 0; i < texts.length; i += BATCH) {
-      const b = await deps.embed(texts.slice(i, i + BATCH));
-      bill("embed", EMBED_MODEL, { input: b.tokens, cached: 0, output: 0 });
+      const b = await deps.embed(texts.slice(i, i + BATCH), (u) => bill("embed", EMBED_MODEL, u));   // 응답 직후(꺼내기 전) — 어댑터가 부른다
       r.vectors.push(...b.vectors);
       r.tokens += b.tokens;
     }
@@ -1474,8 +1543,35 @@ export async function extractTextDetailed(text: string, meta: TextMeta, today: s
   });
 ```
 
-Run: `deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/budget.test.ts supabase/tests/query-vector.test.ts supabase/tests/chat.test.ts supabase/tests/text.test.ts supabase/tests/embed.test.ts supabase/tests/extract.test.ts && deno check supabase/functions/{worker,chat,mail-action,gmail-connect}/index.ts supabase/scripts/*.ts supabase/tests/chat-db.test.ts`
-Expected: 전부 PASS, 타입 오류 없음(스크립트가 `guarded`·`BudgetDeps`를 쓰면 여기서 드러난다 — 고친다). `grep -rn "actualKrw\|reserve_usage\"\|settle_usage\"" supabase/functions` 0줄(옛 RPC 이름을 부르는 코드 없음).
+`worker/embed.ts`의 `EmbedDeps.embed`와 `worker/embed-deps.ts`:
+
+```ts
+  embed(texts: string[], onUsage?: (u: TokenUsage | null) => void): Promise<{ vectors: number[][]; tokens: number }>;   // embed.ts (import type TokenUsage)
+```
+
+```ts
+    embed: (texts, onUsage) => embedWithUsage(texts, "document", onUsage),                                                  // embed-deps.ts
+```
+
+`supabase/tests/usage-db.test.ts`(호스팅 — D1 Step 3에서 0032 적용 뒤에 돈다) 81~95행 LLM 슬롯 사례를 새 계약으로: 콜백이 `{ value, actualKrw }` 대신 원소를 `bill`하고 값만 돌려준다. 정산 금액 = 원소 합(옛 `actualKrw: 0.5` 대응):
+
+```ts
+  const U = { input: 1_000, cached: 0, output: 0 };                                       // luna 입력 1천 토큰 ≈ 0.14원 — 예약 1원 안
+  const each = ledgerLine("extract", "gpt-6-luna", U).krw;                                  // import { ledgerLine } from budget.ts
+  …guarded(deps, USER, "extract", 1, `${RUN}:w${i}`, async (_lv, bill) => {
+      peak = Math.max(peak, ++live);
+      await new Promise((r) => setTimeout(r, 1500));
+      live--;
+      bill("extract", "gpt-6-luna", U);
+      return i;
+    })…
+    assertEquals(Number((await sb.from("usage_counters").select("reserved_krw").eq("user_id", USER).single()).data!.reserved_krw), each * 2);   // 원소 2개
+```
+
+`finally`에 `await sb.from("usage_ledger").delete().eq("user_id", USER);`를 더한다(테스트 사용자 `USER` 행만 — `usage_counters` 정리와 같은 범위, D17).
+
+Run: `deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/budget.test.ts supabase/tests/query-vector.test.ts supabase/tests/embeddings.test.ts supabase/tests/chat.test.ts supabase/tests/text.test.ts supabase/tests/embed.test.ts supabase/tests/extract.test.ts && deno check supabase/functions/{worker,chat,mail-action,gmail-connect}/index.ts supabase/scripts/*.ts supabase/tests/chat-db.test.ts supabase/tests/usage-db.test.ts supabase/tests/embed-db.test.ts supabase/tests/text-db.test.ts`
+Expected: 전부 PASS, 타입 오류 없음(스크립트가 `guarded`·`BudgetDeps`를 쓰면 여기서 드러난다 — 고친다). `grep -rn "actualKrw\|reserve_usage\"\|settle_usage\"" supabase/functions supabase/tests/usage-db.test.ts` 0줄(옛 RPC 이름·옛 콜백 모양을 부르는 코드 없음 — `usage-db`·`embed-db`의 `reserve_usage`/`settle_usage` 직접 호출은 0014 RPC 사례라 남는다). 호스팅 파일(`usage-db`·`embed-db`·`text-db`)은 실제 `budgetDeps`가 0032 RPC를 불러 **0032 적용 전에는 돌리지 않는다** — `deno check`만, 실행은 D1 Step 3.
 
 - [ ] **Step 9: 커밋(리뷰어가 따로 볼 수 있게 둘)**
 
@@ -1484,8 +1580,8 @@ git add supabase/functions/_shared/budget.ts supabase/functions/_shared/budget-d
 git commit -m "feat(server): usage ledger in guarded — every model/embedding response is billed as a line right after it arrives (before parsing), lines settle with the reservation on the month the reservation returned (reserve_usage_month/settle_usage_lines), refused/busy settle no lines, a line outside the reservation's pairs throws ledger_pair, cached input priced at the cache rate
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
-git add supabase/functions/chat supabase/functions/_shared/extract-text.ts supabase/functions/worker/text.ts supabase/functions/worker/text-deps.ts supabase/functions/worker/embed.ts supabase/tests/query-vector.test.ts supabase/tests/chat.test.ts supabase/tests/chat-db.test.ts supabase/tests/text.test.ts supabase/tests/embed.test.ts
-git commit -m "feat(server): bill chat filter, query embedding and answer under kind chat (the query vector is billed only by the request that called the API), worker text extraction under extract/backfill and each embed batch under embed — responses that fail to parse are still settled
+git add supabase/functions/chat supabase/functions/_shared/extract-text.ts supabase/functions/_shared/embeddings.ts supabase/functions/worker/text.ts supabase/functions/worker/text-deps.ts supabase/functions/worker/embed.ts supabase/functions/worker/embed-deps.ts supabase/tests/query-vector.test.ts supabase/tests/embeddings.test.ts supabase/tests/chat.test.ts supabase/tests/chat-db.test.ts supabase/tests/text.test.ts supabase/tests/embed.test.ts supabase/tests/usage-db.test.ts
+git commit -m "feat(server): bill chat filter, query embedding and answer under kind chat (the query vector is billed only by the request that called the API), worker text extraction under extract/backfill and each embed batch under embed — every adapter bills right after the API response (embedWithUsage before reading data), so responses that fail to parse are still settled; usage-db slot case on the new callback contract
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -1856,7 +1952,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Create: `supabase/functions/_shared/mail-body.ts`
 - Modify: `supabase/functions/_shared/gmail.ts:75,104`(`type Part` → `export type MessagePart`(옛 이름 `Part`는 같은 파일 안 별칭으로 남김), `decodeEntities` export — 동작 불변)
-- Modify: `supabase/functions/_shared/rules.ts`(끝에 `maskMail` — 기존 함수 불변)
+- Modify: `supabase/functions/_shared/rules.ts`(끝에 `maskMail`; `scan` 안의 `replaceRange` 반복을 한 번에 다시 짓는 `rebuild`로 — 결과 문자열 불변, 기존 함수의 입출력 불변. Codex 계획 리뷰 4)
 - Test: `supabase/tests/mail-body.test.ts`(새), `supabase/tests/rules.test.ts`(사례 추가)
 
 **Interfaces:**
@@ -1961,12 +2057,31 @@ Deno.test("maskMail: card (Luhn) in the subject is masked; lengths are preserved
   const r = maskMail("결제 카드 4111-1111-1111-1111", "합성 결제 안내 35,000원");
   assertEquals(r, { otp: false, title: "결제 카드 ****-****-****-1111", body: "합성 결제 안내 35,000원" });
 });
-Deno.test("maskMail: 1,000,000-char synthetic text is judged and masked in under 1 s (min of 3, local)", () => {
-  const body = "합성 안내 10/20(화) 15:00 참가비 35,000원 신청서 제출. ".repeat(25_000).slice(0, 1_000_000);
-  let best = Infinity;
-  for (let i = 0; i < 3; i++) { const t0 = performance.now(); maskMail("합성 안내", body); best = Math.min(best, performance.now() - t0); }
-  console.log(JSON.stringify({ mask_ms: Math.round(best) }));
-  assert(best < 1000, `${best}ms`);
+// 병목은 정규식이 아니라 가릴 번호마다 글 전체를 다시 만드는 것 — 번호가 없는 글은 빠르다. 그래서 민감 숫자가 빽빽한 글로 잰다(Codex 계획 리뷰 4:
+// 옛 scan 은 합성 카드번호를 반복한 999,994자에 2,624ms. 2026-10-07 로컬 재현 old 2,585ms → rebuild 25ms, 계좌 2,655 → 33ms, 결과 문자열 동일)
+Deno.test("maskMail: 1,000,000-char synthetic texts — plain, dense cards, dense accounts — are judged and masked in under 1 s each (min of 3, local)", () => {
+  const bodies: Record<string, string> = {
+    plain: "합성 안내 10/20(화) 15:00 참가비 35,000원 신청서 제출. ".repeat(25_000).slice(0, 1_000_000),
+    cards: "결제 카드 4111-1111-1111-1111 ".repeat(50_000).slice(0, 1_000_000),
+    accounts: "신한 계좌 110-123-456789 입금 ".repeat(50_000).slice(0, 1_000_000),
+  };
+  const ms: Record<string, number> = {};
+  for (const [k, body] of Object.entries(bodies)) {
+    let best = Infinity, r: ReturnType<typeof maskMail> = { otp: true };
+    for (let i = 0; i < 3; i++) { const t0 = performance.now(); r = maskMail("합성 안내", body); best = Math.min(best, performance.now() - t0); }
+    ms[k] = Math.round(best);
+    assert(!r.otp && r.body.length === body.length, k);                                  // 길이 보존 — 제목 경계로 다시 나눌 수 있다
+    if (k === "cards") assertEquals(r.body.match(/4111-1111-1111-1111/g), null);         // 빽빽해도 하나도 빠짐없이
+    if (k === "accounts") assertEquals(r.body.match(/110-123-456789/g), null);
+  }
+  console.log(JSON.stringify({ mask_ms: ms }));
+  assert(Object.values(ms).every((x) => x < 1000), JSON.stringify(ms));
+});
+// rebuild 가 옛 replaceRange 반복과 같은 결과인지: 같은 승인번호를 두 키워드가 가리키는 겹침, 카드·계좌가 섞인 글
+Deno.test("maskSensitive: one-pass rebuild matches the old per-range result (duplicate approval range, card + account in one text)", () => {
+  assertEquals(maskSensitive("승인번호 승인코드 123456 결제 1,000원"), "승인번호 승인코드 ****** 결제 1,000원");   // 두 키워드가 같은 숫자를 가리킨다
+  assertEquals(maskSensitive("승인번호 123456 결제 30,000원 승인번호 654321"), "승인번호 ****** 결제 30,000원 승인번호 ******");
+  assertEquals(maskSensitive("카드 4111 1111 1111 1111 계좌 국민 110-123-456789"), "카드 **** **** **** 1111 계좌 국민 ***-***-**6789");
 });
 ```
 
@@ -1983,6 +2098,48 @@ type Part = MessagePart;
 ```
 
 104행 `function decodeEntities`를 `export function decodeEntities`로.
+
+`_shared/rules.ts` — `replaceRange`를 지우고 `rebuild`로, `scan`의 마스킹 세 단계(승인번호·카드·계좌)를 단계마다 범위를 모아 한 번에 바꾼다(판정·정규식·순서 그대로 — 워커 `applyRules`·`maskSensitive` 결과 불변, 기존 `rules.test.ts` 21개가 그대로 통과해야 한다):
+
+```ts
+// 겹치지 않는 범위를 한 번에 바꾼다(길이 보존 마스킹). 범위마다 문자열 전체를 다시 만들면 민감 숫자가 많은 긴 글에서 O(글 길이 × 개수)다.
+// 같은 범위가 두 번 오면(키워드 둘이 같은 승인번호를 가리킴) 한 번만 — 옛 replaceRange 반복과 결과가 같다
+function rebuild(s: string, rs: Range[], f: (raw: string) => string): string {
+  if (rs.length === 0) return s;
+  const parts: string[] = [];
+  let i = 0;
+  for (const r of [...rs].sort((a, b) => a.start - b.start)) {
+    if (r.start < i) continue;
+    parts.push(s.slice(i, r.start), f(s.slice(r.start, r.end)));
+    i = r.end;
+  }
+  parts.push(s.slice(i));
+  return parts.join("");
+}
+```
+
+`scan`의 `let out = text;`부터 `return out;`까지:
+
+```ts
+  let out = rebuild(text, approval, (raw) => raw.replace(/\d/g, "*"));
+  // 카드번호: Luhn 통과하는 13~19자리만
+  const cards = matchesIn(CARD_LIKE, out).filter((m) => {
+    const digits = out.slice(m.start, m.end).replace(/\D/g, "");
+    return digits.length >= 13 && digits.length <= 19 && luhn(digits);
+  });
+  out = rebuild(out, cards, maskDigits);
+  // 계좌번호: 앞뒤 20자 안에 은행·계좌 키워드(키워드에 숫자가 없어 앞선 마스킹이 판정을 바꾸지 않는다)
+  const accounts = matchesIn(ACCOUNT_LIKE, out).filter((m) => {
+    const raw = out.slice(m.start, m.end);
+    const n = raw.replace(/\D/g, "").length;
+    if (raw.includes("-") ? n < 10 || n > 14 : n < 10 || n > 16) return false;
+    const w = windowAround(m, ACCOUNT_WINDOW, out.length);
+    return ACCOUNT_KEYWORD.test(out.slice(w.start, w.end));
+  });
+  return rebuild(out, accounts, maskDigits);
+```
+
+(2026-10-07 계획 수정 때 이 두 블록을 임시 사본에 넣어 기존 `rules.test.ts` 21 passed, 합성 글 세 종류·작은 사례 넷에서 옛 구현과 `maskSensitive`·`isOtp` 결과 동일을 확인했다.)
 
 `_shared/rules.ts` 끝에:
 
@@ -2098,13 +2255,13 @@ export function extractBody(payload: MessagePart | undefined): { text: string | 
 ```
 
 Run: `deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/mail-body.test.ts supabase/tests/rules.test.ts supabase/tests/gmail-mail.test.ts && deno check supabase/functions/worker/index.ts`
-Expected: 전부 PASS(기존 `applyRules`·`isOtp`·`maskSensitive` 사례 포함), 시간 로그 `html_ms`·`mask_ms`가 각각 2,000·1,000 미만(실측 값을 커밋 메시지에 적는다). `gmail-mail.test.ts`(0.14.0)가 호스팅 DB를 쓰면 `grep -n _testenv`로 보고 `LOCAL_FILTER`로 돈다.
+Expected: 전부 PASS(기존 `applyRules`·`isOtp`·`maskSensitive` 사례 포함 — `rebuild`가 결과를 바꾸지 않음), 시간 로그 `html_ms` 2,000 미만, `mask_ms`의 plain·cards·accounts 각각 1,000 미만(실측 값을 커밋 메시지에 적는다). `gmail-mail.test.ts`(0.14.0)가 호스팅 DB를 쓰면 `grep -n _testenv`로 보고 `LOCAL_FILTER`로 돈다.
 
 - [ ] **Step 3: 커밋**
 
 ```bash
 git add supabase/functions/_shared/mail-body.ts supabase/functions/_shared/gmail.ts supabase/functions/_shared/rules.ts supabase/tests/mail-body.test.ts supabase/tests/rules.test.ts
-git commit -m "feat(server): mail body extraction and joint masking for summaries — first text/plain else text/html, part charset decoding (EUC-KR, ISO-2022-JP, unknown → UTF-8), attachments and attachmentId-only bodies counted not read, linear HTML-to-text (no href), 1M-char caps, surrogate-safe clipping; maskMail judges OTP and masks card/account over subject+body once before any clipping (existing rules unchanged). Local timings: html <N>ms, mask <N>ms
+git commit -m "feat(server): mail body extraction and joint masking for summaries — first text/plain else text/html, part charset decoding (EUC-KR, ISO-2022-JP, unknown → UTF-8), attachments and attachmentId-only bodies counted not read, linear HTML-to-text (no href), 1M-char caps, surrogate-safe clipping; maskMail judges OTP and masks card/account over subject+body once before any clipping; scan rebuilds the masked text once per stage instead of once per number (same output, dense 1M-char text ~2.6 s → tens of ms). Local timings: html <N>ms, mask plain/cards/accounts <N>/<N>/<N>ms
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -2116,7 +2273,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Create: `supabase/functions/_shared/mail-token.ts`, `supabase/functions/mail-read/common.ts`, `supabase/functions/mail-read/search.ts`, `supabase/functions/mail-read/handler.ts`, `supabase/functions/mail-read/deps.ts`, `supabase/functions/mail-read/index.ts`
 - Create(빈 자리 — S4가 채움): `supabase/functions/mail-read/read.ts`, `supabase/functions/mail-read/summary.ts`(S3에서는 `read`가 501을 돌려주는 임시 함수와 타입만 — 아래)
-- Modify: `supabase/functions/_shared/gmail.ts`(끝에 `getMessageFull`·`GmailReadApi`·`gmailReadApi`)
+- Modify: `supabase/functions/_shared/gmail.ts`(`mailFetch`·`listMessages`·`getMessageHeaders`에 기본값 있는 `timeoutMs` 인자, 끝에 `getMessageFull`·`GmailReadApi`·`gmailReadApi`)
 - Test: `supabase/tests/mail-token.test.ts`(새), `supabase/tests/mail-read.test.ts`(새 — 검색 사례), `supabase/tests/gmail-mail.test.ts`(사례 하나 추가)
 
 **Interfaces:**
@@ -2275,11 +2432,11 @@ const OK_SUMMARY: SummaryOutput = { status: "ok", lines: ["합성학원 설명�
   amounts: ["35,000원"], todos: ["10/16까지 신청서 제출"], language: "ko", translation: null, ask: null };
 
 type Opt = { msgs?: M[]; pageSize?: number; conn?: { connection_id: string; status: string } | null; access?: string | null | Error;
-  take?: (n: number) => boolean | Error; enabled?: boolean; clockStep?: number; listError?: Error; full?: Record<string, M | Error>;
+  take?: (n: number) => boolean | Error; enabled?: boolean; clockStep?: number; accessStep?: number; listError?: Error; full?: Record<string, M | Error>;
   summary?: SummaryOutput | Error; usage?: boolean; level?: "ok" | "refused"; slots?: (number | null)[]; auditFails?: boolean };
 function fake(o: Opt = {}) {
   const seen = { list: [] as { q: string; max: number; page?: string }[], headers: [] as string[], full: [] as string[], take: [] as number[],
-    summarize: [] as SummaryInput[], audit: [] as string[], settled: [] as LedgerLine[][], reserved: [] as string[], sleeps: [] as number[] };
+    summarize: [] as SummaryInput[], audit: [] as string[], settled: [] as LedgerLine[][], reserved: [] as string[], sleeps: [] as number[], timeouts: [] as number[] };
   const msgs = o.msgs ?? [];
   let clock = NOW;
   const slots = [...(o.slots ?? [])];
@@ -2292,10 +2449,10 @@ function fake(o: Opt = {}) {
     enabled: () => o.enabled ?? true,
     authUser: async (t) => (t === "good" ? USER : t === "other" ? "33333333-3333-4333-8333-333333333333" : null),
     connection: async () => (o.conn === undefined ? { connection_id: CONN, status: "active" } : o.conn),
-    accessToken: async () => { if (o.access instanceof Error) throw o.access; return o.access === undefined ? "at" : o.access; },
+    accessToken: async () => { clock += o.accessStep ?? 0; if (o.access instanceof Error) throw o.access; return o.access === undefined ? "at" : o.access; },
     api: () => ({
-      list: async (q, max, page) => {
-        seen.list.push({ q, max, page });
+      list: async (q, max, page, timeoutMs) => {
+        seen.list.push({ q, max, page }); seen.timeouts.push(timeoutMs ?? -1);
         clock += o.clockStep ?? 0;
         if (o.listError) throw o.listError;
         const afters = [...q.matchAll(/after:(\d+)/g)].map((x) => Number(x[1]) * 1000);   // 가짜 Gmail: after: 만 해석(받은 시각 기준 — U4 전제)
@@ -2303,8 +2460,8 @@ function fake(o: Opt = {}) {
         const start = page ? Number(page) : 0, n = Math.min(max, o.pageSize ?? max);
         return { messages: pool.slice(start, start + n).map((m) => ({ id: m.id })), nextPageToken: start + n < pool.length ? String(start + n) : undefined };
       },
-      headers: async (id) => {
-        seen.headers.push(id);
+      headers: async (id, timeoutMs) => {
+        seen.headers.push(id); seen.timeouts.push(timeoutMs ?? -1);
         const m = msgs.find((x) => x.id === id)!;
         if (m.gone) throw new GmailHttpError("messages.get", 404);
         return toGmail(m);
@@ -2442,6 +2599,16 @@ Deno.test("search: the 20 s budget is checked before each Gmail call → 502 gma
   const { d } = fake({ msgs: [msg("x", 1)], clockStep: 21_000 });
   assertEquals((await call(d, req("search", F))).j, { error: "gmail_upstream" });
 });
+// Codex 계획 리뷰 3: 앱 검색 요청 타임아웃은 30초(§7 "시간") — 19초에 시작한 호출이 15초를 다 쓰면 서버는 34초에 성공하고 앱은 이미 실패한다.
+// 그래서 Gmail 호출마다 제한 시간 = min(15초, 20초 예산의 남은 시간)
+Deno.test("search: each Gmail call's timeout is the remaining 20 s budget capped at 15 s (token refresh took 19 s → every call ≤ 1 s)", async () => {
+  const fresh = fake({ msgs: [msg("x", 1)] });
+  assertEquals((await call(fresh.d, req("search", F))).status, 200);
+  assert(fresh.seen.timeouts.length >= 2 && fresh.seen.timeouts.every((t) => t === 15_000));
+  const late = fake({ msgs: [msg("x", 1)], accessStep: 19_000 });
+  assertEquals((await call(late.d, req("search", F))).status, 200);
+  assert(late.seen.timeouts.length >= 2 && late.seen.timeouts.every((t) => t > 0 && t <= 1_000));
+});
 Deno.test("search: Gmail 429/403 quota → 429 gmail_rate_limited, 403 insufficientPermissions → 403 scope_missing, 401 → 409, 500 → 502", async () => {
   const cases: [GmailHttpError, number, string][] = [[new GmailHttpError("messages.list", 429), 429, "gmail_rate_limited"],
     [new GmailHttpError("messages.list", 403, ["userRateLimitExceeded"]), 429, "gmail_rate_limited"],
@@ -2472,7 +2639,15 @@ Expected: FAIL — `mail-read/*`·`getMessageFull` 없음.
 
 - [ ] **Step 4: 구현**
 
-`_shared/gmail.ts` 끝에:
+`_shared/gmail.ts` — `mailFetch`·`listMessages`·`getMessageHeaders`에 끝 인자 `timeoutMs = MAIL_CALL_TIMEOUT_MS`를 더한다(기본값이라 메일 정리·수집 호출부는 그대로, `signal: AbortSignal.timeout(timeoutMs)`). 메일 요약 검색만 남은 예산으로 줄여 넘긴다(Codex 계획 리뷰 3):
+
+```ts
+function mailFetch(accessToken: string, url: string | URL, body?: unknown, timeoutMs = MAIL_CALL_TIMEOUT_MS): Promise<Response> { /* …signal: AbortSignal.timeout(timeoutMs) */ }
+export async function listMessages(accessToken: string, q: string, maxResults: number, pageToken?: string, timeoutMs = MAIL_CALL_TIMEOUT_MS): Promise<ListPage>;   // mailFetch(accessToken, u, undefined, timeoutMs)
+export async function getMessageHeaders(accessToken: string, id: string, timeoutMs = MAIL_CALL_TIMEOUT_MS): Promise<GmailMessage>;                           // 같은 식
+```
+
+끝에:
 
 ```ts
 // ── 메일 요약(스펙 §7 "메일 요약"): 목록·메타는 메일 정리 것 그대로, 고른 한 통만 format=full. 읽기만 — 쓰기 호출 없음 ──
@@ -2483,14 +2658,14 @@ export async function getMessageFull(accessToken: string, id: string): Promise<G
   return await r.json() as GmailMessage;
 }
 export interface GmailReadApi {
-  list(q: string, maxResults: number, pageToken?: string): Promise<ListPage>;
-  headers(id: string): Promise<GmailMessage>;
+  list(q: string, maxResults: number, pageToken?: string, timeoutMs?: number): Promise<ListPage>;   // timeoutMs = 검색 예산의 남은 시간(최대 15초)
+  headers(id: string, timeoutMs?: number): Promise<GmailMessage>;
   full(id: string): Promise<GmailMessage>;
 }
 export function gmailReadApi(accessToken: string): GmailReadApi {
   return {
-    list: (q, n, p) => listMessages(accessToken, q, n, p),
-    headers: (id) => getMessageHeaders(accessToken, id),
+    list: (q, n, p, t) => listMessages(accessToken, q, n, p, t),
+    headers: (id, t) => getMessageHeaders(accessToken, id, t),
     full: (id) => getMessageFull(accessToken, id),
   };
 }
@@ -2550,7 +2725,7 @@ export async function accessFor(ctx: Ctx, c: MailReadConnection, d: MailReadDeps
 `supabase/functions/mail-read/search.ts`:
 
 ```ts
-import { type GmailMessage, GmailHttpError, type GmailReadApi } from "../_shared/gmail.ts";
+import { type GmailMessage, GmailHttpError, type GmailReadApi, MAIL_CALL_TIMEOUT_MS } from "../_shared/gmail.ts";
 import { candidateMeta } from "../_shared/mail-meta.ts";
 import { buildReadQuery, checkReadConditions, type ReadConditions, seoulMidnight } from "../_shared/mail-query.ts";
 import { signToken, TOKEN_TTL_S } from "../_shared/mail-token.ts";
@@ -2561,7 +2736,8 @@ import { accessFor, connectionFor, type Ctx, err, log, type MailReadDeps, RateLi
 export const LIST_CALLS_MAX = 10, META_MAX = 20, CANDIDATES_MAX = 5, META_PARALLEL = 5, SEARCH_BUDGET_MS = 20_000;
 export const LATEST_STEPS_S = [3_600, 86_400, 7 * 86_400, 30 * 86_400] as const;
 export const SKIP_LABELS: readonly string[] = ["SENT", "DRAFT", "CHAT"];
-export type SearchCtx = { api: Pick<GmailReadApi, "list" | "headers">; take(units: number): Promise<void>; over(): void };
+// over(): 20초 예산이 남았는지 보고(없으면 SearchTimeout) 이번 Gmail 호출의 제한 시간 = min(15초, 남은 시간)을 돌려준다 — 서버 검색이 앱 30초 타임아웃 안에 끝난다
+export type SearchCtx = { api: Pick<GmailReadApi, "list" | "headers">; take(units: number): Promise<void>; over(): number };
 export type SearchOutcome = { candidates: GmailMessage[]; complete: boolean; more: boolean; lists: number; metas: number };
 type State = { lists: number; metas: number; seen: Map<string, GmailMessage | null> };   // null = 그사이 404
 
@@ -2573,7 +2749,7 @@ async function listIds(ctx: SearchCtx, st: State, q: string): Promise<{ ids: str
     ctx.over();
     await ctx.take(5);
     st.lists++;
-    const p = await ctx.api.list(q, META_MAX - ids.length, pageToken);
+    const p = await ctx.api.list(q, META_MAX - ids.length, pageToken, ctx.over());   // units 확보(최대 1초) 뒤 남은 시간으로
     for (const m of p.messages ?? []) {
       if (ids.includes(m.id)) continue;
       if (ids.length >= META_MAX) { dropped = true; continue; }
@@ -2590,8 +2766,9 @@ async function readMeta(ctx: SearchCtx, st: State, ids: string[]): Promise<void>
     ctx.over();
     await ctx.take(20 * group.length);
     st.metas += group.length;
+    const t = ctx.over();
     await Promise.all(group.map(async (id) => {
-      try { st.seen.set(id, await ctx.api.headers(id)); }
+      try { st.seen.set(id, await ctx.api.headers(id, t)); }
       catch (e) { if (e instanceof GmailHttpError && e.status === 404) st.seen.set(id, null); else throw e; }   // 그사이 지워진 메일만 뺀다
     }));
   }
@@ -2645,9 +2822,18 @@ export async function search(ctx: Ctx, body: Record<string, unknown>, d: MailRea
   const sctx: SearchCtx = {
     api: d.api(at),
     take: async (n) => { if (!(await d.takeUnits(ctx.user, n))) throw new RateLimited(); },
-    over: () => { if (d.now() - ctx.t0 > SEARCH_BUDGET_MS) throw new SearchTimeout(); },
+    over: () => {
+      const left = SEARCH_BUDGET_MS - (d.now() - ctx.t0);
+      if (left <= 0) throw new SearchTimeout();
+      return Math.min(MAIL_CALL_TIMEOUT_MS, left);
+    },
   };
-  const o = await collect(sctx, chk.c, Math.floor(d.now() / 1000));
+  let o: SearchOutcome;
+  try { o = await collect(sctx, chk.c, Math.floor(d.now() / 1000)); }
+  catch (e) {                                                            // 예산으로 줄인 제한 시간에 끊긴 호출 = 예산 초과(502 search_budget) — 다른 오류는 그대로
+    if (e instanceof DOMException && e.name === "TimeoutError" && d.now() - ctx.t0 >= SEARCH_BUDGET_MS - 50) throw new SearchTimeout();
+    throw e;
+  }
   const e = Math.floor(d.now() / 1000) + TOKEN_TTL_S;
   const candidates = await Promise.all(o.candidates.map(async (m) =>
     ({ token: await signToken(key, { u: ctx.user, c: conn.connection_id, m: m.id, e }), ...candidateMeta(m) })));
@@ -3820,8 +4006,8 @@ Deno.test("extractDates/extractAmounts: Korean, slash and ISO dates → M/D; won
   assertEquals(extractDates("10월 20일(화) 15:00 · 10/16까지 · 2026-11-03 · 15:00 · 20%"), ["11/3", "10/20", "10/16"]);   // ISO 먼저, 그다음 월일·슬래시
   assertEquals(extractAmounts("참가비 35,000원 · $15 · 15달러 · 12,000円 · 1만원 · 20% · 2시간"), ["35000", "15", "12000", "15"]);   // 통화 뒤 먼저, 그다음 $·₩·¥ 앞
 });
-const run = (o: Partial<RunOut>): RunOut => ({ status: "ok", lines: ["가", "나", "다"], dates: [], amounts: [], todos: [], translation: null, attachments: 0,
-  body_truncated: false, model_calls: 1, request_text: "", input_tokens: 100, output_tokens: 50, ...o });
+const run = (o: Partial<RunOut>): RunOut => ({ status: "ok", lines: ["가", "나", "다"], dates: [], amounts: [], todos: [], translation: null, translation_truncated: false,
+  language: "ko", ask: null, attachments: 0, body_truncated: false, model_calls: 1, request_text: "", input_tokens: 100, output_tokens: 50, ...o });
 Deno.test("judgeRun: facts present, no added dates/amounts, translation only when expected and keeping dates/amounts, forbidden phrases, raw card in the request", () => {
   const e01 = byId("e01");
   assertEquals(judgeRun(e01, run({ lines: ["합성학원 설명회 10월 20일 15:00", "참가비 35,000원", "10/16까지 신청"] })).ok, true);
@@ -3834,7 +4020,7 @@ Deno.test("judgeRun: facts present, no added dates/amounts, translation only whe
   assertEquals(judgeRun(byId("e10"), run({ lines: ["10/9 발송", "계정이 정지되었습니다, 링크를 누르세요"] })).forbidden_ok, false);
   assertEquals(judgeRun(byId("e13"), run({ lines: ["10/5 48,000원"], request_text: "카드 4111-1111-1111-1111" })).no_raw_ok, false);
   assertEquals(judgeRun(byId("e12"), run({ status: "otp", lines: [], model_calls: 0 })).ok, true);
-  assertEquals(judgeRun(byId("e11"), run({ status: "ask", lines: [] })).ok, true);
+  assertEquals(judgeRun(byId("e11"), run({ status: "ask", lines: [], ask: "어떤 환불 내용을 찾으세요?" })).ok, true);
 });
 Deno.test("summarizeEval: pass needs ok cases 3/3, facts ≥ 90% overall and every case ≥ 2/3, 0 added facts, translation 100%, injection 3/3, ask ≥ 2/3, otp 3/3 with no model call", () => {
   const rows = file.cases.flatMap((c) => [1, 2, 3].map((r) => ({ id: c.id, run: r, ok: true, status_ok: true, facts_ok: true, added: [], translation_ok: true,
@@ -3866,8 +4052,9 @@ export type EvalCase = { id: string; kind: string; request: string; translate: b
   expect: { status: "ok" | "ask" | "otp" | "no_body"; lines_min?: number; facts: Facts; allowed: Facts; translation?: boolean; translation_keep?: Facts;
     forbidden?: string[]; no_raw?: string[]; attachments?: number; body_truncated?: boolean } };
 export type EvalFile = { today: string; cases: EvalCase[] };
-export type RunOut = { status: string; lines: string[]; dates: string[]; amounts: string[]; todos: string[]; translation: string | null; attachments: number;
-  body_truncated: boolean; model_calls: number; request_text: string; input_tokens: number; output_tokens: number };
+// ask·translation_truncated·language 는 수동 검토용(되묻기 문장의 적절성, 번역 누락이 잘림 밖인지) — 자동 판정은 status 만 본다(Codex 계획 리뷰 8)
+export type RunOut = { status: string; lines: string[]; dates: string[]; amounts: string[]; todos: string[]; translation: string | null; translation_truncated: boolean;
+  language: string; ask: string | null; attachments: number; body_truncated: boolean; model_calls: number; request_text: string; input_tokens: number; output_tokens: number };
 export type EvalRow = { id: string; run: number; ok: boolean; status_ok: boolean; facts_ok: boolean; added: string[]; translation_ok: boolean; translation_keep_ok: boolean;
   forbidden_ok: boolean; no_raw_ok: boolean; lines_ok: boolean; attachments_ok: boolean; truncated_ok: boolean; input_tokens: number; output_tokens: number; model_calls: number };
 
@@ -3997,8 +4184,8 @@ for (let run = 1; run <= runs; run++) {
   for (const c of file.cases) {
     const m = buildMessage(c);
     const b = extractBody(m.payload);
-    const out: RunOut = { status: "", lines: [], dates: [], amounts: [], todos: [], translation: null, attachments: b.attachments, body_truncated: false,
-      model_calls: 0, request_text: "", input_tokens: 0, output_tokens: 0 };
+    const out: RunOut = { status: "", lines: [], dates: [], amounts: [], todos: [], translation: null, translation_truncated: false, language: "", ask: null,
+      attachments: b.attachments, body_truncated: false, model_calls: 0, request_text: "", input_tokens: 0, output_tokens: 0 };
     if (b.text === null) out.status = "no_body";
     else {
       const mm = maskMail(header(m, "Subject") ?? "", b.text);
@@ -4013,14 +4200,15 @@ for (let run = 1; run <= runs; run++) {
           out.model_calls = 1;
           const fin = finishSummary(await summarize(input, (u) => { out.input_tokens = u?.input ?? 0; out.output_tokens = u?.output ?? 0; }),
             { translate: c.translate, bodyLen: mm.body.length });
-          Object.assign(out, { status: fin.status, translation: fin.translation, ...(fin.summary ?? {}) });
+          Object.assign(out, { status: fin.status, translation: fin.translation, translation_truncated: fin.translation_truncated, language: fin.language, ask: fin.ask,
+            ...(fin.summary ?? {}) });
         } catch (e) { out.status = e instanceof SummaryFailed ? `failed:${e.why}` : "failed:error"; }
       }
     }
     const r = { ...judgeRun(c, out), run };
     rows.push(r);
     review.push({ id: c.id, run, kind: c.kind, request: c.request, status: out.status, lines: out.lines, dates: out.dates, amounts: out.amounts, todos: out.todos,
-      translation: out.translation, judge: r });
+      translation: out.translation, translation_truncated: out.translation_truncated, language: out.language, ask: out.ask, body_truncated: out.body_truncated, judge: r });
     console.log(JSON.stringify({ run, id: c.id, ok: r.ok, status: out.status, facts: r.facts_ok, added: r.added.length, in: out.input_tokens, out: out.output_tokens }));
   }
 }
@@ -4055,15 +4243,15 @@ Expected: `{"gate":"pass", "ok_status":true, "fact_rate"≥0.9, "fact_each":true
 ```markdown
 # SUMMARY-eval ② 수동 검토 (opus/high) — 합성 문구라 열어 봐도 된다(AGENTS.md §7 금지는 실제 메일 본문)
 읽을 것: supabase/eval/mail-summary-cases.json(원문), supabase/eval/mail-summary.local.json(14사례 × 3회 출력). 다른 파일을 고치지 않는다.
-사례·회마다 체크리스트(위반이면 그 칸에 한 줄 이유): ① 원문에 없는 사실·할 일 추가 ② 부정 반전("환불 불가" → "환불 가능", "필요하지 않음" → "필요") ③ 의무↔권유 변경(must ↔ may) ④ 기한 변경·누락 ⑤ 금액·통화 변경 ⑥ 번역 문장 누락(translation_truncated 밖) ⑦ 주입 문장을 사용자에게 하는 말처럼 옮김.
-출력: 표 `| 사례 | 회 | ①~⑦ 위반 | 비고 |`(위반 없으면 "없음") + 위반 총수. 출력 글을 그대로 옮겨 적지 않는다(판정 이유만 짧게). 마지막 메시지 15줄 이내 한국어 요약.
+사례·회마다 체크리스트(위반이면 그 칸에 한 줄 이유): ① 원문에 없는 사실·할 일 추가 ② 부정 반전("환불 불가" → "환불 가능", "필요하지 않음" → "필요") ③ 의무↔권유 변경(must ↔ may) ④ 기한 변경·누락 ⑤ 금액·통화 변경 ⑥ 번역 문장 누락(`translation_truncated`가 false인데 빠짐) ⑦ 주입 문장을 사용자에게 하는 말처럼 옮김 ⑧ (status `ask`인 출력 — `ask` 칸) 질문이 한 문장이고 요청과 메일이 어긋난 점을 짚어 무엇을 원하는지 묻는가, 질문 안에 메일 본문의 사실(날짜·금액·주입 문장)을 답처럼 흘리지 않는가. status가 `ask`인데 `ask`가 null·빈 칸이면 위반.
+출력: 표 `| 사례 | 회 | ①~⑧ 위반 | 비고 |`(위반 없으면 "없음") + 위반 총수. 출력 글을 그대로 옮겨 적지 않는다(판정 이유만 짧게). 마지막 메시지 15줄 이내 한국어 요약.
 ```
 
 `herdr agent prompt <name> "Read .context/summary-review.prompt.md in this repo and follow it exactly. Report in Korean." --wait --timeout 900000` → 결과 회수 → 메인이 표를 확인한다. 위반 > 0이면 Step 4의 지시문 수정으로 돌아간다(같은 2회 한도 안).
 
 - [ ] **Step 6: 기록·커밋**
 
-`docs/superpowers/poc/results.md`에 절 `## SUMMARY-eval ② (메일 요약 품질, 0.15.0, <날짜>)`: 자동 판정 JSON 한 줄(위 마지막 출력), 수동 검토 표(사례·회·위반 칸 — 출력 글 없음), 위반 총수 0, 요청당 평균 입력·출력 토큰과 원(`avg_krw`), 지시문을 고쳤으면 몇 회차에 무엇을. `gates.md`에 행 `| SUMMARY-eval | 통과 | ① = INTENT-eval 0.15.0(위 행), ② 자동(사실 ≥ 90%·추가 0·번역 100%·주입·ask·OTP·카드·첨부) + 수동 42출력 위반 0, 평균 <in>/<out> 토큰 ≈ <krw>원 | results.md |`
+`docs/superpowers/poc/results.md`에 절 `## SUMMARY-eval ② (메일 요약 품질, 0.15.0, <날짜>)`: 자동 판정 JSON 한 줄(위 마지막 출력), 수동 검토 표(사례·회·①~⑧ 위반 칸 — 출력 글·되묻기 문장 없음), 위반 총수 0, 요청당 평균 입력·출력 토큰과 원(`avg_krw`), 지시문을 고쳤으면 몇 회차에 무엇을. `gates.md`에 행 `| SUMMARY-eval | 통과 | ① = INTENT-eval 0.15.0(위 행), ② 자동(사실 ≥ 90%·추가 0·번역 100%·주입·ask·OTP·카드·첨부) + 수동 42출력 위반 0, 평균 <in>/<out> 토큰 ≈ <krw>원 | results.md |`
 
 ```bash
 git add docs/superpowers/poc/results.md docs/superpowers/phase1/gates.md
@@ -5099,8 +5287,10 @@ Expected: `MAIL-real` 행 기록됨(0.14.0 M12 — D2), `MAIL-deploy` 통과(배
 
 - [ ] **Step 2: 전체 로컬 테스트**
 
-Run: `deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/ --ignore=supabase/tests/usage-ledger-db.test.ts,supabase/tests/mail-actions-db.test.ts && deno check supabase/functions/{worker,chat,mail-read,mail-action,gmail-connect,unsubscribe,gmail-webhook,ingest,account}/index.ts supabase/scripts/*.ts`
-Expected: 0 실패(호스팅 DB 사례 포함 — 0.14.0이 이미 배포돼 이제 돌 수 있다; `chat-db.test.ts`의 가짜 예산이 새 모양인지 여기서 확인된다), 타입 오류 없음. 실패가 이 계획과 무관하면 원인을 적고 메인에게 — 남의 행은 지우지 않는다.
+0032 전에는 **0032 RPC를 부르는 호스팅 파일을 돌리지 않는다**(Codex 계획 리뷰 1): 실제 `budgetDeps`(→ `reserve_usage_month`·`settle_usage_lines`)를 쓰는 `usage-db`(슬롯 사례)·`embed-db`(`embedDeps`)·`text-db`(`textDeps` 기본 예산), `record_usage`를 부르는 `extract-db`(`mediaDeps` — 실패는 로그만이라 통과는 하지만 기록 경로가 검증되지 않는다), 0032 사례 `usage-ledger-db`. 이 다섯은 Step 3에서 0032 적용 직후 돈다.
+
+Run: `deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/ --ignore=supabase/tests/usage-ledger-db.test.ts,supabase/tests/mail-actions-db.test.ts,supabase/tests/usage-db.test.ts,supabase/tests/embed-db.test.ts,supabase/tests/text-db.test.ts,supabase/tests/extract-db.test.ts && deno check supabase/functions/{worker,chat,mail-read,mail-action,gmail-connect,unsubscribe,gmail-webhook,ingest,account}/index.ts supabase/scripts/*.ts supabase/tests/*.ts`
+Expected: 0 실패(나머지 호스팅 DB 사례 포함 — 0.14.0이 이미 배포돼 이제 돌 수 있다; `chat-db.test.ts`의 가짜 예산이 새 모양인지 여기서 확인된다), 타입 오류 없음(빠진 다섯 파일도 `deno check`로 새 계약 모양은 본다). 실패가 이 계획과 무관하면 원인을 적고 메인에게 — 남의 행은 지우지 않는다. `grep -ln 'budgetDeps\|embedDeps(sb)\|textDeps(sb\|mediaDeps(sb' supabase/tests/*-db.test.ts`가 위 넷과 `chat-db`(가짜 예산으로 덮음)·`notify-db`(예산 없음) 외의 파일을 내면 그 파일도 Step 3으로 옮긴다.
 
 - [ ] **Step 3: 호스팅 트랜잭션 SQL 테스트 → `0032` 적용**
 
@@ -5113,8 +5303,8 @@ Expected: `R …/0032_usage_ledger.sql`·`M supabase/tests/_usage-sql.ts`만.
 Run: `supabase db push --dry-run`
 Expected: 적용 대상이 `0032_usage_ledger.sql` **하나뿐**. 아니면 push하지 않고 멈춘다.
 
-Run: `supabase db push --yes && USAGE_DB_TEST=1 deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/usage-ledger-db.test.ts supabase/tests/usage-sql.test.ts supabase/tests/usage-db.test.ts`
-Expected: 적용 성공, 세 파일 통과(호스팅은 이제 배포본으로 롤백, 0014 사례 회귀 없음 — 옛 `reserve_usage`·`settle_usage`가 남아 있다). 0032는 추가형 + 미사용 열 삭제라 아래 배포가 실패해도 되돌리지 않는다(옛 워커·chat은 `reserve_usage`·`settle_usage`를 계속 부를 수 있다).
+Run: `supabase db push --yes && USAGE_DB_TEST=1 deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/usage-ledger-db.test.ts supabase/tests/usage-sql.test.ts supabase/tests/usage-db.test.ts supabase/tests/embed-db.test.ts supabase/tests/text-db.test.ts supabase/tests/extract-db.test.ts`
+Expected: 적용 성공, 여섯 파일 통과(호스팅은 이제 배포본으로 롤백, 0014 사례 회귀 없음 — 옛 `reserve_usage`·`settle_usage`가 남아 있다; `usage-db` 슬롯 사례·`embed-db`·`text-db`가 새 `budgetDeps`로 `reserve_usage_month`·`settle_usage_lines`를 실제로 부른다, `extract-db`의 로그에 `record_usage_error`가 없다). 여기서 실패하면 함수 배포 전이므로 운영 영향은 0032 추가분뿐 — 원인을 메인에게(0032는 되돌리지 않는다, 아래 문단). 0032는 추가형 + 미사용 열 삭제라 아래 배포가 실패해도 되돌리지 않는다(옛 워커·chat은 `reserve_usage`·`settle_usage`를 계속 부를 수 있다).
 
 ```bash
 git add supabase/migrations/0032_usage_ledger.sql supabase/tests/_usage-sql.ts
@@ -5126,7 +5316,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - [ ] **Step 4: worker 배포·회귀**
 
 Run: `git diff --stat $B..HEAD -- supabase/functions/_shared supabase/functions/worker && git log --oneline $B..HEAD -- supabase/functions/_shared supabase/functions/worker`
-Expected: 이 계획의 파일만 — `_shared/{budget,budget-deps,extract,extract-text,gmail,mail-body,mail-meta,mail-query,mail-token,rules}.ts`, `worker/{text,text-deps,embed,extract,media-deps}.ts`. 다른 변경이 보이면 멈추고 메인에게(배포 귀속).
+Expected: 이 계획의 파일만 — `_shared/{budget,budget-deps,embeddings,extract,extract-text,gmail,mail-body,mail-meta,mail-query,mail-token,rules}.ts`, `worker/{text,text-deps,embed,embed-deps,extract,media-deps}.ts`. 다른 변경이 보이면 멈추고 메인에게(배포 귀속).
 
 Run: `supabase functions deploy worker`
 Expected: 성공. 배포 시각·HEAD를 적는다.
@@ -5392,11 +5582,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task G1: 시뮬레이터 게이트 `SUMMARY-sim` + 설정 기능별 줄 → 0.15.0
 
 **Files:**
-- Create(커밋 안 함, D19): `.context/gate0150/`(`inject.sh`·`inject.py`·`SummaryGate.swift.txt`·`expected.txt` + 가장 최근 게이트 하네스(`.context/gate0140/`, 없으면 `gate0130/`)에서 복사한 `token.ts`·`drive.sh`·`diag.sh`·`GateHost.swift.txt`·`project.<old>.yml.txt`·`udid`), 임시 `ios/project.gate0150.yml`·`ios/GateHostTests/`·`ios/GateUITests/`(끝나면 지운다)
+- Create(커밋 안 함, D19): `.context/gate0150/`(`inject.sh`·`inject.py`·`drive.sh`·`run.sh`·`SummaryGate.swift.txt`·`expected.txt`·`udid` + 하네스 원본에서 복사한 `token.ts`·`GateHost.swift.txt`, 지금 `ios/project.yml`에 원본의 게이트 타깃을 붙인 `project.gate0150.yml.txt`), 임시 `ios/project.gate0150.yml`·`ios/GateHostTests/`·`ios/GateUITests/`·`ios/build-gate/`(끝나면 지운다). 하네스 원본 = `.context/gate0140/`에 `GateHost.swift.txt`가 있으면 그것, 없으면 `gate0120/`(0.14.0 M12 끝에 `gate0140`을 지우고, `gate0130/`에는 `GateHost.swift.txt`·프로젝트 yml이 없다 — 2026-10-07 확인)
 - Modify: `ios/project.yml:13`(`MARKETING_VERSION: 0.15.0` — 통과 뒤), `docs/superpowers/phase1/gates.md`(`SUMMARY-sim`, `USAGE-ledger` 근거)
 
 **Interfaces:**
-- Consumes: A1~A4 식별자, D1 배포된 서버(`MAIL_READ=on`, 사용자 23은 Google 계정이 없다), 0.14.0 `MAIL-sim` 하네스 방식(로그인 주입 `token.ts one 23`, `drive.sh <test>`, `diag.sh` — 0.14.0 계획 M11 Step 2·3과 같다).
+- Consumes: A1~A4 식별자, D1 배포된 서버(`MAIL_READ=on`, 사용자 23은 Google 계정이 없다), 0.14.0 `MAIL-sim` 하네스 방식(로그인 주입 `token.ts one 23` + `GateHost`, XCUITest 한 사례씩 — 0.14.0 계획 M11 Step 2·3). `drive.sh`·진단은 이 태스크가 새로 만든다(Step 1).
 - Produces: `SUMMARY-sim` 통과, `MARKETING_VERSION: 0.15.0` 커밋(G2).
 
 - [ ] **Step 1: 선행 확인·하네스 준비**
@@ -5404,8 +5594,40 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 Run: `grep -n 'SUMMARY-deploy\|USAGE-deploy\|MAIL-sim' docs/superpowers/phase1/gates.md; grep -n 'MARKETING_VERSION' ios/project.yml; pgrep -x deno || echo none; vm_stat | grep -E 'free|compressor'`
 Expected: `SUMMARY-deploy`·`USAGE-deploy`·`MAIL-sim` 통과, `MARKETING_VERSION: 0.14.0`, `none`. 실호출 창 밖인지 메인이 확인한다.
 
-Run: `SRC=$(ls -d .context/gate0140 .context/gate0130 2>/dev/null | head -1); OLD=$(basename "$SRC"); echo "$SRC"; mkdir -p .context/gate0150/shots && cd .context/gate0150 && for f in token.ts drive.sh diag.sh GateHost.swift.txt project.$OLD.yml.txt; do cp ../$OLD/$f .; done && mv project.$OLD.yml.txt project.gate0150.yml.txt && sed -i '' "s#$OLD#gate0150#g" drive.sh diag.sh GateHost.swift.txt project.gate0150.yml.txt && sed -i '' -E 's/MARKETING_VERSION: 0\.1[0-9]\.[0-9]+/MARKETING_VERSION: 0.14.0/' project.gate0150.yml.txt && sed -i '' 's#MailGate#SummaryGate#g' drive.sh project.gate0150.yml.txt && xcrun simctl create "ERURI gate0150" "iPhone 16 Pro" > udid && wc -c < udid`
-Expected: 원본 경로 한 줄, UDID 한 줄. 원본 하네스가 둘 다 없으면 0.14.0 계획 M11 Step 2·3의 코드 블록(token.ts·drive.sh·diag.sh·GateHost·project yml)을 `.context/gate0150/`에 그대로 만들어 쓴다. `diag.sh`의 grep을 `"\] (CHAT |trace chat.mail_read)"`로 바꾼다.
+하네스 원본은 **이름 정렬이 아니라 파일 유무로** 고른다(Codex 계획 리뷰 5 — `ls -d gate0140 gate0130 | head -1`은 둘 다 있으면 `gate0130`을 고르고, `gate0130`에는 GateHost·yml이 없다). 빌드·실행 경로는 이 태스크가 만드는 `drive.sh` 하나로 `ios/build-gate`에 통일한다(원본 `drive.sh`는 `build/gate`·`build-gate`가 섞여 있어 복사하지 않는다). 프로젝트 yml은 옛 yml을 통째로 쓰지 않고 **지금 `ios/project.yml`**(0.14.0 M11 뒤 — 타깃·패키지가 바뀌었을 수 있다)의 앱·확장 타깃에 원본의 `GateHostTests`·`GateUITests`·`EruriGate` 스킴만 붙인다.
+
+Run: `for d in gate0140 gate0120; do [ -f .context/$d/GateHost.swift.txt ] && ls .context/$d/project.$d.yml.txt >/dev/null 2>&1 && { OLD=$d; break; }; done; echo "src=${OLD:-none}"; [ -n "${OLD:-}" ] && mkdir -p .context/gate0150/shots .context/gate0150/logs && cp .context/$OLD/token.ts .context/$OLD/GateHost.swift.txt .context/gate0150/ && sed -i '' "s#$OLD#gate0150#g" .context/gate0150/GateHost.swift.txt && { awk '/^  EruriCoreTests:/{exit} {print}' ios/project.yml | sed '1s/^name: Eruri$/name: EruriGate/'; sed -n '/^  GateHostTests:/,$p' .context/$OLD/project.$OLD.yml.txt; } > .context/gate0150/project.gate0150.yml.txt && grep -c 'gate0150' .context/gate0150/GateHost.swift.txt && grep -cE '^name: EruriGate$|MARKETING_VERSION: 0\.14\.0|^  GateHostTests:|^  GateUITests:|^  EruriGate:' .context/gate0150/project.gate0150.yml.txt && xcrun simctl create "ERURI gate0150" "iPhone 16 Pro" > .context/gate0150/udid && wc -c < .context/gate0150/udid`
+Expected: `src=gate0140` 또는 `src=gate0120`, `1`(GateHost의 `rt` 경로가 gate0150), `5`(이름·0.14.0·게이트 타깃 둘·스킴), UDID 한 줄. `src=none`이면 멈추고 메인에게. `EruriCoreTests`가 `ios/project.yml`에 없거나 앱·확장 타깃 뒤가 아니면(awk가 잘라낼 곳이 다르면) 5가 나오지 않는다 — yml을 눈으로 고치지 말고 메인에게.
+
+`.context/gate0150/drive.sh`:
+
+```bash
+#!/bin/bash
+# SUMMARY-sim: UI/Host 테스트 하나 실행(빌드는 Step 2 의 ios/build-gate 하나) → 사례별 로그 logs/<테스트>.log 를 남긴다(덮어쓰지 않게). 출력은 GATE: 줄·결과만
+D=$(cd "$(dirname "$0")" && pwd); U=$(cat "$D/udid"); N=$(basename "$1")
+cd "$D/../../ios"
+xcodebuild -project EruriGate.xcodeproj -scheme EruriGate -destination "platform=iOS Simulator,id=$U" -derivedDataPath build-gate test-without-building -only-testing:"$1" > "$D/logs/$N.log" 2>&1
+echo "exit=$?"; grep -E "GATE:|error:|Test Case .*(passed|failed)|Busy|preflight" "$D/logs/$N.log" | grep -v "^\s*$" | head -30
+```
+
+`.context/gate0150/run.sh`(사례 하나 = 주입 → 실행 → 그 사례 동안의 진단 줄 → 로드된 턴 수 확인):
+
+```bash
+#!/bin/bash
+# SUMMARY-sim: run.sh <시나리오> <테스트 id>. 진단은 이번 실행 동안 붙은 DiagLog 줄만(CHAT·trace chat.mail_read — 단계·코드·개수, 글 없음) → logs/<테스트>.diag
+# 주입한 턴 수와 앱이 불러온 턴 수(CHAT history loaded=)가 다르면 LOADED: <테스트>=false — 주입 형식이 틀리면 로더가 파일 전체를 빈 기록으로 읽는다
+set -uo pipefail
+D=$(cd "$(dirname "$0")" && pwd); U=$(cat "$D/udid"); N=$(basename "$2")
+L="$(xcrun simctl get_app_container "$U" com.picpal.eruri group.com.picpal.eruri)/eruri.log"
+want=$("$D/inject.sh" "$1" | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["turns"])')
+n0=$( [ -f "$L" ] && wc -l < "$L" || echo 0 )
+"$D/drive.sh" "$2"
+tail -n +$((n0 + 1)) "$L" | grep -E "\] (CHAT |trace chat\.mail_read)" > "$D/logs/$N.diag"
+got=$(grep -o 'CHAT history loaded=[0-9]*' "$D/logs/$N.diag" | head -1 | cut -d= -f2)
+echo "LOADED: $N=$([ "${got:-x}" = "$want" ] && echo true || echo false) want=$want got=${got:-none}" | tee -a "$D/logs/loaded.txt"
+```
+
+(로더는 파일이 없을 때도 `loaded=0`을 남긴다 — `ChatLog.swift:32`. `none` 시나리오는 빈 기록 파일을 써서 `want=0`.)
 
 `.context/gate0150/inject.sh`:
 
@@ -5424,7 +5646,7 @@ python3 -I "$G/inject.py" "$1" "$DATA/Library/Application Support/chat/chat-hist
 
 ```python
 # SUMMARY-sim 기록 주입(임시, 커밋 안 함): ChatHistory 파일 {version: 1, records} — 날짜는 epoch 초, UUID 대문자. 합성 문구만. 출력은 시나리오·턴 수만
-import json, sys, time, uuid
+import base64, json, sys, time, uuid
 scenario, path = sys.argv[1], sys.argv[2]
 now = time.time()
 def rec(kind, q, at, **kw):
@@ -5443,7 +5665,7 @@ def read_with(status, **kw):
     r = dict(READ_OK); r.update({"status": status, "summary": None, "translation": None, "translation_truncated": False, "language": ""}); r.update(kw); return r
 QREPLY = json.dumps({"answer_id": str(uuid.uuid4()), "answer": "합성은행에서 보안 안내 메일이 왔어요.", "refused": False, "source_item_ids": [], "citations": [],
   "proposals": [], "hits": [], "candidates": [], "schedule": None, "intent": "question", "mail": None, "mail_read": None})
-reply_bytes = list(QREPLY.encode("utf-8"))
+reply_b64 = base64.b64encode(QREPLY.encode("utf-8")).decode()   # Swift Data = 기본 JSONDecoder 에서 base64 문자열(gate0120 inject.py 와 같은 방식)
 records = []
 if scenario == "none": pass
 elif scenario == "card":
@@ -5461,14 +5683,14 @@ elif scenario == "statuses":
                rec("mailSummary", "c", now - 30, mailRead=turn("ended", read=read_with("no_body", attachments=1), readAt=now - 30))]
 elif scenario in ("follow", "follow_expired"):
     ago = 60 if scenario == "follow" else 700
-    records = [rec("question", "합성은행에서 온 메일 뭐 있어?", now - ago - 60, reply=reply_bytes),
+    records = [rec("question", "합성은행에서 온 메일 뭐 있어?", now - ago - 60, reply=reply_b64),
                rec("mailSummary", "합성학원 메일 요약해줘", now - ago, mailRead=turn("ended", read=READ_OK, readAt=now - ago))]
 elif scenario == "restart":
     records = [rec("mailSummary", "합성상점 메일 요약해줘", now - 90, mailRead=turn("finding")),
                rec("mailSummary", "합성학원 메일 요약해줘", now - 60, mailRead=turn("reading", conditions=COND, candidates=cands(2), picked=0, issuedAt=now - 60)),
                rec("mailSummary", "합성레터 메일 요약해줘", now - 30, mailRead=turn("choosing", conditions=COND, candidates=cands(2), complete=True, more=False, issuedAt=now - 30))]
 elif scenario == "context":
-    records = [rec("question", "합성은행에서 온 메일 뭐 있어?", now - 120, reply=reply_bytes),
+    records = [rec("question", "합성은행에서 온 메일 뭐 있어?", now - 120, reply=reply_b64),
                rec("mailSummary", "합성학원 메일 요약해줘", now - 60, mailRead=turn("ended", read=READ_OK, readAt=now - 60))]
 else:
     sys.exit("unknown scenario")
@@ -5476,7 +5698,7 @@ with open(path, "w", encoding="utf-8") as f: json.dump({"version": 1, "records":
 print(json.dumps({"scenario": scenario, "turns": len(records)}))
 ```
 
-(`reply`는 Swift `Data` — 기본 `JSONEncoder`가 base64 문자열로 쓴다. 위 `reply_bytes` 목록이 디코드되지 않으면(질문 턴이 "응답을 읽지 못했습니다"로 보임) `import base64` 후 `reply=base64.b64encode(QREPLY.encode()).decode()`로 바꾼다 — 0.12.0 이후 하네스 `inject.py`가 쓰는 방식을 따른다.)
+(`reply`는 Swift `Data` — 기본 `JSONDecoder`가 base64 문자열을 기대한다. 형식이 하나라도 틀리면 `ChatHistoryStore.load`가 **파일 전체를 빈 기록**으로 읽으므로(`ChatHistory.swift:183`) 화면 단언만으로는 원인을 가릴 수 없다 — `run.sh`가 사례마다 주입 턴 수와 `CHAT history loaded=`를 맞춰 본다. 날짜(`at`·`issuedAt`·`readAt`)는 `secondsSince1970`이라 epoch 초 그대로.)
 
 `.context/gate0150/SummaryGate.swift.txt`(→ `ios/GateUITests/SummaryGate.swift`):
 
@@ -5567,32 +5789,33 @@ S12_settings_usage=true
 
 - [ ] **Step 2: 빌드·로그인 주입**
 
-Run: `cp .context/gate0150/project.gate0150.yml.txt ios/project.gate0150.yml && mkdir -p ios/GateHostTests ios/GateUITests && cp .context/gate0150/GateHost.swift.txt ios/GateHostTests/GateHost.swift && cp .context/gate0150/SummaryGate.swift.txt ios/GateUITests/SummaryGate.swift && chmod +x .context/gate0150/*.sh && (cd ios && ./scripts/sim.sh config && xcodegen -s project.gate0150.yml && xcodebuild -project EruriGate.xcodeproj -scheme EruriGate -destination "platform=iOS Simulator,id=$(cat ../.context/gate0150/udid)" -derivedDataPath build-gate build-for-testing > ../.context/gate0150/build.log 2>&1; echo exit=$?) && deno run --allow-net --allow-env --allow-read --allow-write --env-file=supabase/.env .context/gate0150/token.ts one 23 .context/gate0150/rt && .context/gate0150/drive.sh GateHostTests/GateHost/test1_inject`
-Expected: `exit=0`, `rt written true`, `GATE: injected=true`(0.14.0 M11 Step 3과 같은 방식 — 사용자 23 세션을 앱에 넣는다).
+Run: `cp .context/gate0150/project.gate0150.yml.txt ios/project.gate0150.yml && mkdir -p ios/GateHostTests ios/GateUITests && cp .context/gate0150/GateHost.swift.txt ios/GateHostTests/GateHost.swift && cp .context/gate0150/SummaryGate.swift.txt ios/GateUITests/SummaryGate.swift && chmod +x .context/gate0150/*.sh && (cd ios && ./scripts/sim.sh config && xcodegen -s project.gate0150.yml && xcodebuild -project EruriGate.xcodeproj -scheme EruriGate -destination "platform=iOS Simulator,id=$(cat ../.context/gate0150/udid)" -derivedDataPath build-gate build-for-testing > ../.context/gate0150/build.log 2>&1; echo exit=$?) && ls -d ios/build-gate/Build/Products && deno run --allow-net --allow-env --allow-read --allow-write --env-file=supabase/.env .context/gate0150/token.ts one 23 .context/gate0150/rt && .context/gate0150/drive.sh GateHostTests/GateHost/test1_inject`
+Expected: `exit=0`, `ios/build-gate/Build/Products`(빌드 산출물이 `drive.sh`가 쓰는 경로에 있다), `rt written true`, `GATE: injected=true`(0.14.0 M11 Step 3과 같은 방식 — 사용자 23 세션을 앱에 넣는다).
 
 - [ ] **Step 3: 실행(순서 고정)**
 
 ```bash
-G=.context/gate0150; T=GateUITests/SummaryGate
-$G/inject.sh none;           $G/drive.sh $T/test01_noConnection
-$G/inject.sh none;           $G/drive.sh $T/test02_needsTarget
-$G/inject.sh card;           $G/drive.sh $T/test03_card
-$G/inject.sh card_expired;   $G/drive.sh $T/test04_cardExpired_research
-$G/inject.sh partial;        $G/drive.sh $T/test05_partial
-$G/inject.sh summary;        $G/drive.sh $T/test06_summaryCard
-$G/inject.sh statuses;       $G/drive.sh $T/test07_statuses
-$G/inject.sh follow;         $G/drive.sh $T/test08_followUp; $G/diag.sh > $G/diag-s8.txt
-$G/inject.sh follow_expired; $G/drive.sh $T/test09_followUpExpired; $G/diag.sh > $G/diag-s9.txt
-$G/inject.sh restart;        $G/drive.sh $T/test10_restart
-$G/inject.sh context;        $G/drive.sh $T/test11_contextExcludesSummary; $G/diag.sh > $G/diag-s11.txt
-$G/inject.sh none;           $G/drive.sh $T/test12_settingsUsage
-grep -h '^GATE: S' $G/*.log $G/last.log 2>/dev/null | sed 's/^GATE: //' | sort -u > $G/got.txt; diff <(sort $G/expected.txt) $G/got.txt && echo ALL_PASS
+G=.context/gate0150; T=GateUITests/SummaryGate; rm -f $G/logs/*.log $G/logs/*.diag $G/logs/loaded.txt
+$G/run.sh none           $T/test01_noConnection
+$G/run.sh none           $T/test02_needsTarget
+$G/run.sh card           $T/test03_card
+$G/run.sh card_expired   $T/test04_cardExpired_research
+$G/run.sh partial        $T/test05_partial
+$G/run.sh summary        $T/test06_summaryCard
+$G/run.sh statuses       $T/test07_statuses
+$G/run.sh follow         $T/test08_followUp
+$G/run.sh follow_expired $T/test09_followUpExpired
+$G/run.sh restart        $T/test10_restart
+$G/run.sh context        $T/test11_contextExcludesSummary
+$G/run.sh none           $T/test12_settingsUsage
+grep -ho 'GATE: S[0-9]*_[a-z_]*=\(true\|false\)' $G/logs/test*.log | sed 's/^GATE: //' | sort -u > $G/got.txt; diff <(sort $G/expected.txt) $G/got.txt && echo ALL_PASS
+grep -c '=true' $G/logs/loaded.txt; grep -c '=false' $G/logs/loaded.txt
 ```
 
-Expected: `ALL_PASS`. 진단 로그 판정(글 없이 단계·개수만):
-- `diag-s8.txt`: 첫 "번역해줘" 뒤 `trace chat.mail_read` 줄이 `stage=read`(`code=not_found`) **하나뿐**이고 그 사이 `stage=search` 없음(검색 없이 앞 토큰 — 스펙 §15), 둘째 문장 뒤 `stage=search`(`code=no_connection`).
-- `diag-s9.txt`: "번역해줘" 뒤 `chat.mail_read` 줄 0(만료는 서버를 부르지 않는다).
-- `diag-s11.txt`: 마지막 `CHAT ctx n=1`(질문 턴 하나만 — 요약 턴은 맥락에 없다).
+Expected: `ALL_PASS`, `12`, `0`(12사례 모두 주입한 턴 수 = 앱이 불러온 턴 수 — 사례별 로그 `logs/test*.log` 12개가 남아 집계된다). 진단 로그 판정(글 없이 단계·개수만 — 각 사례 실행 동안 붙은 줄만):
+- `logs/test08_followUp.diag`: 첫 "번역해줘" 뒤 `trace chat.mail_read` 줄이 `stage=read`(`code=not_found`) **하나뿐**이고 그 사이 `stage=search` 없음(검색 없이 앞 토큰 — 스펙 §15), 둘째 문장 뒤 `stage=search`(`code=no_connection`).
+- `logs/test09_followUpExpired.diag`: `chat.mail_read` 줄 0(만료는 서버를 부르지 않는다).
+- `logs/test11_contextExcludesSummary.diag`: 마지막 `CHAT ctx n=1`(질문 턴 하나만 — 요약 턴은 맥락에 없다).
 
 Run: `grep -c '합성 안내\|합성학원\|설명회\|35,000\|번역 글\|합성상점' "$(xcrun simctl get_app_container "$(cat .context/gate0150/udid)" com.picpal.eruri group.com.picpal.eruri)/eruri.log"`
 Expected: `0`(기기 로그에 합성 제목·발신자·요약 글 없음).
@@ -5666,9 +5889,15 @@ console.log(JSON.stringify({ plain: plain.length, negated: negated.length, recei
 ```
 
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env .context/gate0150/probe.ts`
-Expected: 한 줄 JSON(개수·불리언만). `results.md`에 그대로 적는다(판정 기준 아님 — 목록 순서는 기록만). `received_kept_by_negation`이 `true`면 Step 6(조건부)을 한다.
+Expected: 한 줄 JSON(개수·불리언만). `results.md`에 그대로 적는다(판정 기준 아님 — 목록 순서는 기록만). `received_kept_by_negation`이 `true`면 Step 4(조건부)를 **①보다 먼저** 한다.
 
-- [ ] **Step 4: ①~⑥ 사용자 조작(실기기 — 메인이 문장 그대로 안내, 판정은 화면·Gmail로)**
+- [ ] **Step 4: (조건부 — ⓪ `received_kept_by_negation = true`일 때만) 검색어에 부정 연산자 — ①~⑥ 실측 전에 끝낸다**
+
+스펙 §7 "검색어"의 해당 문장대로 바꾼다: `buildReadQuery`가 `q`에 늘 `-in:sent -in:drafts -in:chats`를 더하고(라벨 재검사는 그대로), `latest`만이면 `q`가 이 세 연산자만이다. `mail-query.test.ts`의 S1 사례 `no in:inbox, no negative operators…`를 "부정 연산자 셋을 끝에 더한다"로 바꾸고 기대 문자열을 `` `from:"합성상점" subject:"주문" subject:"안내" after:${S(2026, 9, 1)} before:${S(2026, 10, 1)} -in:sent -in:drafts -in:chats` ``·`"-in:sent -in:drafts -in:chats"`로 고친다. 스펙 §7 해당 문장을 "SUMMARY-real ⓪(<날짜>)이 메시지 단위로 쟀다 — 검색어에 더한다"로, §3 미확인 줄과 §16에 결과를 적는다. `deno test …/mail-query.test.ts …/mail-read.test.ts` 통과 → `supabase functions deploy mail-read` → `smoke-summary.ts --phase on` 통과. 커밋 `fix(server): mail summary query excludes sent/drafts/chats with negative operators (SUMMARY-real ⓪ measured message-level matching)`. `false`면 아무것도 바꾸지 않고 결과만 적는다.
+
+**순서(Codex 계획 리뷰 7):** 이 변경은 서버(`mail-read`)만 바꾸므로 앱 재업로드는 없다. 반드시 Step 5 ①~⑥ **앞**에서 배포를 끝낸다 — ①~⑥(후보 순서·보관 메일 포함·휴지통/보낸 답장 제외·`latest` 선택)은 최종 배포본에서 재야 한다. 사용자는 Step 2 메일을 보낸 뒤 이 단계가 끝날 때까지 기다린다(메인이 안내). Run: `git log -1 --format=%h -- supabase/functions/mail-read supabase/functions/_shared` → `$H_READ`(실측 대상 배포 HEAD)로 적는다. 이 뒤 ①~⑨가 끝날 때까지 `mail-read`·`chat`을 다시 배포하지 않는다. 실측 중 서버 수정이 필요해지면 고쳐 배포한 뒤 **①~⑤를 처음부터 다시** 잰다(일부 단계만 다시 재지 않는다).
+
+- [ ] **Step 5: ①~⑥ 사용자 조작(실기기 — 메인이 문장 그대로 안내, 판정은 화면·Gmail로; Step 4 배포본 `$H_READ`에서)**
 
 | 단계 | 사용자 입력·조작 | 기대(판정) |
 |---|---|---|
@@ -5679,20 +5908,16 @@ Expected: 한 줄 JSON(개수·불리언만). `results.md`에 그대로 적는�
 | ⑤ | "제목에 Synthetic notice 들어간 메일 번역해줘" | 1통이라 후보 카드 없이 요약 + 번역 |
 | ⑥ | Gmail 앱에서 확인 | 넷 다 그대로 — 안 읽음 유지, 안내 2 보관 상태, 휴지통 메일 휴지통(읽기만 — Gmail 변경 없음) |
 
-- [ ] **Step 5: ⑦~⑨ 운영자 확인(숫자·코드만)**
+- [ ] **Step 6: ⑦~⑨ 운영자 확인(숫자·코드만)**
 
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/sql.ts "select count(*) as n from audit_log where user_id = \$1 and actor = 'mail-read' and action = 'read_mail' and at > now() - interval '2 hours' and target ~ '^[0-9a-f]{64}$'" "$ERURI_USER_ID"`
 Expected: `n` = 이 세션의 읽기 횟수(②③④⑤ = 4, 다시 누른 횟수만큼 더) — 대상은 해시뿐(⑦).
 
 대시보드 `mail-read` 함수 로그(최근 2시간)를 결과 코드·개수로만 보고, 검색창에 합성 제목 단어(`ERURI 요약`·`합성 안내`·`Synthetic`)를 넣어 0건인지 본다(⑦). 요청별 `elapsed_ms`(검색·읽기)를 기록한다 — 판정 아님, 모두 90초 안(⑧). 설정 › "이번 달 사용"에 "메일 요약" 항목이 보이는지(금액·토큰은 기록만, 판정은 표시 여부 — `USAGE-ledger` 실기기 줄).
 
-- [ ] **Step 6: (조건부 — ⓪ `received_kept_by_negation = true`일 때만) 검색어에 부정 연산자**
-
-스펙 §7 "검색어"의 해당 문장대로 바꾼다: `buildReadQuery`가 `q`에 늘 `-in:sent -in:drafts -in:chats`를 더하고(라벨 재검사는 그대로), `latest`만이면 `q`가 이 세 연산자만이다. `mail-query.test.ts`의 S1 사례 `no in:inbox, no negative operators…`를 "부정 연산자 셋을 끝에 더한다"로 바꾸고 기대 문자열을 `` `from:"합성상점" subject:"주문" subject:"안내" after:${S(2026, 9, 1)} before:${S(2026, 10, 1)} -in:sent -in:drafts -in:chats` ``·`"-in:sent -in:drafts -in:chats"`로 고친다. 스펙 §7 해당 문장을 "SUMMARY-real ⓪(<날짜>)이 메시지 단위로 쟀다 — 검색어에 더한다"로, §3 미확인 줄과 §16에 결과를 적는다. `deno test …/mail-query.test.ts …/mail-read.test.ts` 통과 → `supabase functions deploy mail-read` → `smoke-summary.ts --phase on` 통과. 커밋 `fix(server): mail summary query excludes sent/drafts/chats with negative operators (SUMMARY-real ⓪ measured message-level matching)`. `false`면 아무것도 바꾸지 않고 결과만 적는다.
-
 - [ ] **Step 7: 기록·커밋**
 
-`docs/superpowers/poc/results.md`에 절 `## SUMMARY-real (메일 요약 0.15.0, <날짜>)`: ⓪ probe JSON, ①~⑥ 단계별 통과/실패(화면 문구·순서만 — 메일 본문·요약 글 없음), ⑦ 감사 행 수·로그 검색 0건, ⑧ elapsed_ms, 설정 "메일 요약" 표시, Step 6 여부. `gates.md` 행 `| SUMMARY-real | 통과 | <요약> | results.md |`. 실패 단계가 있으면 그 행은 `실패`로 두고 메인이 사용자에게 보고한다(`MAIL_READ` 끄기는 메인 판단 — 읽기만이라 되돌릴 Gmail 변경이 없다).
+`docs/superpowers/poc/results.md`에 절 `## SUMMARY-real (메일 요약 0.15.0, <날짜>)`: ⓪ probe JSON, ①~⑥ 단계별 통과/실패(화면 문구·순서만 — 메일 본문·요약 글 없음), ⑦ 감사 행 수·로그 검색 0건, ⑧ elapsed_ms, 설정 "메일 요약" 표시, Step 4 여부와 실측 대상 배포 HEAD `$H_READ`(①~⑨ 동안 재배포 없음 — 있었으면 ①~⑤ 재측정 기록). `gates.md` 행 `| SUMMARY-real | 통과 | <요약> | results.md |`. 실패 단계가 있으면 그 행은 `실패`로 두고 메인이 사용자에게 보고한다(`MAIL_READ` 끄기는 메인 판단 — 읽기만이라 되돌릴 Gmail 변경이 없다).
 
 ```bash
 git add docs/superpowers/poc/results.md docs/superpowers/phase1/gates.md
@@ -5734,3 +5959,16 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **3. 타입 일관성:** `BudgetDeps.reserve → Reservation{level, month}`·`settle(u, kind, est, month, lines)`(L2) ↔ 가짜(L2·S4·chat-db) 일치. `Bill(kind, model, usage|null)`(L2) ↔ chat deps·worker·`summarizeGuarded`(S4) 일치. `TokenUsage{input, cached, output}` ↔ `responseUsage`·`queryEmbedder`·가짜 `onUsage` 일치. `MailReadFields`(S5) ↔ `Case.mail_read`(S6) ↔ 앱 `MailSummary.fields`(A1, `translate`·`target_in_message`) 일치. `MailSummaryTurn` 필드(A1) ↔ ChatView(A3)·inject.py(G1) 키 이름(`phase`·`translate`·`conditions`·`candidates`·`complete`·`more`·`issuedAt`·`picked`·`read`·`readAt`·`note`·`settings`) 일치. 서버 응답 칸(`conditions`·`candidates[{token, from, subject, date}]`·`complete`·`more` / `status`·`token`·…·`ask`) ↔ `MailSummary.Search`·`Read` 일치.
 
 **4. Review Focus:** 다섯 줄 모두 소유 태스크의 테스트가 있다(1 → S3 `latest`·`sixth id`·`20 all-SENT`, A1 `afterSearch` / 2 → S2 `maskMail`·S4 `masking reaches the model`·`OTP` / 3 → L1 ⓐⓑ·L2 `month`·`queryEmbedder`·chat billing / 4 → A1 `followUp`·S6 s15·s16·G1 S8 / 5 → S4 `angle brackets`·S7 e10·G1 S6 `links 0`).
+
+## 외부 리뷰 반영 (Codex gpt-6-astra, 2026-10-07 — `.context/codex-review-plan-mail-summary.out.md`, MED 8·HIGH 0)
+
+| # | 지적 | 반영 |
+|---|---|---|
+| 1 | D1 — 0032 적용 전 전체 테스트가 새 RPC를 부르는 호스팅 파일을 돌린다, `usage-db`의 `actualKrw` 콜백 | 반영 — D1 Step 2에서 `usage-db`·`embed-db`·`text-db`·`extract-db`를 빼고(`deno check`만) Step 3 `db push` 직후 0032 사례와 함께 실행. L2가 `usage-db.test.ts` 슬롯 사례를 `bill` 계약으로 고친다(코드 확인: `embedDeps`·`textDeps` 기본 예산이 실제 `budgetDeps`) |
+| 2 | L2 — 임베딩 비용을 `embedWithUsage` 반환 뒤 기록해 응답 꺼내기 실패 때 누락 | 반영 — `embedWithUsage(texts, type, onUsage?, create?)`가 응답 직후(정렬·매핑 전) `onUsage`, `queryEmbedder`·worker embed는 그 콜백으로 `bill`. 새 `embeddings.test.ts`가 실제 어댑터에 `data: null` 응답을 주입, `query-vector` 사례 추가 |
+| 3 | S3 — 20초 검사가 호출 시작 전에만 있어 앱 30초 타임아웃을 넘겨 성공할 수 있다 | 반영 — `over()`가 남은 시간을 돌려주고 Gmail 목록·메타 호출 제한 시간 = min(15초, 남은 예산). 예산으로 끊긴 호출은 `SearchTimeout`(502). 사례 "토큰 갱신 19초 → 모든 호출 ≤ 1초" 추가 |
+| 4 | S2 — 가림 성능 테스트에 가릴 번호가 없다(빽빽한 카드번호 999,994자 2,624ms) | 반영 — 로컬 재현(옛 2,585ms) 후 `scan`을 범위마다 재조립 → 단계당 한 번 `rebuild`로(25ms, 결과 동일·기존 `rules.test.ts` 21 통과를 임시 사본으로 확인). 성능 사례에 카드·계좌 빽빽한 글, 결과 동일 사례 추가 |
+| 5 | G1 — 하네스 원본 선택(정렬상 gate0130)·`build/gate` vs `build-gate`·`last.log` 덮어쓰기 | 반영 — 원본은 파일 유무로(`gate0140` → `gate0120`; `gate0130`엔 GateHost·yml 없음, `gate0140`은 0.14.0 M12 끝에 지워짐), `drive.sh`를 새로 써서 `build-gate` 하나로, 사례별 `logs/<테스트>.log`·`.diag`. yml은 지금 `ios/project.yml` + 게이트 타깃만 |
+| 6 | G1 — `reply`를 정수 배열로 넣어 로더가 파일 전체를 빈 기록으로 읽는다 | 반영 — 처음부터 base64(`gate0120/inject.py`와 같은 방식), `run.sh`가 사례마다 주입 턴 수 = `CHAT history loaded=`를 확인(12/12) |
+| 7 | G2 — ①~⑥ 실측 뒤 검색어를 바꿔 재배포하고 최종본은 스모크만 | 반영 — 조건부 검색어 변경을 Step 4(⓪ probe 직후, ① 전)로 옮기고 실측 대상 배포 HEAD `$H_READ`를 기록, 실측 중 재배포가 생기면 ①~⑤ 처음부터 다시 |
+| 8 | S7 — 수동 검토 자료에 되묻기 문장(`fin.ask`)이 없다 | 반영 — `RunOut`·로컬 검토 파일에 `ask`·`translation_truncated`·`language`, 수동 체크리스트 ⑧(되묻기 문장 적절성·본문 사실 누설) 추가 |
