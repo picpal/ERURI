@@ -171,4 +171,30 @@ final class MailSummaryTests: XCTestCase {
     XCTAssertTrue(c.candidatesExpired(now: t0.addingTimeInterval(600)))
     XCTAssertTrue(MailSummaryTurn(phase: .choosing).candidatesExpired(now: t0))
   }
+
+  func testChoosingTicks_Every30sUntilExpiry_ThenTheExpiryInstant() {
+    var c = MailSummaryTurn(phase: .choosing); c.issuedAt = t0
+    XCTAssertEqual(c.choosingTicks(from: t0.addingTimeInterval(500)),
+                   [500, 530, 560, 590, 600].map { t0.addingTimeInterval($0) })
+    XCTAssertEqual(c.choosingTicks(from: t0.addingTimeInterval(570)), [570, 600].map { t0.addingTimeInterval($0) })
+    XCTAssertEqual(c.choosingTicks(from: t0.addingTimeInterval(600)), [t0.addingTimeInterval(600)])
+    XCTAssertEqual(MailSummaryTurn(phase: .choosing).choosingTicks(from: t0), [t0])
+  }
+
+  func testReadFailed_CardPick410ShowsTheExpiredCard_RetryRestoresWithin10Minutes() {
+    var c = MailSummaryTurn(phase: .reading); c.issuedAt = t0; c.picked = 2; c.candidates = []
+    let now = t0.addingTimeInterval(599)
+    var a = c; a.readFailed(MailSummary.readError(status: 410, code: "token_expired"), status: 410, fromCard: true, now: now)
+    XCTAssertEqual(a.phase, .choosing); XCTAssertNil(a.picked); XCTAssertNil(a.note); XCTAssertFalse(a.settings)
+    XCTAssertTrue(a.candidatesExpired(now: now))                                     // 만료 카드 — [다시 찾기]
+    var b = c; b.readFailed(MailSummary.readError(status: 500, code: nil), status: 500, fromCard: true, now: now)
+    XCTAssertEqual(b.phase, .choosing); XCTAssertNil(b.picked); XCTAssertEqual(b.note, MailSummaryText.failed)
+    XCTAssertFalse(b.candidatesExpired(now: now))
+    var d = c; d.readFailed(MailSummary.readError(status: 500, code: nil), status: 500, fromCard: true, now: t0.addingTimeInterval(600))
+    XCTAssertEqual(d.phase, .ended)
+    var e = c; e.readFailed(MailSummary.readError(status: 410, code: "token_expired"), status: 410, fromCard: false, now: now)
+    XCTAssertEqual(e.phase, .ended); XCTAssertEqual(e.note, MailSummaryText.followExpired)
+    var f = c; f.readFailed(MailSummary.readError(status: 400, code: "bad_token"), status: 400, fromCard: true, now: now)
+    XCTAssertEqual(f.phase, .ended); XCTAssertEqual(f.picked, 2)
+  }
 }

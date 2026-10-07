@@ -281,4 +281,23 @@ public struct MailSummaryTurn: Codable, Sendable, Equatable {
   public mutating func apply(_ n: MailSummary.Note) { note = n.text; settings = n.settings }
   /// 후보 카드를 아직 누를 수 있는가(서버가 원본 — 410). 발급 시각이 없으면 지난 것으로
   public func candidatesExpired(now: Date) -> Bool { issuedAt.map { now.timeIntervalSince($0) >= MailSummary.tokenTTL } ?? true }
+  /// 후보 카드 다시 그릴 시각: start 부터 30초마다 + 만료 시각(발급 + 10분) 그 순간 — 만료 직후 탭이 조용히 무시되지 않게(A3 리뷰). 만료 뒤에는 start 하나
+  public func choosingTicks(from start: Date) -> [Date] {
+    guard let i = issuedAt else { return [start] }
+    let end = i.addingTimeInterval(MailSummary.tokenTTL)
+    guard start < end else { return [start] }
+    return Array(stride(from: start.timeIntervalSince1970, to: end.timeIntervalSince1970, by: 30).map { Date(timeIntervalSince1970: $0) }) + [end]
+  }
+  /// 읽기 실패 뒤 턴(스펙 §9 오류): 카드에서 고른 읽기가 410 이면 만료 카드([다시 찾기] — 앱 발급 시각이 서버 서명보다 늦어 생기는 경합, A3 리뷰).
+  /// 카드에서 고른 "그 밖" 실패는 10분 안이면 후보를 되살린다. 나머지는 끝
+  public mutating func readFailed(_ n: MailSummary.Note, status: Int, fromCard: Bool, now: Date) {
+    if fromCard && status == 410 {
+      phase = .choosing; picked = nil; issuedAt = .distantPast; note = nil; settings = false
+      return
+    }
+    let canRetry = fromCard && n.retry && !candidatesExpired(now: now)
+    phase = canRetry ? .choosing : .ended
+    if canRetry { picked = nil }
+    apply(n)
+  }
 }

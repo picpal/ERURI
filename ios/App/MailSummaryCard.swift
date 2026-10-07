@@ -3,7 +3,7 @@ import UIKit
 import EruriCore
 
 /// 채팅 메일 요약 카드(스펙 §9 "채팅 메일 요약", 0.15.0): 찾는 중 → 후보 카드(조건 줄·최대 5줄·[가장 최근 것]·더 있음 줄, 10분 뒤 [다시 찾기]) → 읽는 중 → 요약 카드.
-/// 요약·번역·후보 글은 Text(verbatim:) — 마크다운·링크 해석 없이(메일이 심은 주소가 눌리지 않게). 막대는 "복사"만. 시간 창은 30초마다 다시 본다(서버가 원본 — 410)
+/// 요약·번역·후보 글은 Text(verbatim:) — 마크다운·링크 해석 없이(메일이 심은 주소가 눌리지 않게). 막대는 "복사"만. 후보 카드의 시간 창은 30초마다·만료 순간에 다시 본다(서버가 원본 — 410)
 struct MailSummaryCard: View {
   let turn: MailSummaryTurn
   var onPick: (Int) -> Void
@@ -12,29 +12,31 @@ struct MailSummaryCard: View {
   @State private var copied = false
 
   var body: some View {
-    TimelineView(.periodic(from: .now, by: 30)) { ctx in
-      VStack(alignment: .leading, spacing: 8) {
-        switch turn.phase {
-        case .finding:
-          HStack { ProgressView(); Text(MailSummaryText.finding).font(.subheadline) }
-        case .choosing:
-          candidates(now: ctx.date)
-        case .reading:
-          if let i = turn.picked, let c = turn.candidates?.indices.contains(i) == true ? turn.candidates?[i] : nil {
-            Text(verbatim: MailSummary.candidateLine(c, now: ctx.date)).font(.caption).lineLimit(1)
-          }
-          HStack { ProgressView(); Text(MailSummaryText.reading).font(.subheadline) }
-        case .ended:
-          if let r = turn.read { result(r, now: ctx.date) }
+    let now = Date()
+    VStack(alignment: .leading, spacing: 8) {
+      switch turn.phase {
+      case .finding:
+        HStack { ProgressView(); Text(MailSummaryText.finding).font(.subheadline) }
+      case .choosing:
+        // 시간 창은 후보 카드만 — 30초마다 + 만료 순간(A3 리뷰). 끝난 카드는 다시 그리지 않는다
+        TimelineView(.explicit(turn.choosingTicks(from: now))) { ctx in
+          VStack(alignment: .leading, spacing: 8) { candidates(now: ctx.date) }
         }
-        if let n = turn.note { Text(verbatim: n).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("summary-note") }
-        if turn.settings {
-          Button(MailSummaryText.openSettings, action: onSettings).buttonStyle(.bordered).accessibilityIdentifier("summary-open-settings")
+      case .reading:
+        if let i = turn.picked, let c = turn.candidates?.indices.contains(i) == true ? turn.candidates?[i] : nil {
+          Text(verbatim: MailSummary.candidateLine(c, now: now)).font(.caption).lineLimit(1)
         }
+        HStack { ProgressView(); Text(MailSummaryText.reading).font(.subheadline) }
+      case .ended:
+        if let r = turn.read { result(r, now: now) }
       }
-      .accessibilityElement(children: .contain)
-      .accessibilityIdentifier("summary-card")
+      if let n = turn.note { Text(verbatim: n).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("summary-note") }
+      if turn.settings {
+        Button(MailSummaryText.openSettings, action: onSettings).buttonStyle(.bordered).accessibilityIdentifier("summary-open-settings")
+      }
     }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("summary-card")
   }
 
   @ViewBuilder private func candidates(now: Date) -> some View {

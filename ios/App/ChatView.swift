@@ -880,7 +880,7 @@ struct ChatView: View {
     }
   }
 
-  /// 읽기: 503 llm_busy 만 5초 뒤 한 번 더. 후보 카드에서 고른 읽기가 "그 밖" 실패면 10분 안 후보를 되살린다(다시 누르면 비용은 다시 든다)
+  /// 읽기: 503 llm_busy 만 5초 뒤 한 번 더. 후보 카드에서 고른 읽기가 "그 밖" 실패면 10분 안 후보를 되살리고, 410 이면 만료 카드([다시 찾기])로(다시 누르면 비용은 다시 든다)
   private func readSummary(_ id: UUID, token: String, translate: Bool, request: String, epoch: Int, fromCard: Bool) {
     let t0 = Date()
     Task {
@@ -906,12 +906,7 @@ struct ChatView: View {
         }
         Trace.log("chat.mail_read", ["stage": "read", "result": "error", "code": code ?? "http_\(r?.status ?? -1)", "elapsed_ms": ms])
         let n = MailSummary.readError(status: r?.status ?? -1, code: code)
-        settle(id, epoch) {
-          let canRetry = fromCard && n.retry && !($0.record.mailRead?.candidatesExpired(now: Date()) ?? true)
-          $0.record.mailRead?.phase = canRetry ? .choosing : .ended
-          if canRetry { $0.record.mailRead?.picked = nil }
-          $0.record.mailRead?.apply(n)
-        }
+        settle(id, epoch) { $0.record.mailRead?.readFailed(n, status: r?.status ?? -1, fromCard: fromCard, now: Date()) }
         scroll(to: id)
         return
       }
