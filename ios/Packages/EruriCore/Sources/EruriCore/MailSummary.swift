@@ -162,8 +162,8 @@ public enum MailSummary {
       guard let s = r.summary else { return .note(MailSummaryText.failed) }
       guard translate else { return .summary(s, translation: nil, translationNote: nil) }
       if r.language == "ko" { return .summary(s, translation: nil, translationNote: MailSummaryText.koreanNoTranslate) }
-      // 번역이 빠진 응답은 조용히 넘기지 않는다 — 스펙 §9 에 번역 실패 문구가 없어 기존 실패 문구(A1 리뷰)
-      guard let t = r.translation else { return .summary(s, translation: nil, translationNote: MailSummaryText.failed) }
+      // 번역이 빠진 응답은 조용히 넘기지 않는다 — 요약 아래 한 줄(스펙 §9 오류 문구, A1 리뷰)
+      guard let t = r.translation else { return .summary(s, translation: nil, translationNote: MailSummaryText.translationMissing) }
       return .summary(s, translation: t, translationNote: r.translation_truncated ? MailSummaryText.translationTruncated : nil)
     case "ask":
       guard let q = r.ask, !q.isEmpty else { return .note(MailSummaryText.failed) }   // 빈 질문 대신 실패 문구(A1 리뷰)
@@ -215,6 +215,7 @@ public enum MailSummaryText {
   public static let datesTitle = "날짜", amountsTitle = "금액", todosTitle = "할 일", translationTitle = "전문 번역", copy = "복사"
   public static let translationTruncated = "번역이 길어 앞부분만 옮겼어요 — 나머지는 Gmail에서 확인해 주세요"
   public static let koreanNoTranslate = "한국어 메일이라 번역하지 않았어요"
+  public static let translationMissing = "번역은 하지 못했어요 — 다시 '번역해줘'라고 해 주세요"
   public static let bodyTruncated = "메일이 길어 앞부분만 읽고 요약했어요"
   public static func attachments(_ n: Int) -> String { "첨부 \(n)개는 읽지 않았어요" }
   public static let notStored = "본문은 요약할 때만 읽고 ERURI 서버에 저장하지 않아요"

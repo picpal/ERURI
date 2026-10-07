@@ -93,11 +93,11 @@ final class MailSummaryTests: XCTestCase {
     let ask = r(#"{"status":"ask","token":"t","from":"a","subject":"b","date":"","summary":null,"language":"ko","translation":null,"translation_truncated":false,"body_truncated":false,"attachments":0,"ask":"어떤 환불 내용을 찾으세요?"}"#)
     XCTAssertEqual(MailSummary.body(ask, translate: false), .ask("어떤 환불 내용을 찾으세요?"))
   }
-  // A1 리뷰: 번역 요청·language ≠ ko 인데 translation 이 없으면 조용히 빠지지 않고 실패 문구 한 줄
+  // A1 리뷰·스펙 §9 오류 문구(aed7e14): 번역 요청·language ≠ ko 인데 translation 이 없으면 조용히 빠지지 않고 요약 아래 한 줄
   func testMissingTranslationSaysSo() {
     let x = r(readJSON.replacingOccurrences(of: #""translation":"번역 글""#, with: #""translation":null"#))
     guard case let .summary(_, t, note) = MailSummary.body(x, translate: true) else { return XCTFail() }
-    XCTAssertNil(t); XCTAssertEqual(note, "메일을 요약하지 못했어요 — 잠시 뒤 다시 해 주세요")
+    XCTAssertNil(t); XCTAssertEqual(note, "번역은 하지 못했어요 — 다시 '번역해줘'라고 해 주세요")
   }
   // A1 리뷰: status = ask 인데 ask 가 없으면 빈 질문 대신 실패 문구
   func testAskWithoutQuestionIsFailedNote() {
