@@ -2,7 +2,7 @@
 // 출력은 사례 id·그룹·기대·결과·칸 일치만(문장 글·칸 값 없음 — AGENTS.md §7 형식)
 // 사용: deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/eval-intent.ts --runs 3 [--mail-judged]
 import { extractFilters } from "../functions/chat/filters.ts";
-import { type CaseFile, GATE, judge, parseRuns, type Row, summarize, validateCases } from "./_intent-eval.ts";
+import { type CaseFile, gateCases, judge, parseRuns, type Row, summarize, validateCases } from "./_intent-eval.ts";
 
 const file = JSON.parse(await Deno.readTextFile(new URL("../eval/intent-cases.json", import.meta.url))) as CaseFile;
 const problems = validateCases(file);
@@ -19,4 +19,4 @@ for (let run = 1; run <= runs; run++) {
     console.log(JSON.stringify({ run, ...row }));
   }
 }
-console.log(JSON.stringify({ ...summarize(rows, runs, mailJudged), gate_cases: GATE.every((id) => rows.filter((r) => r.id === id).every((r) => r.got === r.expected)) }));
+console.log(JSON.stringify({ ...summarize(rows, runs, mailJudged), gate_cases: gateCases(rows) }));

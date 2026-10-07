@@ -1,12 +1,12 @@
 import { assert, assertEquals } from "jsr:@std/assert";
-import { type CaseFile, judge, parseRuns, type Row, sameMail, summarize, validateCases } from "../scripts/_intent-eval.ts";
+import { type CaseFile, gateCases, judge, parseRuns, type Row, sameMail, summarize, validateCases } from "../scripts/_intent-eval.ts";
 import type { MailFields } from "../functions/chat/filters.ts";
 
 const file = JSON.parse(await Deno.readTextFile(new URL("../eval/intent-cases.json", import.meta.url))) as CaseFile;
 const M = (o: Partial<MailFields> = {}): MailFields => ({ action: "trash", sender: "합성상점", subject_words: [], received_from: null, received_to: null,
   promotions: true, unread_only: false, ...o });
 
-Deno.test("case file meets the spec composition (question 41 with confusable ≥15 incl. context 5, quoted 3, previous 3, negation 3, ability 2; add 18 incl. context 3, polite 3; mail 17 incl. context 2, polite 2)", () => {
+Deno.test("case file meets the spec composition (question 41 with confusable ≥15 incl. context 5, quoted 3, previous 3, negation 3, ability 2; add 18 incl. context 3, polite 3; mail 20 incl. context 2, polite 2, 0.14.0 gate sentences 3 new + m01)", () => {
   assertEquals(validateCases(file), []);
   assertEquals(file.today, "2026-10-07");
 });
@@ -63,4 +63,17 @@ Deno.test("summarize: any false positive or confusion fails; recall below 0.9 fa
   const confused = summarize([...base, ok("a9x", "add_event", "mail_action")], 1, false);
   assertEquals([confused.confusion, confused.gate], [1, "fail"]);
   assertEquals(summarize(base.map((r) => r.id === "a0" || r.id === "a1" ? { ...r, got: "question" as const } : r), 1, false).gate, "fail");   // 8/10
+});
+
+Deno.test("gateCases: every gate id in every run needs the expected intent and, for mail, matching fields; a missing id fails", () => {
+  const row = (id: string, r: Partial<Row> = {}): Row => {
+    const c = file.cases.find((x) => x.id === id)!;
+    return { id, group: c.group, expected: c.intent, got: c.intent, mail_ok: c.intent === "mail_action" ? true : null, ...r };
+  };
+  const ids = ["a01", "a12", "a13", "q04", "m01", "m18", "m19", "m20"];
+  const two = [...ids.map((id) => row(id)), ...ids.map((id) => row(id))];
+  assert(gateCases(two));
+  assert(!gateCases(two.map((r, i) => i === ids.length + 5 ? { ...r, mail_ok: false } : r)));   // 2회차 m18 칸 불일치
+  assert(!gateCases(two.map((r, i) => i === 3 ? { ...r, got: "add_event" as const } : r)));       // q04 오탐
+  assert(!gateCases(two.filter((r) => r.id !== "m20")));
 });

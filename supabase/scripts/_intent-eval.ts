@@ -7,10 +7,11 @@ export type Got = { intent: Intent; mail: MailFields | null };
 export type Row = { id: string; group: string; expected: Intent; got: Intent; mail_ok: boolean | null };
 
 // 스펙 §15 구성. 사례를 더하면 이 수도 같이 고친다
-const WANT = { question: 41, add_event: 18, mail_action: 17 } as const;
+const WANT = { question: 41, add_event: 18, mail_action: 20 } as const;
 const GROUP_MIN: Record<string, number> = { confusable_ctx: 5, quoted: 3, prev_command: 3, negation: 3, ability: 2, add_ctx: 3, add_polite: 3, mail_ctx: 2, mail_polite: 2 };
-// ADD-sim 문장(G1 = a01, G3 = a12, G7 = a13, G4 = q04)은 3회 모두 기대값이어야 A6 를 돌린다 — 재현율 0.9 합격선은 특정 문장의 실패를 허용한다(Fable F2)
-export const GATE = ["a01", "a12", "a13", "q04"] as const;
+// ADD-sim 문장(G1 = a01, G3 = a12, G7 = a13, G4 = q04)과 0.14.0 메일 정리 게이트 문장(m01·m18~m20 — MAIL-sim·MAIL-real·smoke-mail)은
+// 3회 모두 기대값이어야 한다 — 재현율 0.9 합격선은 특정 문장의 실패를 허용한다(Fable F2, 메일 정리 계획 리뷰 N-M11)
+export const GATE = ["a01", "a12", "a13", "q04", "m01", "m18", "m19", "m20"] as const;
 
 // --runs N: 1 이상 정수만(없으면 1). NaN 이면 0행이 되어 gate_cases 가 빈 every 로 참이 된다(최종 리뷰 Minor 2)
 export function parseRuns(args: string[]): number | null {
@@ -56,6 +57,11 @@ export function sameMail(want: MailFields, got: MailFields | null): boolean {
 export function judge(c: Case, g: Got): Row {
   const mail_ok = c.intent !== "mail_action" ? null : g.intent === "mail_action" ? sameMail(c.mail!, g.mail) : false;
   return { id: c.id, group: c.group, expected: c.intent, got: g.intent, mail_ok };
+}
+
+// 게이트 문장: 모든 회차에서 의도가 맞고 mail 칸도 맞아야 한다(행동이 아닌 문장은 mail_ok 가 null). 행이 없는 id 도 실패(빈 every 방지)
+export function gateCases(rows: Row[]): boolean {
+  return GATE.every((id) => { const xs = rows.filter((r) => r.id === id); return xs.length > 0 && xs.every((r) => r.got === r.expected && r.mail_ok !== false); });
 }
 
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
