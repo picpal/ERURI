@@ -23,7 +23,7 @@ const OK_SUMMARY: SummaryOutput = { status: "ok", lines: ["합성학원 설명�
 
 type Opt = { msgs?: M[]; pageSize?: number; conn?: { connection_id: string; status: string } | null; access?: string | null | Error;
   take?: (n: number) => boolean | Error; enabled?: boolean; clockStep?: number; accessStep?: number; listError?: Error; full?: Record<string, M | Error>;
-  summary?: SummaryOutput | Error; usage?: boolean; level?: "ok" | "refused"; slots?: (number | null)[]; auditFails?: boolean; key?: string };
+  summary?: SummaryOutput | Error; summarizeStep?: number; usage?: boolean; level?: "ok" | "refused"; slots?: (number | null)[]; auditFails?: boolean; key?: string };
 function fake(o: Opt = {}) {
   const seen = { list: [] as { q: string; max: number; page?: string }[], headers: [] as string[], full: [] as string[], take: [] as number[],
     summarize: [] as SummaryInput[], audit: [] as string[], settled: [] as LedgerLine[][], reserved: [] as string[], sleeps: [] as number[], timeouts: [] as number[] };
@@ -70,6 +70,7 @@ function fake(o: Opt = {}) {
     budget,
     summarize: async (i, onUsage) => {
       seen.summarize.push(i);
+      clock += o.summarizeStep ?? 0;                                         // 모델 응답 지연
       if (o.usage !== false) onUsage({ input: 9000, cached: 0, output: 600 });
       if (o.summary instanceof Error) throw o.summary;
       return o.summary ?? OK_SUMMARY;
@@ -346,6 +347,23 @@ Deno.test("read: ask status → ask sentence, summary null; logs carry no subjec
   const out = logs.join("\n");
   for (const s of ["비밀본문", "설명회 안내", "academy@example.com", "합성학원", "환불", "id9zz"]) assert(!out.includes(s), s);
   assert(out.includes('"status":"ask"'));
+});
+
+// ── S4 리뷰 반영(계획 Ruling S4-m1) ──
+// 새 토큰 만료 = 응답 시점 + 10분(스펙 §7) — 모델이 늦게 답해도 이어서 "번역해줘"가 10분 안에 410 이 되지 않게. otp·no_body 는 모델 없음
+Deno.test("read: ok/ask sign the follow-up token after the model answers (slow model → e ≥ response time + 600)", async () => {
+  const slow = 48_000;
+  for (const summary of [OK_SUMMARY, { ...OK_SUMMARY, status: "ask" as const, lines: [], dates: [], amounts: [], todos: [], ask: "어떤 내용을 찾으세요?" }]) {
+    const { d } = fake({ msgs: [mail("m1", "본문")], summary, summarizeStep: slow });
+    const { j } = await call(d, req("read", await R("m1")));
+    const v = await verifyToken(await importTokenKey(KEY_B64), j.token, NOW_S);
+    assert(v.ok, summary.status);
+    assert(v.claims.e >= Math.floor((NOW + slow) / 1000) + 600, `${summary.status} e=${v.claims.e}`);
+  }
+  const { d } = fake({ msgs: [mail("m1", "482913", { subject: "[합성은행] 인증번호 안내" })], summarizeStep: slow });
+  const o = await call(d, req("read", await R("m1")));
+  const v = await verifyToken(await importTokenKey(KEY_B64), o.j.token, NOW_S);
+  assertEquals([o.j.status, v.ok && v.claims.e], ["otp", NOW_S + 600]);
 });
 
 // ── S3 리뷰 반영(계획 Ruling S3-m1·m2·m3) ──

@@ -62,24 +62,25 @@ export async function read(ctx: Ctx, body: Record<string, unknown>, d: MailReadD
   }
   await d.audit(ctx.user, await sha256Hex(v.claims.m));                 // 본문을 받은 읽기마다 한 번(D7) — 실패면 500, 모델 없음
   if ((m.labelIds ?? []).some((l) => GONE.includes(l))) { log({ stage, request_id: rid, result: "mail_gone", elapsed_ms: ms() }); return err(404, "mail_gone"); }
-  const token = await signToken(key, { ...v.claims, e: Math.floor(d.now() / 1000) + TOKEN_TTL_S });   // 같은 메일, 지금 + 10분 — 이어서 번역(§9)
+  // 같은 메일, 응답 시점 + 10분 — 이어서 번역(§9). ok·ask 는 모델 응답 뒤에 서명(느린 모델이 만료를 깎지 않게, S4 리뷰)
+  const sign = () => signToken(key, { ...v.claims, e: Math.floor(d.now() / 1000) + TOKEN_TTL_S });
   const meta = candidateMeta(m);
-  const base = { token, from: meta.from, subject: meta.subject, date: meta.date, summary: null, language: "", translation: null,
+  const base = { from: meta.from, subject: meta.subject, date: meta.date, summary: null, language: "", translation: null,
     translation_truncated: false, body_truncated: false, ask: null };
   const b = extractBody(m.payload);
   if (b.text === null) {
     log({ stage, request_id: rid, result: "ok", status: "no_body", attachments: b.attachments, elapsed_ms: ms() });
-    return Response.json({ status: "no_body", ...base, attachments: b.attachments });
+    return Response.json({ status: "no_body", token: await sign(), ...base, attachments: b.attachments });
   }
   const mm = maskMail(header(m, "Subject") ?? "", b.text);              // 제목+본문 통합 판정·가림 — 자르기 전(§7, Codex #3)
   if (mm.otp) {
     log({ stage, request_id: rid, result: "ok", status: "otp", attachments: b.attachments, elapsed_ms: ms() });
-    return Response.json({ status: "otp", ...base, attachments: b.attachments });
+    return Response.json({ status: "otp", token: await sign(), ...base, attachments: b.attachments });
   }
   const clipped = clipText(mm.body, SUMMARY_BODY_MAX);                  // 가림 뒤 자르기(12,000·4,000) — 경계에 걸친 번호도 이미 가려져 있다
   const input: SummaryInput = { today: d.today(), request: request.trim(), from: clip16(header(m, "From") ?? "", 200), date: seoulIso(m.internalDate),
     subject: mm.title, body: clipped.text, translateSource: translate ? clipText(mm.body, TRANSLATE_SOURCE_MAX).text : null };
   const fin = finishSummary(await summarizeGuarded(ctx.user, input, translate, d), { translate, bodyLen: mm.body.length });
   log({ stage, request_id: rid, result: "ok", status: fin.status, body_truncated: clipped.truncated, attachments: b.attachments, model: SUMMARY_MODEL, elapsed_ms: ms() });
-  return Response.json({ ...base, ...fin, subject: clip16(mm.title, 100), body_truncated: clipped.truncated, attachments: b.attachments });
+  return Response.json({ token: await sign(), ...base, ...fin, subject: clip16(mm.title, 100), body_truncated: clipped.truncated, attachments: b.attachments });
 }

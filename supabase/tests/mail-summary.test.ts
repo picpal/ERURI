@@ -36,6 +36,10 @@ Deno.test("parseSummary: incomplete, refusal, bad JSON and wrong shapes → Summ
   assertThrows(() => parseSummary(resp({ ...OK, status: "maybe" }) as never), SummaryFailed, "bad_shape");
   assertEquals(parseSummary(resp(OK) as never), OK);
 });
+// S4 리뷰 반영(계획 Ruling S4-m2): JSON 이 객체가 아니면(null·배열·원시값) 형식 오류 — TypeError 로 새지 않는다(S7 러너 분류)
+Deno.test("parseSummary: a non-object JSON (null, array, number, string, boolean) → SummaryFailed bad_shape", () => {
+  for (const v of [null, [OK], 5, "ok", true]) assertThrows(() => parseSummary(resp(v) as never), SummaryFailed, "bad_shape", JSON.stringify(v));
+});
 Deno.test("finishSummary: ok without lines or ask without a question → SummaryFailed; items capped at 5 × 200; ask 200; fewer than 3 lines kept", () => {
   assertThrows(() => finishSummary({ ...OK, lines: [] }, { translate: false, bodyLen: 10 }), SummaryFailed, "empty");
   assertThrows(() => finishSummary({ ...OK, status: "ask", lines: [], ask: "  " }, { translate: false, bodyLen: 10 }), SummaryFailed, "empty_ask");

@@ -63,6 +63,7 @@ export function parseSummary(r: RawResponse): SummaryOutput {
     const m = e instanceof Error ? e.message : "";
     throw new SummaryFailed(m.includes("refusal") ? "refusal" : m.includes("bad_json") ? "bad_json" : "incomplete");
   }
+  if (o === null || typeof o !== "object" || Array.isArray(o)) throw new SummaryFailed("bad_shape");   // null·배열·원시값(S4 리뷰)
   const x = o as Record<string, unknown>;
   const list = (v: unknown) => Array.isArray(v) && v.every((s) => typeof s === "string");
   if ((x.status !== "ok" && x.status !== "ask") || !list(x.lines) || !list(x.dates) || !list(x.amounts) || !list(x.todos) || typeof x.language !== "string" ||
