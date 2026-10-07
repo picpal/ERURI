@@ -2,7 +2,7 @@ import { assert, assertEquals } from "jsr:@std/assert";
 import type { BudgetDeps, LedgerLine } from "../functions/_shared/budget.ts";
 import { GmailHttpError, type GmailMessage, type MessagePart } from "../functions/_shared/gmail.ts";
 import { importTokenKey, signToken, type TokenClaims, verifyToken } from "../functions/_shared/mail-token.ts";
-import type { MailReadDeps } from "../functions/mail-read/common.ts";
+import { type MailReadDeps, SummaryFailed as SummaryFailedProbe } from "../functions/mail-read/common.ts";
 import { handleMailRead } from "../functions/mail-read/handler.ts";
 import type { SummaryInput, SummaryOutput } from "../functions/mail-read/summary.ts";
 
@@ -15,7 +15,7 @@ type M = { id: string; at: number | null; labels?: string[]; from?: string; subj
 const msg = (id: string, minsAgo: number, o: Partial<M> = {}): M =>
   ({ id, at: NOW - minsAgo * 60_000, from: "합성상점 <shop@example.com>", subject: `합성 안내 ${id}`, ...o });
 const toGmail = (m: M): GmailMessage => ({ id: m.id, internalDate: m.at === null ? "" : String(m.at), labelIds: m.labels ?? ["INBOX"],
-  payload: { headers: [{ name: "From", value: m.from ?? "" }, { name: "Subject", value: m.subject ?? "" }], ...(m.payload ?? {}) } });
+  payload: { ...(m.payload ?? {}), headers: [{ name: "From", value: m.from ?? "" }, { name: "Subject", value: m.subject ?? "" }, ...(m.payload?.headers ?? [])] } });
 const OK_SUMMARY: SummaryOutput = { status: "ok", lines: ["합성학원 설명회 안내", "10/20 15:00 시작", "참가비 35,000원"], dates: ["10/20(화) 15:00"],
   amounts: ["35,000원"], todos: ["10/16까지 신청서 제출"], language: "ko", translation: null, ask: null };
 
@@ -230,3 +230,119 @@ Deno.test("search logs carry codes and counts only — no sender, subject, Gmail
   for (const s of ["합성비밀", "secret@example.com", "합성 비밀 제목", "id77aa", "비밀", "합성상점"]) assert(!out.includes(s), s);
   assert(out.includes('"mail_read":"search"'));
 });
+// ── 읽기(스펙 §7 "읽기") ──
+const b64u = (s: string) => btoa(Array.from(new TextEncoder().encode(s), (b) => String.fromCharCode(b)).join("")).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const plain = (text: string): MessagePart => ({ mimeType: "text/plain", headers: [{ name: "Content-Type", value: "text/plain; charset=utf-8" }], body: { data: b64u(text) } });
+const tok = async (m: string, o: Partial<TokenClaims> = {}) => signToken(await importTokenKey(KEY_B64), { u: USER, c: CONN, m, e: NOW_S + 600, ...o });
+const R = async (m: string, o: Record<string, unknown> = {}) => ({ token: await tok(m), translate: false, request: "합성학원 메일 요약해줘", ...o });
+const sha = async (s: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))), (b) => b.toString(16).padStart(2, "0")).join("");
+const mail = (id: string, body: string, o: Partial<M> = {}) => msg(id, 60, { subject: "설명회 안내", from: "합성학원 <academy@example.com>", payload: plain(body), ...o });
+
+Deno.test("read: token format 400 bad_token, tampered/foreign signature 404 not_found, expired 410 token_expired — before the connection", async () => {
+  const { d, seen } = fake({ conn: null });
+  assertEquals((await call(d, req("read", { token: "x", request: "a" }))).j, { error: "bad_token" });
+  const t = await tok("m1");
+  assertEquals((await call(d, req("read", { token: t.slice(0, -2) + (t.endsWith("AA") ? "BB" : "AA"), request: "a" }))).j, { error: "not_found" });
+  assertEquals((await call(d, req("read", { token: await tok("m1", { e: NOW_S }), request: "a" }))).j, { error: "token_expired" });
+  assertEquals(seen.full.length, 0);
+});
+Deno.test("read: request must be 1–500 UTF-16 non-blank and translate a boolean → else 400 bad_request", async () => {
+  const { d } = fake({ msgs: [mail("m1", "본문")] });
+  for (const o of [{ request: undefined }, { request: "  " }, { request: "가".repeat(501) }, { translate: "yes" }, { request: 7 }]) {
+    assertEquals((await call(d, req("read", await R("m1", o)))).j, { error: "bad_request" }, JSON.stringify(o));
+  }
+});
+Deno.test("read: a token of another user or another connection → 404 not_found (never reads)", async () => {
+  const { d, seen } = fake({ msgs: [mail("m1", "본문")] });
+  assertEquals((await call(d, req("read", await R("m1"), "other"))).j, { error: "not_found" });
+  assertEquals((await call(d, req("read", { ...(await R("m1")), token: await tok("m1", { c: "44444444-4444-4444-8444-444444444444" }) }))).j, { error: "not_found" });
+  assertEquals(seen.full.length, 0);
+});
+Deno.test("read: Gmail 404 or SPAM/TRASH labels → 404 mail_gone", async () => {
+  assertEquals((await call(fake().d, req("read", await R("missing")))).j, { error: "mail_gone" });
+  for (const l of ["SPAM", "TRASH"]) {
+    assertEquals((await call(fake({ msgs: [mail("m1", "본문", { labels: [l] })] }).d, req("read", await R("m1")))).j, { error: "mail_gone" });
+  }
+});
+Deno.test("read: ok → summary with a new 10-minute token for the same mail; reserve chat, line mail_summary; audit target = SHA-256 of the Gmail id", async () => {
+  const { d, seen } = fake({ msgs: [mail("m1", "합성학원 설명회 10/20(화) 15:00, 참가비 35,000원")] });
+  const { status, j } = await call(d, req("read", await R("m1")));
+  assertEquals(status, 200);
+  assertEquals([j.status, j.summary.lines.length, j.from, j.subject, j.body_truncated, j.attachments, j.translation, j.ask], ["ok", 3, "합성학원", "설명회 안내", false, 0, null, null]);
+  assertEquals(await verifyToken(await importTokenKey(KEY_B64), j.token, NOW_S), { ok: true, claims: { u: USER, c: CONN, m: "m1", e: NOW_S + 600 } });
+  assertEquals([seen.reserved, seen.settled[0].map((l) => [l.kind, l.model])], [["chat"], [["mail_summary", "gpt-6-luna"]]]);
+  assertEquals(seen.audit, [await sha("m1")]);
+  assertEquals(seen.take, [20]);
+});
+Deno.test("read: attachmentId-only body → no_body, no model call; attachments counted; subject masked like search", async () => {
+  const p: MessagePart = { mimeType: "multipart/mixed", body: {}, parts: [{ mimeType: "text/plain", body: { attachmentId: "big" } }] };
+  const { d, seen } = fake({ msgs: [msg("m1", 5, { payload: p, subject: "카드 4111-1111-1111-1111 영수증" })] });
+  const { j } = await call(d, req("read", await R("m1")));
+  assertEquals([j.status, j.attachments, j.subject, j.language, j.summary, seen.summarize.length], ["no_body", 1, "카드 ****-****-****-1111 영수증", "", null, 0]);
+  assertEquals(seen.audit.length, 1);                                       // 본문을 받았다(D7)
+});
+// 스펙 §15: OTP 키워드가 제목·숫자가 본문인 경우 포함 — 모델 호출 0
+Deno.test("read: OTP mail → status otp and the model is never called (keyword in the subject, digits in the body)", async () => {
+  const { d, seen } = fake({ msgs: [mail("m1", "482913", { subject: "[합성은행] 인증번호 안내" })] });
+  const { j } = await call(d, req("read", await R("m1")));
+  assertEquals([j.status, seen.summarize.length, seen.reserved.length], ["otp", 0, 0]);
+});
+// 가림 뒤 자르기(전역 제약): 카드가 12,000·4,000 경계에 걸치면 자르기가 먼저일 때 번호 앞부분이 그대로 남는다(계획 Ruling M3)
+Deno.test("read: masking reaches the model — split account (subject keyword, body number), card across the 12,000 and 4,000 boundaries", async () => {
+  const card = "4111-1111-1111-1111";
+  const cases = [mail("a", "123-456-789012", { subject: "입금 계좌" }), mail("b", "가".repeat(11_985) + " 결제 카드 " + card + " 끝"),
+    mail("c", "Synthetic " + "x".repeat(3_980) + " card " + card),                 // 카드 3,996~4,014자 — 4,000에서 잘림
+    mail("d", "Synthetic " + "x".repeat(3_975) + " card 4111111111111111")];     // 구분자 없는 카드 3,991~4,006자
+  const { d, seen } = fake({ msgs: cases, summary: { ...OK_SUMMARY, language: "en", translation: "번역" } });
+  for (const id of ["a", "b", "c", "d"]) await call(d, req("read", await R(id, { translate: true })));
+  assertEquals(seen.summarize.length, 4);
+  for (const i of seen.summarize) {
+    const all = JSON.stringify(i);
+    assert(!all.includes("123-456-789012") && !all.includes("4111-1111-1111") && !all.includes("1111-1111-1111-1111"), all.slice(0, 80));
+  }
+  assertEquals(seen.summarize[0].body, "***-***-**9012");
+  assertEquals([seen.summarize[1].body.length <= 12_000, seen.summarize[2].translateSource!.length <= 4_000], [true, true]);
+  assert(seen.summarize[1].body.endsWith("****-***") && !seen.summarize[1].body.includes("4111"));
+  for (const i of [seen.summarize[2], seen.summarize[3]]) {
+    const src = i.translateSource!;
+    assertEquals(src.length, 4_000);
+    assert(src.includes("****") && !/\d{4,}/.test(src) && !/\d{5,}/.test(src.replace(/-/g, "")), src.slice(-24));
+  }
+});
+Deno.test("read: translate=false sends no translate source; body over 12,000 → body_truncated", async () => {
+  const { d, seen } = fake({ msgs: [mail("m1", "가".repeat(13_000))] });
+  const { j } = await call(d, req("read", await R("m1")));
+  assertEquals([seen.summarize[0].translateSource, j.body_truncated], [null, true]);
+});
+// 응답이 온 실패도 원소 기록(§13), 모델 쪽 실패는 모두 502 summary_failed(D9) — gmail_upstream 으로 새지 않는다
+Deno.test("read: model refusal/incomplete/network/timeout → 502 summary_failed; a usage line is still settled when a response arrived", async () => {
+  for (const e of [new SummaryFailedProbe("refusal"), new TypeError("fetch failed"), Object.assign(new Error("t"), { name: "TimeoutError" })]) {
+    const responded = e instanceof SummaryFailedProbe;                       // 거절·잘림은 응답이 왔다 — 네트워크·타임아웃은 응답 없음
+    const { d, seen } = fake({ msgs: [mail("m1", "본문")], summary: e, usage: responded });
+    const r = await call(d, req("read", await R("m1")));
+    assertEquals([r.status, r.j.error], [502, "summary_failed"], e.name);
+    assertEquals(seen.settled[0].length, responded ? 1 : 0);
+  }
+});
+Deno.test("read: budget exhausted → 429 budget_exhausted without a model call; no slot after 1 s and 2 s → 503 llm_busy (retry-after 30)", async () => {
+  const a = fake({ msgs: [mail("m1", "본문")], level: "refused" });
+  assertEquals([(await call(a.d, req("read", await R("m1")))).j.error, a.seen.summarize.length], ["budget_exhausted", 0]);
+  const b = fake({ msgs: [mail("m1", "본문")], slots: [null, null, null] });
+  const r = await call(b.d, req("read", await R("m1")));
+  assertEquals([r.status, r.j.error, r.headers.get("retry-after"), b.seen.sleeps], [503, "llm_busy", "30", [1000, 2000]]);
+});
+Deno.test("read: units refused before messages.get → 429 gmail_rate_limited and no read; audit failure → 500 and no model call", async () => {
+  const a = fake({ msgs: [mail("m1", "본문")], take: () => false });
+  assertEquals([(await call(a.d, req("read", await R("m1")))).j.error, a.seen.full.length], ["gmail_rate_limited", 0]);
+  const b = fake({ msgs: [mail("m1", "본문")], auditFails: true });
+  assertEquals([(await call(b.d, req("read", await R("m1")))).status, b.seen.summarize.length], [500, 0]);
+});
+Deno.test("read: ask status → ask sentence, summary null; logs carry no subject, sender, body, request or Gmail id", async () => {
+  const { d } = fake({ msgs: [mail("id9zz", "합성은행 로그인 알림 비밀본문")], summary: { ...OK_SUMMARY, status: "ask", lines: [], dates: [], amounts: [], todos: [], ask: "어떤 환불 내용을 찾으세요?" } });
+  const { j, logs } = await call(d, req("read", await R("id9zz", { request: "합성은행 메일에서 환불 얘기 요약해줘" })));
+  assertEquals([j.status, j.summary, j.ask], ["ask", null, "어떤 환불 내용을 찾으세요?"]);
+  const out = logs.join("\n");
+  for (const s of ["비밀본문", "설명회 안내", "academy@example.com", "합성학원", "환불", "id9zz"]) assert(!out.includes(s), s);
+  assert(out.includes('"status":"ask"'));
+});
+
