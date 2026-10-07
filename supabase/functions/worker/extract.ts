@@ -1,5 +1,6 @@
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
-import type { ExtractedEvent, ExtractInput, ExtractUsage } from "../_shared/extract.ts";
+import { type LedgerLine, ledgerLine, type TokenUsage } from "../_shared/budget.ts";
+import { EXTRACT_MODEL, type ExtractedEvent, type ExtractInput, type ExtractUsage } from "../_shared/extract.ts";
 import type { SavedFact } from "../_shared/facts.ts";
 import type { Job } from "../_shared/job.ts";
 
@@ -14,7 +15,8 @@ export type MediaDeps = {
   decrypt(userId: string, enc: string): Promise<string>;
   reserveVision(userId: string): Promise<boolean>;
   download(storageKey: string): Promise<Uint8Array>;
-  extract(input: ExtractInput): Promise<{ event: ExtractedEvent; usage: ExtractUsage }>;
+  extract(input: ExtractInput, onUsage?: (u: TokenUsage | null) => void): Promise<{ event: ExtractedEvent; usage: ExtractUsage }>;
+  record(userId: string, lines: LedgerLine[]): Promise<void>;          // record_usage(vision, 예약 없음 — 스펙 §13)
   addTokens(userId: string, tokens: number): Promise<void>;
   saveEvent(userId: string, itemId: string, event: ExtractedEvent, via: "vision" | "ocr"): Promise<SavedFact>;
   enqueueNotify(userId: string, proposalId: string): Promise<void>;
@@ -52,8 +54,19 @@ export async function extractMedia(deps: MediaDeps, job: Job): Promise<string> {
   } else {
     return log(job, "needs_review", { reason: "vision_cap_no_ocr" });   // "앱에서 확인"(스펙 §7)
   }
-  const { event, usage } = await deps.extract(input);
-  await deps.addTokens(user, usage.input_tokens + usage.output_tokens);
+  // 기능별 기록(스펙 §13): vision 은 예약 없이 응답마다 기록만 — 기록 실패는 추출 결과를 버리지 않는다(로그 코드만)
+  const lines: LedgerLine[] = [];
+  let out: { event: ExtractedEvent; usage: ExtractUsage };
+  try {
+    out = await deps.extract(input, (u) => { lines.push(ledgerLine("vision", EXTRACT_MODEL, u)); });
+  } finally {
+    if (lines.length) {
+      try { await deps.record(user, lines); }
+      catch (e) { console.log(JSON.stringify({ job_id: job.id, record_usage_error: e instanceof Error ? e.message.slice(0, 60) : "error" })); }
+    }
+  }
+  const { event, usage } = out;
+  await deps.addTokens(user, usage.input_tokens + usage.output_tokens);   // 0.16.0 에서 정리(D12)
   const saved = await deps.saveEvent(user, itemId, event, via);
   if (saved.proposalId) await deps.enqueueNotify(user, saved.proposalId);
   return log(job, "proposed", { via, has_start: event.start !== null, uncertain: event.uncertain.length,

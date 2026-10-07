@@ -17,6 +17,13 @@ async function counter() {
   return data as { vision_calls: number; extract_tokens: number };
 }
 const clearCounters = () => sb.from("usage_counters").delete().eq("user_id", USER);
+// 0032 record_usage 가 이번 달 vision 행에 쌓은 값(L3 — 메인 판정 M1: 호스팅에서 mediaDeps.record 경로가 실제로 돈다)
+async function visionLedger() {
+  const { data, error } = await sb.from("usage_ledger").select("calls, input_tokens, output_tokens").eq("user_id", USER).eq("month", await month())
+    .eq("kind", "vision").eq("model", "gpt-6-luna").maybeSingle();
+  assertEquals(error, null);
+  return (data as { calls: number; input_tokens: number; output_tokens: number } | null) ?? { calls: 0, input_tokens: 0, output_tokens: 0 };
+}
 
 Deno.test("reserve_vision_call: 99 → true (100), then false; counter never exceeds the monthly limit", async () => {
   await setVisionCalls(99);
@@ -46,6 +53,7 @@ async function cleanup(itemIds: string[], paths: string[]) {
   await sb.storage.from("media").remove(paths);
   await deleteRunJobs();
   await clearCounters();
+  await sb.from("usage_ledger").delete().eq("user_id", USER);
 }
 const fakeEvent = { title: "합성 결혼식", start: "2026-10-17T13:00:00+09:00", end: null, location: "합성홀", uncertain: [] as string[] };
 
@@ -53,7 +61,11 @@ Deno.test("extract job end-to-end on hosted DB: vision under cap, OCR fallback o
   const a = await seedMedia("png", "합성 OCR: 2026년 10월 17일 오후 1시 합성홀");
   const b = await seedMedia("pdf", "합성 OCR: 안내문");
   const seen: string[][] = [];
-  const deps = mediaDeps(sb, async (input) => { seen.push(Object.keys(input).sort()); return { event: fakeEvent, usage: { input_tokens: 900, output_tokens: 40 } }; }, { leasePrefix: `${RUN}:` });
+  const deps = mediaDeps(sb, async (input, onUsage) => {
+    seen.push(Object.keys(input).sort());
+    onUsage?.({ input: 900, cached: 0, output: 40 });
+    return { event: fakeEvent, usage: { input_tokens: 900, output_tokens: 40 } };
+  }, { leasePrefix: `${RUN}:` });
   try {
     const { data: jobs, error } = await sb.rpc("claim_jobs", { p_limit: 5, p_lease_seconds: 60, p_lease_prefix: `${RUN}:extract` });
     assertEquals(error, null);
@@ -62,10 +74,14 @@ Deno.test("extract job end-to-end on hosted DB: vision under cap, OCR fallback o
     assertEquals(byItem.get(a.itemId)!.kind, "extract");
 
     await setVisionCalls(99);                                                          // 이번 달 99건 사용 상태
+    const ledger0 = await visionLedger();
     assertEquals(await extractMedia(deps, byItem.get(a.itemId)!), "proposed");          // 100번째 → vision
     assertEquals(await extractMedia(deps, byItem.get(b.itemId)!), "proposed");          // 101번째 → OCR 폴백
     assertEquals(seen, [["imageBase64", "mediaType", "ocrText"], ["ocrText"]]);
     assertEquals(await counter(), { vision_calls: 100, extract_tokens: 1880 });
+    const ledger1 = await visionLedger();                                              // vision·OCR 글 경로 모두 kind vision 한 줄씩
+    assertEquals([ledger1.calls - ledger0.calls, Number(ledger1.input_tokens) - Number(ledger0.input_tokens), Number(ledger1.output_tokens) - Number(ledger0.output_tokens)],
+      [2, 1800, 80]);
 
     const { data: facts } = await sb.from("facts").select("id, item_id, kind, payload, proposals(action, status, payload, idempotency_key)")
       .eq("user_id", USER).in("item_id", [a.itemId, b.itemId]);

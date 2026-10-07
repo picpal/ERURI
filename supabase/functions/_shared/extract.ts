@@ -1,3 +1,4 @@
+import { responseUsage, type TokenUsage } from "./budget.ts";
 import { openai } from "./openai.ts";
 import { seoulToday } from "./time.ts";
 export { seoulToday };
@@ -121,9 +122,11 @@ export function parseExtractResponse(r: RawResponse, today = seoulToday()): Extr
 }
 
 // 측정·토큰 정산용. extractEvent는 계획서 시그니처 그대로 결과만 돌려준다
-export async function extractEventDetailed(input: ExtractInput, today = seoulToday()): Promise<{ event: ExtractedEvent; usage: ExtractUsage; ms: number }> {
+export async function extractEventDetailed(input: ExtractInput, today = seoulToday(), onUsage?: (u: TokenUsage | null) => void):
+  Promise<{ event: ExtractedEvent; usage: ExtractUsage; ms: number }> {
   const t0 = performance.now();
   const r = await openai.responses.create(buildExtractRequest(input, today));
+  onUsage?.(responseUsage(r));                                      // 파싱 전(§13 — 거절·잘림도 청구된 토큰)
   const event = parseExtractResponse(r as unknown as RawResponse, today);
   return { event, usage: { input_tokens: r.usage?.input_tokens ?? 0, output_tokens: r.usage?.output_tokens ?? 0 }, ms: Math.round(performance.now() - t0) };
 }

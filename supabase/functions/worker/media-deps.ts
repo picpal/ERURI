@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { recordUsage } from "../_shared/budget-deps.ts";
 import { decrypt } from "../_shared/crypto.ts";
 import { extractEventDetailed } from "../_shared/extract.ts";
 import { enqueueNotify, eventFact, saveFact } from "../_shared/facts.ts";
@@ -11,7 +12,8 @@ export async function addExtractTokens(sb: SupabaseClient, userId: string, token
 }
 
 // extract 잡의 실제 의존성(service role). 사용자 범위는 모든 RPC에 user_id를 명시해 좁힌다(스펙 §12 통제 4)
-export function mediaDeps(sb: SupabaseClient, extract: MediaDeps["extract"] = (i) => extractEventDetailed(i), o: { leasePrefix?: string } = {}): MediaDeps {
+export function mediaDeps(sb: SupabaseClient, extract: MediaDeps["extract"] = (i, onUsage) => extractEventDetailed(i, undefined, onUsage),
+  o: { leasePrefix?: string } = {}): MediaDeps {
   return {
     async getItem(userId, itemId) {
       const { data, error } = await sb.rpc("worker_get_media", { p_user: userId, p_item: itemId });
@@ -34,6 +36,7 @@ export function mediaDeps(sb: SupabaseClient, extract: MediaDeps["extract"] = (i
       return new Uint8Array(await data.arrayBuffer());
     },
     extract,
+    record: (userId, lines) => recordUsage(sb, userId, lines),
     addTokens: (userId, tokens) => addExtractTokens(sb, userId, tokens),
     saveEvent: (userId, itemId, event, via) => saveFact(sb, eventFact(userId, itemId, event, via)),
     enqueueNotify: (userId, proposalId) => enqueueNotify(sb, userId, proposalId, o.leasePrefix ?? ""),

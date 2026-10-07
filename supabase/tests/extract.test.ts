@@ -84,14 +84,18 @@ Deno.test("parse: completed → normalized event; incomplete/refusal → error w
 
 // ── worker extract 잡: Storage → vision(월 100건) → 초과 시 OCR 폴백 → facts/proposals ──
 const EVENT = { title: "결혼식", start: "2026-10-17T13:00:00+09:00", end: null, location: "더채플", uncertain: [] as string[] };
-function deps(o: { storageKey?: string | null; ocr?: string | null; allowed?: boolean; bytes?: number } = {}) {
-  const calls = { reserve: 0, download: 0, extract: [] as Record<string, unknown>[], saved: [] as unknown[], tokens: 0, notify: [] as string[] };
+function deps(o: { storageKey?: string | null; ocr?: string | null; allowed?: boolean; bytes?: number; extractThrows?: boolean; recordFails?: boolean } = {}) {
+  const calls = { reserve: 0, download: 0, extract: [] as Record<string, unknown>[], saved: [] as unknown[], tokens: 0, notify: [] as string[],
+    recorded: [] as unknown[][] };
   const d: MediaDeps = {
     getItem: async () => ({ storage_key: o.storageKey === undefined ? "media/u1/a.png" : o.storageKey, ocr_text_enc: o.ocr === null ? null : "enc" }),
     decrypt: async () => o.ocr ?? "합성 OCR 텍스트",
     reserveVision: async () => { calls.reserve++; return o.allowed ?? true; },
     download: async () => { calls.download++; return new Uint8Array(o.bytes ?? 4); },
-    extract: async (input) => { calls.extract.push(input); return { event: EVENT, usage: { input_tokens: 1000, output_tokens: 50 } }; },
+    extract: async (input, onUsage) => { calls.extract.push(input); onUsage?.({ input: 1000, cached: 0, output: 50 });
+      if (o.extractThrows) throw new Error("openai refusal");
+      return { event: EVENT, usage: { input_tokens: 1000, output_tokens: 50 } }; },
+    record: async (_u, lines) => { if (o.recordFails) throw new Error("record_usage 42883"); calls.recorded.push(lines.map((l) => [l.kind, l.model, l.input, l.output])); },
     addTokens: async (_u, n) => { calls.tokens += n; },
     saveEvent: async (_u, item, ev, via) => { calls.saved.push([item, ev.title, via]); return { factId: "f1", proposalId: "p1", created: true }; },
     enqueueNotify: async (_u, p) => { calls.notify.push(p); },
@@ -137,6 +141,28 @@ Deno.test("extract job: PDF over 10MB → needs_review (spec §7), unknown media
   await assertRejects(() => extractMedia(deps({ storageKey: "media/u1/x.heic" }).d, job()), Error, "extract unsupported_media");
   await assertRejects(() => extractMedia(deps({ storageKey: null }).d, job()), Error, "extract no_storage_key");
   await assertRejects(() => extractMedia(deps().d, { ...job(), user_id: null }), Error, "extract job without user_id");
+});
+
+// 스펙 §13 "vision은 기록만": 예약 없이 record_usage(kind vision) — vision 경로·OCR 글 경로 모두
+Deno.test("extract billing: vision and OCR-text paths record one vision line (no budget reservation)", async () => {
+  const v = deps();
+  await extractMedia(v.d, job());
+  assertEquals(v.calls.recorded, [[["vision", "gpt-6-luna", 1000, 50]]]);
+  const ocr = deps({ allowed: false });
+  await extractMedia(ocr.d, job());
+  assertEquals(ocr.calls.recorded, [[["vision", "gpt-6-luna", 1000, 50]]]);
+});
+Deno.test("extract billing: a refused/unparsable response is still recorded before the job fails", async () => {
+  const { d, calls } = deps({ extractThrows: true });
+  let thrown = "";
+  try { await extractMedia(d, job()); } catch (e) { thrown = (e as Error).message; }
+  assertEquals([thrown, calls.recorded.length], ["openai refusal", 1]);
+});
+// 기록은 예산과 무관 — 실패해도 추출 결과를 버리지 않는다(로그 코드 record_usage_error)
+Deno.test("extract billing: record_usage failing does not fail the job", async () => {
+  const { d, calls } = deps({ recordFails: true });
+  assertEquals(await extractMedia(d, job()), "proposed");
+  assertEquals(calls.saved.length, 1);
 });
 
 Deno.test("mediaTypeOf maps extensions", () => {
