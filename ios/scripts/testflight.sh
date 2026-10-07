@@ -29,6 +29,7 @@ else
   echo "auth=asc-api-key id=$KEY_ID"
 fi
 
+./scripts/version-guard.sh   # 0.14.0 전 버전 이름으로 메일 정리를 올리지 않는다(D17)
 vm_stat | grep -E 'free|compressor'   # 아카이브는 시뮬레이터 빌드보다 무겁다. 한 번에 하나
 ./scripts/sim.sh config   # 매번 최신 supabase/.env 반영
 # 호스트가 비면 업로드 기본값이 https:///functions/v1 → localhost 로 조용히 떨어진다. 그런 Release 는 올리지 않는다

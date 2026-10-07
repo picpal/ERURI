@@ -10,6 +10,7 @@ import EruriCore
 @MainActor
 enum GmailConnect {
   static let scope = "https://www.googleapis.com/auth/gmail.readonly"
+  static let modifyScope = MailCleanup.modifyScope   // 0.14.0: 새 연결·주간 재연결은 readonly + modify(스펙 §7, 서버는 readonly 만 확인). ③c2 전 기기 설치 금지(D17)
   /// 마지막 실패 코드(진단 복사용)
   private(set) static var lastError: String?
 
@@ -36,7 +37,7 @@ enum GmailConnect {
     DiagLog.append("gmail signin start forceConsent=\(forceConsent)")
     let code: String
     do {
-      let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter, hint: nil, additionalScopes: [scope])
+      let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter, hint: nil, additionalScopes: [scope, modifyScope])
       let granted = result.user.grantedScopes?.contains(scope) ?? false
       guard let c = result.serverAuthCode else { return fail("no_server_auth_code", "serverAuthCode 없음 granted=\(granted)") }
       DiagLog.append("gmail signin ok codeLen=\(c.count) gmailScope=\(granted)")
@@ -64,15 +65,62 @@ enum GmailConnect {
     return log(line)
   }
 
+  /// 권한 업데이트(스펙 §7, 0.14.0, 계획 D13): 지금 연결을 그대로 두고 gmail.modify 를 더한다 — disconnect 하지 않는다(기존 승인을 끊지 않게).
+  /// 되살린 사용자에게 addScopes, 못 되살렸거나 Google 쪽에 이미 승인돼 있으면 일반 로그인(readonly + modify)으로 새 코드를 받는다 → gmail-connect {code, upgrade: true}.
+  /// 취소(-5)는 서버를 부르지 않고 빈 문구(버튼은 그대로). 서버 호출이 네트워크 오류면 같은 코드로 한 번만 다시(교환 전에 끊겼을 수 있다 — 교환됐으면 502 로 끝난다).
+  /// 화면 문구는 MailCleanupText 의 것만(진단 문자열은 DiagLog·trace 로만). 코드·토큰은 로그에 남기지 않는다
+  static func upgrade() async -> String {
+    guard let cfg = config() else { _ = fail("config_missing", "앱 설정값(GID·Supabase)이 빌드에 없음"); return MailCleanupText.upgradeFailed }
+    guard var access = await SupabaseSession.shared.accessToken() else { _ = fail("no_session", "먼저 Apple로 로그인하세요"); return MailCleanupText.upgradeFailed }
+    GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: cfg.clientID, serverClientID: cfg.serverClientID)
+    guard let presenter = topViewController() else { _ = fail("no_presenter", "로그인 화면을 띄울 창을 찾지 못함"); return MailCleanupText.upgradeFailed }
+    let result: GIDSignInResult
+    do {
+      let restored = try? await GIDSignIn.sharedInstance.restorePreviousSignIn()
+      if let u = restored, !(u.grantedScopes?.contains(modifyScope) ?? false) {
+        DiagLog.append("gmail upgrade addScopes")
+        result = try await u.addScopes([modifyScope], presenting: presenter)
+      } else {
+        DiagLog.append("gmail upgrade signIn restored=\(restored != nil)")
+        result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter, hint: restored?.profile?.email, additionalScopes: [scope, modifyScope])
+      }
+    } catch {
+      let e = error as NSError
+      if e.code == -5 { DiagLog.append("gmail upgrade cancelled"); return "" }      // 취소: 아무것도 바꾸지 않는다
+      _ = fail("upgrade_signin_error", "\(e.domain) \(e.code)", code: e.code)
+      return MailCleanupText.upgradeFailed
+    }
+    guard result.user.grantedScopes?.contains(modifyScope) == true else {
+      Trace.log("device.gmail_upgrade", ["result": "not_granted"]); return MailCleanupText.upgradeNotGranted
+    }
+    guard let code = result.serverAuthCode else {                                   // U3: 문서 미명시 — 다음 재연결 때 더해진다
+      Trace.log("device.gmail_upgrade", ["result": "no_code"]); return MailCleanupText.upgradeLater
+    }
+    var (status, body) = await connect(cfg, access: access, code: code, upgrade: true)
+    if status == -1 {                                                                // 네트워크 오류 — 같은 코드로 한 번만(MAIL-real ①이 일시 오류로 7일 밀리지 않게)
+      DiagLog.append("gmail upgrade network retry")
+      (status, body) = await connect(cfg, access: access, code: code, upgrade: true)
+    }
+    if status == 401 {                                                               // 게이트웨이에서 막혀 코드가 소비되지 않았다 — 한 번만 다시(서버는 Google 401 을 502 로 준다, D12)
+      await SupabaseSession.shared.invalidate()
+      guard let a = await SupabaseSession.shared.accessToken() else { _ = fail("relogin_failed", "Supabase 재로그인 실패"); return MailCleanupText.upgradeFailed }
+      access = a
+      (status, body) = await connect(cfg, access: access, code: code, upgrade: true)
+    }
+    Trace.log("device.gmail_upgrade", ["result": "http_\(status)", "upgraded": (body["upgraded"] as? Bool) == true])
+    return MailCleanupText.upgradeResult(status: status, body: body)
+  }
+
   // MARK: - HTTP
 
-  private static func connect(_ cfg: Config, access: String, code: String) async -> (Int, [String: Any]) {
+  private static func connect(_ cfg: Config, access: String, code: String, upgrade: Bool = false) async -> (Int, [String: Any]) {
     var r = URLRequest(url: cfg.supabase.appendingPathComponent("functions/v1/gmail-connect"))
     r.httpMethod = "POST"
     r.setValue("Bearer \(access)", forHTTPHeaderField: "Authorization")
     r.setValue(cfg.anonKey, forHTTPHeaderField: "apikey")
     r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    r.httpBody = try? JSONSerialization.data(withJSONObject: ["code": code])
+    let payload: [String: Any] = upgrade ? ["code": code, "upgrade": true] : ["code": code]
+    r.httpBody = try? JSONSerialization.data(withJSONObject: payload)
     r.timeoutInterval = 120   // 백필 잡 적재까지 동기로 끝난다
     let started = Date()
     do {

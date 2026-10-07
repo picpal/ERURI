@@ -17,6 +17,8 @@ struct ContentView: View {
   @State private var deleteResult = ""
   @State private var usage = ""
   @State private var confirmChat = false
+  @State private var needsUpgrade = false
+  @State private var upgradeResult = ""
 
   var body: some View {
     NavigationStack {
@@ -34,6 +36,14 @@ struct ContentView: View {
           if !gmail.isEmpty { Text(gmail).font(.caption).foregroundStyle(gmail.contains("다시 연결") ? .orange : .secondary) }
           Button("Gmail 연결") { connectGmail(false) }.disabled(busy || !GmailConnect.configured)
           Button("다시 연결 (동의 다시 받기)") { connectGmail(true) }.disabled(busy || !GmailConnect.configured)
+          if needsUpgrade {                                      // 스펙 §7 권한 업데이트(0.14.0): 연결돼 있고 modify 가 없을 때만(D16)
+            Button(MailCleanupText.upgradeButton) { upgradeGmail() }.disabled(busy || !GmailConnect.configured)
+              .accessibilityIdentifier("settings-gmail-upgrade")
+            Text(MailCleanupText.upgradeNote).font(.caption2).foregroundStyle(.secondary)
+          }
+          if !upgradeResult.isEmpty {
+            Text(upgradeResult).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("settings-gmail-upgrade-result")
+          }
           NavigationLink("광고 메일 구독 해지") { UnsubscribeView() }        // 스펙 §7 광고 구독 해지(0.10.0)
             .accessibilityIdentifier("settings-unsubscribe")
         }
@@ -89,6 +99,7 @@ struct ContentView: View {
     // 실패 문구는 세션이 없을 때만 남긴다(다른 경로로 세션이 생기면 "로그인됨")
     account = signedIn ? "로그인됨" : (account.hasPrefix("로그인 실패") ? account : "로그인 필요")
     gmail = signedIn ? await gmailStatus() : ""
+    needsUpgrade = signedIn ? await gmailNeedsUpgrade() : false
     usage = signedIn ? await usageStatus() : ""
   }
   /// rpc/usage_status(0014, auth.uid() 기준): 이번 달 예약 금액 / 상한 · 강등·중단 표시
@@ -126,6 +137,16 @@ struct ContentView: View {
     busy = true
     Task { gmail = await GmailConnect.run(forceConsent: force); busy = false; await refresh() }
   }
+  /// [권한 업데이트] 표시(D16): scopes 를 상태 줄과 따로 읽는다 — 열이 없는 서버(0030 전, 400)면 숨긴다. 판단은 EruriCore(needsUpgrade)
+  private func gmailNeedsUpgrade() async -> Bool {
+    guard let r = await API.send("rest/v1/connections?select=status,scopes&provider=eq.gmail"), r.status == 200,
+          let rows = try? JSONSerialization.jsonObject(with: r.data) as? [[String: Any]] else { return false }
+    return MailCleanup.needsUpgrade(rows: rows)
+  }
+  private func upgradeGmail() {
+    busy = true
+    Task { upgradeResult = await GmailConnect.upgrade(); busy = false; await refresh() }
+  }
   private func requestPermissions() {
     Task {
       let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
@@ -141,4 +162,11 @@ struct ContentView: View {
     UIPasteboard.general.string = (["ERURI \(Self.version) (\(Trace.build)) · iOS \(UIDevice.current.systemVersion)"] + lines).joined(separator: "\n")
     copied = true
   }
+}
+
+/// 채팅 → 설정 탭(메일 정리 [설정 열기], 0.14.0). 루트가 openCount 로 탭을 옮긴다(ArchiveRouter 와 같은 방식)
+@MainActor @Observable final class SettingsRouter {
+  static let shared = SettingsRouter()
+  var openCount = 0
+  func open() { openCount += 1 }
 }
