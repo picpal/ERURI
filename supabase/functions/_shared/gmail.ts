@@ -209,31 +209,32 @@ async function mailError(call: string, r: Response): Promise<GmailHttpError> {
     .filter((x): x is string => typeof x === "string" && /^[A-Za-z_]{1,64}$/.test(x)).slice(0, 5);
   return new GmailHttpError(call, r.status, reasons);
 }
-function mailFetch(accessToken: string, url: string | URL, body?: unknown): Promise<Response> {
+// timeoutMs: 기본 15초. 메일 요약 검색만 20초 예산의 남은 시간으로 줄여 넘긴다
+function mailFetch(accessToken: string, url: string | URL, body?: unknown, timeoutMs = MAIL_CALL_TIMEOUT_MS): Promise<Response> {
   return fetch(url, {
     method: body === undefined ? "GET" : "POST",
     headers: { authorization: `Bearer ${accessToken}`, ...(body === undefined ? {} : { "content-type": "application/json" }) },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(MAIL_CALL_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 }
 const msgUrl = (id: string, rest = "") => `${G}/messages/${encodeURIComponent(id)}${rest}`;
 
 export type ListPage = { messages?: { id: string }[]; nextPageToken?: string; resultSizeEstimate?: number };
-export async function listMessages(accessToken: string, q: string, maxResults: number, pageToken?: string): Promise<ListPage> {
+export async function listMessages(accessToken: string, q: string, maxResults: number, pageToken?: string, timeoutMs = MAIL_CALL_TIMEOUT_MS): Promise<ListPage> {
   const u = new URL(`${G}/messages`); u.searchParams.set("q", q); u.searchParams.set("maxResults", String(maxResults));
   if (pageToken) u.searchParams.set("pageToken", pageToken);
-  const r = await mailFetch(accessToken, u);
+  const r = await mailFetch(accessToken, u, undefined, timeoutMs);
   if (!r.ok) throw await mailError("messages.list", r);
   return await r.json() as ListPage;
 }
 export const PREVIEW_HEADERS = ["From", "Subject"];   // 미리보기 표본: 본문 없이 헤더만
 const PREVIEW_FIELDS = "id,internalDate,labelIds,payload/headers";   // format=metadata 도 snippet(본문 앞부분)을 주므로 응답 칸을 좁힌다(스펙 §12)
-export async function getMessageHeaders(accessToken: string, id: string): Promise<GmailMessage> {
+export async function getMessageHeaders(accessToken: string, id: string, timeoutMs = MAIL_CALL_TIMEOUT_MS): Promise<GmailMessage> {
   const u = new URL(msgUrl(id)); u.searchParams.set("format", "metadata");
   for (const h of PREVIEW_HEADERS) u.searchParams.append("metadataHeaders", h);
   u.searchParams.set("fields", PREVIEW_FIELDS);
-  const r = await mailFetch(accessToken, u);
+  const r = await mailFetch(accessToken, u, undefined, timeoutMs);
   if (!r.ok) throw await mailError("messages.get", r);
   return await r.json() as GmailMessage;
 }
@@ -273,5 +274,25 @@ export function gmailMailApi(accessToken: string): GmailMailApi {
     trash: (id) => trashMessage(accessToken, id),
     untrash: (id) => untrashMessage(accessToken, id),
     modify: (id, a, r) => modifyMessage(accessToken, id, a, r),
+  };
+}
+
+// ── 메일 요약(스펙 §7 "메일 요약"): 목록·메타는 메일 정리 것 그대로, 고른 한 통만 format=full. 읽기만 — 쓰기 호출 없음 ──
+export async function getMessageFull(accessToken: string, id: string): Promise<GmailMessage> {
+  const u = new URL(msgUrl(id)); u.searchParams.set("format", "full");
+  const r = await mailFetch(accessToken, u);
+  if (!r.ok) throw await mailError("messages.get", r);
+  return await r.json() as GmailMessage;
+}
+export interface GmailReadApi {
+  list(q: string, maxResults: number, pageToken?: string, timeoutMs?: number): Promise<ListPage>;   // timeoutMs = 검색 예산의 남은 시간(최대 15초)
+  headers(id: string, timeoutMs?: number): Promise<GmailMessage>;
+  full(id: string): Promise<GmailMessage>;
+}
+export function gmailReadApi(accessToken: string): GmailReadApi {
+  return {
+    list: (q, n, p, t) => listMessages(accessToken, q, n, p, t),
+    headers: (id, t) => getMessageHeaders(accessToken, id, t),
+    full: (id) => getMessageFull(accessToken, id),
   };
 }

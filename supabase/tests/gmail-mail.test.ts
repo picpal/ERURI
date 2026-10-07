@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
-import { classifyGmailError, GMAIL_MODIFY_SCOPE, GmailHttpError, gmailMailApi, MAIL_CALL_TIMEOUT_MS, refreshAccessToken } from "../functions/_shared/gmail.ts";
+import { classifyGmailError, getMessageFull, GMAIL_MODIFY_SCOPE, GmailHttpError, gmailMailApi, MAIL_CALL_TIMEOUT_MS, refreshAccessToken } from "../functions/_shared/gmail.ts";
 
 // 메일 정리 Gmail 래퍼(스펙 §7): 요청 모양·reason 파싱·분류. fetch 를 바꿔 끼운다(네트워크 없음)
 type Call = { url: URL; method: string; body: unknown; auth: string | null; signal: AbortSignal | null };
@@ -102,4 +102,17 @@ Deno.test("classifyGmailError: 429 and quota reasons → quota, permission reaso
   assertEquals(classifyGmailError(new TypeError("network")), "unknown");
   assertEquals(classifyGmailError(new DOMException("t", "TimeoutError")), "unknown");
   assertEquals(GMAIL_MODIFY_SCOPE, "https://www.googleapis.com/auth/gmail.modify");
+});
+Deno.test("getMessageFull: format=full on the message URL, 15 s timeout signal, error carries the status and reasons", async () => {
+  const orig = globalThis.fetch;
+  const seen: { url: string; signal: boolean }[] = [];
+  globalThis.fetch = (async (u: string | URL, init?: RequestInit) => {
+    seen.push({ url: String(u), signal: init?.signal instanceof AbortSignal });
+    return new Response(JSON.stringify({ error: { errors: [{ reason: "notFound" }] } }), { status: 404 });
+  }) as typeof fetch;
+  try {
+    const e = await getMessageFull("at", "abc").catch((x) => x);
+    assertEquals([e instanceof GmailHttpError, e.status, e.reasons], [true, 404, ["notFound"]]);
+    assertEquals(seen, [{ url: "https://gmail.googleapis.com/gmail/v1/users/me/messages/abc?format=full", signal: true }]);
+  } finally { globalThis.fetch = orig; }
 });
