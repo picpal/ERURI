@@ -206,10 +206,14 @@ final class MailCleanupTests: XCTestCase {
     XCTAssertEqual([a.phase == .ended, a.note == MailCleanupText.undoIncomplete], [true, true])
     XCTAssertEqual(MailCleanupText.undoIncomplete, "되돌리기를 마치지 못했어요 — 다시 눌러 주세요")
     XCTAssertTrue(MailCleanup.canUndo(a.status!, previewAt: t0, now: t0))
-    // 되돌리기 요청 뒤 닫혀 저장 상태가 실행 결과(done)인 채 진행 중 → 다시 읽어도 done(partial): 같은 안내
-    var b = MailTurn(phase: .running, status: st("partial", done: 2, failed: 1))
+    // [되돌리기]를 누른 뒤 응답 전에 닫힘(저장 상태 = 실행 결과 partial) → 다시 열어 읽어도 partial: 같은 안내(되돌리기 요청 표시는 기록에 남는다)
+    var b0 = MailTurn(phase: .ended, previewAt: t0, status: st("partial", done: 2, failed: 1))
+    b0.beginUndo()
+    XCTAssertEqual([b0.phase == .running, b0.undoRequested == true, b0.needsStatusRead], [true, true, true])
+    var b = try! JSONDecoder().decode(MailTurn.self, from: try! JSONEncoder().encode(b0))
     b.afterStatusRead(st("partial", done: 2, failed: 1))
-    XCTAssertEqual(b.note, MailCleanupText.undoIncomplete)
+    XCTAssertEqual([b.phase == .ended, b.note == MailCleanupText.undoIncomplete, b.undoRequested == nil], [true, true, true])
+    XCTAssertTrue(MailCleanup.canUndo(b.status!, previewAt: t0, now: t0))
     // 연결 반송(undo_ 코드)은 result 가 연결 문구를 낸다 — 덧붙이지 않는다
     var c = MailTurn(phase: .running, status: st("undo_pending", done: 3))
     c.afterStatusRead(st("done", done: 3, code: "undo_reauth_required"))
@@ -222,6 +226,33 @@ final class MailCleanupTests: XCTestCase {
     var e = MailTurn(phase: .running, status: st("undoing", done: 3))
     e.afterStatusRead(st("undone", done: 3, undone: 3))
     XCTAssertNil(e.note)
+  }
+
+  func testExecuteFinishedAndResumeDoNotSayUndoIncomplete() {
+    // 실행 200·202 가 끝난 결과(G7c — 이미 실행된 토큰)로 오면 executeMail 은 phase .running 인 채 status 만 두고 한 번 읽는다 — [되돌리기]를 누른 적이 없다
+    for r in [st("done", done: 3), st("partial", done: 2, failed: 1)] {
+      var a = MailTurn(phase: .running, previewAt: t0, status: r)
+      a.afterStatusRead(r)
+      XCTAssertEqual([a.phase == .ended, a.note == nil], [true, true], r.status)
+      XCTAssertTrue(MailCleanup.canUndo(a.status!, previewAt: t0, now: t0))
+    }
+    // 그 직후 닫혔다 다시 엶(재개 → pollMail): 저장 기록 그대로 읽어도 안내 없음
+    let saved = try! JSONEncoder().encode(MailTurn(phase: .running, previewAt: t0, status: st("done", done: 3)))
+    var b = try! JSONDecoder().decode(MailTurn.self, from: saved)
+    XCTAssertTrue(b.needsStatusRead)
+    b.afterStatusRead(st("done", done: 3))
+    XCTAssertNil(b.note)
+    // 옛 기록(되돌리기 요청 키 없음) = 요청 아님 — 실행 진행 중 닫힌 기록이 끝난 결과를 읽어도 안내 없음
+    var c = try! JSONDecoder().decode(MailTurn.self, from: Data(#"{"phase":"running","settings":false,"repreview":false,"status":{"id":"x","status":"done","total":3,"done":3,"failed":0,"undone":0,"undo_failed":0}}"#.utf8))
+    XCTAssertNil(c.undoRequested)
+    c.afterStatusRead(st("done", done: 3))
+    XCTAssertEqual([c.phase == .ended, c.note == nil], [true, true])
+    // 되돌리기가 끝나면 요청 표시는 내린다 — 다음 [되돌리기]·읽기는 새로 판단
+    var d = MailTurn(phase: .ended, status: st("done", done: 3)); d.beginUndo()
+    d.afterStatusRead(st("undoing", done: 3, undone: 1))
+    XCTAssertEqual(d.undoRequested, true)
+    d.afterStatusRead(st("undone", done: 3, undone: 3))
+    XCTAssertEqual([d.undoRequested == nil, d.note == nil], [true, true])
   }
 
   func testAfterStatusRead() {

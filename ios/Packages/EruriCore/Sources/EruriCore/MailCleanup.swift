@@ -284,22 +284,28 @@ public struct MailTurn: Codable, Sendable, Equatable {
   public var note: String?
   public var settings: Bool
   public var repreview: Bool
+  /// 사용자가 [되돌리기]를 눌러 되돌리기 단계에 들어갔다(끝난 상태를 읽거나 확정 오류면 내린다). 옛 기록(키 없음) = nil = 아님
+  public var undoRequested: Bool?
   public init(phase: Phase = .finding, preview: MailCleanup.Preview? = nil, previewAt: Date? = nil, status: MailCleanup.Status? = nil,
-              note: String? = nil, settings: Bool = false, repreview: Bool = false) {
+              note: String? = nil, settings: Bool = false, repreview: Bool = false, undoRequested: Bool? = nil) {
     self.phase = phase; self.preview = preview; self.previewAt = previewAt; self.status = status
-    self.note = note; self.settings = settings; self.repreview = repreview
+    self.note = note; self.settings = settings; self.repreview = repreview; self.undoRequested = undoRequested
   }
   public mutating func apply(_ n: MailCleanup.Note) { note = n.text; settings = n.settings; repreview = n.repreview }
+  /// [되돌리기]를 눌렀다: 진행 중(스피너)으로, 되돌리기 요청 표시를 남긴다(닫혔다 다시 열어도 — 재개 때 반송 판단에 쓴다)
+  public mutating func beginUndo() { phase = .running; note = nil; settings = false; undoRequested = true }
   /// 서버 상태를 먼저 읽어야 하는 턴(D22): 진행 중(실행·되돌리기 요청 중 닫힘 포함)이거나 저장된 상태가 아직 끝나지 않음(20분 상한·옛 기록)
   public var needsStatusRead: Bool { phase == .running || (status.map { !$0.finished } ?? false) }
   /// 서버 상태를 읽은 뒤: previewed = 실행 요청이 닿지 않음 → 미리보기(버튼)로. 그 밖은 그 상태로(끝났으면 ended).
-  /// 되돌리기 단계였는데(저장 상태가 되돌리기, 또는 저장 상태가 실행 결과인 채 요청 중) 실행 종료 상태로 돌아왔으면 되돌리기가 진행 0 으로 끝난 것 —
-  /// "되돌리기를 마치지 못했어요"를 남긴다([되돌리기]는 남는다, 스펙 §9). 연결 반송(undo_ 코드)은 result 가 연결 문구를 내므로 덧붙이지 않는다
+  /// 되돌리기 단계였는데([되돌리기]를 눌렀거나 저장 상태가 되돌리기) 실행 종료 상태로 돌아왔으면 되돌리기가 진행 0 으로 끝난 것 —
+  /// "되돌리기를 마치지 못했어요"를 남긴다([되돌리기]는 남는다, 스펙 §9). 실행 200 의 끝난 결과·재개는 [되돌리기]를 누른 적이 없으니 붙지 않는다.
+  /// 연결 반송(undo_ 코드)은 result 가 연결 문구를 내므로 덧붙이지 않는다
   public mutating func afterStatusRead(_ s: MailCleanup.Status) {
-    if s.status == "previewed" { phase = .preview; status = nil; note = MailCleanupText.failed; settings = false; return }
-    let wasUndo = status?.undoPhase == true || (phase == .running && status.map { $0.finished && !$0.undoPhase } == true)
+    if s.status == "previewed" { phase = .preview; status = nil; note = MailCleanupText.failed; settings = false; undoRequested = nil; return }
+    let wasUndo = undoRequested == true || status?.undoPhase == true
     let bounced = wasUndo && ["done", "partial"].contains(s.status) && !(s.code ?? "").hasPrefix("undo_")
     status = s; phase = s.finished ? .ended : .running; note = bounced ? MailCleanupText.undoIncomplete : nil; settings = false
+    if s.finished { undoRequested = nil }
   }
 }
 

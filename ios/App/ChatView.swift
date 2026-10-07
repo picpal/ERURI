@@ -728,7 +728,7 @@ struct ChatView: View {
           !mailRequesting.contains(id) else { return }
     let action = m.preview?.action ?? "trash"
     mailRequesting.insert(id)
-    settle(id, epoch) { $0.record.mail?.phase = .running; $0.record.mail?.note = nil; $0.record.mail?.settings = false }
+    settle(id, epoch) { $0.record.mail?.beginUndo() }
     Task {
       defer { mailRequesting.remove(id) }
       let r = await MailCleanupAPI.undo(id: s.id)
@@ -743,7 +743,7 @@ struct ChatView: View {
       Trace.log("chat.mail", ["stage": "undo", "result": "error", "code": code ?? "http_\(r?.status ?? -1)"])
       if let r, [400, 403, 404, 409, 410].contains(r.status) || (r.status == 502 && code == "gmail_upstream") {   // 확정: 행이 바뀌지 않았다([되돌리기]는 canUndo 대로 남는다). 502 gmail_upstream = 토큰 갱신 일시 오류(D3)
         let n = MailCleanup.undoError(status: r.status, code: code, action: action)
-        settle(id, epoch) { $0.record.mail?.phase = .ended; $0.record.mail?.apply(n) }
+        settle(id, epoch) { $0.record.mail?.phase = .ended; $0.record.mail?.undoRequested = nil; $0.record.mail?.apply(n) }
         return
       }
       pollMail(id, epoch: epoch)                                                  // 결과 불명: 서버 상태를 읽어 잇는다(실패하면 진행 중으로 남아 재개 때 다시)
@@ -762,7 +762,7 @@ struct ChatView: View {
         if let r = await MailCleanupAPI.status(id: sid) {
           if r.status == 404 {                                                    // 7일 정리·출처 삭제 — 끝나지 않은 저장 상태는 비운다(영구 스피너·재읽기 방지). 끝난 상태는 둔다(되돌리기는 410)
             settle(id, epoch) {
-              $0.record.mail?.phase = .ended; $0.record.mail?.note = MailCleanupText.unknownResult
+              $0.record.mail?.phase = .ended; $0.record.mail?.note = MailCleanupText.unknownResult; $0.record.mail?.undoRequested = nil
               if $0.record.mail?.status?.finished != true { $0.record.mail?.status = nil }
             }
             return
