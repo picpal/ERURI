@@ -19,6 +19,11 @@ Deno.test("sampleOf moved to _shared — mail-action still exports the same func
 Deno.test("candidateMeta: subject is masked (card → last 4) before it is clipped to 100; empty/odd dates like sampleOf", () => {
   const m = candidateMeta(mk("shop@example.com", "결제 카드 4111-1111-1111-1111 승인"));
   assertEquals([m.from, m.subject], ["shop@example.com", "결제 카드 ****-****-****-1111 승인"]);
-  assertEquals(candidateMeta(mk(null, "x".repeat(95) + " 4111111111111111")).subject.includes("4111111111111111"), false);
+  // 번호가 100자 경계를 걸친다 — 자른 뒤 가리면 앞 14~15자리가 그대로 남는다(순서를 가르는 경계값)
+  for (const s of ["x".repeat(85) + " 4111111111111111", "x".repeat(83) + " 4111-1111-1111-1111"]) {
+    const subject = candidateMeta(mk(null, s)).subject;
+    assertEquals(/\d{5,}/.test(subject) || subject.includes("41111"), false);
+    assertEquals(subject.includes("****"), true);
+  }
   assertEquals(candidateMeta({ id: "x", internalDate: "abc" }), { from: "", subject: "", date: "" });
 });
