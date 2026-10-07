@@ -4585,10 +4585,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ### Task M10: 배포 — `0030` 적용 → 워커 → `mail-action`·`gmail-connect` → (chat) → 플래그 → `MAIL-deploy` (③c2 뒤)
 
+> **0.15.0 겹침(계획 `2026-10-07-mail-summary.md` D1, 2026-10-07):** main에는 0.15.0 코드(`_shared/budget.ts`가 0032의 `reserve_usage_month`·`settle_usage_lines`를 부름, chat 의도 네 값, 앱 `.mailSummary`)가 들어온다. 이 태스크의 배포·빌드·업로드는 **main HEAD가 아니라 `B14`**(`git log --format=%h -1 --grep '^docs(spec): 0.15.0 plan details'` — 0.15.0 계획 S0 커밋)의 worktree에서 한다. **파일 변경·커밋(마이그레이션 이동·`smoke-mail.ts`·`gates.md`·`results.md`·`MARKETING_VERSION`)은 main(`$ROOT`)에서 하고 main에 커밋한다** — worktree는 `functions deploy`·회귀 스크립트 실행·시뮬레이터 빌드·TestFlight 업로드에만 쓴다(분리 HEAD라 거기서 만든 커밋은 `worktree remove` 뒤 고아가 된다). worktree에서 필요한 main 커밋(예: `smoke-mail.ts`)은 worktree에 `git cherry-pick`한다. `db push`도 main에서 한다(main의 `supabase/migrations/`로 옮긴 0030·0031만 올라가고, 0.15.0의 `0032`는 `migrations-pending/`에 남아 딸려 가지 않는다 — 광고 해지 U6b "Step 3b부터는 main에서"와 같은 선례, 0.15.0 계획 preflight H2). worktree에는 gitignore 파일(`supabase/.temp`의 `project-ref`·`pooler-url`, `supabase/.env`, `ios/keys`)이 없으므로 main 체크아웃에서 준비한다(광고 해지 U6b Step 3과 같은 방식): `ROOT=$PWD; REF=$(cat supabase/.temp/project-ref); B14=$(git log --format=%h -1 --grep '^docs(spec): 0.15.0 plan details'); WT="$TMPDIR/b14-$B14" && git worktree add --detach "$WT" "$B14" && cp -R "$ROOT/supabase/.temp" "$WT/supabase/" && cp "$ROOT/supabase/.env" "$WT/supabase/.env" && cp -R "$ROOT/ios/keys" "$WT/ios/keys"`. 그 트리에서 서버는 `supabase functions deploy <함수> --project-ref "$REF"`, 회귀 스크립트는 `--env-file="$ROOT/supabase/.env"`, 앱은 `cd "$WT/ios" && ./scripts/sim.sh config`(worktree의 `.env`로 `Config/Secrets.xcconfig` 생성) 뒤 `./scripts/sim.sh …`·`./scripts/testflight.sh`. 끝나면 `cd "$ROOT" && git worktree remove --force "$WT"`(복사한 비밀 파일을 남기지 않는다). `B14` 뒤에 0.14.0 수정이 필요하면 main에 커밋하고 worktree에 `git cherry-pick`한 뒤 배포하며, `gates.md` 근거 칸에 "배포 HEAD = `B14` + <커밋>"을 적는다. M11의 `MARKETING_VERSION: 0.14.0` 커밋은 main에 넣고 M12 worktree에도 cherry-pick한다. 이 태스크의 "이 계획 파일만" diff 검사는 기준 커밋 대신 `B14`(+ cherry-pick)를 HEAD로 본다. **0.15.0 배포(0.15.0 계획 D1 단계)는 이 계획 M12 `MAIL-real` 기록 뒤에만 시작한다.**
+
 **Files:**
-- Move: `supabase/migrations-pending/0030_mail_cleanup.sql` → `supabase/migrations/`(`git mv`), `supabase/tests/_mail-sql.ts`의 `MIGRATION_0030` 경로
+- Move: `supabase/migrations-pending/0030_mail_cleanup.sql`·`0031_pending_proposals_source.sql` → `supabase/migrations/`(`git mv`), `supabase/tests/_mail-sql.ts`의 `MIGRATION_0030`·`supabase/tests/proposals-source-sql.test.ts`의 `MIGRATION_0031` 경로(0031 = 제안 카드 출처 버튼, 커밋 `b710c6e` — 0030 다음에 적용, 2026-10-07)
 - Create: `supabase/scripts/smoke-mail.ts`
-- Apply: 호스팅 DB `0030`, 배포 `worker`·`mail-action`·`gmail-connect`(M7이 `MAIL_SCHEMA`를 고쳤으면 `chat`도), secret `MAIL_ACTIONS=on`
+- Apply: 호스팅 DB `0030`·`0031`, 배포 `worker`·`mail-action`·`gmail-connect`(M7이 `MAIL_SCHEMA`를 고쳤으면 `chat`도), secret `MAIL_ACTIONS=on`
 - Modify: `docs/superpowers/phase1/gates.md`(`MAIL-server` 통과, `INTENT-eval` 근거에 chat 재배포·CTX-eval, `MAIL-deploy` 새 행)
 
 **Interfaces:**
@@ -4598,7 +4600,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - [ ] **Step 1: 선행 확인(하나라도 없으면 멈춘다)**
 
 Run: `grep -n '③c2\|PoC-6' docs/superpowers/phase1/gates.md | tail -3; grep -n 'UNS-server' docs/superpowers/phase1/gates.md; grep -n 'MAIL-server\|INTENT-eval' docs/superpowers/phase1/gates.md; supabase migration list 2>/dev/null | tail -4; ls supabase/migrations-pending/; date '+%F %H:%M %Z'; pgrep -x xcodebuild || echo none`
-Expected: ③c2 완료 기록(10-08 15:00 KST 이후), `UNS-server` 행에 U6b 워커 배포 HEAD(= 메일 정리 M1 첫 커밋의 부모 `B` — D2; main HEAD로 배포됐으면 메일 정리 워커가 이미 나간 것이니 멈추고 메인에게)와 Step 3b "0029 적용" 기록, `INTENT-eval` mail 판정(M7) 통과, `MAIL-server` 대기 행, 원격 마이그레이션 목록 끝이 `0029`, `migrations-pending/`에 `0030_mail_cleanup.sql`만, 지금이 10-08 16:30 KST 이후(smoke의 chat 단계가 실호출 — Global Constraints), `none`. 메인에게 M2 ⑩b·다른 배포가 진행 중이 아님을 확인받는다.
+Expected: ③c2 완료 기록(10-08 15:00 KST 이후), `UNS-server` 행에 U6b 워커 배포 HEAD(= 메일 정리 M1 첫 커밋의 부모 `B` — D2; main HEAD로 배포됐으면 메일 정리 워커가 이미 나간 것이니 멈추고 메인에게)와 Step 3b "0029 적용" 기록, `INTENT-eval` mail 판정(M7) 통과, `MAIL-server` 대기 행, 원격 마이그레이션 목록 끝이 `0029`, `migrations-pending/`에 `0030_mail_cleanup.sql`·`0031_pending_proposals_source.sql`(+ 0.15.0 L1의 `0032_usage_ledger.sql` — 그대로 둔다)만, 지금이 10-08 16:30 KST 이후(smoke의 chat 단계가 실호출 — Global Constraints), `none`. 메인에게 M2 ⑩b·다른 배포가 진행 중이 아님을 확인받는다.
 
 - [ ] **Step 2: 전체 테스트(이제 호스팅 DB 사례 포함)**
 
@@ -4610,18 +4612,18 @@ Expected: 0 실패(ignored 수는 직전 기록과 같음), 무오류. 실패가
 Run: `MAIL_DB_TEST=1 deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/mail-actions-db.test.ts`
 Expected: `hosted: 0030 cases in one rolled-back transaction` 1 통과(단계 19 — 0030을 트랜잭션 하나 안에서 한 번만 적용, 사례마다 savepoint로 되감고 끝에서 롤백 — 아직 운영 DB에 없다). **그 수 초 동안 이 트랜잭션이 `connections`(열 추가 — ACCESS EXCLUSIVE)·`jobs`(트리거 — SHARE ROW EXCLUSIVE) 잠금을 쥐어 운영 수집·워커 클레임이 기다린다**(Fable N-M8 — 사례마다 적용하던 것을 한 번으로 줄였다). `lock_timeout` 3초에 걸리면(운영 잠금이 길다) 1분 뒤 한 번 더, 그래도면 멈추고 메인에게 알린다. 실패면 멈춘다(PGlite와 Supabase의 차이 — SQL을 고치고 M3 Step 5부터 다시, 권한 사례를 PGlite에서 건너뛰었으면 여기서 판정한다).
 
-Run: `git mv supabase/migrations-pending/0030_mail_cleanup.sql supabase/migrations/ && sed -i '' 's#"../migrations-pending/0030_mail_cleanup.sql"#"../migrations/0030_mail_cleanup.sql"#' supabase/tests/_mail-sql.ts && rmdir supabase/migrations-pending 2>/dev/null; git status --short`
-Expected: `R  …/0030_mail_cleanup.sql`·`M supabase/tests/_mail-sql.ts`만. `migrations-pending`에 다른 파일이 남았으면 `rmdir`이 실패하고 남는다 — 그대로 둔다.
+Run: `git mv supabase/migrations-pending/0030_mail_cleanup.sql supabase/migrations-pending/0031_pending_proposals_source.sql supabase/migrations/ && sed -i '' 's#"../migrations-pending/0030_mail_cleanup.sql"#"../migrations/0030_mail_cleanup.sql"#' supabase/tests/_mail-sql.ts && sed -i '' 's#"../migrations-pending/0031_pending_proposals_source.sql"#"../migrations/0031_pending_proposals_source.sql"#' supabase/tests/proposals-source-sql.test.ts && rmdir supabase/migrations-pending 2>/dev/null; git status --short`
+Expected: `R  …/0030_mail_cleanup.sql`·`R  …/0031_pending_proposals_source.sql`·`M supabase/tests/_mail-sql.ts`·`M supabase/tests/proposals-source-sql.test.ts`만. `migrations-pending`에 다른 파일(0.15.0의 `0032`)이 남았으면 `rmdir`이 실패하고 남는다 — 그대로 둔다.
 
 Run: `supabase db push --dry-run`
-Expected: 적용 대상이 `0030_mail_cleanup.sql` **하나뿐**. 다른 파일이 보이면 push하지 않고 멈춰 메인에게 알린다.
+Expected: 적용 대상이 `0030_mail_cleanup.sql`·`0031_pending_proposals_source.sql` **둘뿐**(이 순서). 다른 파일이 보이면 push하지 않고 멈춰 메인에게 알린다.
 
-Run: `supabase db push --yes && MAIL_DB_TEST=1 deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/mail-actions-db.test.ts supabase/tests/mail-sql.test.ts supabase/tests/unsub-db.test.ts supabase/tests/jobs-priority-db.test.ts supabase/tests/retention-db.test.ts`
-Expected: 적용 성공, 테스트 전부 통과(이제 `mail-actions-db`는 배포본을 그대로 쓰고 롤백, PGlite는 옮긴 경로를 읽는다, 기존 우선순위·보관·광고 DB 테스트 회귀 없음). `cron.job`에 `mail-actions-purge-daily`(`53 4 * * *`). cron을 수동으로 돌리지 않는다. 0030은 추가형(새 표·함수·열·`mail-action` 전용 트리거)이라 아래 배포가 실패해도 되돌리지 않는다 — U6b 워커는 이 함수들을 부르지 않는다.
+Run: `supabase db push --yes && MAIL_DB_TEST=1 deno test --allow-net --allow-env --allow-read --allow-write=/tmp --env-file=supabase/.env supabase/tests/mail-actions-db.test.ts supabase/tests/mail-sql.test.ts supabase/tests/unsub-db.test.ts supabase/tests/jobs-priority-db.test.ts supabase/tests/retention-db.test.ts supabase/tests/proposals-source-sql.test.ts`
+Expected: 적용 성공, 테스트 전부 통과(`proposals-source-sql`은 옮긴 0031 경로를 읽는다, 이제 `mail-actions-db`는 배포본을 그대로 쓰고 롤백, PGlite는 옮긴 경로를 읽는다, 기존 우선순위·보관·광고 DB 테스트 회귀 없음). `cron.job`에 `mail-actions-purge-daily`(`53 4 * * *`). cron을 수동으로 돌리지 않는다. 0030은 추가형(새 표·함수·열·`mail-action` 전용 트리거)이라 아래 배포가 실패해도 되돌리지 않는다 — U6b 워커는 이 함수들을 부르지 않는다.
 
 ```bash
-git add supabase/migrations/0030_mail_cleanup.sql supabase/tests/_mail-sql.ts
-git commit -m "chore(db): move 0030 mail cleanup into supabase/migrations/ and apply it after ③c2 and U6b's 0029 (hosted rolled-back test passed first)
+git add supabase/migrations/0030_mail_cleanup.sql supabase/migrations/0031_pending_proposals_source.sql supabase/tests/_mail-sql.ts supabase/tests/proposals-source-sql.test.ts
+git commit -m "chore(db): move 0030 mail cleanup and 0031 proposal source into supabase/migrations/ and apply them after ③c2 and U6b's 0029 (hosted rolled-back test passed first)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -4819,6 +4821,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ---
 
 ### Task M11: 시뮬레이터 게이트 `MAIL-sim` → 0.14.0
+
+> **0.15.0 겹침(계획 `2026-10-07-mail-summary.md` D1, 2026-10-07):** main에는 0.15.0 코드(`_shared/budget.ts`가 0032의 `reserve_usage_month`·`settle_usage_lines`를 부름, chat 의도 네 값, 앱 `.mailSummary`)가 들어온다. 이 태스크의 배포·빌드·업로드는 **main HEAD가 아니라 `B14`**(`git log --format=%h -1 --grep '^docs(spec): 0.15.0 plan details'` — 0.15.0 계획 S0 커밋)의 worktree에서 한다. **파일 변경·커밋(마이그레이션 이동·`smoke-mail.ts`·`gates.md`·`results.md`·`MARKETING_VERSION`)은 main(`$ROOT`)에서 하고 main에 커밋한다** — worktree는 `functions deploy`·회귀 스크립트 실행·시뮬레이터 빌드·TestFlight 업로드에만 쓴다(분리 HEAD라 거기서 만든 커밋은 `worktree remove` 뒤 고아가 된다). worktree에서 필요한 main 커밋(예: `smoke-mail.ts`)은 worktree에 `git cherry-pick`한다. `db push`도 main에서 한다(main의 `supabase/migrations/`로 옮긴 0030·0031만 올라가고, 0.15.0의 `0032`는 `migrations-pending/`에 남아 딸려 가지 않는다 — 광고 해지 U6b "Step 3b부터는 main에서"와 같은 선례, 0.15.0 계획 preflight H2). worktree에는 gitignore 파일(`supabase/.temp`의 `project-ref`·`pooler-url`, `supabase/.env`, `ios/keys`)이 없으므로 main 체크아웃에서 준비한다(광고 해지 U6b Step 3과 같은 방식): `ROOT=$PWD; REF=$(cat supabase/.temp/project-ref); B14=$(git log --format=%h -1 --grep '^docs(spec): 0.15.0 plan details'); WT="$TMPDIR/b14-$B14" && git worktree add --detach "$WT" "$B14" && cp -R "$ROOT/supabase/.temp" "$WT/supabase/" && cp "$ROOT/supabase/.env" "$WT/supabase/.env" && cp -R "$ROOT/ios/keys" "$WT/ios/keys"`. 그 트리에서 서버는 `supabase functions deploy <함수> --project-ref "$REF"`, 회귀 스크립트는 `--env-file="$ROOT/supabase/.env"`, 앱은 `cd "$WT/ios" && ./scripts/sim.sh config`(worktree의 `.env`로 `Config/Secrets.xcconfig` 생성) 뒤 `./scripts/sim.sh …`·`./scripts/testflight.sh`. 끝나면 `cd "$ROOT" && git worktree remove --force "$WT"`(복사한 비밀 파일을 남기지 않는다). `B14` 뒤에 0.14.0 수정이 필요하면 main에 커밋하고 worktree에 `git cherry-pick`한 뒤 배포하며, `gates.md` 근거 칸에 "배포 HEAD = `B14` + <커밋>"을 적는다. M11의 `MARKETING_VERSION: 0.14.0` 커밋은 main에 넣고 M12 worktree에도 cherry-pick한다. 이 태스크의 "이 계획 파일만" diff 검사는 기준 커밋 대신 `B14`(+ cherry-pick)를 HEAD로 본다. **0.15.0 배포(0.15.0 계획 D1 단계)는 이 계획 M12 `MAIL-real` 기록 뒤에만 시작한다.**
 
 **Files:**
 - Create(커밋 안 함, D19): `.context/gate0140/`(`seed.ts`·`inject.py`·`MailGate.swift.txt`·`cleanup.ts`·`expected.txt` + 가장 최근 게이트 하네스(`.context/gate0130/`, 없으면 `gate0120/`)에서 복사해 고친 `token.ts`·`inject.sh`·`drive.sh`·`diag.sh`·`GateHost.swift.txt`·`project.gate0140.yml.txt`·`udid`), 임시 `ios/project.gate0140.yml`·`ios/GateHostTests/`·`ios/GateUITests/`(끝나면 지운다)
@@ -5155,6 +5159,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ---
 
 ### Task M12: TestFlight 0.14.0 → `MAIL-real`(실기기, 사용자 조작)
+
+> **0.15.0 겹침(계획 `2026-10-07-mail-summary.md` D1, 2026-10-07):** main에는 0.15.0 코드(`_shared/budget.ts`가 0032의 `reserve_usage_month`·`settle_usage_lines`를 부름, chat 의도 네 값, 앱 `.mailSummary`)가 들어온다. 이 태스크의 배포·빌드·업로드는 **main HEAD가 아니라 `B14`**(`git log --format=%h -1 --grep '^docs(spec): 0.15.0 plan details'` — 0.15.0 계획 S0 커밋)의 worktree에서 한다. **파일 변경·커밋(마이그레이션 이동·`smoke-mail.ts`·`gates.md`·`results.md`·`MARKETING_VERSION`)은 main(`$ROOT`)에서 하고 main에 커밋한다** — worktree는 `functions deploy`·회귀 스크립트 실행·시뮬레이터 빌드·TestFlight 업로드에만 쓴다(분리 HEAD라 거기서 만든 커밋은 `worktree remove` 뒤 고아가 된다). worktree에서 필요한 main 커밋(예: `smoke-mail.ts`)은 worktree에 `git cherry-pick`한다. `db push`도 main에서 한다(main의 `supabase/migrations/`로 옮긴 0030·0031만 올라가고, 0.15.0의 `0032`는 `migrations-pending/`에 남아 딸려 가지 않는다 — 광고 해지 U6b "Step 3b부터는 main에서"와 같은 선례, 0.15.0 계획 preflight H2). worktree에는 gitignore 파일(`supabase/.temp`의 `project-ref`·`pooler-url`, `supabase/.env`, `ios/keys`)이 없으므로 main 체크아웃에서 준비한다(광고 해지 U6b Step 3과 같은 방식): `ROOT=$PWD; REF=$(cat supabase/.temp/project-ref); B14=$(git log --format=%h -1 --grep '^docs(spec): 0.15.0 plan details'); WT="$TMPDIR/b14-$B14" && git worktree add --detach "$WT" "$B14" && cp -R "$ROOT/supabase/.temp" "$WT/supabase/" && cp "$ROOT/supabase/.env" "$WT/supabase/.env" && cp -R "$ROOT/ios/keys" "$WT/ios/keys"`. 그 트리에서 서버는 `supabase functions deploy <함수> --project-ref "$REF"`, 회귀 스크립트는 `--env-file="$ROOT/supabase/.env"`, 앱은 `cd "$WT/ios" && ./scripts/sim.sh config`(worktree의 `.env`로 `Config/Secrets.xcconfig` 생성) 뒤 `./scripts/sim.sh …`·`./scripts/testflight.sh`. 끝나면 `cd "$ROOT" && git worktree remove --force "$WT"`(복사한 비밀 파일을 남기지 않는다). `B14` 뒤에 0.14.0 수정이 필요하면 main에 커밋하고 worktree에 `git cherry-pick`한 뒤 배포하며, `gates.md` 근거 칸에 "배포 HEAD = `B14` + <커밋>"을 적는다. M11의 `MARKETING_VERSION: 0.14.0` 커밋은 main에 넣고 M12 worktree에도 cherry-pick한다. 이 태스크의 "이 계획 파일만" diff 검사는 기준 커밋 대신 `B14`(+ cherry-pick)를 HEAD로 본다. **0.15.0 배포(0.15.0 계획 D1 단계)는 이 계획 M12 `MAIL-real` 기록 뒤에만 시작한다.**
 
 **Files:**
 - Create(커밋 안 함): `.context/gate0140/probe.ts`, `.context/gate0140/ids-real.json`·`ids-control.json`(합성 메일 3통·대조 메일의 Gmail id — 끝나면 지운다)
