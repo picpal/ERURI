@@ -15,4 +15,17 @@ public enum SourceLabel {
     default: return source
     }
   }
+  /// 제안 카드 출처 버튼 아이콘(2026-10-07, 스펙 §11). SF Symbols 이름 — label 과 같은 분기
+  public static func symbol(source: String, appName: String?) -> String {
+    let app = (appName ?? "").replacingOccurrences(of: " ", with: "").lowercased()
+    switch source {
+    case "MESSAGES": return "message"
+    case "NOTIFICATION": return messageApps.contains(app) ? "message" : "bell"
+    case "GMAIL": return "envelope"
+    case "SHARE":
+      return appName == LinkText.appName ? "link" : appName == ImageText.appName ? "photo" : appName == ChatAddEvent.appName ? "bubble.left" : "square.and.arrow.up"
+    case "CHAT": return "bubble.left"
+    default: return "doc.text"
+    }
+  }
 }

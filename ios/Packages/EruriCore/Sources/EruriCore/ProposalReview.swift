@@ -12,6 +12,10 @@ public enum ProposalReview {
     public var notes: String? = nil
     /// 0026 부터. 없으면(0022 서버) start 형식으로 판단
     public let all_day: Bool?
+    /// 0031 부터(2026-10-07 사용자 요청): 그 제안을 만든 항목의 id·출처. 없으면(옛 서버·항목 없는 fact) nil — 출처 버튼을 숨긴다
+    public var item_id: String? = nil
+    public var source: String? = nil
+    public var app_name: String? = nil
     public var id: String { proposal_id }
     /// 종일 행은 마지막 날, 시각 행은 끝(§10 "일정 종료", 0.11.3)으로 end 를 쓴다. all_day 와 start 형식이 어긋나면 nil(추가 버튼 없음)
     public var timing: ProposalTiming? {
@@ -19,6 +23,13 @@ public enum ProposalReview {
       return t
     }
     public var isAllDay: Bool { timing?.isAllDay ?? false }
+    /// 카드 오른쪽 출처 버튼(스펙 §11, 0031): 항목 id 가 있을 때만. 라벨·아이콘은 보관함과 같은 SourceLabel, 출처 열이 없으면 "원문"
+    public var sourceLink: SourceLink? {
+      guard let id = item_id, !id.isEmpty else { return nil }
+      guard let source else { return SourceLink(itemID: id, label: "원문", symbol: "doc.text") }
+      return SourceLink(itemID: id, label: SourceLabel.label(source: source, appName: app_name),
+                        symbol: SourceLabel.symbol(source: source, appName: app_name))
+    }
     /// 종일 "10/8(목) · 종일", 시각 "10/8(목) 10:00–16:00"(끝 없으면 시작만, §10 "시각 범위 표시" 0.12.0). 못 읽으면 서울 원문 시각
     public var whenLabel: String { timing.flatMap { $0.allDayLabel ?? $0.timeLabel } ?? ChatReply.seoulLabel(start) }
     /// handleAdd 입력(알림 페이로드와 같은 키). 시각은 Postgres 소수 초를 떼고 handleAdd 의 파서가 읽는 형식으로, 종일은 날짜 그대로(여러 날이면 end).
@@ -30,6 +41,12 @@ public enum ProposalReview {
       if let n = ProposalReview.memo(notes) { f["notes"] = n }                 // 일정 메모(스펙 §10, 0.11.2)
       return f
     }
+  }
+
+  /// 제안 카드 출처 버튼 값(2026-10-07): 누르면 항목 상세(itemID)
+  public struct SourceLink: Equatable, Hashable, Sendable {
+    public let itemID: String; public let label: String; public let symbol: String
+    public init(itemID: String, label: String, symbol: String) { self.itemID = itemID; self.label = label; self.symbol = symbol }
   }
 
   /// 일정 위치(스펙 §10, 0.11.0): 제안의 장소·주소 그대로, 앞뒤 공백만 뗀다. 비면 nil(EventKit 에 넣지 않는다)

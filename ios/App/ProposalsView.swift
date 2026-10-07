@@ -23,6 +23,7 @@ struct ProposalsView: View {
   @State private var confirmAll = false
   @State private var dismissingAll = false
   @State private var allResult = ""
+  @State private var openItem: String?                                 // 출처 버튼 → 항목 상세(2026-10-07, §11)
 
   var body: some View {
     NavigationStack {
@@ -32,10 +33,11 @@ struct ProposalsView: View {
         if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
         ForEach(rows) { p in
           ProposalActionsView(title: p.title, when: p.whenLabel, location: p.location, addFields: calendarOK ? p.addFields : nil,
-                              proposalId: p.proposal_id, state: binding(p.proposal_id))
+                              proposalId: p.proposal_id, state: binding(p.proposal_id), source: p.sourceLink) { openItem = $0 }
         }
       }
       .navigationTitle("제안")
+      .navigationDestination(item: $openItem) { ItemDetailView(itemID: $0) }
       .toolbar {
         if !rows.isEmpty {
           ToolbarItem(placement: .topBarTrailing) {
@@ -90,12 +92,14 @@ struct SheetCardView: View {
   let sheet: ProposalReview.Sheet
   let calendarOK: Bool
   @Binding var state: ProposalReview.ActionState
+  /// 목록 카드(.pending)의 출처 버튼 → 시트 안 항목 상세. 알림 값 카드는 항목 id 가 없어 버튼이 없다
+  var openSource: (String) -> Void = { _ in }
 
   var body: some View {
     switch sheet {
     case .pending(let p):
       ProposalActionsView(title: p.title, when: p.whenLabel, location: p.location, addFields: calendarOK ? p.addFields : nil,
-                          proposalId: p.proposal_id, state: $state)
+                          proposalId: p.proposal_id, state: $state, source: p.sourceLink, openSource: openSource)
     case .offline(let f):
       ProposalActionsView(title: link.title, when: link.whenLabel, location: nil, addFields: calendarOK ? f : nil,
                           proposalId: link.proposalId, state: $state)
@@ -126,6 +130,7 @@ struct ProposalSheet: View {
   @State private var state = ProposalReview.ActionState.idle
   @State private var states: [String: ProposalReview.ActionState] = [:]
   @State private var calendarOK = CalendarLookup.fullAccess
+  @State private var openItem: String?
 
   private var isBundle: Bool { link.events.count >= 2 }
   /// 추가할 수 있는 카드가 있을 때만 권한 안내(단건 시트의 기존 위치 = 맨 위)
@@ -140,13 +145,16 @@ struct ProposalSheet: View {
         if needsAccessPrompt { CalendarAccessSection { calendarOK = CalendarLookup.fullAccess } }
         if isBundle {
           if let cards {
-            ForEach(cards) { c in Section { SheetCardView(link: c.event.link, sheet: c.sheet, calendarOK: calendarOK, state: binding(c.id)) } }
+            ForEach(cards) { c in
+              Section { SheetCardView(link: c.event.link, sheet: c.sheet, calendarOK: calendarOK, state: binding(c.id)) { openItem = $0 } }
+            }
           } else { ProgressView() }
         } else if let sheet {
-          SheetCardView(link: link, sheet: sheet, calendarOK: calendarOK, state: $state)
+          SheetCardView(link: link, sheet: sheet, calendarOK: calendarOK, state: $state) { openItem = $0 }
         } else { ProgressView() }
       }
       .navigationTitle(isBundle ? "제안 \(link.events.count)건" : "제안").navigationBarTitleDisplayMode(.inline)
+      .navigationDestination(item: $openItem) { ItemDetailView(itemID: $0) }
       .toolbar { ToolbarItem(placement: .confirmationAction) { Button("닫기") { close() } } }
       .task {
         if isBundle {                                                         // 목록과 상태를 같은 5초 마감으로 병렬 조회(§10 묶음 판정)
@@ -174,6 +182,7 @@ struct ProposalSheet: View {
 /// 종일 제안이 다른 제안 표식·같은 날짜·같은 정규화 제목 일정과 맞으면 "✅ 캘린더에 등록됨" — 추가 버튼 없이 무시만.
 /// 최종 판정은 AddEventGate — 미리 판정에 없던 겹침·비슷한 일정이 저장 직전에 나오면 다시 읽고 확인창(C2-5).
 /// mode(항목 상세 "일정" 절, §10 0.11.4): readd = "캘린더에 다시 추가"(무시 없음, handleAdd readd), addOnly = 무시한 제안(추가만)
+/// source(제안 탭·시트 목록 카드, 2026-10-07 §11): 오른쪽 여백에 출처 버튼(아이콘 + 짧은 라벨) → openSource(item_id). 큰 글씨(접근성 크기)면 아래 한 줄로
 struct ProposalActionsView: View {
   enum Mode { case pending, readd, addOnly }
   let title: String; let when: String; let location: String?; let addFields: [String: String]?; let proposalId: String
@@ -181,17 +190,60 @@ struct ProposalActionsView: View {
   var mode = Mode.pending
   /// 장소 아래 상태 한 줄(항목 상세 — "캘린더에서 찾지 못함 …"·"무시한 제안")
   var note: String? = nil
+  var source: ProposalReview.SourceLink? = nil
+  var openSource: (String) -> Void = { _ in }
   @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.dynamicTypeSize) private var typeSize
+  @ScaledMetric(relativeTo: .caption2) private var sourceWidth: CGFloat = 64
   @State private var preview = ProposalFlow.Preview.clear
   @State private var askConfirm = false
   @State private var heldSimilar = false                              // 확인창을 띄운 결과가 비슷한 일정(similar:<n>)인가 — 문구를 고른다
 
   var body: some View {
+    Group {
+      if let source, !typeSize.isAccessibilitySize {
+        HStack(alignment: .top, spacing: 8) {
+          details(inlineSource: nil)
+          Spacer(minLength: 0)
+          sourceButton(source)
+        }
+      } else { details(inlineSource: source) }
+    }
+    .padding(.vertical, 4)
+    .task(id: addFields?["start"]) { refreshPreview() }
+    .onChange(of: scenePhase) { _, phase in if phase == .active { refreshPreview() } }   // 캘린더 앱에서 바꾸고 돌아온 경우
+    .confirmationDialog(confirmText, isPresented: $askConfirm, titleVisibility: .visible) {
+      Button("추가") { add(confirmed: true) }
+      Button("취소", role: .cancel) {}
+    }
+  }
+
+  /// 출처 버튼(오른쪽 열): 아이콘 위, 라벨 아래 두 줄까지. 행 탭과 겹치지 않게 borderless(자기 제스처)
+  private func sourceButton(_ s: ProposalReview.SourceLink) -> some View {
+    Button { openSource(s.itemID) } label: {
+      VStack(spacing: 2) {
+        Image(systemName: s.symbol).font(.body)
+        Text(s.label).font(.caption2).lineLimit(2).multilineTextAlignment(.center)
+      }
+      .frame(width: sourceWidth).frame(minHeight: 44)
+    }
+    .buttonStyle(.borderless)
+    .accessibilityLabel("\(s.label) 원문 보기")
+    .accessibilityIdentifier("proposal-source")
+  }
+
+  /// 제목·시각·장소·상태 줄·버튼. inlineSource 가 있으면(큰 글씨) 장소 아래에 출처 버튼을 한 줄로
+  private func details(inlineSource: ProposalReview.SourceLink?) -> some View {
     VStack(alignment: .leading, spacing: 6) {
       Text(title).font(.headline)
       Text(when).font(.subheadline).foregroundStyle(.secondary)
       if let location { Label(location, systemImage: "mappin.and.ellipse").font(.caption).foregroundStyle(.secondary) }
       if let note, !finished { Text(note).font(.caption).foregroundStyle(.secondary) }
+      if let s = inlineSource {
+        Button { openSource(s.itemID) } label: { Label("\(s.label) 원문 보기", systemImage: s.symbol).font(.caption) }
+          .buttonStyle(.borderless)
+          .accessibilityIdentifier("proposal-source")
+      }
       // 추가·무시가 끝나면(.finished) 미리 판정 줄은 지난 정보라 숨긴다(C2 리뷰 Minor 4)
       if addFields != nil, !finished {
         if let line = ProposalFlow.conflictLine(conflicts) { Text(line).font(.caption).foregroundStyle(.orange) }
@@ -217,13 +269,6 @@ struct ProposalActionsView: View {
       case .failed(let t): Text(t).font(.caption).foregroundStyle(.red)
       default: EmptyView()
       }
-    }
-    .padding(.vertical, 4)
-    .task(id: addFields?["start"]) { refreshPreview() }
-    .onChange(of: scenePhase) { _, phase in if phase == .active { refreshPreview() } }   // 캘린더 앱에서 바꾸고 돌아온 경우
-    .confirmationDialog(confirmText, isPresented: $askConfirm, titleVisibility: .visible) {
-      Button("추가") { add(confirmed: true) }
-      Button("취소", role: .cancel) {}
     }
   }
 

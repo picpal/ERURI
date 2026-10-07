@@ -23,6 +23,42 @@ final class ProposalReviewTests: XCTestCase {
     XCTAssertNil(ProposalReview.decodeList(Data("{\"code\":\"42883\"}".utf8)))   // 오류 본문은 목록이 아니다
   }
 
+  /// 출처 버튼(2026-10-07, 0031): item_id·source·app_name 이 있으면 항목 상세로 가는 버튼 값, 없으면(옛 서버·항목 없음) nil — 디코드는 그대로
+  func testSourceLink() throws {
+    let iid = "5c2d8e11-7a4b-4f0e-9d3c-2b1a0f9e8d7c"
+    let sms = try XCTUnwrap(ProposalReview.decodeList(Data("""
+      [{"proposal_id":"\(pid)","action":"ADD_EVENT","title":"합성 치과","start":"2026-10-02T15:30:00+09:00","end":null,"all_day":false,
+        "location":null,"version":1,"created_at":"x","item_id":"\(iid)","source":"MESSAGES","app_name":null}]
+      """.utf8))?.first)
+    XCTAssertEqual([sms.item_id, sms.source, sms.app_name], [iid, "MESSAGES", nil])
+    XCTAssertEqual(sms.sourceLink, ProposalReview.SourceLink(itemID: iid, label: "문자", symbol: "message"))
+    XCTAssertNotNil(sms.addFields)                                          // 추가 경로는 그대로
+    XCTAssertNil(sms.addFields?["item_id"])                                 // handleAdd 입력에 섞지 않는다
+
+    let mail = try XCTUnwrap(ProposalReview.decodeList(Data("""
+      [{"proposal_id":"\(pid)","action":"ADD_EVENT","title":"t","start":"2026-10-08","end":null,"all_day":true,"location":null,"version":1,
+        "created_at":"x","item_id":"\(iid)","source":"GMAIL","app_name":null}]
+      """.utf8))?.first)
+    XCTAssertEqual(mail.sourceLink?.label, "메일")
+    let share = try XCTUnwrap(ProposalReview.decodeList(Data("""
+      [{"proposal_id":"\(pid)","action":"ADD_EVENT","title":"t","start":"2026-10-08","end":null,"all_day":true,"location":null,"version":1,
+        "created_at":"x","item_id":"\(iid)","source":"SHARE","app_name":"채팅"}]
+      """.utf8))?.first)
+    XCTAssertEqual(share.sourceLink, ProposalReview.SourceLink(itemID: iid, label: "채팅에서 등록", symbol: "bubble.left"))
+
+    // 옛 서버(0026): 세 열이 없다 → nil, 버튼 숨김
+    let old = try XCTUnwrap(ProposalReview.decodeList(listJSON())?.first)
+    XCTAssertEqual([old.item_id, old.source, old.app_name], [nil, nil, nil])
+    XCTAssertNil(old.sourceLink)
+    // 항목이 없는 fact(item_id null)·빈 문자열 → 버튼 없음. item_id 만 있고 source 가 없으면 "원문"
+    let none = try XCTUnwrap(ProposalReview.decodeList(listJSON(#",{"proposal_id":"\#(pid)","action":"ADD_EVENT","title":"t","start":"2026-10-02T06:30:00+00:00","end":null,"location":null,"version":1,"created_at":"x","item_id":null,"source":null,"app_name":null}"#)))
+    XCTAssertNil(none[1].sourceLink)
+    let empty = try XCTUnwrap(ProposalReview.decodeList(listJSON(#",{"proposal_id":"\#(pid)","action":"ADD_EVENT","title":"t","start":"2026-10-02T06:30:00+00:00","end":null,"location":null,"version":1,"created_at":"x","item_id":""}"#)))
+    XCTAssertNil(empty[1].sourceLink)
+    let bare = try XCTUnwrap(ProposalReview.decodeList(listJSON(#",{"proposal_id":"\#(pid)","action":"ADD_EVENT","title":"t","start":"2026-10-02T06:30:00+00:00","end":null,"location":null,"version":1,"created_at":"x","item_id":"\#(iid)"}"#)))
+    XCTAssertEqual(bare[1].sourceLink, ProposalReview.SourceLink(itemID: iid, label: "원문", symbol: "doc.text"))
+  }
+
   /// handleAdd 는 알림 페이로드 키(proposal_id·title·start·version)를 받는다. Postgres 소수 초가 붙어도 읽을 수 있는 start 로 바꾼다
   func testAddFields() throws {
     let row = try XCTUnwrap(ProposalReview.decodeList(listJSON())?.first)
