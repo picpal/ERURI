@@ -38,6 +38,8 @@ struct ChatView: View {
   @State private var confirm: ConfirmAdd?              // 겹침·비슷한 일정 확인창(§10): 저장 직전에 새로 나온 경우만(C2-5). 제안 id·handleAdd 필드·다시 읽은 일정으로 만든 문구
   struct ConfirmAdd: Identifiable { let id: String; let fields: [String: String]; var prompt = "" }
   @State private var openItem: String?                  // "일정 보기"(이미 읽은 링크, 0.11.4) → 항목 상세
+  @State private var mailPolling: Set<UUID> = []       // 상태를 읽는 중인 메일 정리 턴(같은 턴을 두 Task 가 읽지 않게, 0.14.0)
+  @State private var mailRequesting: Set<UUID> = []    // 실행·되돌리기·다시 미리보기 요청 중인 턴 — 재개(onAppear·활성화)가 끼어들지 않게(D22)
   @State private var dictation = SpeechDictation()     // 기기 안 받아쓰기(§9·§12)
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.colorScheme) private var scheme
@@ -64,7 +66,12 @@ struct ChatView: View {
                   }
                 }
               if let e = t.record.error { Text(e).foregroundStyle(.red) }
-              if let l = t.record.link {
+              if t.record.kind == .mailAction {                    // 메일 정리 턴(§9, 0.14.0): 카드 하나. 상태를 다시 읽어야 하는 턴은 나올 때 서버를 먼저 읽는다
+                MailCleanupCard(turn: t.record.mail ?? MailTurn(phase: .ended, note: MailCleanupText.failed),
+                                onExecute: { executeMail(t.id) }, onCancel: { cancelMail(t.id) }, onUndo: { undoMail(t.id) },
+                                onRepreview: { repreviewMail(t.id) }, onNext: { nextMail(t.id) }, onSettings: { SettingsRouter.shared.open() })
+                  .onAppear { resumeMail(t.id) }
+              } else if let l = t.record.link {
                 linkRow(l, done: t.record.linkDone, saved: t.record.linkSaved, itemID: t.record.seenItemID)
                 if t.record.kind == .addEvent { addEventRows(t) }           // 채팅 일정 카드(§9) — 답이 아니라 막대·보관함 버튼 없음
               }
@@ -113,7 +120,7 @@ struct ChatView: View {
         // 캘린더 절·카드도 다시 읽는다(설정에서 캘린더 권한·캘린더 앱에서 일정을 바꾸고 온 경우, Codex #6).
         // 기록: 불러왔으면 30일 지난 턴을 빼고(D7), 못 불러왔으면(잠금 중 보호 파일) 다시 불러온다
         .onChange(of: scenePhase) { _, p in
-          if p == .active { dictation.refresh(); syncClear(); if loaded { pruneExpired() } else { loadHistory() }; refreshCalendars() } else { dictation.stopIfRecording() }
+          if p == .active { dictation.refresh(); syncClear(); if loaded { pruneExpired() } else { loadHistory() }; refreshCalendars(); resumeMailTurns() } else { dictation.stopIfRecording() }
         }
         // 새 행이 목록에 놓인 다음 턴에 스크롤한다 — 같은 갱신에서 부르면 옛 높이로 계산돼 카드가 패널 뒤에 남을 수 있다
         .onChange(of: scrollRequest) { _, r in
@@ -133,7 +140,7 @@ struct ChatView: View {
     guard let seen = seenClear else { seenClear = now; return }
     guard seen != now else { return }
     seenClear = now
-    turns = []; judged = [:]; judging = []; adds = [:]; copied = nil; judgeSheet = nil; confirm = nil; openItem = nil; loaded = true
+    turns = []; judged = [:]; judging = []; adds = [:]; copied = nil; judgeSheet = nil; confirm = nil; openItem = nil; mailPolling = []; mailRequesting = []; loaded = true
   }
 
   /// 새 턴을 맨 뒤에 두고 저장한다. 500개 상한은 더할 때도(D1)
@@ -554,6 +561,17 @@ struct ChatView: View {
             registerEvent(id, text: q, at: sentAt, epoch: epoch, withContext: withContext)
             return
           }
+          if MailCleanup.isMailAction(a.intent) {
+            // 채팅 메일 정리(§9, 0.14.0): 답이 아니다 — reply 를 저장하지 않고 턴을 "메일 정리"로 바꿔 mail 칸 그대로 미리보기를 부른다(검사는 서버 한 곳)
+            DiagLog.append("CHAT intent mail_action ctx=\(withContext ? 1 : 0)")
+            guard let body = a.mail?.foundation as? [String: Any] else {
+              settle(id, epoch) { $0.record.kind = .mailAction; $0.record.mail = MailTurn(phase: .ended, note: MailCleanupText.failed) }
+              return
+            }
+            settle(id, epoch) { $0.record.kind = .mailAction; $0.record.mail = MailTurn(phase: .finding) }
+            previewMail(id, body: body, epoch: epoch)
+            return
+          }
           settle(id, epoch) { $0.record.reply = r.data; $0.answer = a }
           readCalendar(id)
           scroll(to: id)
@@ -598,6 +616,194 @@ struct ChatView: View {
         if r.itemID != nil { loadAddEventCards(id, scroll: true) }
       }
     }
+  }
+
+  // ── 채팅 메일 정리(스펙 §9, 0.14.0). 모든 갱신은 id·epoch 로(settle) — await 뒤 색인으로 턴을 고치지 않는다. 미리보기 글은 기록에만, 로그·trace 는 개수·코드만.
+  //    상태 계약(D22): 진행 중·끝나지 않은 턴은 서버를 먼저 읽는다, 결과를 모르면 토큰 상태를 읽기 전에 버튼·토큰을 버리지 않는다 ──
+
+  /// 미리보기: 응답의 mail 칸(또는 서버가 확정한 conditions — 다시 미리보기·다음 1,000건)을 그대로 보낸다
+  private func previewMail(_ id: UUID, body: [String: Any], epoch: Int) {
+    Task {
+      let started = Date()
+      let r = await MailCleanupAPI.preview(body)
+      let ms = Int(Date().timeIntervalSince(started) * 1000)
+      if let r, r.status == 200, let p = MailCleanup.preview(r.data) {
+        Trace.log("chat.mail", ["stage": "preview", "result": p.token == nil ? "empty" : "ok", "count": p.count, "elapsed_ms": ms])
+        settle(id, epoch) {
+          $0.record.mail = p.token == nil ? MailTurn(phase: .ended, note: MailCleanupText.noneFound) : MailTurn(phase: .preview, preview: p, previewAt: Date())
+        }
+      } else {
+        let code = r.flatMap { MailCleanup.errorCode($0.data) }
+        Trace.log("chat.mail", ["stage": "preview", "result": "error", "code": code ?? "http_\(r?.status ?? -1)", "elapsed_ms": ms])
+        var m = MailTurn(phase: .ended)
+        m.apply(MailCleanup.previewError(status: r?.status ?? -1, code: code))
+        settle(id, epoch) { $0.record.mail = m }
+      }
+    }
+  }
+
+  /// [휴지통으로 이동]·[읽음 처리] = 확인. 누르는 즉시 버튼을 없앤다(서버도 같은 토큰은 한 번만).
+  /// 확정 코드가 아니면(네트워크·5xx·401) 요청이 서버에 닿았을 수 있다 — 문구 전에 토큰 상태를 읽는다(N-H2)
+  private func executeMail(_ id: UUID) {
+    let epoch = log.clearCount
+    guard let m = turns.first(where: { $0.id == id })?.record.mail, m.phase == .preview, let token = m.preview?.token,
+          !mailRequesting.contains(id) else { return }
+    mailRequesting.insert(id)
+    settle(id, epoch) { $0.record.mail?.phase = .running; $0.record.mail?.note = nil }
+    Task {
+      defer { mailRequesting.remove(id) }
+      let r = await MailCleanupAPI.execute(token: token)
+      if let r, r.status == 200 || r.status == 202, let s = MailCleanup.status(r.data) {
+        Trace.log("chat.mail", ["stage": "execute", "result": s.status, "count": s.total, "method": s.method ?? "-"])
+        settle(id, epoch) { $0.record.mail?.status = s }
+        pollMail(id, epoch: epoch)
+        return
+      }
+      let code = r.flatMap { MailCleanup.errorCode($0.data) }
+      Trace.log("chat.mail", ["stage": "execute", "result": "error", "code": code ?? "http_\(r?.status ?? -1)"])
+      if let r, MailCleanup.executeIsDefinite(status: r.status) {               // 행이 바뀌지 않았다
+        let n = MailCleanup.executeError(status: r.status, code: code)
+        settle(id, epoch) {
+          if n.repreview { $0.record.mail?.phase = .preview; $0.record.mail?.repreview = true }   // 카드가 "미리보기가 만료됐어요" + [다시 미리보기]
+          else { $0.record.mail?.phase = .ended; $0.record.mail?.apply(n) }
+        }
+        return
+      }
+      await readBack(id, token: token, epoch: epoch)
+    }
+  }
+
+  /// 결과를 모를 때(실행 응답을 못 받음·재개 때 상태 없음): 토큰 상태를 최대 2번 읽는다. previewed 면 실행되지 않은 것 — 버튼으로 돌린다.
+  /// 그 밖이면 그 상태로 진행·결과를 잇는다. 둘 다 못 읽으면 진행 중으로 두고 "결과를 확인하는 중이에요" — 다시 열거나 활성화되면 다시 읽는다(D22)
+  private func readBack(_ id: UUID, token: String, epoch: Int) async {
+    for attempt in 0..<2 {
+      if attempt > 0 { try? await Task.sleep(for: .seconds(2)) }
+      guard let r = await MailCleanupAPI.status(id: token) else { continue }
+      if r.status == 200, let s = MailCleanup.status(r.data) {
+        Trace.log("chat.mail", ["stage": "status", "result": s.status])
+        settle(id, epoch) { $0.record.mail?.afterStatusRead(s) }
+        if !s.finished && s.status != "previewed" { pollMail(id, epoch: epoch) }
+        return
+      }
+      if r.status == 404 {                                                        // 행이 없다(정리·출처 삭제) — 결과를 확인할 수 없다
+        settle(id, epoch) { $0.record.mail?.phase = .ended; $0.record.mail?.note = MailCleanupText.unknownResult }
+        return
+      }
+    }
+    settle(id, epoch) { $0.record.mail?.note = MailCleanupText.checking }
+  }
+
+  /// [되돌리기](7일, 한 번): 성공한 메일만 서버 잡이 되돌린다. 결과 불명이면 저장된 상태로 폴링을 이어 서버 상태를 읽는다(GET 먼저)
+  private func undoMail(_ id: UUID) {
+    let epoch = log.clearCount
+    guard let m = turns.first(where: { $0.id == id })?.record.mail, m.phase == .ended, let s = m.status,
+          !mailRequesting.contains(id) else { return }
+    let action = m.preview?.action ?? "trash"
+    mailRequesting.insert(id)
+    settle(id, epoch) { $0.record.mail?.phase = .running; $0.record.mail?.note = nil; $0.record.mail?.settings = false }
+    Task {
+      defer { mailRequesting.remove(id) }
+      let r = await MailCleanupAPI.undo(id: s.id)
+      let code = r.flatMap { MailCleanup.errorCode($0.data) }
+      // 202·200 = 되돌리기 상태, 409 busy = 실행이 아직 진행 중 — 둘 다 본문 counts 로 폴링을 잇는다
+      if let r, r.status == 200 || r.status == 202 || (r.status == 409 && code == "busy"), let n = MailCleanup.status(r.data) {
+        Trace.log("chat.mail", ["stage": "undo", "result": n.status, "count": n.done, "method": n.method ?? "-"])
+        settle(id, epoch) { $0.record.mail?.status = n }
+        pollMail(id, epoch: epoch)
+        return
+      }
+      Trace.log("chat.mail", ["stage": "undo", "result": "error", "code": code ?? "http_\(r?.status ?? -1)"])
+      if let r, [400, 403, 404, 409, 410].contains(r.status) {                   // 확정: 행이 바뀌지 않았다([되돌리기]는 canUndo 대로 남는다)
+        let n = MailCleanup.undoError(status: r.status, code: code, action: action)
+        settle(id, epoch) { $0.record.mail?.phase = .ended; $0.record.mail?.apply(n) }
+        return
+      }
+      pollMail(id, epoch: epoch)                                                  // 결과 불명: 서버 상태를 읽어 잇는다(실패하면 진행 중으로 남아 재개 때 다시)
+    }
+  }
+
+  /// 상태를 읽는다(§9): **먼저 한 번 읽고**(저장된 상태와 무관 — 되돌리기 요청 직후 닫혔으면 저장된 것은 옛 실행 결과다, Codex C3), 끝나지 않았으면 3초마다.
+  /// 지우기(epoch)·턴 소멸·끝난 상태에서 멈춘다. 20분 상한은 GET 뒤에 보고, 넘으면 진행 중 그대로 문구만 남긴다 — 다시 열거나 활성화되면 resumeMail 이 다시 읽는다(C4)
+  private func pollMail(_ id: UUID, epoch: Int) {
+    guard !mailPolling.contains(id), let sid = turns.first(where: { $0.id == id })?.record.mail?.status?.id else { return }
+    mailPolling.insert(id)
+    Task {
+      defer { mailPolling.remove(id) }
+      let started = Date()
+      while log.clearCount == epoch, turns.contains(where: { $0.id == id }) {
+        if let r = await MailCleanupAPI.status(id: sid) {
+          if r.status == 404 {                                                    // 7일 정리·출처 삭제
+            settle(id, epoch) { $0.record.mail?.phase = .ended; $0.record.mail?.note = MailCleanupText.unknownResult }
+            return
+          }
+          if r.status == 200, let n = MailCleanup.status(r.data) {
+            settle(id, epoch) { $0.record.mail?.afterStatusRead(n) }
+            if n.finished || n.status == "previewed" {
+              Trace.log("chat.mail", ["stage": n.undoPhase ? "undo" : "execute", "result": n.status, "count": n.undoPhase ? n.undone : n.done, "method": n.method ?? "-"])
+              return
+            }
+          }
+        }
+        if Date().timeIntervalSince(started) > MailCleanup.pollLimit {
+          settle(id, epoch) { $0.record.mail?.note = MailCleanupText.stillRunning }   // phase 는 running 그대로(needsStatusRead)
+          return
+        }
+        try? await Task.sleep(for: MailCleanup.pollInterval)
+      }
+    }
+  }
+
+  /// 다시 열었을 때·활성화될 때(D22): 상태를 다시 읽어야 하는 턴(needsStatusRead)은 서버를 먼저 읽는다. 상태가 없으면(실행 응답 전에 닫힘) 토큰으로 묻는다.
+  /// 이 프로세스가 요청 중인 턴은 건너뛴다(N-M14 — 재개가 요청 중인 턴의 버튼을 되살리지 않게)
+  private func resumeMail(_ id: UUID) {
+    let epoch = log.clearCount
+    guard let m = turns.first(where: { $0.id == id })?.record.mail, m.needsStatusRead,
+          !mailPolling.contains(id), !mailRequesting.contains(id) else { return }
+    if m.status != nil { pollMail(id, epoch: epoch); return }
+    guard let token = m.preview?.token else {
+      settle(id, epoch) { $0.record.mail?.phase = .ended; $0.record.mail?.note = MailCleanupText.unknownResult }
+      return
+    }
+    mailRequesting.insert(id)
+    Task { defer { mailRequesting.remove(id) }; await readBack(id, token: token, epoch: epoch) }
+  }
+  private func resumeMailTurns() { for t in turns where t.record.mail?.needsStatusRead == true { resumeMail(t.id) } }
+
+  /// [다시 미리보기](10분 지남·토큰이 없음): 옛 토큰이 그사이 실행됐는지 먼저 본다 — 실행된 턴을 새 미리보기로 덮어 [되돌리기]를 잃지 않게(N-H2).
+  /// previewed·행 없음(404)이면 서버가 확정한 conditions 로 다시 받는다(D15). 상태를 못 읽으면 덮지 않는다
+  private func repreviewMail(_ id: UUID) {
+    let epoch = log.clearCount
+    guard let m = turns.first(where: { $0.id == id })?.record.mail, let c = m.preview?.conditions, !mailRequesting.contains(id) else { return }
+    mailRequesting.insert(id)
+    settle(id, epoch) { $0.record.mail?.phase = .running; $0.record.mail?.note = nil }   // 확인 중(스피너)
+    Task {
+      defer { mailRequesting.remove(id) }
+      if let token = m.preview?.token {
+        guard let r = await MailCleanupAPI.status(id: token), r.status == 200 || r.status == 404 else {
+          settle(id, epoch) { $0.record.mail?.phase = .preview; $0.record.mail?.note = MailCleanupText.failed }
+          return
+        }
+        if r.status == 200, let s = MailCleanup.status(r.data), s.status != "previewed" {   // 그사이 실행됐다 — 그 결과로 잇는다
+          settle(id, epoch) { $0.record.mail?.afterStatusRead(s) }
+          if !s.finished { pollMail(id, epoch: epoch) }
+          return
+        }
+      }
+      settle(id, epoch) { $0.record.mail = MailTurn(phase: .finding) }
+      previewMail(id, body: c.json, epoch: epoch)                                // Conditions(Sendable)를 잡고 여기서 본문을 만든다
+    }
+  }
+
+  /// [다음 1,000건 보기]: 새 메일 정리 턴 — 앞 턴의 결과·[되돌리기]를 지우지 않는다(D15). append 가 새 턴으로 스크롤한다(F28). 맥락으로 가지 않는다
+  private func nextMail(_ id: UUID) {
+    guard let c = turns.first(where: { $0.id == id })?.record.mail?.preview?.conditions else { return }
+    let nid = append(ChatHistory.Record(at: Date(), kind: .mailAction, question: MailCleanupText.nextPage, mail: MailTurn(phase: .finding)))
+    previewMail(nid, body: c.json, epoch: log.clearCount)
+  }
+
+  /// [취소]: 서버를 부르지 않는다 — 행은 실행되지 않은 채 7일 뒤 정리된다
+  private func cancelMail(_ id: UUID) {
+    settle(id, log.clearCount) { $0.record.mail?.phase = .ended; $0.record.mail?.note = MailCleanupText.cancelled }
   }
 
   /// 링크 수집 턴(§9): 읽기(15초 + OCR) 동안만 보내기를 막고, 서버 결과(최대 60초)는 따로 기다린다
