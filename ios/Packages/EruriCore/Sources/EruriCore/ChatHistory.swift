@@ -3,7 +3,7 @@ import Foundation
 /// 채팅 대화 기록·짧은 맥락(스펙 §9 "대화 기록·짧은 맥락", 2026-10-04 사용자 결정 B): 대화 하나가 이어지고, 기록은 기기에만 30일.
 /// 질문 턴의 서버 응답은 받은 그대로(JSON) 둔다 — 다시 열 때 같은 해석(ChatReply.decode)·카드 계산(기기 캘린더는 다시 읽음)을 거친다
 public enum ChatHistory {
-  public enum Kind: String, Codable, Sendable { case question, link, image, addEvent, mailAction }   // addEvent = 채팅 일정 등록(0.13.0) · mailAction = 채팅 메일 정리(0.14.0)
+  public enum Kind: String, Codable, Sendable { case question, link, image, addEvent, mailAction, mailSummary }   // addEvent = 채팅 일정 등록(0.13.0) · mailAction = 채팅 메일 정리(0.14.0) · mailSummary = 채팅 메일 요약(0.15.0)
 
   public struct Record: Codable, Sendable, Equatable, Identifiable {
     public let id: UUID
@@ -18,14 +18,15 @@ public enum ChatHistory {
     public var seenItemID: String?         // 이미 읽은 링크의 항목(0.11.4 "일정 보기")
     public var itemID: String?               // 채팅 일정 등록: 일정을 찾은 항목(카드가 그 항목의 제안을 다시 읽는다, 0.13.0)
     public var mail: MailTurn?                 // 메일 정리 턴(0.14.0): 조건·미리보기 글·토큰·마지막 상태 — 이 기기에만
+    public var mailRead: MailSummaryTurn?                 // 메일 요약 턴(0.15.0): 조건·후보·읽기 결과·토큰 — 이 기기에만
     public var judged: [String: Bool]      // 인용 item_id → 관련 있음(맞아요·틀렸어요 — 서버 eval_judgments 와 같은 값)
 
     public init(id: UUID = UUID(), at: Date, kind: Kind, question: String, reply: Data? = nil, error: String? = nil, link: String? = nil,
                 linkDone: Bool = false, linkSaved: Bool = false, seenItemID: String? = nil, itemID: String? = nil, judged: [String: Bool] = [:],
-                mail: MailTurn? = nil) {
+                mail: MailTurn? = nil, mailRead: MailSummaryTurn? = nil) {
       self.id = id; self.at = at; self.kind = kind; self.question = question; self.reply = reply; self.error = error; self.link = link
       self.linkDone = linkDone; self.linkSaved = linkSaved; self.seenItemID = seenItemID; self.itemID = itemID; self.judged = judged
-      self.mail = mail
+      self.mail = mail; self.mailRead = mailRead
     }
   }
 
@@ -61,6 +62,10 @@ public enum ChatHistory {
         // 미리보기를 받기 전에 닫혔으면 끝난 문구로. 실행·되돌리기 중(running)은 그대로 — 화면에 나올 때 서버 상태를 다시 읽는다(§9)
         if x.mail == nil { x.mail = MailTurn(phase: .ended, note: MailCleanupText.interrupted) }
         else if x.mail?.phase == .finding { x.mail?.phase = .ended; x.mail?.note = MailCleanupText.interrupted }
+      case .mailSummary:
+        // 검색·읽기 결과를 받기 전에 닫혔으면 끝난 문구로(읽기는 비용이 들어 다시 보내지 않는다). 후보 카드(choosing)는 10분 안이면 그대로 누를 수 있다
+        if x.mailRead == nil { x.mailRead = MailSummaryTurn(phase: .ended, note: MailSummaryText.interrupted) }
+        else if x.mailRead?.phase == .finding || x.mailRead?.phase == .reading { x.mailRead?.phase = .ended; x.mailRead?.note = MailSummaryText.interrupted }
       }
       return x
     }

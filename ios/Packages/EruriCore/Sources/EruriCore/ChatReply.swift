@@ -20,10 +20,12 @@ public enum ChatReply {
     public var archiveIDs: [String]? { refused || candidateIDs.isEmpty ? nil : candidateIDs }
     /// 일정 질문의 일정 기간(스펙 §9 "일정 질문과 기기 캘린더", 서버 S3). 앱이 이 기간의 기기 캘린더를 읽는다. 0.7.x 서버·일정 질문이 아니면 nil
     public let schedule: Schedule?
-    /// 채팅 의도(스펙 §9 "채팅 의도 판별", 0.13.0): question · add_event(· mail_action 0.14.0). 0.12.x 서버면 nil = 질문
+    /// 채팅 의도(스펙 §9 "채팅 의도 판별", 0.13.0): question · add_event(· mail_action 0.14.0 · mail_summary 0.15.0). 0.12.x 서버면 nil = 질문
     public let intent: String?
     /// 메일 정리 칸(스펙 §9, 0.14.0): intent = mail_action 일 때 모델 출력 그대로. 검사·정제는 서버 mail-action 한 곳이라 앱은 해석하지 않고 그대로 보낸다
     public let mail: JSONValue?
+    /// 메일 요약 칸(스펙 §9, 0.15.0): intent = mail_summary 일 때 모델 출력 그대로. 앱은 translate·target_in_message 만 읽고(MailSummary.fields) 나머지는 그대로 mail-read/search 에 보낸다
+    public let mail_read: JSONValue?
   }
   public struct Schedule: Decodable, Sendable, Equatable {
     public let from: String; public let to: String

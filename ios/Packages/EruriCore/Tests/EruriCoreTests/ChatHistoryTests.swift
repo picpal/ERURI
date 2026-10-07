@@ -312,4 +312,32 @@ final class ChatHistoryTests: XCTestCase {
     try Data(#"{"version":1,"records":[{"id":"6F1C2A3B-0000-4000-8000-000000000001","at":1790000000,"kind":"question","question":"q","linkDone":false,"linkSaved":false,"judged":{}}]}"#.utf8).write(to: s.url)
     XCTAssertNil(try s.load().first?.mail)
   }
+
+  func testRestoredEndsMailSummarySearchOrRead_ChoosingStays() {
+    let f = ChatHistory.Record(at: t0, kind: .mailSummary, question: "합성 메일 요약해줘", mailRead: MailSummaryTurn(phase: .finding))
+    let rd = ChatHistory.Record(at: t0, kind: .mailSummary, question: "b", mailRead: MailSummaryTurn(phase: .reading))
+    var ch = MailSummaryTurn(phase: .choosing); ch.issuedAt = t0
+    let c = ChatHistory.Record(at: t0, kind: .mailSummary, question: "c", mailRead: ch)
+    let none = ChatHistory.Record(at: t0, kind: .mailSummary, question: "d")
+    let out = ChatHistory.restored([f, rd, c, none])
+    XCTAssertEqual(out.map { $0.mailRead?.phase }, [.ended, .ended, .choosing, .ended] as [MailSummaryTurn.Phase?])
+    XCTAssertEqual(out.map { $0.mailRead?.note }, [MailSummaryText.interrupted, MailSummaryText.interrupted, nil, MailSummaryText.interrupted])
+    XCTAssertEqual(MailSummaryText.interrupted, "앱이 닫혀 메일을 읽지 못했어요 — 다시 요청해 주세요.")
+  }
+
+  // 스펙 §9 "대화 기록": 요약 턴은 맥락으로 보내지 않고 구간은 잇는다
+  func testMailSummaryTurnsKeepTheSegmentButAreNotContext() {
+    let s = ChatHistory.Record(at: t0.addingTimeInterval(-300), kind: .mailSummary, question: "합성학원 메일 요약해줘", mailRead: MailSummaryTurn(phase: .ended))
+    let r = [q("합성은행에서 온 메일 뭐 있어?", at: -600), s, q("둘째 질문", at: -60)]
+    XCTAssertEqual(ChatHistory.context(r, now: t0).map(\.question), ["합성은행에서 온 메일 뭐 있어?", "둘째 질문"])
+    XCTAssertEqual(ChatHistory.segmentStart(r, now: t0), 0)
+  }
+
+  func testStoreRoundTripsMailSummaryTurns() throws {
+    let st = tempStore(); defer { st.wipe() }
+    var t = MailSummaryTurn(phase: .ended, translate: true); t.readAt = t0; t.note = nil
+    let a = ChatHistory.Record(at: t0, kind: .mailSummary, question: "합성", mailRead: t)
+    try st.save([q("x", at: 0), a])
+    XCTAssertEqual(try st.load().map(\.mailRead), [nil, t])
+  }
 }
