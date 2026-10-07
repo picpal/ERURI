@@ -99,3 +99,24 @@ language sql stable security definer set search_path = '' as $$
   where c.id = p_connection and c.user_id = p_user and c.status = 'active';
 $$;
 `;
+
+// 0032(기능별 비용 기록, 계획 L1)용 추가 스텁: 0001·0005 의 usage_counters, 시계를 바꿀 수 있는 seoul_month(), auth.uid().
+// 원본 seoul_month() 는 now() 를 읽는다 — 테스트는 test_clock 에 시각을 넣어 서울 자정 경계를 만든다(비면 now())
+export const USAGE_STUBS = `
+create table test_clock (at timestamptz);
+create function public.seoul_month() returns date language sql stable as $$
+  select date_trunc('month', coalesce((select at from public.test_clock limit 1), now()) at time zone 'Asia/Seoul')::date
+$$;
+create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+create table usage_counters (
+  user_id uuid not null references auth.users on delete cascade,
+  month date not null,
+  vision_calls int not null default 0,
+  extract_tokens bigint not null default 0,
+  chat_tokens bigint not null default 0,
+  reserved_krw numeric not null default 0,
+  backfill_tokens bigint not null default 0,
+  primary key (user_id, month)
+);
+alter table usage_counters enable row level security;
+`;
