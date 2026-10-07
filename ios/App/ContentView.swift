@@ -16,6 +16,7 @@ struct ContentView: View {
   @State private var confirmAccount = false
   @State private var deleteResult = ""
   @State private var usage = ""
+  @State private var usageLines: [String] = []
   @State private var confirmChat = false
   @State private var needsUpgrade = false
   @State private var upgradeResult = ""
@@ -52,8 +53,10 @@ struct ContentView: View {
             .accessibilityIdentifier("settings-clear-chat")
           Text(ChatHistoryText.settingsNote).font(.caption2).foregroundStyle(.secondary)
         }
-        Section("이번 달 사용") {                                              // 스펙 §13 월 상한(M2-⑦)
+        Section("이번 달 사용") {                                              // 스펙 §13 월 상한(M2-⑦) + 기능별 기록(§9, 0.15.0)
           Text(usage.isEmpty ? "-" : usage).font(.caption).foregroundStyle(usage.contains("중단") ? .red : .secondary)
+          ForEach(usageLines, id: \.self) { Text($0).font(.caption2).foregroundStyle(.secondary) }
+            .accessibilityIdentifier("settings-usage-breakdown")
         }
         Section("진단") {
           Toggle("진단 전송", isOn: $diagnostics).onChange(of: diagnostics) { _, v in
@@ -101,12 +104,19 @@ struct ContentView: View {
     gmail = signedIn ? await gmailStatus() : ""
     needsUpgrade = signedIn ? await gmailNeedsUpgrade() : false
     if !needsUpgrade { upgradeResult = "" }                     // 버튼이 사라졌으면(로그아웃·연결 상태 바뀜) 옛 결과 문구도 — 방금 업데이트한 결과는 upgradeGmail 이 refresh 뒤에 쓴다(M9a 리뷰 Minor 1)
-    usage = signedIn ? await usageStatus() : ""
+    async let total = signedIn ? usageStatus() : ""
+    async let lines = signedIn ? usageBreakdown() : []
+    (usage, usageLines) = await (total, lines)
   }
   /// rpc/usage_status(0014, auth.uid() 기준): 이번 달 예약 금액 / 상한 · 강등·중단 표시
   private func usageStatus() async -> String {
     guard let r = await API.send("rest/v1/rpc/usage_status", method: "POST", json: [String: String]()), r.status == 200 else { return "" }
     return UsageStatus.label(r.data) ?? ""
+  }
+  /// rpc/usage_breakdown(0032, auth.uid() 기준): 기능별 줄. 200 이 아니거나(0032 전 404) 모양이 다르면 빈 배열 — 합계 줄만(0.14.x 화면)
+  private func usageBreakdown() async -> [String] {
+    guard let r = await API.send("rest/v1/rpc/usage_breakdown", method: "POST", json: [String: String]()), r.status == 200 else { return [] }
+    return UsageStatus.breakdown(r.data) ?? []
   }
   /// 연결 상태(RLS: 자기 connections). 계정 주소는 사용자 본인 화면에만 보인다
   private func gmailStatus() async -> String {
