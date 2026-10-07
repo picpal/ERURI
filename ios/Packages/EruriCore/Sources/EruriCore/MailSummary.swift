@@ -100,6 +100,7 @@ public enum MailSummary {
     case (404, "mail_gone"?): return Note(MailSummaryText.gone)
     case (404, _): return Note(MailSummaryText.refind)
     case (410, _): return Note(MailSummaryText.followExpired)
+    case (400, "bad_token"?), (400, "bad_request"?): return Note(MailSummaryText.failed)   // 같은 토큰으로 다시 눌러도 같은 400 — 되살리지 않는다(A1 리뷰)
     default: return Note(MailSummaryText.failed, retry: true)
     }
   }
@@ -161,8 +162,12 @@ public enum MailSummary {
       guard let s = r.summary else { return .note(MailSummaryText.failed) }
       guard translate else { return .summary(s, translation: nil, translationNote: nil) }
       if r.language == "ko" { return .summary(s, translation: nil, translationNote: MailSummaryText.koreanNoTranslate) }
-      return .summary(s, translation: r.translation, translationNote: r.translation != nil && r.translation_truncated ? MailSummaryText.translationTruncated : nil)
-    case "ask": return .ask(r.ask ?? "")
+      // 번역이 빠진 응답은 조용히 넘기지 않는다 — 스펙 §9 에 번역 실패 문구가 없어 기존 실패 문구(A1 리뷰)
+      guard let t = r.translation else { return .summary(s, translation: nil, translationNote: MailSummaryText.failed) }
+      return .summary(s, translation: t, translationNote: r.translation_truncated ? MailSummaryText.translationTruncated : nil)
+    case "ask":
+      guard let q = r.ask, !q.isEmpty else { return .note(MailSummaryText.failed) }   // 빈 질문 대신 실패 문구(A1 리뷰)
+      return .ask(q)
     case "otp": return .note(MailSummaryText.otp)
     case "no_body": return .note(MailSummaryText.noBody)
     default: return .note(MailSummaryText.failed)

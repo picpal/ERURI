@@ -93,6 +93,17 @@ final class MailSummaryTests: XCTestCase {
     let ask = r(#"{"status":"ask","token":"t","from":"a","subject":"b","date":"","summary":null,"language":"ko","translation":null,"translation_truncated":false,"body_truncated":false,"attachments":0,"ask":"어떤 환불 내용을 찾으세요?"}"#)
     XCTAssertEqual(MailSummary.body(ask, translate: false), .ask("어떤 환불 내용을 찾으세요?"))
   }
+  // A1 리뷰: 번역 요청·language ≠ ko 인데 translation 이 없으면 조용히 빠지지 않고 실패 문구 한 줄
+  func testMissingTranslationSaysSo() {
+    let x = r(readJSON.replacingOccurrences(of: #""translation":"번역 글""#, with: #""translation":null"#))
+    guard case let .summary(_, t, note) = MailSummary.body(x, translate: true) else { return XCTFail() }
+    XCTAssertNil(t); XCTAssertEqual(note, "메일을 요약하지 못했어요 — 잠시 뒤 다시 해 주세요")
+  }
+  // A1 리뷰: status = ask 인데 ask 가 없으면 빈 질문 대신 실패 문구
+  func testAskWithoutQuestionIsFailedNote() {
+    let x = r(#"{"status":"ask","token":"t","from":"a","subject":"b","date":"","summary":null,"language":"ko","translation":null,"translation_truncated":false,"body_truncated":false,"attachments":0,"ask":null}"#)
+    XCTAssertEqual(MailSummary.body(x, translate: false), .note("메일을 요약하지 못했어요 — 잠시 뒤 다시 해 주세요"))
+  }
 
   // 스펙 §9 "오류 문구"
   func testErrorNotes() {
@@ -117,6 +128,11 @@ final class MailSummaryTests: XCTestCase {
     XCTAssertNil(MailSummary.retryDelay(status: 503, code: "disabled", attempt: 0))
   }
 
+  // A1 리뷰: 토큰·요청 형식 400 은 같은 토큰으로 다시 눌러도 같은 400 — 후보를 되살리지 않는다(retry 거짓)
+  func testReadBadTokenOrRequestIsNotRetried() {
+    XCTAssertEqual(MailSummary.readError(status: 400, code: "bad_token"), .init("메일을 요약하지 못했어요 — 잠시 뒤 다시 해 주세요"))
+    XCTAssertEqual(MailSummary.readError(status: 400, code: "bad_request"), .init("메일을 요약하지 못했어요 — 잠시 뒤 다시 해 주세요"))
+  }
   // 스펙 §9 "이어서 읽기"·D18: 바로 앞 요약 턴(ok·ask)·30분 안·target_in_message 거짓일 때만 앞 토큰
   func testFollowUp() {
     func turn(_ at: TimeInterval, status: String, readAt: TimeInterval) -> ChatHistory.Record {
