@@ -7,7 +7,7 @@ import CryptoKit
 public enum ChatAddEvent {
   public static let appName = "채팅"
   /// 이 앱이 처리하는 행동 의도(스펙 §9 "하위 호환") — 0.14.0 은 "mail_action" 을 더한다
-  public static let intents = ["add_event"]
+  public static let intents = ["add_event", "mail_action"]   // 이 앱이 처리하는 행동(§9 하위 호환) — 0.14.0 메일 정리
   public static func isAddEvent(_ intent: String?) -> Bool { intent == "add_event" }
 
   /// 같은 글 판정용(키에만): 줄바꿈을 포함한 공백 연속을 공백 하나로, 앞뒤 제거

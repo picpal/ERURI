@@ -22,6 +22,8 @@ public enum ChatReply {
     public let schedule: Schedule?
     /// 채팅 의도(스펙 §9 "채팅 의도 판별", 0.13.0): question · add_event(· mail_action 0.14.0). 0.12.x 서버면 nil = 질문
     public let intent: String?
+    /// 메일 정리 칸(스펙 §9, 0.14.0): intent = mail_action 일 때 모델 출력 그대로. 검사·정제는 서버 mail-action 한 곳이라 앱은 해석하지 않고 그대로 보낸다
+    public let mail: JSONValue?
   }
   public struct Schedule: Decodable, Sendable, Equatable {
     public let from: String; public let to: String

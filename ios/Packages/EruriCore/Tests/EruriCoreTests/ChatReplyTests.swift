@@ -126,4 +126,14 @@ final class ChatReplyTests: XCTestCase {
     XCTAssertNil(old.intent)
     XCTAssertFalse(ChatAddEvent.isAddEvent(old.intent))
   }
+
+  func testMailDecodesAsRawJSONValue_NullAndAbsentAreNil() throws {
+    let base = #""answer_id":"a","answer":"","refused":false,"citations":[],"proposals":[],"candidates":[],"schedule":null"#
+    let a = ChatReply.decode(Data(("{" + base + #","intent":"mail_action","mail":{"action":"trash","sender":"합성상점","subject_words":[],"received_from":null,"received_to":null,"promotions":true,"unread_only":false}}"#).utf8))!
+    XCTAssertEqual(a.intent, "mail_action")
+    guard case .object(let o)? = a.mail else { return XCTFail("mail") }
+    XCTAssertEqual(o["sender"], .string("합성상점"))
+    XCTAssertNil(ChatReply.decode(Data(("{" + base + #","intent":"question","mail":null}"#).utf8))!.mail)
+    XCTAssertNil(ChatReply.decode(Data(("{" + base + "}").utf8))!.mail)
+  }
 }

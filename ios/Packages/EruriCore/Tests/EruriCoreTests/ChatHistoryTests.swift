@@ -217,14 +217,14 @@ final class ChatHistoryTests: XCTestCase {
     let old = #"{"id":"\#(UUID().uuidString)","at":1790000000,"kind":"question","question":"q","linkDone":false,"linkSaved":false,"judged":{}}"#
     XCTAssertNil(try d.decode(R.self, from: Data(old.utf8)).itemID)
   }
-  // 모르는 kind(0.14.0 → 0.13.0 으로 내림)는 그 레코드만 빠지고 나머지 기록은 남는다. 아는 kind 의 깨진 레코드는 전처럼 빈 기록(최종 리뷰 Minor 3)
+  // 모르는 kind(새 버전 → 앞 버전으로 내림 — 0.14.0 부터 mailAction 은 아는 kind 라 가상의 다음 kind 로 본다)는 그 레코드만 빠지고 나머지 기록은 남는다. 아는 kind 의 깨진 레코드는 전처럼 빈 기록(최종 리뷰 Minor 3)
   func testStoreLoadDropsOnlyRecordsOfUnknownKind() throws {
     let s = tempStore(); defer { s.wipe() }
     let r = q("a", at: 0), add = R(at: t0, kind: .addEvent, question: "합성 등록해줘", link: "끝", linkDone: true, itemID: "item-9")
     try s.save([r, add])
     let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: s.url)) as? [String: Any])
     var recs = try XCTUnwrap(raw["records"] as? [[String: Any]])
-    var future = recs[0]; future["id"] = UUID().uuidString; future["kind"] = "mailAction"
+    var future = recs[0]; future["id"] = UUID().uuidString; future["kind"] = "futureTurn"
     recs.insert(future, at: 1)
     try JSONSerialization.data(withJSONObject: ["version": 1, "records": recs]).write(to: s.url)
     XCTAssertEqual(try s.load(), [r, add])
@@ -256,5 +256,34 @@ final class ChatHistoryTests: XCTestCase {
   }
   func testGmailDeleteNote() {
     XCTAssertEqual(ChatHistoryText.gmailDeleteNote, "채팅 기록은 설정 › 채팅에서 따로 지워요")
+  }
+
+  // ── 메일 정리 턴(0.14.0) ──
+  func testRestoredEndsMailTurnsStillFinding_RunningStays() {
+    let finding = R(at: t0, kind: .mailAction, question: "합성상점 광고 지워줘", mail: MailTurn(phase: .finding))
+    let running = R(at: t0, kind: .mailAction, question: "합성 메일 읽음 처리해줘", mail: MailTurn(phase: .running))
+    let none = R(at: t0, kind: .mailAction, question: "합성", mail: nil)
+    let out = ChatHistory.restored([finding, running, none])
+    XCTAssertEqual(out.map { $0.mail?.phase }, [MailTurn.Phase.ended, .running, .ended] as [MailTurn.Phase?])
+    XCTAssertEqual([out[0].mail?.note, out[2].mail?.note], [MailCleanupText.interrupted, MailCleanupText.interrupted] as [String?])
+  }
+
+  func testMailTurnsKeepTheSegmentButAreNotContext() {
+    let mailTurn = R(at: t0.addingTimeInterval(-300), kind: .mailAction, question: "합성상점 광고 지워줘", mail: MailTurn(phase: .ended))
+    let r = [q("첫 질문", at: -600), mailTurn, q("둘째 질문", at: -60)]
+    XCTAssertEqual(ChatHistory.context(r, now: t0).map(\.question), ["첫 질문", "둘째 질문"])
+    XCTAssertEqual(ChatHistory.segmentStart(r, now: t0), 0)
+  }
+
+  func testStoreRoundTripsMailTurns_OldRecordsWithoutMailStillLoad() throws {
+    let s = tempStore(); defer { s.wipe() }
+    let pv = MailCleanup.preview(Data(#"{"token":"t","action":"trash","conditions":{"action":"trash","sender":"합성상점","subject_words":[],"received_from":null,"received_to":null,"promotions":true,"unread_only":false},"count":1,"exact":true,"total_estimate":1,"starred_estimate":0,"has_more":false,"sample":[{"from":"합성상점","subject":"합성","date":"2026-10-01T00:00:00Z"}]}"#.utf8))
+    let m = R(at: t0, kind: .mailAction, question: "합성", mail: MailTurn(phase: .preview, preview: pv, previewAt: t0))
+    let a = q("a", at: 0)
+    try s.save([a, m])
+    XCTAssertEqual(try s.load(), [a, m])
+    // 0.13.0 파일(mail 키 없음)
+    try Data(#"{"version":1,"records":[{"id":"6F1C2A3B-0000-4000-8000-000000000001","at":1790000000,"kind":"question","question":"q","linkDone":false,"linkSaved":false,"judged":{}}]}"#.utf8).write(to: s.url)
+    XCTAssertNil(try s.load().first?.mail)
   }
 }

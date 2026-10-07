@@ -96,7 +96,7 @@ final class ChatAddEventTests: XCTestCase {
     XCTAssertEqual(ChatAddEventText.duplicate, "이미 등록한 글이에요. 보관함에서 그 항목을 열면 일정을 다시 볼 수 있어요")
     XCTAssertEqual(ChatAddEventText.discarded, LinkCaptureText.discarded)
     XCTAssertEqual(ChatAddEventText.pending, LinkCaptureText.pending)
-    XCTAssertEqual(ChatAddEvent.intents, ["add_event"])
+    XCTAssertEqual(ChatAddEvent.intents, ["add_event", "mail_action"])
     XCTAssertTrue(ChatAddEvent.isAddEvent("add_event"))
     XCTAssertFalse(ChatAddEvent.isAddEvent(nil))
     XCTAssertFalse(ChatAddEvent.isAddEvent("mail_action"))
