@@ -273,6 +273,32 @@ final class ChatHistoryTests: XCTestCase {
     let r = [q("첫 질문", at: -600), mailTurn, q("둘째 질문", at: -60)]
     XCTAssertEqual(ChatHistory.context(r, now: t0).map(\.question), ["첫 질문", "둘째 질문"])
     XCTAssertEqual(ChatHistory.segmentStart(r, now: t0), 0)
+    // 메일 턴이 다리 역할(리뷰 Minor 6): far(-50분)·mail(-25분)·지금 → 구간 시작은 far(각 간격 ≤ 30분), 맥락은 질문 턴만
+    let far = q("합성세미나 언제야?", at: -3000)
+    let mid = R(at: t0.addingTimeInterval(-1500), kind: .mailAction, question: "합성상점 광고 지워줘", mail: MailTurn(phase: .ended))
+    XCTAssertNil(ChatHistory.segmentStart([far], now: t0))
+    XCTAssertEqual(ChatHistory.segmentStart([far, mid], now: t0), 0)
+    XCTAssertEqual(ChatHistory.context([far, mid], now: t0).map(\.question), ["합성세미나 언제야?"])
+  }
+
+  func testRestoredKeepsPreviewAndEndedMailTurns() {
+    let pv = MailTurn(phase: .preview, previewAt: t0)
+    let ended = MailTurn(phase: .ended, note: MailCleanupText.cancelled)
+    let out = ChatHistory.restored([R(at: t0, kind: .mailAction, question: "a", mail: pv), R(at: t0, kind: .mailAction, question: "b", mail: ended)])
+    XCTAssertEqual(out.map(\.mail), [pv, ended])
+  }
+
+  func testStoreLoadKeepsHistoryWhenAMailTurnHasAnUnknownPhase() throws {
+    // 다음 버전의 Phase 값(리뷰 Minor 5): 그 턴은 끝난 턴으로, 나머지 기록은 그대로
+    let s = tempStore(); defer { s.wipe() }
+    let a = q("a", at: 0), m = R(at: t0, kind: .mailAction, question: "합성", mail: MailTurn(phase: .running))
+    try s.save([a, m])
+    let raw = try XCTUnwrap(String(data: Data(contentsOf: s.url), encoding: .utf8))
+    XCTAssertTrue(raw.contains(#""phase":"running""#))
+    try Data(raw.replacingOccurrences(of: #""phase":"running""#, with: #""phase":"verifying""#).utf8).write(to: s.url)
+    let out = try s.load()
+    XCTAssertEqual(out.map(\.question), ["a", "합성"])
+    XCTAssertEqual(out.last?.mail?.phase, .ended)
   }
 
   func testStoreRoundTripsMailTurns_OldRecordsWithoutMailStillLoad() throws {

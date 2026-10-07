@@ -259,7 +259,13 @@ public enum MailCleanupText {
 /// 대화 기록의 메일 정리 턴(스펙 §9 "대화 기록"): 서버가 확정한 조건·미리보기 글(위 20건·건수)·토큰(= mail_actions id)·마지막 상태. 이 기기에만, 30일.
 /// 기록 파일 호환(F19): 이후에 더하는 필드는 Optional 로만(없는 키를 읽어도 실패하지 않게). 모르는 키는 무시된다
 public struct MailTurn: Codable, Sendable, Equatable {
-  public enum Phase: String, Codable, Sendable { case finding, preview, running, ended }
+  public enum Phase: String, Codable, Sendable {
+    case finding, preview, running, ended
+    /// 모르는 값(다음 버전이 더한 단계를 내린 앱이 읽음)은 끝난 턴으로 — 엄격하면 레코드 하나 때문에 기록 파일 전체가 손상(빈 기록)이 된다
+    public init(from decoder: Decoder) throws {
+      self = Phase(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .ended
+    }
+  }
   public var phase: Phase
   public var preview: MailCleanup.Preview?
   public var previewAt: Date?

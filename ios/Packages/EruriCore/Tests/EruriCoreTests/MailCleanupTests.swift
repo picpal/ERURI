@@ -206,4 +206,34 @@ final class MailCleanupTests: XCTestCase {
     let m = try JSONDecoder().decode(MailTurn.self, from: Data(#"{"phase":"ended","settings":false,"repreview":false,"later_field":1}"#.utf8))
     XCTAssertEqual([m.phase == .ended, m.preview == nil, m.status == nil, m.previewAt == nil, m.note == nil], [true, true, true, true, true])
   }
+
+  func testMailTurnUnknownPhaseIsEnded_UnknownPreviewAndStatusFieldsIgnored() throws {
+    // 다음 버전이 Phase 값을 더한 뒤 내려도 그 턴은 끝난 턴으로 읽힌다(리뷰 Minor 5) — 엄격하면 레코드 하나가 기록 전체를 비운다
+    let m = try JSONDecoder().decode(MailTurn.self, from: Data(#"{"phase":"verifying","settings":false,"repreview":false}"#.utf8))
+    XCTAssertEqual(m.phase, .ended)
+    XCTAssertEqual(try JSONDecoder().decode(MailTurn.Phase.self, from: Data(#""running""#.utf8)), .running)
+    XCTAssertEqual(String(data: try JSONEncoder().encode(MailTurn.Phase.preview), encoding: .utf8), #""preview""#)
+    let pv = try XCTUnwrap(MailCleanup.preview(Data(previewJSON.replacingOccurrences(of: #""has_more":true,"#, with: #""has_more":true,"later":{"x":1},"#).utf8)))
+    XCTAssertEqual(pv, p(previewJSON))
+    let s = try XCTUnwrap(MailCleanup.status(Data(#"{"id":"x","status":"done","total":3,"done":3,"failed":0,"undone":0,"undo_failed":0,"code":null,"method":"batch","later":[1]}"#.utf8)))
+    XCTAssertEqual(s.status, "done")
+  }
+
+  func testUnknownStatusShowsProgressAndNoDestructiveButtons() {
+    // status 는 서버 check 로 닫힌 집합이지만, 모르는 값이 와도 진행 문구·버튼 없음(리뷰 Minor 6)
+    let u = st("verifying", done: 1)
+    XCTAssertFalse(u.finished); XCTAssertFalse(u.undoPhase)
+    XCTAssertEqual(MailCleanup.result(u, action: "trash"), MailCleanup.Note("휴지통으로 옮기는 중 1/3"))
+    XCTAssertFalse(MailCleanup.canUndo(u, previewAt: t0, now: t0))
+    XCTAssertFalse(MailCleanup.showNext(p(previewJSON), u))
+    XCTAssertTrue(MailTurn(phase: .ended, status: u).needsStatusRead)
+  }
+
+  func testUndoNoConnectionBounceKeepsUndo() {
+    // D11: 연결이 없어 되돌리기가 시작되지 않음 → 실행 결과 + 다시 연결 줄 + [설정 열기], [되돌리기]는 남는다
+    let s = st("partial", done: 2, failed: 1, code: "undo_no_connection")
+    XCTAssertEqual(MailCleanup.result(s, action: "trash"),
+                   MailCleanup.Note("휴지통으로 2건 옮겼어요 · 1건 실패\n" + MailCleanupText.undoReconnect, settings: true))
+    XCTAssertTrue(MailCleanup.canUndo(s, previewAt: t0, now: t0))
+  }
 }

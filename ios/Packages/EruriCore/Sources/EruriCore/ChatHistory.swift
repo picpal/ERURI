@@ -155,7 +155,7 @@ public struct ChatHistoryStore: Sendable {
   struct File: Codable {
     let version: Int; let records: [ChatHistory.Record]
     init(version: Int, records: [ChatHistory.Record]) { self.version = version; self.records = records }
-    /// 모르는 kind(새 버전에서 더한 턴, 예: 0.14.0 메일 정리)는 그 레코드만 뺀다 — 앱을 내려도 30일 기록 전체가 비지 않게(최종 리뷰 Minor 3, D9).
+    /// 모르는 kind(새 버전에서 더한 턴 — 0.13.0 앱이 읽는 0.14.0 메일 정리 턴 등)는 그 레코드만 뺀다 — 앱을 내려도 30일 기록 전체가 비지 않게(최종 리뷰 Minor 3, D9).
     /// 아는 kind 인데 다른 칸이 깨진 레코드는 전과 같이 파일 손상(빈 기록)이다
     init(from decoder: Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
