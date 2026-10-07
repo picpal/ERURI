@@ -4849,6 +4849,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 | G9 | [취소] → "취소했어요", 실행 버튼 없음, 서버 행은 previewed 그대로 | 주입 |
 | G10 | 설정 [권한 업데이트]: readonly일 때만 보이고 modify·미연결이면 숨김 | 시드 |
 | G11 | 기기 로그(eruri.log)에 합성 발신자·제목 0줄 | `diag.sh` |
+| G12 | 0031 출처 버튼(0.14.0 최종 리뷰 Important 2): 테스트 사용자 23의 합성 제안 1건 → 제안 탭 `proposal-source` → 항목 상세, 0031 전 서버면 버튼 없음 | 시드(합성 item + proposal, 끝나면 그 행만 지운다) |
 
 - [ ] **Step 1: 선행 확인**
 
@@ -5171,6 +5172,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces: U1·U2(권한 reason)·U3·U4·U5·U6 판정, `MAIL-real` 행.
 
 **사람이 필요한 이유:** U1·U3~U6은 실제 Google 계정의 Gmail에서만 재현된다(위 "실기기가 필요한 이유"). 합성 메일을 보내고, 권한 동의 화면을 누르고, Gmail 앱에서 휴지통·받은편지함을 눈으로 보는 것은 사용자만 할 수 있다. 메인은 한 번의 요청으로 묶는다(약 15분).
+
+- [ ] **Step 0: GCP 동의 화면 확인(업로드 전, 0.14.0 최종 리뷰 Recommendations)**
+
+Google Cloud 콘솔 › OAuth 동의 화면(Google Auth Platform) › **데이터 액세스**(Data access) 목록에 `https://www.googleapis.com/auth/gmail.modify`가 있는지 확인한다 — 없으면 추가한다(사용자 또는 메인이 `ego-browser`로, 사용자 로그인 세션). 0.14.0의 새 연결·주간 재연결이 readonly + modify를 함께 요청하므로(`GoogleSignIn.swift`), 막히면 권한 업데이트뿐 아니라 **주간 재연결(수집)까지** 실패한다. 결과(있었음/추가함)를 `results.md` MAIL-real 머리에 한 줄 적는다.
 
 - [ ] **Step 1: 선행 확인·TestFlight**
 
