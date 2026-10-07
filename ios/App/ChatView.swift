@@ -679,8 +679,8 @@ struct ChatView: View {
   /// 그 밖이면 그 상태로 진행·결과를 잇는다. 둘 다 못 읽으면 진행 중으로 두고 "결과를 확인하는 중이에요" — 다시 열거나 활성화되면 다시 읽는다(D22)
   private func readBack(_ id: UUID, token: String, epoch: Int) async {
     for attempt in 0..<2 {
-      guard log.clearCount == epoch else { return }                               // 지운 뒤에는 요청을 보내지 않는다
       if attempt > 0 { try? await Task.sleep(for: .seconds(2)) }
+      guard log.clearCount == epoch else { return }                               // 지운 뒤에는 요청을 보내지 않는다
       guard let r = await MailCleanupAPI.status(id: token) else { continue }
       if r.status == 200, let s = MailCleanup.status(r.data) {
         Trace.log("chat.mail", ["stage": "status", "result": s.status])
