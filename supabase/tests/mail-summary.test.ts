@@ -58,6 +58,9 @@ Deno.test("finishSummary: translation only when asked and the mail is not Korean
   assertEquals(finishSummary(en, { translate: true, bodyLen: 4_001 }).translation_truncated, true);
   assertEquals(finishSummary({ ...en, translation: "가".repeat(12_500) }, { translate: true, bodyLen: 100 }).translation_truncated, true);
   assertEquals(finishSummary({ ...en, language: " EN " }, { translate: true, bodyLen: 100 }).language, "en");
+  // 지역 꼬리를 뗀다(최종 리뷰 Minor 2): ko-KR 이면 한국어 메일 — 번역하지 않는다
+  assertEquals(finishSummary({ ...en, language: "ko-KR" }, { translate: true, bodyLen: 100 }), { status: "ok", summary: { lines: ["a", "b", "c"], dates: [], amounts: [], todos: [] },
+    language: "ko", translation: null, translation_truncated: false, ask: null });
 });
 Deno.test("summaryEstKrw: input 12k and output 2k (10k when translating) at gpt-6-luna prices", () => {
   assertEquals(summaryEstKrw(false), costKrw("gpt-6-luna", { input: 12_000, output: 2_000 }));

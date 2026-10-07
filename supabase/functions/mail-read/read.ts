@@ -44,7 +44,7 @@ export async function read(ctx: Ctx, body: Record<string, unknown>, d: MailReadD
   const v = await verifyToken(key, body.token, Math.floor(d.now() / 1000));
   if (!v.ok) { log({ stage, request_id: rid, result: v.code, elapsed_ms: ms() }); return err(v.code === "bad_token" ? 400 : v.code === "not_found" ? 404 : 410, v.code); }
   const translate = body.translate ?? false, request = body.request;
-  if (typeof translate !== "boolean" || typeof request !== "string" || request.trim() === "" || request.length > REQUEST_MAX) {
+  if (typeof translate !== "boolean" || typeof request !== "string" || request.trim() === "" || request.trim().length > REQUEST_MAX) {
     log({ stage, request_id: rid, result: "bad_request", elapsed_ms: ms() });
     return err(400, "bad_request");
   }

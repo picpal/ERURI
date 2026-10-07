@@ -167,11 +167,18 @@ export const USAGE_CASES: UsageCase[] = [
       await c.q("rollback to savepoint usage_role");
       return err;
     };
-    assert((await as("anon", "select * from usage_breakdown()", [])).includes("permission denied"));
+    const denied = (fn: string) => `permission denied for function ${fn}`;
+    assert((await as("anon", "select * from usage_breakdown()", [])).includes(denied("usage_breakdown")));
     assertEquals(await as("authenticated", "select * from usage_breakdown()", []), "");
-    for (const s of ["select settle_usage_lines($1::uuid, 'chat', 0, seoul_month(), '[]'::jsonb)", "select record_usage($1::uuid, '[]'::jsonb)",
-      "select * from reserve_usage_month($1::uuid, 'chat', 0)", "select audit_mail_read($1::uuid, repeat('a', 64))"]) {
-      assert((await as("authenticated", s, [c.user])).includes("permission denied"), s);
+    // 달은 $2 인수로 — seoul_month() 는 authenticated 에서 revoke 돼 있어 그쪽 거부로 헛통과한다(최종 리뷰 I2). 거부 문구에 대상 함수 이름까지 단언
+    for (const [fn, s, p] of [
+      ["settle_usage_lines", "select settle_usage_lines($1::uuid, 'chat', 0, $2::date, '[]'::jsonb)", [c.user, "2026-10-01"]],
+      ["record_usage", "select record_usage($1::uuid, '[]'::jsonb)", [c.user]],
+      ["reserve_usage_month", "select * from reserve_usage_month($1::uuid, 'chat', 0)", [c.user]],
+      ["audit_mail_read", "select audit_mail_read($1::uuid, repeat('a', 64))", [c.user]],
+    ] as const) {
+      const e = await as("authenticated", s, [...p]);
+      assert(e.includes(denied(fn)), `${s}: ${e}`);
     }
   } },
   { name: "chat_tokens column is gone; 4-arg settle_usage still settles the current month and writes no ledger row", run: async (c) => {

@@ -77,7 +77,7 @@ export function finishSummary(o: SummaryOutput, x: { translate: boolean; bodyLen
   if (o.status === "ok" && o.lines.length === 0) throw new SummaryFailed("empty");
   if (o.status === "ask" && !(o.ask ?? "").trim()) throw new SummaryFailed("empty_ask");
   const cap = (xs: string[]) => xs.slice(0, ITEMS_MAX).map((s) => clip16(s, ITEM_CHARS));
-  const language = o.language.trim().toLowerCase().slice(0, 8);
+  const language = o.language.trim().toLowerCase().split(/[-_]/)[0].slice(0, 8);   // ko-KR·zh_TW → 지역 꼬리 없이(최종 리뷰 Minor 2)
   if (o.status === "ask") return { status: "ask", summary: null, language, translation: null, translation_truncated: false, ask: clip16(o.ask!.trim(), ASK_CHARS) };
   let translation: string | null = null, truncated = false;
   if (x.translate && language !== "ko" && o.translation) {

@@ -254,6 +254,8 @@ Deno.test("read: request must be 1–500 UTF-16 non-blank and translate a boolea
   for (const o of [{ request: undefined }, { request: "  " }, { request: "가".repeat(501) }, { translate: "yes" }, { request: 7 }]) {
     assertEquals((await call(d, req("read", await R("m1", o)))).j, { error: "bad_request" }, JSON.stringify(o));
   }
+  // 500자 상한은 앞뒤 공백을 뺀 길이(스펙 §7, 최종 리뷰 Minor 1): 498자 + 공백 3 = 원래 501자도 통과
+  assertEquals((await call(d, req("read", await R("m1", { request: " " + "가".repeat(498) + "  " })))).status, 200);
 });
 Deno.test("read: a token of another user or another connection → 404 not_found (never reads)", async () => {
   const { d, seen } = fake({ msgs: [mail("m1", "본문")] });
