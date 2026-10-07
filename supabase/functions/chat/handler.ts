@@ -1,12 +1,12 @@
 import { type Bill, type BudgetDeps, type BudgetLevel, costKrw, Deferred, guarded } from "../_shared/budget.ts";
 import { type ActionIntent, ACTION_INTENTS, type ContextTurn, escTags, type FilterOutput, type Filters, formatContext, type Intent, type MailFields,
-  type Schedule, scheduleOf } from "./filters.ts";
-export type { ActionIntent, ContextTurn, Filters, Intent, MailFields, Schedule } from "./filters.ts";
+  type MailReadFields, type Schedule, scheduleOf } from "./filters.ts";
+export type { ActionIntent, ContextTurn, Filters, Intent, MailFields, MailReadFields, Schedule } from "./filters.ts";
 
 // 채팅(스펙 §9): 필터 추출 → facts SQL(구조화 조건이 있을 때) → 하이브리드 상위 12(기간 필터로 0건이면 기간 없이 1회 더) → gpt-6-sol 답변(예산 80% 이상이면 gpt-6-luna, §13)
 // → 서버 인용 검증(이번 문서 집합에 없는 id 제거, 근거 0개면 거절) → 출처 메타·제안 카드·보관함 후보(인용 ∪ 구별 facts ∪ 관련도 컷, 거절이면 없음) · 일정 질문이면 schedule(기간만, 앱이 기기 캘린더를 읽는다). 수집 문서 안의 지시는 데이터(<document> 블록).
 // 로그에 질문·문서·답변 본문을 남기지 않는다. 문서로 읽은 item_id 목록은 감사(read)
-// 의도 판별(§9, 2026-10-06): intents 가 있는 요청만 필터가 intent·mail 도 뽑고, 행동 의도면 검색·답변 없이 의도만 돌려준다(앱이 처리)
+// 의도 판별(§9, 2026-10-06): intents 가 있는 요청만 필터가 intent·mail·mail_read 도 뽑고, 행동 의도면 검색·답변 없이 의도만 돌려준다(앱이 처리)
 export type ChatHit = { item_id: string; text: string; occurred_at: string };
 export type RawAnswer = { answer: string; source_item_ids: string[]; refused: boolean };
 export type Usage = { input_tokens: number; output_tokens: number; cached_tokens?: number; reasoning_tokens?: number };
@@ -31,9 +31,12 @@ export type ChatDeps = {
   sleep?(ms: number): Promise<void>;
   /** 메일 정리 플래그(스펙 §7 "켜기" — Edge secret MAIL_ACTIONS=on). 꺼져 있으면 mail_action → question */
   mailActions(): boolean;
+  /** 메일 요약 플래그(스펙 §7 "켜기" — Edge secret MAIL_READ=on). 꺼져 있으면 mail_summary → question */
+  mailRead(): boolean;
 };
 export type ChatResult = RawAnswer & { forced_refusal: boolean; dropped_ids: number; hits: string[]; candidates: string[]; citations: Meta[];
-  proposals: ProposalCard[]; model: string | null; schedule: Schedule | null; intent: Intent; mail: MailFields | null };
+  proposals: ProposalCard[]; model: string | null; schedule: Schedule | null; intent: Intent; mail: MailFields | null;
+  mail_read: MailReadFields | null };
 export type ChatOutcome = ChatResult & { rewritten: boolean; raw_intent?: Intent };
 
 export const REFUSAL = "저장된 정보에서 확인되지 않음";
@@ -87,7 +90,7 @@ export function answerUserMessage(input: AnswerInput): string {
   return `오늘: ${input.today}\n이전 대화(질문 이해용, 근거 아님):\n${formatContext(input.context)}\n질문: ${input.question}${q}\n\n${docs}`;
 }
 
-export function validateAnswer(raw: RawAnswer, hits: ChatHit[]): Omit<ChatResult, "hits" | "candidates" | "citations" | "proposals" | "model" | "schedule" | "intent" | "mail"> {
+export function validateAnswer(raw: RawAnswer, hits: ChatHit[]): Omit<ChatResult, "hits" | "candidates" | "citations" | "proposals" | "model" | "schedule" | "intent" | "mail" | "mail_read"> {
   const allowed = new Set(hits.map((h) => h.item_id));
   const ids = [...new Set(raw.source_item_ids)].filter((id) => allowed.has(id));
   const dropped = new Set(raw.source_item_ids).size - ids.length;
@@ -149,25 +152,27 @@ export function parseIntents(v: unknown): Set<ActionIntent> | null {
   const s = new Set((v as string[]).filter((x): x is ActionIntent => (ACTION_INTENTS as readonly string[]).includes(x)));
   return s.size ? s : null;
 }
-// 모델 의도(세 값) → 이 요청의 의도: 앱 목록에 없거나 메일 정리 플래그가 꺼져 있으면 question(D2)
-export function resolveIntent(raw: Intent, allowed: Set<ActionIntent>, mailOn: boolean): Intent {
+// 모델 의도(네 값) → 이 요청의 의도: 앱 목록에 없거나 그 기능의 플래그가 꺼져 있으면 question(D2). readOn 은 0.15.0(없으면 꺼짐 — 0.14.0 호출 그대로)
+export function resolveIntent(raw: Intent, allowed: Set<ActionIntent>, mailOn: boolean, readOn = false): Intent {
   if (raw === "question" || !allowed.has(raw)) return "question";
-  return raw === "mail_action" && !mailOn ? "question" : raw;
+  if (raw === "mail_action" && !mailOn) return "question";
+  if (raw === "mail_summary" && !readOn) return "question";
+  return raw;
 }
-// 행동 의도 응답(스펙 §9 "응답"): 검색·답변 없이 빈 목록. mail 은 mail_action 일 때만 모델 출력 그대로
-export function actionResult(intent: ActionIntent, mail: MailFields | null): ChatResult {
+// 행동 의도 응답(스펙 §9 "응답"): 검색·답변 없이 빈 목록. mail·mail_read 는 그 의도일 때만 모델 출력 그대로
+export function actionResult(intent: ActionIntent, mail: MailFields | null, mailRead: MailReadFields | null = null): ChatResult {
   return { answer: "", source_item_ids: [], refused: false, forced_refusal: false, dropped_ids: 0, hits: [], candidates: [], citations: [], proposals: [],
-    model: null, schedule: null, intent, mail: intent === "mail_action" ? mail : null };
+    model: null, schedule: null, intent, mail: intent === "mail_action" ? mail : null, mail_read: intent === "mail_summary" ? mailRead : null };
 }
 
 async function answerOnce(userId: string, question: string, deps: ChatDeps, context: ContextTurn[], allowed: Set<ActionIntent> | null): Promise<ChatOutcome> {
   const today = deps.today();
   // 금액은 응답마다 bill 로 쌓인 원소의 합(스펙 §13 "기능별 기록") — 필터·질의 임베딩·답변 모두 예약 chat·집계 chat
   const { value } = await guarded(deps.budget, userId, "chat", CHAT_EST_KRW, crypto.randomUUID(), async (level, bill): Promise<ChatOutcome> => {
-    const { filters, query, intent: raw, mail } = await deps.filters(question, today, context, allowed !== null, bill);
-    const intent = allowed ? resolveIntent(raw ?? "question", allowed, deps.mailActions()) : "question";
+    const { filters, query, intent: raw, mail, mail_read } = await deps.filters(question, today, context, allowed !== null, bill);
+    const intent = allowed ? resolveIntent(raw ?? "question", allowed, deps.mailActions(), deps.mailRead()) : "question";
     // 행동 의도: 검색·facts·답변 모델을 부르지 않는다 — 문서를 읽지 않으므로 감사 read 도 없다. 예약은 같고 정산은 필터 원소만(스펙 §9 "응답")
-    if (intent !== "question") return { ...actionResult(intent, mail ?? null), rewritten: false, raw_intent: raw } as ChatOutcome;
+    if (intent !== "question") return { ...actionResult(intent, mail ?? null, mail_read ?? null), rewritten: false, raw_intent: raw } as ChatOutcome;
     // 맥락이 있으면 검색은 독립 질문으로(스펙 §9) — "거기 주소" 만으로는 키워드·임베딩이 대상을 못 고른다. 비었으면 원 질문
     const standalone = context.length && query?.trim() ? cut(query.trim(), 500) : question;
     const rewritten = standalone !== question;
@@ -179,7 +184,7 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps, cont
     if (s.docs.length === 0 && (q.from !== null || q.to !== null)) s = await deps.search(userId, { ...q, from: null, to: null }, bill);
     const read = dedupe([...mergeFactDocs(factDocs), ...s.docs]);
     const docs = read.slice(0, 12);
-    const asked = { intent: "question" as const, mail: null, raw_intent: raw };
+    const asked = { intent: "question" as const, mail: null, mail_read: null, raw_intent: raw };
     if (docs.length === 0) {
       return { answer: REFUSAL, source_item_ids: [], refused: true, forced_refusal: false, dropped_ids: 0, hits: [], candidates: [],
         citations: [], proposals: [], model: null, schedule, rewritten, ...asked } as ChatOutcome;
@@ -238,7 +243,8 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
         context: context.length, rewritten: r.rewritten, intent_raw: r.raw_intent ?? null }));   // id 목록·날짜·질문·맥락은 로그에 넣지 않는다
     }
     return Response.json({ answer_id: crypto.randomUUID(), answer: r.answer, refused: r.refused, source_item_ids: r.source_item_ids,
-      citations: r.citations, proposals: r.proposals, hits: r.hits, candidates: r.candidates, schedule: r.schedule, intent: r.intent, mail: r.mail });
+      citations: r.citations, proposals: r.proposals, hits: r.hits, candidates: r.candidates, schedule: r.schedule, intent: r.intent, mail: r.mail,
+      mail_read: r.mail_read });
   } catch (e) {
     if (e instanceof Deferred) {
       console.log(JSON.stringify({ chat: e.message }));

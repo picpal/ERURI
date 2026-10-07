@@ -3,7 +3,7 @@ import type { BudgetDeps } from "../functions/_shared/budget.ts";
 import { actionResult, answerQuestion, answerUserMessage, type ChatDeps, type ChatHit, CONTEXT_RULE, type Filters, factsDistinct, formatDocuments, handleChat,
   mergeFactDocs, parseContext, parseIntents, REFUSAL, relevantItems, resolveIntent, SYSTEM_PROMPT, systemPrompt, validateAnswer } from "../functions/chat/handler.ts";
 import { CONTEXT_FILTER_RULE, CONTEXT_FILTER_SCHEMA, extractFilters, FILTER_SCHEMA, FILTER_SYSTEM, filterRequest, formatContext, INTENT_CONTEXT_FILTER_SCHEMA,
-  INTENT_FILTER_SCHEMA, INTENT_RULE, type MailFields, MAIL_SCHEMA, normalizeFilters, parseFilterOutput, scheduleOf } from "../functions/chat/filters.ts";
+  INTENT_FILTER_SCHEMA, INTENT_RULE, type MailFields, MAIL_READ_SCHEMA, MAIL_SCHEMA, type MailReadFields, normalizeFilters, parseFilterOutput, scheduleOf } from "../functions/chat/filters.ts";
 
 const hits: ChatHit[] = [
   { item_id: "i1", occurred_at: "2026-07-03T12:14:00Z", text: "[쿠팡] 에어팟 프로 2세대 주문 329,000원" },
@@ -33,7 +33,8 @@ Deno.test("documents are wrapped as <document id date> blocks and cannot close t
 function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; searches?: ChatHit[][]; candidates?: string[][];
   raw?: { answer: string; source_item_ids: string[]; refused: boolean };
   level?: "ok" | "degraded" | "refused"; filters?: Partial<Filters>; slots?: (number | null)[];
-  intent?: "question" | "add_event" | "mail_action"; mail?: MailFields | null; mailOn?: boolean;
+  intent?: "question" | "add_event" | "mail_action" | "mail_summary"; mail?: MailFields | null; mailOn?: boolean;
+  readOn?: boolean; mailRead?: MailReadFields | null;
   bills?: { filter?: boolean; embed?: boolean; answer?: boolean; answerThrows?: boolean; answerBadJson?: boolean } } = {}) {
   const seen = { answer: [] as { docs: string[]; level: string }[], audit: [] as string[][], search: [] as unknown[], sleeps: [] as number[],
     settled: [] as number[], lines: [] as [string, string][][], facts: 0, withIntent: [] as boolean[] };
@@ -47,7 +48,7 @@ function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; searches?: ChatHit[][]; 
       seen.withIntent.push(withIntent === true);
       if (o.bills?.filter) bill?.("chat", "gpt-6-luna", { input: 800, cached: 0, output: 100 });
       const f = { filters: { date_from: null, date_to: null, event_from: null, event_to: null, sources: [], kinds: [], merchant: null, ...o.filters } };
-      return withIntent ? { ...f, intent: o.intent ?? "question", mail: o.mail ?? null } : f;
+      return withIntent ? { ...f, intent: o.intent ?? "question", mail: o.mail ?? null, mail_read: o.mailRead ?? null } : f;
     },
     facts: async () => { seen.facts++; return o.facts ?? []; },
     search: async (_u, q, bill) => {
@@ -71,6 +72,7 @@ function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; searches?: ChatHit[][]; 
     today: () => "2026-10-01",
     sleep: async (ms) => { seen.sleeps.push(ms); },
     mailActions: () => o.mailOn ?? false,
+    mailRead: () => o.readOn ?? false,
   };
   return { d, seen };
 }
@@ -468,16 +470,16 @@ Deno.test("filterRequest: without intents both requests are byte-identical to 0.
   assert(!("intent" in FILTER_SCHEMA.properties) && !("mail" in CONTEXT_FILTER_SCHEMA.properties));
 });
 
-Deno.test("filterRequest with intents: intent (three values) and nullable mail added; system gets INTENT_RULE; context keeps query", () => {
+Deno.test("filterRequest with intents: intent (four values) and nullable mail added; system gets INTENT_RULE; context keeps query", () => {
   const r = filterRequest("합성치과 예약 등록해줘", "2026-10-07", [], true) as { input: { content: string }[]; text: { format: { name: string; schema: typeof INTENT_FILTER_SCHEMA } } };
   assertEquals(r.input[0].content, `${FILTER_SYSTEM}\n${INTENT_RULE}`);
   assertEquals(r.input[1].content, "오늘(서울): 2026-10-07(수)\n질문: 합성치과 예약 등록해줘");
   assertEquals(r.text.format.name, "search_filters_intent");
   assertEquals(r.text.format.schema, INTENT_FILTER_SCHEMA);
-  assertEquals([...r.text.format.schema.properties.intent.enum], ["question", "add_event", "mail_action"]);
+  assertEquals([...r.text.format.schema.properties.intent.enum], ["question", "add_event", "mail_action", "mail_summary"]);
   assert(r.text.format.schema.required.includes("intent") && r.text.format.schema.required.includes("mail"));
   assertEquals(r.text.format.schema.properties.mail.anyOf, [MAIL_SCHEMA, { type: "null" }]);
-  assertEquals(Object.keys(r.text.format.schema.properties).filter((k) => k !== "intent" && k !== "mail"), Object.keys(FILTER_SCHEMA.properties));
+  assertEquals(Object.keys(r.text.format.schema.properties).filter((k) => k !== "intent" && k !== "mail" && k !== "mail_read"), Object.keys(FILTER_SCHEMA.properties));
   const c = filterRequest("그 약속 등록해줘", "2026-10-07", ctx1, true) as { input: { content: string }[]; text: { format: { name: string; schema: typeof INTENT_CONTEXT_FILTER_SCHEMA } } };
   assertEquals(c.input[0].content, `${FILTER_SYSTEM}\n${CONTEXT_FILTER_RULE}\n${INTENT_RULE}`);
   assertEquals(c.input[1].content, `오늘(서울): 2026-10-07(수)\n이전 대화:\n${formatContext(ctx1)}\n질문: 그 약속 등록해줘`);
@@ -557,7 +559,7 @@ Deno.test("handleChat: intents in the body; action response keeps the answer sha
   const j = await r.json();
   assertEquals(r.status, 200);
   assertEquals({ ...j, answer_id: "x" }, { answer_id: "x", answer: "", refused: false, source_item_ids: [], citations: [], proposals: [], hits: [],
-    candidates: [], schedule: null, intent: "add_event", mail: null });
+    candidates: [], schedule: null, intent: "add_event", mail: null, mail_read: null });
   const q = deps({ intent: "add_event" });
   const k = await (await handleChat(req("chat", { question: "에어팟 어디서 샀어?" }), q.d)).json();
   assertEquals([k.intent, k.mail, k.refused, q.seen.withIntent], ["question", null, false, [false]]);
@@ -617,4 +619,59 @@ Deno.test("chat billing: an action intent settles only the filter line (no searc
   const { d, seen } = deps({ bills: { filter: true, embed: true, answer: true }, intent: "add_event" });
   await answerQuestion("user-1", "합성치과 10/20 15시 등록해줘", d, [], new Set(["add_event"]));
   assertEquals(seen.lines, [[["chat", "gpt-6-luna"]]]);
+});
+
+// ── 채팅 메일 요약(스펙 §7 "메일 요약"·§9 "채팅 메일 요약", 0.15.0) ──
+const READ: MailReadFields = { sender: "합성상점", subject_words: [], received_from: null, received_to: null, latest: false, translate: false, target_in_message: true };
+Deno.test("filterRequest with intents: mail_read is a required nullable MAIL_READ_SCHEMA; INTENT_RULE names mail_summary and its boundaries", () => {
+  const r = filterRequest("합성상점에서 온 메일 요약해줘", "2026-10-07", [], true) as { text: { format: { schema: typeof INTENT_FILTER_SCHEMA } } };
+  const s = r.text.format.schema;
+  assert((s.required as readonly string[]).includes("mail_read"));
+  assertEquals(s.properties.mail_read.anyOf[0], MAIL_READ_SCHEMA);
+  assertEquals([...MAIL_READ_SCHEMA.required], ["sender", "subject_words", "received_from", "received_to", "latest", "translate", "target_in_message"]);
+  for (const k of ["mail_summary", "읽음 처리", "읽어줘", "문자·카톡", "target_in_message", "mail_read 는 intent 가 mail_summary 일 때만"]) assert(INTENT_RULE.includes(k), k);
+});
+Deno.test("filterRequest without intents is still byte-identical to 0.12.x (no intent, mail or mail_read)", () => {
+  const r = JSON.stringify(filterRequest("합성상점 메일 요약해줘", "2026-10-07", [], false));
+  assert(!r.includes("mail_read") && !r.includes("intent"));
+});
+Deno.test("parseFilterOutput: mail_read never leaks into the 7 filter fields; absent → null; only with intents", () => {
+  const raw = JSON.stringify({ date_from: null, date_to: null, event_from: null, event_to: null, sources: [], kinds: [], merchant: null,
+    intent: "mail_summary", mail: null, mail_read: READ });
+  const o = parseFilterOutput(raw, false, true);
+  assertEquals([o.intent, o.mail_read, Object.keys(o.filters).length], ["mail_summary", READ, 7]);
+  assertEquals(parseFilterOutput(raw.replace(`,"mail_read":${JSON.stringify(READ)}`, ""), false, true).mail_read, null);
+  assertEquals(parseFilterOutput(raw, false, false).mail_read, undefined);
+});
+Deno.test("resolveIntent: mail_summary only when the app lists it and MAIL_READ is on; parseIntents knows mail_summary", () => {
+  const all = new Set(["add_event", "mail_action", "mail_summary"] as const);
+  assertEquals(resolveIntent("mail_summary", all, false, true), "mail_summary");
+  assertEquals(resolveIntent("mail_summary", all, true, false), "question");
+  assertEquals(resolveIntent("mail_summary", new Set(["add_event", "mail_action"] as const), true, true), "question");   // 0.14.0 앱
+  assertEquals(resolveIntent("mail_action", all, true, false), "mail_action");                                     // 플래그는 따로
+  assertEquals(parseIntents(["add_event", "mail_action", "mail_summary"]), all);
+});
+Deno.test("answerQuestion mail_summary: no facts, search, answer or audit; mail_read is the model output; mail null; only the filter line is billed", async () => {
+  const { d, seen } = deps({ intent: "mail_summary", mailRead: READ, mail: MAIL, readOn: true, bills: { filter: true, embed: true, answer: true } });
+  const r = await answerQuestion("user-1", "합성상점에서 온 메일 요약해줘", d, [], new Set(["add_event", "mail_action", "mail_summary"]));
+  assertEquals([seen.facts, seen.search.length, seen.answer.length, seen.audit.length], [0, 0, 0, 0]);
+  assertEquals([r.intent, r.mail_read, r.mail], ["mail_summary", READ, null]);
+  assertEquals(seen.lines, [[["chat", "gpt-6-luna"]]]);
+});
+Deno.test("answerQuestion: a 0.14.0 app (no mail_summary in intents) or MAIL_READ off gets a normal question answer with mail_read null", async () => {
+  for (const [intents, readOn] of [[["add_event", "mail_action"], true], [["add_event", "mail_action", "mail_summary"], false]] as const) {
+    const { d, seen } = deps({ intent: "mail_summary", mailRead: READ, readOn });
+    const r = await answerQuestion("user-1", "합성상점에서 온 메일 요약해줘", d, [], new Set(intents));
+    assertEquals([r.intent, r.mail_read, seen.answer.length], ["question", null, 1]);
+  }
+});
+Deno.test("handleChat: the response carries mail_read (null for questions and other intents)", async () => {
+  const q = await handleChat(req("chat", { question: "에어팟" }), deps().d);
+  assertEquals((await q.json()).mail_read, null);
+  const s = await handleChat(req("chat", { question: "합성상점 메일 요약해줘", intents: ["add_event", "mail_action", "mail_summary"] }),
+    deps({ intent: "mail_summary", mailRead: READ, readOn: true }).d);
+  const j = await s.json();
+  assertEquals([j.intent, j.mail_read, j.mail], ["mail_summary", READ, null]);
+  const a = await handleChat(req("chat", { question: "등록해줘", intents: ["add_event", "mail_summary"] }), deps({ intent: "add_event", mailRead: READ, readOn: true }).d);
+  assertEquals((await a.json()).mail_read, null);
 });

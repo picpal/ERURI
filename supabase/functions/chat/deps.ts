@@ -90,5 +90,6 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
     budget: budgetDeps(sb),
     today: () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10),
     mailActions: () => Deno.env.get("MAIL_ACTIONS") === "on",        // 스펙 §7 "켜기" — 0.14.0 전에는 설정하지 않는다
+    mailRead: () => Deno.env.get("MAIL_READ") === "on",              // 스펙 §7 "메일 요약" 켜기 — 0.15.0 배포 뒤 SUMMARY-deploy 에서 켠다
   };
 }

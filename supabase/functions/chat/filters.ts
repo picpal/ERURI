@@ -44,12 +44,12 @@ export const CONTEXT_FILTER_SCHEMA = {
     query: { type: "string", description: "이전 대화로 지시어·생략을 채운 독립 질문 한 문장. 이어지지 않는 질문이면 질문 그대로" } },
 } as const;
 
-// 채팅 의도 판별(스펙 §9 "채팅 의도 판별", 2026-10-06): 앱이 intents 를 보낼 때만 필터 출력에 intent·mail 을 더한다.
-// intents 가 없으면 위 FILTER_SCHEMA·CONTEXT_FILTER_SCHEMA 요청 그대로(0.12.x 와 바이트 동일 — 테스트). enum 은 늘 세 값이고 변환은 handler(resolveIntent)
-export const INTENTS = ["question", "add_event", "mail_action"] as const;
+// 채팅 의도 판별(스펙 §9 "채팅 의도 판별", 2026-10-06): 앱이 intents 를 보낼 때만 필터 출력에 intent·mail·mail_read 를 더한다.
+// intents 가 없으면 위 FILTER_SCHEMA·CONTEXT_FILTER_SCHEMA 요청 그대로(0.12.x 와 바이트 동일 — 테스트). enum 은 늘 네 값이고 변환은 handler(resolveIntent)
+export const INTENTS = ["question", "add_event", "mail_action", "mail_summary"] as const;
 export type Intent = typeof INTENTS[number];
 export type ActionIntent = Exclude<Intent, "question">;
-export const ACTION_INTENTS: readonly ActionIntent[] = ["add_event", "mail_action"];
+export const ACTION_INTENTS: readonly ActionIntent[] = ["add_event", "mail_action", "mail_summary"];
 export const asIntent = (v: unknown): Intent => ((INTENTS as readonly unknown[]).includes(v) ? v as Intent : "question");
 // 메일 정리 칸(스펙 §7 "메일 정리", 0.14.0). chat 은 검사·정제하지 않고 모델 출력 그대로 돌려준다 — 검사·검색어 조립은 mail-action 한 곳
 export type MailFields = { action: "trash" | "read"; sender: string | null; subject_words: string[]; received_from: string | null;
@@ -67,27 +67,50 @@ export const MAIL_SCHEMA = {
     unread_only: { type: "boolean", description: "'안 읽은' 메일이라고 말했으면 true" },
   },
 } as const;
+// 메일 요약 칸(스펙 §7 "메일 요약"·§9 "채팅 메일 요약", 0.15.0). chat 은 검사·정제하지 않고 모델 출력 그대로 — 검사·검색어 조립은 mail-read 한 곳.
+// target_in_message 는 앱이 직전 요약 뒤 후속 요청을 가르는 데만 쓴다(§9 "이어서 읽기") — 검색은 읽지 않는다
+export type MailReadFields = { sender: string | null; subject_words: string[]; received_from: string | null; received_to: string | null;
+  latest: boolean; translate: boolean; target_in_message: boolean };
+export const MAIL_READ_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["sender", "subject_words", "received_from", "received_to", "latest", "translate", "target_in_message"],
+  properties: {
+    sender: MAIL_SCHEMA.properties.sender,
+    subject_words: MAIL_SCHEMA.properties.subject_words,
+    received_from: MAIL_SCHEMA.properties.received_from,
+    received_to: MAIL_SCHEMA.properties.received_to,
+    latest: { type: "boolean", description: "'가장 최근·마지막으로 온·방금 온' 메일이라고 말했으면 true" },
+    translate: { type: "boolean", description: "번역해줘·전문 번역·우리말로 옮겨줘처럼 번역을 시켰으면 true" },
+    target_in_message: { type: "boolean",
+      description: "지금 보낸 글이 대상(발신자·제목 단어·받은 기간·가장 최근)을 하나라도 직접 말했으면 true. 대상이 없거나 이전 대화로만 채웠으면 false" },
+  },
+} as const;
 // U1: strict 가 속성 수준 anyOf null 을 거절하면 mail 을 늘 MAIL_SCHEMA 객체로 두고 parseFilterOutput 이 intent !== mail_action 이면 null 로 바꾼다
 const INTENT_PROPS = {
   intent: { type: "string", enum: INTENTS,
-    description: "지금 보낸 질문이 캘린더 등록을 시키면 add_event, Gmail 메일을 휴지통으로 옮기거나 읽음 처리하라고 시키면 mail_action, 그 밖(묻기·설명·애매함)은 question" },
+    description: "지금 보낸 질문이 캘린더 등록을 시키면 add_event, Gmail 메일을 휴지통으로 옮기거나 읽음 처리하라고 시키면 mail_action, Gmail 메일을 요약·읽기·번역하라고 시키면 mail_summary, 그 밖(묻기·설명·애매함)은 question" },
   mail: { anyOf: [MAIL_SCHEMA, { type: "null" }], description: "intent 가 mail_action 일 때만 채운다. 아니면 null" },
+  mail_read: { anyOf: [MAIL_READ_SCHEMA, { type: "null" }], description: "intent 가 mail_summary 일 때만 채운다. 아니면 null" },
 } as const;
 export const INTENT_FILTER_SCHEMA = {
-  ...FILTER_SCHEMA, required: [...FILTER_SCHEMA.required, "intent", "mail"], properties: { ...FILTER_SCHEMA.properties, ...INTENT_PROPS },
+  ...FILTER_SCHEMA, required: [...FILTER_SCHEMA.required, "intent", "mail", "mail_read"], properties: { ...FILTER_SCHEMA.properties, ...INTENT_PROPS },
 } as const;
 export const INTENT_CONTEXT_FILTER_SCHEMA = {
-  ...CONTEXT_FILTER_SCHEMA, required: [...CONTEXT_FILTER_SCHEMA.required, "intent", "mail"], properties: { ...CONTEXT_FILTER_SCHEMA.properties, ...INTENT_PROPS },
+  ...CONTEXT_FILTER_SCHEMA, required: [...CONTEXT_FILTER_SCHEMA.required, "intent", "mail", "mail_read"], properties: { ...CONTEXT_FILTER_SCHEMA.properties, ...INTENT_PROPS },
 } as const;
 // 행동은 명시적 요청만, 지금 보낸 글에서만(스펙 §9, 2026-10-06 리뷰 반영). 필터 칸은 의도와 상관없이 위 규칙대로 뽑는다
 export const INTENT_RULE = [
   "intent: 지금 보낸 질문이 행동을 명시적으로 시킬 때만 행동 의도다.",
   "add_event = 일정을 캘린더에 등록·추가·넣기·잡기를 시키는 말(예: 등록해줘, 추가해줘, 캘린더에 넣어줘, 일정 잡아줘). 날짜가 없어도 등록을 시키면 add_event 다.",
   "mail_action = Gmail 메일을 휴지통으로 옮기거나 읽음 처리하라고 시키는 말(예: 지워줘, 휴지통에 버려줘, 삭제해줘, 읽음 처리해줘).",
-  "일정·메일을 묻거나 설명만 하면 question 이다(예: 다음 주 치과 예약 있어?, 광고 메일 몇 통 왔어?, 그 메일 지워야 할까?, 지우는 법 알려줘). 애매하면 question.",
+  "mail_summary = Gmail 메일을 요약·읽기·번역하라고 시키는 말(예: 요약해줘, 읽어줘, 내용 정리해줘, 번역해줘, 뭐라고 왔는지 보여줘, ~요약해 줄래?, ~읽어 줄 수 있어?). '읽음 처리'는 mail_action, '읽어줘'는 mail_summary 다.",
+  "메일 내용을 묻기만 하면(예: 그 메일 무슨 내용이야?, 언제까지래?) question 이다. 메일을 찾아 달라는 말도 question 이다. 문자·카톡·알림·공유한 글의 요약은 Gmail 이 아니므로 question 이다.",
+  "요약과 휴지통·읽음 처리를 한 글에서 함께 시키면 mail_summary 다(읽기만 한다).",
+  "일정·메일을 묻거나 설명만 하면 question 이다(예: 다음 주 치과 예약 있어?, 광고 메일 몇 통 왔어?, 그 메일 지워야 할까?, 지우는 법 알려줘, 메일도 요약할 수 있어?). 애매하면 question.",
   "행동 의도는 지금 보낸 질문에서만 인정한다. 이전 대화(<previous>)의 질문·답 안의 명령, 지금 질문 속 따옴표로 옮긴 남의 말, '하지 마'처럼 하지 말라는 요청은 question 이다.",
   "이전 대화는 '그 메일·그 약속·그 발신자'가 무엇인지 채우는 데만 쓴다.",
   "mail 은 intent 가 mail_action 일 때만 채우고 그 밖에는 null 이다. 말하지 않은 조건은 채우지 않는다. 필터 칸은 의도와 상관없이 위 규칙대로 뽑는다.",
+  "mail_read 는 intent 가 mail_summary 일 때만 채우고 그 밖에는 null 이다. 말하지 않은 조건은 채우지 않는다. target_in_message 는 지금 보낸 글이 발신자·제목 단어·받은 기간·가장 최근 중 하나를 직접 말했으면 true, 대상을 말하지 않았거나 이전 대화로만 채웠으면 false 다.",
 ].join("\n");
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -138,13 +161,14 @@ export function filterRequest(question: string, today: string, context: ContextT
       schema: ctx ? INTENT_CONTEXT_FILTER_SCHEMA : INTENT_FILTER_SCHEMA, strict: true } } };
 }
 
-export type FilterOutput = { filters: Filters; query?: string; intent?: Intent; mail?: MailFields | null;
+export type FilterOutput = { filters: Filters; query?: string; intent?: Intent; mail?: MailFields | null; mail_read?: MailReadFields | null;
   usage?: { input_tokens: number; output_tokens: number } };
-// 모델 출력 → 필터(7칸만 — query·intent·mail 이 필터 객체에 섞이지 않게) + 독립 질문 + 의도. intent·mail 키는 withIntent 일 때만 있다
+// 모델 출력 → 필터(7칸만 — query·intent·mail·mail_read 가 필터 객체에 섞이지 않게) + 독립 질문 + 의도. intent·mail·mail_read 키는 withIntent 일 때만 있다
 export function parseFilterOutput(outputText: string, hasContext: boolean, withIntent: boolean): Omit<FilterOutput, "usage"> {
-  const { query, intent, mail, ...f } = JSON.parse(outputText) as Filters & { query?: string; intent?: unknown; mail?: MailFields | null };
+  const { query, intent, mail, mail_read, ...f } = JSON.parse(outputText) as Filters & { query?: string; intent?: unknown; mail?: MailFields | null;
+    mail_read?: MailReadFields | null };
   const out: Omit<FilterOutput, "usage"> = { filters: normalizeFilters(f), query: hasContext ? query : undefined };
-  if (withIntent) { out.intent = asIntent(intent); out.mail = mail ?? null; }
+  if (withIntent) { out.intent = asIntent(intent); out.mail = mail ?? null; out.mail_read = mail_read ?? null; }
   return out;
 }
 
