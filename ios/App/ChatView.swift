@@ -40,6 +40,7 @@ struct ChatView: View {
   @State private var openItem: String?                  // "일정 보기"(이미 읽은 링크, 0.11.4) → 항목 상세
   @State private var mailPolling: Set<UUID> = []       // 상태를 읽는 중인 메일 정리 턴(같은 턴을 두 Task 가 읽지 않게, 0.14.0)
   @State private var mailRequesting: Set<UUID> = []    // 실행·되돌리기·다시 미리보기 요청 중인 턴 — 재개(onAppear·활성화)가 끼어들지 않게(D22)
+  @State private var mailNexted: Set<UUID> = []        // [다음 1,000건 보기]를 이미 누른 턴 — 연타로 새 턴이 둘 생기지 않게(저장하지 않는다)
   @State private var dictation = SpeechDictation()     // 기기 안 받아쓰기(§9·§12)
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.colorScheme) private var scheme
@@ -112,7 +113,7 @@ struct ChatView: View {
         .navigationDestination(item: $openItem) { ItemDetailView(itemID: $0) }
         // 다시 나올 때(다른 탭·항목 상세에서 돌아옴 — scenePhase 는 그대로)는 카드·제안을 다시 읽는다(§10 "다음에 화면에 나올 때", 최종 리뷰 Minor 1).
         // 첫 표시는 행 onAppear 가 읽는다
-        .onAppear { let back = loaded; dictation.onText = { input = $0 }; dictation.refresh(); syncClear(); loadHistory(); if back { refreshCalendars() } }
+        .onAppear { let back = loaded; dictation.onText = { input = $0 }; dictation.refresh(); syncClear(); loadHistory(); if back { refreshCalendars(); resumeMailTurns() } }
         .onDisappear { dictation.stopIfRecording() }
         // 설정·로그아웃·계정 삭제·삭제 푸시에서 지웠다(D7) — 화면도 바로 비운다. 지운 뒤에는 빈 기록을 불러온 것과 같다
         .onChange(of: log.clearCount) { _, _ in syncClear() }
@@ -140,7 +141,7 @@ struct ChatView: View {
     guard let seen = seenClear else { seenClear = now; return }
     guard seen != now else { return }
     seenClear = now
-    turns = []; judged = [:]; judging = []; adds = [:]; copied = nil; judgeSheet = nil; confirm = nil; openItem = nil; mailPolling = []; mailRequesting = []; loaded = true
+    turns = []; judged = [:]; judging = []; adds = [:]; copied = nil; judgeSheet = nil; confirm = nil; openItem = nil; mailPolling = []; mailRequesting = []; mailNexted = []; loaded = true
   }
 
   /// 새 턴을 맨 뒤에 두고 저장한다. 500개 상한은 더할 때도(D1)
@@ -632,6 +633,7 @@ struct ChatView: View {
         settle(id, epoch) {
           $0.record.mail = p.token == nil ? MailTurn(phase: .ended, note: MailCleanupText.noneFound) : MailTurn(phase: .preview, preview: p, previewAt: Date())
         }
+        scroll(to: id)                                                            // 카드·버튼이 입력 패널 뒤에 깔리지 않게(0.8.2)
       } else {
         let code = r.flatMap { MailCleanup.errorCode($0.data) }
         Trace.log("chat.mail", ["stage": "preview", "result": "error", "code": code ?? "http_\(r?.status ?? -1)", "elapsed_ms": ms])
@@ -677,6 +679,7 @@ struct ChatView: View {
   /// 그 밖이면 그 상태로 진행·결과를 잇는다. 둘 다 못 읽으면 진행 중으로 두고 "결과를 확인하는 중이에요" — 다시 열거나 활성화되면 다시 읽는다(D22)
   private func readBack(_ id: UUID, token: String, epoch: Int) async {
     for attempt in 0..<2 {
+      guard log.clearCount == epoch else { return }                               // 지운 뒤에는 요청을 보내지 않는다
       if attempt > 0 { try? await Task.sleep(for: .seconds(2)) }
       guard let r = await MailCleanupAPI.status(id: token) else { continue }
       if r.status == 200, let s = MailCleanup.status(r.data) {
@@ -713,7 +716,7 @@ struct ChatView: View {
         return
       }
       Trace.log("chat.mail", ["stage": "undo", "result": "error", "code": code ?? "http_\(r?.status ?? -1)"])
-      if let r, [400, 403, 404, 409, 410].contains(r.status) {                   // 확정: 행이 바뀌지 않았다([되돌리기]는 canUndo 대로 남는다)
+      if let r, [400, 403, 404, 409, 410].contains(r.status) || (r.status == 502 && code == "gmail_upstream") {   // 확정: 행이 바뀌지 않았다([되돌리기]는 canUndo 대로 남는다). 502 gmail_upstream = 토큰 갱신 일시 오류(D3)
         let n = MailCleanup.undoError(status: r.status, code: code, action: action)
         settle(id, epoch) { $0.record.mail?.phase = .ended; $0.record.mail?.apply(n) }
         return
@@ -732,8 +735,11 @@ struct ChatView: View {
       let started = Date()
       while log.clearCount == epoch, turns.contains(where: { $0.id == id }) {
         if let r = await MailCleanupAPI.status(id: sid) {
-          if r.status == 404 {                                                    // 7일 정리·출처 삭제
-            settle(id, epoch) { $0.record.mail?.phase = .ended; $0.record.mail?.note = MailCleanupText.unknownResult }
+          if r.status == 404 {                                                    // 7일 정리·출처 삭제 — 끝나지 않은 저장 상태는 비운다(영구 스피너·재읽기 방지). 끝난 상태는 둔다(되돌리기는 410)
+            settle(id, epoch) {
+              $0.record.mail?.phase = .ended; $0.record.mail?.note = MailCleanupText.unknownResult
+              if $0.record.mail?.status?.finished != true { $0.record.mail?.status = nil }
+            }
             return
           }
           if r.status == 200, let n = MailCleanup.status(r.data) {
@@ -783,12 +789,18 @@ struct ChatView: View {
           settle(id, epoch) { $0.record.mail?.phase = .preview; $0.record.mail?.note = MailCleanupText.failed }
           return
         }
-        if r.status == 200, let s = MailCleanup.status(r.data), s.status != "previewed" {   // 그사이 실행됐다 — 그 결과로 잇는다
+        let s = r.status == 200 ? MailCleanup.status(r.data) : nil
+        if r.status == 200 && s == nil {                                          // 200 인데 상태를 못 읽었다 — 덮지 않는다
+          settle(id, epoch) { $0.record.mail?.phase = .preview; $0.record.mail?.note = MailCleanupText.failed }
+          return
+        }
+        if let s, s.status != "previewed" {                                       // 그사이 실행됐다 — 그 결과로 잇는다
           settle(id, epoch) { $0.record.mail?.afterStatusRead(s) }
           if !s.finished { pollMail(id, epoch: epoch) }
           return
         }
       }
+      guard log.clearCount == epoch else { return }                               // 지운 뒤에는 새 미리보기를 받지 않는다
       settle(id, epoch) { $0.record.mail = MailTurn(phase: .finding) }
       previewMail(id, body: c.json, epoch: epoch)                                // Conditions(Sendable)를 잡고 여기서 본문을 만든다
     }
@@ -796,13 +808,15 @@ struct ChatView: View {
 
   /// [다음 1,000건 보기]: 새 메일 정리 턴 — 앞 턴의 결과·[되돌리기]를 지우지 않는다(D15). append 가 새 턴으로 스크롤한다(F28). 맥락으로 가지 않는다
   private func nextMail(_ id: UUID) {
-    guard let c = turns.first(where: { $0.id == id })?.record.mail?.preview?.conditions else { return }
+    guard !mailNexted.contains(id), let c = turns.first(where: { $0.id == id })?.record.mail?.preview?.conditions else { return }
+    mailNexted.insert(id)
     let nid = append(ChatHistory.Record(at: Date(), kind: .mailAction, question: MailCleanupText.nextPage, mail: MailTurn(phase: .finding)))
     previewMail(nid, body: c.json, epoch: log.clearCount)
   }
 
   /// [취소]: 서버를 부르지 않는다 — 행은 실행되지 않은 채 7일 뒤 정리된다
   private func cancelMail(_ id: UUID) {
+    guard turns.first(where: { $0.id == id })?.record.mail?.phase == .preview, !mailRequesting.contains(id) else { return }
     settle(id, log.clearCount) { $0.record.mail?.phase = .ended; $0.record.mail?.note = MailCleanupText.cancelled }
   }
 
