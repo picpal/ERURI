@@ -15,11 +15,14 @@ export function clipText(s: string, n: number): { text: string; truncated: boole
 
 const isAttachment = (p: MessagePart) => !!p.filename || !!p.body?.attachmentId;
 function charsetOf(contentType: string | null): string | null {
-  const m = contentType?.match(/charset\s*=\s*"?([^";\s]+)"?/i);
+  const m = contentType?.match(/charset\s*=\s*["']?([^"';\s]+)["']?/i);   // 작은따옴표(charset='euc-kr')도 — 한국 메일에 있다
   return m ? m[1].toLowerCase() : null;
 }
+// base64 는 디코드 전에 자른다: 4M 바이트(UTF-8 한 글자 최대 3바이트/UTF-16 단위 → 1M 글자 이상)의 base64 길이 — 큰 첨부성 본문을 통째로 풀지 않는다
+const B64_MAX = 4 * Math.ceil((4 * BODY_SCAN_MAX) / 3);
 function b64urlBytes(data: string): Uint8Array {
-  const b = data.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
+  let b = data.slice(0, B64_MAX).replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
+  if (data.length > B64_MAX) b = b.slice(0, b.length - (b.length % 4));   // 자른 끝이 4자 묶음 중간이면 버린다(atob 거절 방지)
   return Uint8Array.from(atob(b + "=".repeat((4 - (b.length % 4)) % 4)), (c) => c.charCodeAt(0));
 }
 // base64url → 바이트 → 파트 charset(WHATWG 라벨, 대소문자·따옴표 무시)로. 라벨이 없거나 모르면 UTF-8(깨진 바이트는 U+FFFD)
@@ -64,7 +67,7 @@ function dropBlocks(html: string): string {
   }
   return out;
 }
-const BLOCK_END = /<br\s*\/?>|<\/(?:p|div|li|tr|h[1-6])\s*>/gi;
+const BLOCK_END = /<br\b[^<>]*>|<\/(?:p|div|li|tr|h[1-6])\s*>/gi;
 const TAG = /<[^<>]*>/g;                         // 겹친 '<' 에서 되짚기 폭발이 없다(D8)
 // HTML → 글: 블록 제거 → 블록 끝 태그는 줄바꿈 → 나머지 태그 제거(href 넣지 않음) → 엔티티 → 줄마다 공백 정리, 빈 줄이 이어지면 하나로
 export function htmlToText(html: string): string {

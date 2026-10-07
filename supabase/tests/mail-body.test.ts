@@ -73,3 +73,19 @@ Deno.test("clipText: 12,000 and 4,000 cuts never leave a lone surrogate; reports
   assertEquals(clipText("가".repeat(11_999) + "🎉", 12_000), { text: "가".repeat(11_999), truncated: true });
   assertEquals(clipText("가".repeat(100), 4_000), { text: "가".repeat(100), truncated: false });
 });
+// S2 리뷰 Minor: 속성이 붙은 <br …> 도 줄바꿈(<brx> 같은 다른 태그는 아님)
+Deno.test("<br> with attributes is a line break too; a tag that only starts with br is not", () => {
+  assertEquals(htmlToText(`첫줄<br class="x">둘째<br style='a' />셋째<BR >넷째<brx>붙음`), "첫줄\n둘째\n셋째\n넷째붙음");
+});
+// S2 리뷰 Minor: 한국 메일에 실제로 있는 작은따옴표 charset
+Deno.test("charset in single quotes (charset='euc-kr') is read", () => {
+  assertEquals(decodePartData(hex("c7d5bcbac0bac7e020bec8b3bb"), "text/plain; charset='euc-kr'"), "합성은행 안내");
+});
+// S2 리뷰 Minor: base64 를 디코드 전에 잘라 1M 글자 상한에 맞춘다(약 4/3 × 4M 자) — 상한 뒤 잘못된 글자가 있어도 앞부분은 디코드된다
+Deno.test("base64 is capped before decoding: data past the cap is never decoded", () => {
+  const big = utf8("a".repeat(4_200_000)) + "@@@@";                                  // 상한 뒤에 base64 가 아닌 글자
+  const t = decodePartData(big, "text/plain; charset=utf-8");
+  assertEquals(t.length, 4_000_002);                                                // 5,333,336 자 → 4,000,002 바이트
+  assert(t.length >= BODY_SCAN_MAX);
+  assertEquals(extractBody(leaf("text/plain", big)).text?.length, BODY_SCAN_MAX);
+});
