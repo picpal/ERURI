@@ -50,7 +50,11 @@ Deno.test("e02 carries td-split dates/amounts and a &zwnj;·&middot; preheader a
   const html = byId("e02").message.mime.parts![0].text!;
   assert(html.includes("<td>30,000원 이상</td><td>10월 15일부터</td>") && html.includes("&zwnj;") && html.includes("&middot;"));
   const text = extractBody(buildMessage(byId("e02")).payload).text!;
+  // S2 Minor 1·2 고치면 바꿀 곳: 아래 세 단언(셀 붙음·엔티티 잔존)
   assert(text.includes("30,000원 이상10월 15일부터"), "td cells join without a separator (S2 Minor 1)");
   assert(text.includes("&middot;") && text.includes("&zwnj;"), "named entities outside the small table stay raw (S2 Minor 2)");
   assertEquals(byId("e02").expect.forbidden, ["&zwnj;", "&middot;"]);
+  // 셀 붙음 사실(10/15·30000)은 allowed 에만 — 필수(facts)가 아니다(S7 리뷰 Ruling S7-I1)
+  assertEquals(byId("e02").expect.facts, { dates: ["10/12", "10/31"], amounts: ["5000"] });
+  assertEquals(byId("e02").expect.allowed, { dates: ["10/12", "10/15", "10/31"], amounts: ["30000", "5000"] });
 });

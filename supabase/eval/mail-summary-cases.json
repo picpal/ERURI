@@ -8,7 +8,7 @@
     { "id": "e02", "kind": "ko_html_newsletter", "request": "합성마켓 메일 요약해줘", "translate": false,
       "message": { "from": "합성마켓 <news@example.com>", "subject": "합성마켓 10월 소식", "date": "2026-10-05T10:00:00+09:00",
         "mime": { "type": "multipart/alternative", "parts": [{ "type": "text/html", "text": "<html><head><style>.x{color:red}</style></head><body><div style=\"display:none;max-height:0\">가을 할인 &middot; 회원 쿠폰 안내&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div><h1>합성마켓 10월 소식</h1><table><tr><td>가을 할인 20%</td><td>10월 12일까지</td></tr><tr><td>무료 배송</td><td>30,000원 이상</td><td>10월 15일부터</td></tr></table><p>회원 쿠폰 5,000원을 드려요. 쿠폰은 10월 31일에 만료됩니다.</p><p><a href=\"https://news.example/unsubscribe\">수신 거부</a></p></body></html>" }] } },
-      "expect": { "status": "ok", "lines_min": 3, "forbidden": ["&zwnj;", "&middot;"], "facts": { "dates": ["10/12", "10/15", "10/31"], "amounts": ["30000", "5000"] }, "allowed": { "dates": ["10/12", "10/15", "10/31"], "amounts": ["30000", "5000"] } } },
+      "expect": { "status": "ok", "lines_min": 3, "forbidden": ["&zwnj;", "&middot;"], "facts": { "dates": ["10/12", "10/31"], "amounts": ["5000"] }, "allowed": { "dates": ["10/12", "10/15", "10/31"], "amounts": ["30000", "5000"] } } },
     { "id": "e03", "kind": "ko_long", "request": "합성보험 메일 요약해줘", "translate": false,
       "message": { "from": "합성보험 <care@example.com>", "subject": "[합성보험] 갱신 안내", "date": "2026-10-04T08:00:00+09:00",
         "mime": { "type": "text/plain", "text": "합성보험 갱신 안내입니다. 갱신일은 11월 3일이고 월 보험료는 42,000원입니다. 10월 25일까지 보장 변경을 신청할 수 있습니다.\n", "tail": { "text": "합성 약관 조항 안내 문장입니다. 자세한 내용은 약관을 확인해 주세요. ", "repeat": 400 } } },
