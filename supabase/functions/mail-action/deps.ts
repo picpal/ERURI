@@ -17,7 +17,7 @@ export function mailActionDeps(sb: SupabaseClient): MailActionDeps {
     connection: async (u) => ((await rpc("mail_connection", { p_user: u })) as MailConnection[] | null)?.[0] ?? null,
     accessToken: (u, c) => gmailAccessToken(sb, (rt) => refreshAccessToken(rt, MAIL_CALL_TIMEOUT_MS), u, c),   // 갱신 15초(D7)
     api: gmailMailApi,
-    noteUnits: async (u, n) => { await noteGmailUnits(sb, u, n); },
+    noteUnits: (u, n) => noteGmailUnits(sb, u, n),
     createRow: async (u, c, a, ids) => (await rpc("mail_action_preview", { p_user: u, p_connection: c, p_action: a, p_ids: ids })) as string | null,
     start: async (u, id) => (await rpc("mail_action_start", { p_user: u, p_id: id })) as RowResult,
     undo: async (u, id) => (await rpc("mail_action_undo", { p_user: u, p_id: id })) as RowResult,

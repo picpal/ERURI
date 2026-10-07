@@ -14,7 +14,7 @@ const many = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => 
 
 type FakeOpts = { user?: string | null; conn?: Partial<MailConnection> | null; enabled?: boolean; token?: string | null; tokenThrows?: boolean; pages?: Page[]; starred?: number;
   list?: (q: string, n: number, p?: string) => Promise<Page>; headers?: (id: string) => Promise<GmailMessage>; row?: string | null;
-  start?: RowResult; undo?: RowResult; status?: Counts | null; step?: number };
+  start?: RowResult; undo?: RowResult; status?: Counts | null; step?: number; noteOk?: boolean };
 function fake(o: FakeOpts = {}) {
   const calls = { list: [] as { q: string; n: number; p?: string }[], headers: [] as string[], notes: [] as number[],
     rows: [] as { action: string; ids: string[] }[], kicks: 0, starts: [] as string[], undos: [] as string[], tokens: 0 };
@@ -33,7 +33,7 @@ function fake(o: FakeOpts = {}) {
       },
       headers: (id) => { calls.headers.push(id); return o.headers ? o.headers(id) : Promise.resolve(mk(id)); },
     }),
-    noteUnits: (_u, n) => { calls.notes.push(n); return Promise.resolve(); },
+    noteUnits: (_u, n) => { calls.notes.push(n); return Promise.resolve(o.noteOk ?? true); },
     createRow: (_u, _c, action, ids) => { calls.rows.push({ action, ids }); return Promise.resolve(o.row === undefined ? TOKEN : o.row); },
     start: (_u, id) => { calls.starts.push(id); return Promise.resolve(o.start ?? { result: "started", ...C("pending") }); },
     undo: (_u, id) => { calls.undos.push(id); return Promise.resolve(o.undo ?? { result: "started", ...C("undo_pending") }); },
@@ -75,6 +75,17 @@ Deno.test("preview: server builds the query, lists 500 per page, estimates starr
   assertEquals({ ...j, sample: j.sample.length }, { token: TOKEN, action: "trash", conditions: { action: "trash", sender: "합성상점", subject_words: [],
     received_from: null, received_to: null, promotions: true, unread_only: false }, count: 3, exact: true, total_estimate: 3, starred_estimate: 2, has_more: false, sample: 3 });
   assertEquals(j.sample[0], { from: "합성상점", subject: "합성 광고 a", date: new Date(1790000000000).toISOString() });
+});
+
+Deno.test("preview: a failed units note turns noting off for the rest of the request (one try, code-only log); the preview still succeeds", async () => {
+  const { d, calls } = fake({ noteOk: false });
+  const { r, lines } = await quiet(() => handleMailAction(req("preview", mail()), d));
+  assertEquals(r.status, 200);
+  assertEquals(calls.notes, [5]);                                        // 목록 앞 1번만 — 별표·표본 앞에서는 부르지 않는다
+  assertEquals(calls.list.length, 2);
+  assertEquals(calls.rows.length, 1);
+  assertEquals(lines.filter((l) => l.includes("units_note_error")).length, 1);
+  assert(lines.every((l) => !l.includes("합성")));
 });
 
 Deno.test("preview: conditions are the server-confirmed ones (sanitized), a model-written q is ignored", async () => {

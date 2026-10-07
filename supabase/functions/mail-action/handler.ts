@@ -14,7 +14,7 @@ export type MailActionDeps = {
   connection(user: string): Promise<MailConnection | null>;
   accessToken(user: string, conn: string): Promise<string | null>;    // null = 토큰 없음·invalid_grant(연결은 reauth_required 로 표시됨)
   api(accessToken: string): Pick<GmailMailApi, "list" | "headers">;
-  noteUnits(user: string, units: number): Promise<void>;               // 호출 전 기록(fail-open)
+  noteUnits(user: string, units: number): Promise<boolean>;            // 호출 전 기록(fail-open, false = 실패·1초 초과)
   createRow(user: string, conn: string, action: string, ids: string[]): Promise<string | null>;
   start(user: string, id: string): Promise<RowResult>;
   undo(user: string, id: string): Promise<RowResult>;
@@ -101,12 +101,18 @@ async function preview(user: string, conn: MailConnection, body: Record<string, 
   const at = await accessFor(user, conn, d, "preview");
   if (at instanceof Response) return at;
   const over = () => { if (d.now() - t0 > PREVIEW_BUDGET_MS) throw new PreviewTimeout(); };   // Gmail 호출 직전마다
+  // units 기록 차단기: 요청 안에서 첫 실패 뒤 나머지 기록은 건너뛴다(수집 unitsNoter 와 같은 이유 — 멈춘 DB 가 7번 × 1초로 미리보기 예산을 먹지 않게)
+  let noteOff = false;
+  const note = async (units: number) => {
+    if (noteOff) return;
+    if (!(await d.noteUnits(user, units))) { noteOff = true; log({ stage: "preview", result: "units_note_error" }); }
+  };
   const api = d.api(at), c = chk.c, q = buildQuery(c);
   const ids: string[] = [], seen = new Set<string>();
   let pageToken: string | undefined, pages = 0, estimate = 0, complete = false;
   do {
     over();
-    await d.noteUnits(user, 5);
+    await note(5);
     const p = await api.list(q, PAGE_SIZE, pageToken);
     if (pages++ === 0) estimate = p.resultSizeEstimate ?? 0;
     let dropped = false;
@@ -119,10 +125,10 @@ async function preview(user: string, conn: MailConnection, body: Record<string, 
     complete = !pageToken && !dropped;
   } while (pageToken && ids.length < PREVIEW_MAX && pages < PAGE_CAP);
   over();
-  await d.noteUnits(user, 5);
+  await note(5);
   const starred = (await api.list(buildQuery(c, true), 1)).resultSizeEstimate ?? 0;   // 별표 수도 추정치("별표 약 M건")
   const head = ids.slice(0, SAMPLE);
-  if (head.length) await d.noteUnits(user, 20 * head.length);
+  if (head.length) await note(20 * head.length);
   const sample = await samples(api, head, over);
   const base = { action: c.action, conditions: c, count: ids.length, exact: complete,
     total_estimate: complete ? ids.length : Math.max(estimate, ids.length), starred_estimate: starred, has_more: !complete, sample };
