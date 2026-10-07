@@ -1,5 +1,5 @@
 import type { BudgetDeps, TokenUsage } from "../_shared/budget.ts";
-import type { GmailReadApi } from "../_shared/gmail.ts";
+import { type GmailReadApi, ReauthRequired } from "../_shared/gmail.ts";
 import type { SummaryInput, SummaryOutput } from "./summary.ts";
 
 // 메일 요약 Edge(스펙 §7 "메일 요약"): 공용 타입·오류·응답 도우미. 로그는 request_id·단계·결과 코드·개수·status·잘림·첨부 수·모델·elapsed_ms 만 —
@@ -9,7 +9,7 @@ export type MailReadDeps = {
   enabled(): boolean;                                                  // MAIL_READ=on — 꺼지면 검색·읽기 모두 503 disabled
   authUser(token: string): Promise<string | null>;
   connection(user: string): Promise<MailReadConnection | null>;        // 0030 mail_connection(최신 1개)
-  accessToken(user: string, conn: string): Promise<string | null>;    // null = 토큰 없음·invalid_grant(연결은 reauth_required 로), 던짐 = 갱신 일시 오류
+  accessToken(user: string, conn: string): Promise<string | null>;    // null = 토큰 없음·invalid_grant(연결은 reauth_required 로), RpcError = RPC/DB 실패, 그 밖의 던짐 = 갱신 일시 오류
   api(accessToken: string): GmailReadApi;
   takeUnits(user: string, units: number): Promise<boolean>;           // 0030 gmail_take_units — 거절 false, RPC 실패·1초 초과는 던짐(fail-closed)
   tokenKey(): Promise<CryptoKey>;                                      // MAIL_READ_KEY(형식 오류면 key_invalid 로 거절된 Promise)
@@ -40,7 +40,12 @@ export async function connectionFor(ctx: Ctx, d: MailReadDeps, stage: string): P
 export async function accessFor(ctx: Ctx, c: MailReadConnection, d: MailReadDeps, stage: string): Promise<string | Response> {
   let at: string | null;
   try { at = await d.accessToken(ctx.user, c.connection_id); }
-  catch { log({ stage, request_id: ctx.request_id, result: "token_error", elapsed_ms: ms(ctx, d) }); return err(502, "gmail_upstream"); }
+  catch (e) {
+    if (e instanceof RpcError) throw e;                                  // RPC/DB 실패 → failure 의 500 internal(로그 = 함수 이름·SQLSTATE, 스펙 §7)
+    if (e instanceof ReauthRequired) { log({ stage, request_id: ctx.request_id, result: "reauth_required", elapsed_ms: ms(ctx, d) }); return err(409, "reauth_required"); }
+    log({ stage, request_id: ctx.request_id, result: "token_error", elapsed_ms: ms(ctx, d) });
+    return err(502, "gmail_upstream");                                   // Google 토큰 엔드포인트 일시 오류
+  }
   if (!at) { log({ stage, request_id: ctx.request_id, result: "reauth_required", elapsed_ms: ms(ctx, d) }); return err(409, "reauth_required"); }
   return at;
 }

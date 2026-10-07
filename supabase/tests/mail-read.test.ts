@@ -1,8 +1,10 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import type { BudgetDeps, LedgerLine } from "../functions/_shared/budget.ts";
-import { GmailHttpError, type GmailMessage, type MessagePart } from "../functions/_shared/gmail.ts";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { GmailHttpError, type GmailMessage, type MessagePart, ReauthRequired } from "../functions/_shared/gmail.ts";
 import { importTokenKey, signToken, type TokenClaims, verifyToken } from "../functions/_shared/mail-token.ts";
-import { type MailReadDeps, SummaryFailed as SummaryFailedProbe } from "../functions/mail-read/common.ts";
+import { type MailReadDeps, RpcError, SummaryFailed as SummaryFailedProbe } from "../functions/mail-read/common.ts";
+import { mailReadDeps } from "../functions/mail-read/deps.ts";
 import { handleMailRead } from "../functions/mail-read/handler.ts";
 import type { SummaryInput, SummaryOutput } from "../functions/mail-read/summary.ts";
 
@@ -21,7 +23,7 @@ const OK_SUMMARY: SummaryOutput = { status: "ok", lines: ["합성학원 설명�
 
 type Opt = { msgs?: M[]; pageSize?: number; conn?: { connection_id: string; status: string } | null; access?: string | null | Error;
   take?: (n: number) => boolean | Error; enabled?: boolean; clockStep?: number; accessStep?: number; listError?: Error; full?: Record<string, M | Error>;
-  summary?: SummaryOutput | Error; usage?: boolean; level?: "ok" | "refused"; slots?: (number | null)[]; auditFails?: boolean };
+  summary?: SummaryOutput | Error; usage?: boolean; level?: "ok" | "refused"; slots?: (number | null)[]; auditFails?: boolean; key?: string };
 function fake(o: Opt = {}) {
   const seen = { list: [] as { q: string; max: number; page?: string }[], headers: [] as string[], full: [] as string[], take: [] as number[],
     summarize: [] as SummaryInput[], audit: [] as string[], settled: [] as LedgerLine[][], reserved: [] as string[], sleeps: [] as number[], timeouts: [] as number[] };
@@ -64,7 +66,7 @@ function fake(o: Opt = {}) {
       },
     }),
     takeUnits: async (_u, n) => { seen.take.push(n); const r = o.take?.(n) ?? true; if (r instanceof Error) throw r; return r; },
-    tokenKey: () => importTokenKey(KEY_B64),
+    tokenKey: () => importTokenKey(o.key ?? KEY_B64),
     budget,
     summarize: async (i, onUsage) => {
       seen.summarize.push(i);
@@ -346,3 +348,56 @@ Deno.test("read: ask status → ask sentence, summary null; logs carry no subjec
   assert(out.includes('"status":"ask"'));
 });
 
+// ── S3 리뷰 반영(계획 Ruling S3-m1·m2·m3) ──
+// S3 리뷰 Minor 1(계획 Ruling S3-m1): 토큰 갱신 중 RPC/DB 실패는 502 가 아니라 500 internal(로그 = 함수 이름·SQLSTATE), 갱신 일시 오류만 502, ReauthRequired 는 409
+Deno.test("search/read: an RPC failure while getting the access token → 500 internal (function + SQLSTATE logged); ReauthRequired → 409; refresh error → 502", async () => {
+  for (const p of ["search", "read"]) {
+    const body = p === "search" ? F : await R("m1");
+    const rpc = await call(fake({ msgs: [mail("m1", "본문")], access: new RpcError("gmail_get_refresh_token", "42883") }).d, req(p, body));
+    assertEquals([rpc.status, rpc.j], [500, { error: "internal" }], p);
+    assert(rpc.logs.join("\n").includes("gmail_get_refresh_token 42883"), p);
+    assertEquals((await call(fake({ msgs: [mail("m1", "본문")], access: new ReauthRequired("invalid_grant") }).d, req(p, body))).j, { error: "reauth_required" }, p);
+    assertEquals((await call(fake({ msgs: [mail("m1", "본문")], access: new Error("token refresh 500") }).d, req(p, body))).j, { error: "gmail_upstream" }, p);
+  }
+});
+// 실제 deps: gmail-jobs call 은 평범한 Error("<함수> <SQLSTATE>")를 던진다 — deps 가 RpcError 로 바꾸고, refresh(Google 토큰 엔드포인트) 오류는 그대로 둔다
+Deno.test("mailReadDeps.accessToken: RPC errors become RpcError (function + SQLSTATE), refresh transport errors pass through unchanged", async () => {
+  const sb = (h: (fn: string) => { data: unknown; error: { code: string } | null }) => ({ rpc: async (fn: string) => h(fn) }) as unknown as SupabaseClient;
+  const e1 = await mailReadDeps(sb(() => ({ data: null, error: { code: "42883" } }))).accessToken(USER, CONN).catch((e) => e);
+  assertEquals([e1 instanceof RpcError, e1.message], [true, "gmail_get_refresh_token 42883"]);
+  const orig = globalThis.fetch;
+  try {
+    globalThis.fetch = () => Promise.reject(new TypeError("fetch failed"));
+    const e2 = await mailReadDeps(sb(() => ({ data: "rt-synthetic", error: null }))).accessToken(USER, CONN).catch((e) => e);
+    assertEquals([e2 instanceof RpcError, e2 instanceof TypeError], [false, true]);
+    globalThis.fetch = () => Promise.resolve(Response.json({ error: "invalid_grant" }, { status: 400 }));
+    const e3 = await mailReadDeps(sb((fn) => fn === "gmail_get_refresh_token" ? { data: "rt-synthetic", error: null } : { data: null, error: { code: "57014" } }))
+      .accessToken(USER, CONN).catch((e) => e);
+    assertEquals([e3 instanceof RpcError, e3.message], [true, "gmail_update 57014"]);   // invalid_grant 뒤 연결 갱신 RPC 실패 — RPC 실패라 500
+    assertEquals(await mailReadDeps(sb((fn) => ({ data: fn === "gmail_get_refresh_token" ? "rt-synthetic" : null, error: null }))).accessToken(USER, CONN), null);
+  } finally { globalThis.fetch = orig; }
+});
+// S3 리뷰 Minor 2(Ruling S3-m2): MAIL_READ_KEY 형식 오류 → 500 internal(key_invalid), Gmail·units 호출 0 — 검색·읽기 모두
+Deno.test("search/read: a malformed MAIL_READ_KEY → 500 internal before any Gmail call or unit", async () => {
+  for (const p of ["search", "read"]) {
+    const { d, seen } = fake({ msgs: [mail("m1", "본문")], key: "c2hvcnQ=" });
+    const r = await call(d, req(p, p === "search" ? F : await R("m1")));
+    assertEquals([r.status, r.j], [500, { error: "internal" }], p);
+    assert(r.logs.join("\n").includes('"why":"key_invalid"'), p);
+    assertEquals([seen.list.length, seen.headers.length, seen.full.length, seen.take.length], [0, 0, 0, 0], p);
+  }
+});
+// S3 리뷰 Minor 3(Ruling S3-m3): 거절된 키 Promise 를 캐시하지 않는다 — 키를 고치면 같은 isolate 에서 바로 낫는다
+Deno.test("mailReadDeps.tokenKey: a rejected key import is not cached; the same instance caches a good key", async () => {
+  const prev = Deno.env.get("MAIL_READ_KEY");
+  try {
+    Deno.env.set("MAIL_READ_KEY", "c2hvcnQ=");
+    const d = mailReadDeps({} as unknown as SupabaseClient);
+    const e = await d.tokenKey().catch((x) => x);
+    assertEquals(e.message, "key_invalid");
+    Deno.env.set("MAIL_READ_KEY", KEY_B64);
+    const k = await d.tokenKey();
+    assert(k instanceof CryptoKey);
+    assert((await d.tokenKey()) === k);
+  } finally { if (prev === undefined) Deno.env.delete("MAIL_READ_KEY"); else Deno.env.set("MAIL_READ_KEY", prev); }
+});
