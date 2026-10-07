@@ -222,18 +222,21 @@ Deno.test("gmail-watch: renews watch on the topic and stores the new expiration"
 const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 type Stage = "profile" | "watch" | "list";
 function connectDeps(o: { user?: string | null; refreshToken?: string | null; saveError?: string; scope?: string;
-  fail?: { stage: Stage; status: number }; rpcThrows?: boolean } = {}) {
+  fail?: { stage: Stage; status: number }; rpcThrows?: boolean; account?: string; refreshFails?: boolean; replaceError?: string;
+  mailConn?: null; mailConnStatus?: string; exchangeFails?: boolean; scopesError?: string } = {}) {
   const calls: string[] = [];
   const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
   const revoked: string[] = [];
   const maybeFail = (stage: Stage) => { if (o.fail?.stage === stage) throw new GmailHttpError(stage, o.fail.status); };
   const d: ConnectDeps = {
     authUser: async (t) => (t === "user-jwt" ? (o.user === undefined ? USER : o.user) : null),
-    exchange: async (code) => { calls.push("exchange:" + code); return { access_token: "at", refresh_token: o.refreshToken === undefined ? "rt" : o.refreshToken ?? undefined,
+    exchange: async (code) => { calls.push("exchange:" + code); if (o.exchangeFails) throw new Error("token exchange 400 invalid_grant");
+      return { access_token: "at", refresh_token: o.refreshToken === undefined ? "rt" : o.refreshToken ?? undefined,
       expires_in: 3600, scope: o.scope ?? `openid ${GMAIL_SCOPE} https://www.googleapis.com/auth/userinfo.email` }; },
+    refresh: async (t) => { calls.push("refresh:" + t); if (o.refreshFails) throw new Error("token refresh 400"); return "at2"; },
     revoke: async (token) => { revoked.push(token); },
     api: () => ({
-      profile: async () => { calls.push("profile"); maybeFail("profile"); return { emailAddress: "poc@example.com", historyId: "400" }; },
+      profile: async () => { calls.push("profile"); maybeFail("profile"); return { emailAddress: o.account ?? "poc@example.com", historyId: "400" }; },
       watch: async () => { calls.push("watch"); maybeFail("watch"); return { historyId: "500", expiration: "1790600000000" }; },
       listMessageIds: async (q, p) => { calls.push("list:" + q + ":" + (p ?? "")); maybeFail("list");
         return p ? { messages: [{ id: "m3" }] } : { messages: [{ id: "m1" }, { id: "m2" }], nextPageToken: "1" }; },
@@ -241,6 +244,9 @@ function connectDeps(o: { user?: string | null; refreshToken?: string | null; sa
     rpc: { rpc: (fn, args = {}) => {
       rpcCalls.push({ fn, args });
       if (o.rpcThrows) throw new Error("connection reset rt=secret-refresh-token");
+      if (fn === "mail_connection") return Promise.resolve({ data: o.mailConn === null ? [] : [{ connection_id: CONN, account_ref: "poc@example.com", status: o.mailConnStatus ?? "active", scopes: [GMAIL_SCOPE] }], error: null });
+      if (fn === "gmail_replace_token") return Promise.resolve(o.replaceError ? { data: null, error: { code: o.replaceError } } : { data: true, error: null });
+      if (fn === "gmail_set_scopes" && o.scopesError) return Promise.resolve({ data: null, error: { code: o.scopesError } });
       if (fn === "gmail_save_connection" && o.saveError) return Promise.resolve({ data: null, error: { code: o.saveError } });
       return Promise.resolve({ data: fn === "gmail_save_connection" ? CONN : null, error: null });
     } },
@@ -271,10 +277,10 @@ Deno.test("gmail-connect: exchange → scope check → profile → save(vault) �
   assertEquals(await r.json(), { connection_id: CONN, account: "poc@example.com", refresh_token_stored: true,
     watch_expires_at: new Date(1790600000000).toISOString(), backfill_pages: 2, backfill_messages: 3 });
   assertEquals(calls, ["exchange:auth-code", "profile", "watch", "list:newer_than:90d -category:promotions -in:drafts:", "list:newer_than:90d -category:promotions -in:drafts:1"]);
-  assertEquals(rpcCalls.map((c) => c.fn), ["gmail_save_connection", "gmail_update", "enqueue_job", "enqueue_job", "gmail_enqueue_for_account"]);
+  assertEquals(rpcCalls.map((c) => c.fn), ["gmail_save_connection", "gmail_set_scopes", "gmail_update", "enqueue_job", "enqueue_job", "gmail_enqueue_for_account"]);
   // watch 전에 저장한다: 커서는 profile의 historyId(watch 이후 도착분도 history가 받는다)
   assertEquals(rpcCalls[0].args, { p_user: USER, p_account_ref: "poc@example.com", p_refresh_token: "rt", p_history_id: "400" });
-  assertEquals([rpcCalls[2].args.p_lease_key, rpcCalls[2].args.p_payload], ["backfill:" + USER, { connection_id: CONN, ids: ["m1", "m2"], backfill: true }]);
+  assertEquals([rpcCalls[3].args.p_lease_key, rpcCalls[3].args.p_payload], ["backfill:" + USER, { connection_id: CONN, ids: ["m1", "m2"], backfill: true }]);
   assertEquals(revoked, []);
 });
 
@@ -340,6 +346,79 @@ Deno.test("gmail-connect: unexpected exception → 500 internal with request_id,
   const out = lines.join("\n");
   assert(out.includes(body.request_id));
   assert(!out.includes("secret-refresh-token") && !out.includes("rt=") && !out.includes("auth-code"));
+});
+
+// ── 권한 업데이트(upgrade, 스펙 §7, 계획 D12): 어떤 실패에서도 revoke 0회, 연결·vault·커서·잡 불변 ──
+const MODIFY = "https://www.googleapis.com/auth/gmail.modify";
+const UP_SCOPE = `openid ${GMAIL_SCOPE} ${MODIFY}`;
+const upReq = (code = "up-code", upgrade: unknown = true) => connectReq({ code, upgrade });
+const WRITES = ["gmail_save_connection", "gmail_update", "enqueue_job", "gmail_enqueue_for_account", "gmail_set_scopes"];
+const noWrites = (rpcCalls: { fn: string }[]) => assertEquals(rpcCalls.filter((c) => WRITES.includes(c.fn)).map((c) => c.fn), []);
+
+Deno.test("gmail-connect upgrade: same account + refresh token + modify → verify once → gmail_replace_token; no watch, no backfill, no revoke", async () => {
+  const c = connectDeps({ scope: UP_SCOPE });
+  const r = await handleConnect(upReq(), c.d);
+  assertEquals([r.status, await r.json()], [200, { connection_id: CONN, refresh_token_stored: true, upgraded: true }]);
+  assertEquals(c.calls, ["exchange:up-code", "profile", "refresh:rt"]);
+  assertEquals(c.rpcCalls.map((x) => x.fn), ["mail_connection", "gmail_replace_token"]);
+  assertEquals(c.rpcCalls[1].args, { p_user: USER, p_connection: CONN, p_refresh_token: "rt", p_scopes: ["openid", GMAIL_SCOPE, MODIFY] });
+  assertEquals(c.revoked, []);
+});
+
+Deno.test("gmail-connect upgrade failures never revoke and never write: mismatch 409, no token 200 false, no modify or no readonly 403, verify 502, replace 500, no connection 404, dead connection 409, exchange 502, profile 401 → 502", async () => {
+  const cases: [Parameters<typeof connectDeps>[0], number, unknown][] = [
+    [{ scope: UP_SCOPE, account: "other@example.com" }, 409, { error: "account_mismatch" }],
+    [{ scope: UP_SCOPE, refreshToken: null }, 200, { connection_id: CONN, refresh_token_stored: false, upgraded: false }],
+    [{}, 403, { error: "gmail_scope_missing" }],
+    [{ scope: `openid ${MODIFY}` }, 403, { error: "gmail_scope_missing" }],                  // readonly 가 빠진 토큰은 옛 토큰을 덮지 않는다(D12)
+    [{ scope: UP_SCOPE, refreshFails: true }, 502, { error: "token_verify_failed" }],
+    [{ scope: UP_SCOPE, replaceError: "XX000" }, 500, { error: "replace_failed" }],
+    [{ scope: UP_SCOPE, mailConn: null }, 404, { error: "no_connection" }],
+    [{ scope: UP_SCOPE, mailConnStatus: "reauth_required" }, 409, { error: "reauth_required" }],   // 끊긴 연결은 되살리지 않는다(D12)
+    [{ scope: UP_SCOPE, exchangeFails: true }, 502, { error: "token_exchange_failed" }],
+    [{ scope: UP_SCOPE, fail: { stage: "profile", status: 401 } }, 502, { error: "gmail_unauthorized" }],   // 401 이면 앱이 일회용 코드를 다시 보낸다
+    [{ scope: UP_SCOPE, fail: { stage: "profile", status: 403 } }, 403, { error: "gmail_forbidden" }],
+  ];
+  for (const [o, status, body] of cases) {
+    const c = connectDeps(o);
+    const r = await handleConnect(upReq(), c.d);
+    assertEquals([r.status, await r.json()], [status, body], JSON.stringify(o));
+    assertEquals(c.revoked, [], JSON.stringify(o));
+    noWrites(c.rpcCalls);
+    assertEquals(c.rpcCalls.filter((x) => x.fn === "gmail_replace_token").length, status === 500 ? 1 : 0);
+    assert(!c.calls.some((x) => x === "watch" || x.startsWith("list:")));
+  }
+});
+
+Deno.test("gmail-connect upgrade: account comparison ignores case; an unexpected rpc throw → 500 without revoke", async () => {
+  const c = connectDeps({ scope: UP_SCOPE, account: "POC@Example.com" });
+  assertEquals((await handleConnect(upReq(), c.d)).status, 200);
+  const t = connectDeps({ scope: UP_SCOPE, rpcThrows: true });
+  const r = await handleConnect(upReq(), t.d);
+  assertEquals([r.status, t.revoked], [500, []]);
+});
+
+Deno.test("gmail-connect: upgrade must be a boolean — malformed is 400 and never falls into a normal connect; false is a normal connect", async () => {
+  const c = connectDeps({ scope: UP_SCOPE });
+  for (const v of ["true", 1, "yes", null]) {
+    const r = await handleConnect(upReq("c", v), c.d);
+    assertEquals([r.status, await r.json()], [400, { error: "bad_upgrade" }], String(v));
+  }
+  assertEquals([c.calls, c.rpcCalls], [[], []]);
+  const n = connectDeps();
+  assertEquals((await handleConnect(upReq("c", false), n.d)).status, 200);
+  assertEquals(n.rpcCalls[0].fn, "gmail_save_connection");
+});
+
+Deno.test("gmail-connect normal path records granted scopes right after save only when a refresh token was stored; a failed scopes write still connects", async () => {
+  const c = connectDeps({ scope: UP_SCOPE });
+  assertEquals((await handleConnect(connectReq({ code: "c" }), c.d)).status, 200);
+  assertEquals(c.rpcCalls[1], { fn: "gmail_set_scopes", args: { p_user: USER, p_connection: CONN, p_scopes: ["openid", GMAIL_SCOPE, MODIFY] } });
+  const n = connectDeps({ scope: UP_SCOPE, refreshToken: null });                 // vault 의 옛 토큰과 scopes 가 어긋나지 않게(D12)
+  assertEquals((await handleConnect(connectReq({ code: "c" }), n.d)).status, 200);
+  assertEquals(n.rpcCalls.filter((x) => x.fn === "gmail_set_scopes").length, 0);
+  const f = connectDeps({ scopesError: "42883" });
+  assertEquals((await handleConnect(connectReq({ code: "c" }), f.d)).status, 200);
 });
 
 // ── 모의: gmail-webhook OIDC ─────────────────────────────────────
