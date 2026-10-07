@@ -100,6 +100,7 @@ struct ContentView: View {
     account = signedIn ? "로그인됨" : (account.hasPrefix("로그인 실패") ? account : "로그인 필요")
     gmail = signedIn ? await gmailStatus() : ""
     needsUpgrade = signedIn ? await gmailNeedsUpgrade() : false
+    if !needsUpgrade { upgradeResult = "" }                     // 버튼이 사라졌으면(로그아웃·연결 상태 바뀜) 옛 결과 문구도 — 방금 업데이트한 결과는 upgradeGmail 이 refresh 뒤에 쓴다(M9a 리뷰 Minor 1)
     usage = signedIn ? await usageStatus() : ""
   }
   /// rpc/usage_status(0014, auth.uid() 기준): 이번 달 예약 금액 / 상한 · 강등·중단 표시
@@ -135,6 +136,7 @@ struct ContentView: View {
   }
   private func connectGmail(_ force: Bool) {
     busy = true
+    upgradeResult = ""
     Task { gmail = await GmailConnect.run(forceConsent: force); busy = false; await refresh() }
   }
   /// [권한 업데이트] 표시(D16): scopes 를 상태 줄과 따로 읽는다 — 열이 없는 서버(0030 전, 400)면 숨긴다. 판단은 EruriCore(needsUpgrade)
@@ -145,7 +147,7 @@ struct ContentView: View {
   }
   private func upgradeGmail() {
     busy = true
-    Task { upgradeResult = await GmailConnect.upgrade(); busy = false; await refresh() }
+    Task { let r = await GmailConnect.upgrade(); busy = false; await refresh(); upgradeResult = r }
   }
   private func requestPermissions() {
     Task {

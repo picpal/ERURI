@@ -86,7 +86,7 @@ enum GmailConnect {
       }
     } catch {
       let e = error as NSError
-      if e.code == -5 { DiagLog.append("gmail upgrade cancelled"); return "" }      // 취소: 아무것도 바꾸지 않는다
+      if e.domain == kGIDSignInErrorDomain, e.code == -5 { DiagLog.append("gmail upgrade cancelled"); return "" }   // 취소(GIDSignIn 도메인만): 아무것도 바꾸지 않는다
       _ = fail("upgrade_signin_error", "\(e.domain) \(e.code)", code: e.code)
       return MailCleanupText.upgradeFailed
     }
@@ -107,7 +107,8 @@ enum GmailConnect {
       access = a
       (status, body) = await connect(cfg, access: access, code: code, upgrade: true)
     }
-    Trace.log("device.gmail_upgrade", ["result": "http_\(status)", "upgraded": (body["upgraded"] as? Bool) == true])
+    // error = 서버 열거 코드(account_mismatch·reauth_required·bad_upgrade·token_verify_failed 등 — 개인정보 없음, M9a 리뷰 Minor 2)
+    Trace.log("device.gmail_upgrade", ["result": "http_\(status)", "upgraded": (body["upgraded"] as? Bool) == true, "error": body["error"] as? String ?? "-"])
     return MailCleanupText.upgradeResult(status: status, body: body)
   }
 
