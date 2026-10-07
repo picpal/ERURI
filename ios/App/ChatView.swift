@@ -67,7 +67,10 @@ struct ChatView: View {
                   }
                 }
               if let e = t.record.error { Text(e).foregroundStyle(.red) }
-              if t.record.kind == .mailAction {                    // 메일 정리 턴(§9, 0.14.0): 카드 하나. 상태를 다시 읽어야 하는 턴은 나올 때 서버를 먼저 읽는다
+              if t.record.kind == .mailSummary {                   // 메일 요약 턴(§9, 0.15.0): 카드 하나. 다시 보내지 않는다(읽기는 비용) — 복원은 ChatHistory.restored
+                MailSummaryCard(turn: t.record.mailRead ?? MailSummaryTurn(phase: .ended, note: MailSummaryText.failed),
+                                onPick: { pickSummary(t.id, $0) }, onResearch: { researchSummary(t.id) }, onSettings: { SettingsRouter.shared.open() })
+              } else if t.record.kind == .mailAction {             // 메일 정리 턴(§9, 0.14.0): 카드 하나. 상태를 다시 읽어야 하는 턴은 나올 때 서버를 먼저 읽는다
                 MailCleanupCard(turn: t.record.mail ?? MailTurn(phase: .ended, note: MailCleanupText.failed),
                                 onExecute: { executeMail(t.id) }, onCancel: { cancelMail(t.id) }, onUndo: { undoMail(t.id) },
                                 onRepreview: { repreviewMail(t.id) }, onNext: { nextMail(t.id) }, onSettings: { SettingsRouter.shared.open() })
@@ -573,6 +576,28 @@ struct ChatView: View {
             previewMail(id, body: body, epoch: epoch)
             return
           }
+          if MailSummary.isMailSummary(a.intent) {
+            // 채팅 메일 요약(§9, 0.15.0): 답이 아니다 — reply 를 저장하지 않는다. 바로 앞 요약 턴 + 지금 글이 대상을 말하지 않음이면 앞 토큰으로 읽기(검색 없음),
+            // 아니면 mail_read 칸 그대로 검색(검사는 서버 한 곳). 칸 값·글은 로그에 없다
+            DiagLog.append("CHAT intent mail_summary ctx=\(withContext ? 1 : 0)")
+            let f = MailSummary.fields(a.mail_read)
+            let translate = f?.translate ?? false
+            switch MailSummary.followUp(turns.map(\.record), current: id, now: Date(), targetInMessage: f?.targetInMessage ?? true) {
+            case .token(let token):
+              settle(id, epoch) { $0.record.kind = .mailSummary; $0.record.mailRead = MailSummaryTurn(phase: .reading, translate: translate) }
+              readSummary(id, token: token, translate: translate, request: q, epoch: epoch, fromCard: false)
+            case .expired:
+              settle(id, epoch) { $0.record.kind = .mailSummary; $0.record.mailRead = MailSummaryTurn(phase: .ended, translate: translate, note: MailSummaryText.followExpired) }
+            case .none:
+              guard let body = a.mail_read?.foundation as? [String: Any] else {
+                settle(id, epoch) { $0.record.kind = .mailSummary; $0.record.mailRead = MailSummaryTurn(phase: .ended, note: MailSummaryText.failed) }
+                return
+              }
+              settle(id, epoch) { $0.record.kind = .mailSummary; $0.record.mailRead = MailSummaryTurn(phase: .finding, translate: translate) }
+              searchSummary(id, body: body, request: q, epoch: epoch, direct: true)
+            }
+            return
+          }
           settle(id, epoch) { $0.record.reply = r.data; $0.answer = a }
           readCalendar(id)
           scroll(to: id)
@@ -818,6 +843,96 @@ struct ChatView: View {
   private func cancelMail(_ id: UUID) {
     guard turns.first(where: { $0.id == id })?.record.mail?.phase == .preview, !mailRequesting.contains(id) else { return }
     settle(id, log.clearCount) { $0.record.mail?.phase = .ended; $0.record.mail?.note = MailCleanupText.cancelled }
+  }
+
+  // ── 채팅 메일 요약(스펙 §9, 0.15.0). 모든 갱신은 id·epoch 로(settle) — await 뒤 색인으로 턴을 고치지 않는다. 후보·요약 글은 기록에만, 로그·trace 는 단계·결과·개수·코드만 ──
+
+  /// 검색: direct = 첫 검색(완결 1통·latest 면 바로 읽기). [다시 찾기]는 direct = false(후보 카드를 바꿀 뿐 — 사용자가 고른다)
+  private func searchSummary(_ id: UUID, body: [String: Any], request: String, epoch: Int, direct: Bool) {
+    let t0 = Date()
+    Task {
+      let r = await MailSummaryAPI.search(body)
+      let ms = Int(Date().timeIntervalSince(t0) * 1000)
+      guard let r, r.status == 200, let s = MailSummary.search(r.data) else {
+        let code = r.flatMap { MailCleanup.errorCode($0.data) }
+        Trace.log("chat.mail_read", ["stage": "search", "result": "error", "code": code ?? "http_\(r?.status ?? -1)", "elapsed_ms": ms])
+        settle(id, epoch) { $0.record.mailRead?.phase = .ended; $0.record.mailRead?.apply(MailSummary.searchError(status: r?.status ?? -1, code: code)) }
+        scroll(to: id)
+        return
+      }
+      Trace.log("chat.mail_read", ["stage": "search", "result": s.complete ? "complete" : "partial", "count": s.candidates.count, "elapsed_ms": ms])
+      let step = direct ? MailSummary.afterSearch(s) : (s.candidates.isEmpty ? MailSummary.afterSearch(s) : .choose)
+      settle(id, epoch) {
+        $0.record.mailRead?.conditions = s.conditions; $0.record.mailRead?.translate = s.conditions.translate
+        $0.record.mailRead?.candidates = s.candidates; $0.record.mailRead?.complete = s.complete; $0.record.mailRead?.more = s.more
+        $0.record.mailRead?.issuedAt = Date(); $0.record.mailRead?.note = nil; $0.record.mailRead?.settings = false; $0.record.mailRead?.picked = nil
+        switch step {
+        case .none(let text): $0.record.mailRead?.phase = .ended; $0.record.mailRead?.note = text
+        case .readFirst: $0.record.mailRead?.phase = .reading; $0.record.mailRead?.picked = 0
+        case .choose: $0.record.mailRead?.phase = .choosing
+        }
+      }
+      // 지웠거나 정리로 빠진 턴이면 읽지 않는다(읽기는 비용 — settle 이 무시된 턴을 위해 요청하지 않게)
+      if step == .readFirst, log.clearCount == epoch, turns.contains(where: { $0.id == id }) {
+        readSummary(id, token: s.candidates[0].token, translate: s.conditions.translate, request: request, epoch: epoch, fromCard: false)
+      }
+      scroll(to: id)
+    }
+  }
+
+  /// 읽기: 503 llm_busy 만 5초 뒤 한 번 더. 후보 카드에서 고른 읽기가 "그 밖" 실패면 10분 안 후보를 되살린다(다시 누르면 비용은 다시 든다)
+  private func readSummary(_ id: UUID, token: String, translate: Bool, request: String, epoch: Int, fromCard: Bool) {
+    let t0 = Date()
+    Task {
+      var attempt = 0
+      while true {
+        let r = await MailSummaryAPI.read(token: token, translate: translate, request: request)
+        let code = r.flatMap { MailCleanup.errorCode($0.data) }
+        if let r, let wait = MailSummary.retryDelay(status: r.status, code: code, attempt: attempt) {
+          attempt += 1
+          try? await Task.sleep(for: .seconds(wait))
+          guard log.clearCount == epoch else { return }                         // 지운 뒤에는 다시 보내지 않는다
+          continue
+        }
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        if let r, r.status == 200, let x = MailSummary.read(r.data) {
+          Trace.log("chat.mail_read", ["stage": "read", "result": x.status, "elapsed_ms": ms])
+          settle(id, epoch) {
+            $0.record.mailRead?.read = x; $0.record.mailRead?.readAt = Date(); $0.record.mailRead?.phase = .ended
+            $0.record.mailRead?.note = nil; $0.record.mailRead?.settings = false
+          }
+          scroll(to: id)
+          return
+        }
+        Trace.log("chat.mail_read", ["stage": "read", "result": "error", "code": code ?? "http_\(r?.status ?? -1)", "elapsed_ms": ms])
+        let n = MailSummary.readError(status: r?.status ?? -1, code: code)
+        settle(id, epoch) {
+          let canRetry = fromCard && n.retry && !($0.record.mailRead?.candidatesExpired(now: Date()) ?? true)
+          $0.record.mailRead?.phase = canRetry ? .choosing : .ended
+          if canRetry { $0.record.mailRead?.picked = nil }
+          $0.record.mailRead?.apply(n)
+        }
+        scroll(to: id)
+        return
+      }
+    }
+  }
+
+  /// 후보 줄·[가장 최근 것]: 고른 줄만 남기고 읽는다. 단계가 choosing 일 때만(연타·만료 뒤 탭 무시)
+  private func pickSummary(_ id: UUID, _ i: Int) {
+    let epoch = log.clearCount
+    guard let t = turns.first(where: { $0.id == id }), let m = t.record.mailRead, m.phase == .choosing, let cs = m.candidates, cs.indices.contains(i),
+          !m.candidatesExpired(now: Date()) else { return }
+    settle(id, epoch) { $0.record.mailRead?.picked = i; $0.record.mailRead?.phase = .reading; $0.record.mailRead?.note = nil; $0.record.mailRead?.settings = false }
+    readSummary(id, token: cs[i].token, translate: m.translate, request: t.record.question, epoch: epoch, fromCard: true)
+  }
+
+  /// [다시 찾기]: 서버가 확정한 조건 그대로 다시 검색해 같은 턴의 후보 카드를 바꾼다
+  private func researchSummary(_ id: UUID) {
+    let epoch = log.clearCount
+    guard let t = turns.first(where: { $0.id == id }), let m = t.record.mailRead, m.phase == .choosing, let c = m.conditions else { return }
+    settle(id, epoch) { $0.record.mailRead?.phase = .finding; $0.record.mailRead?.note = nil }
+    searchSummary(id, body: c.json, request: t.record.question, epoch: epoch, direct: false)
   }
 
   /// 링크 수집 턴(§9): 읽기(15초 + OCR) 동안만 보내기를 막고, 서버 결과(최대 60초)는 따로 기다린다
