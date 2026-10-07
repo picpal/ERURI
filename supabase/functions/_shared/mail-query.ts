@@ -102,3 +102,78 @@ export function buildQuery(c: MailConditions, starred = false): string {
   if (c.unread_only || c.action === "read") q.push("is:unread");
   return q.join(" ");
 }
+
+// ── 메일 요약 지목(스펙 §7 "메일 요약", 0.15.0): 같은 정제·날짜 규칙, 칸이 다르다(동작·광고·안 읽음 없음, latest·translate 있음).
+// 메일 정리 checkConditions·buildQuery 는 바꾸지 않는다(0.14.0 회귀 없음) — 그래서 칸 읽기를 따로 둔다. target_in_message 는 앱만 쓴다(검색은 읽지 않음) ──
+export type ReadConditions = { sender: string | null; subject_words: string[]; received_from: string | null; received_to: string | null;
+  latest: boolean; translate: boolean };
+export type ReadCheck =
+  | { ok: true; c: ReadConditions }
+  | { ok: false; code: "bad_condition"; fields: string[] }
+  | { ok: false; code: "needs_target" };
+
+function readSender(v: unknown, bad: string[]): string | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v !== "string" || v.length > SENDER_MAX) { bad.push("sender"); return null; }
+  if (v.trim() === "") return null;
+  const s = sanitize(v);
+  if (!WORDY.test(s)) { bad.push("sender"); return null; }
+  return s;
+}
+function readWords(v: unknown, bad: string[]): string[] {
+  const words: string[] = [];
+  if (v === null || v === undefined) return words;
+  if (!Array.isArray(v) || v.length > WORDS_MAX || v.some((x) => typeof x !== "string" || x.length > WORD_MAX)) { bad.push("subject_words"); return words; }
+  for (const x of v as string[]) {
+    if (x.trim() === "") continue;
+    const s = sanitize(x);
+    if (!WORDY.test(s)) { bad.push("subject_words"); return []; }
+    if (!words.includes(s)) words.push(s);
+  }
+  return words;
+}
+function readDay(r: Record<string, unknown>, k: "received_from" | "received_to", bad: string[]): string | null {
+  const v = r[k];
+  if (v === null || v === undefined) return null;
+  if (typeof v !== "string" || seoulMidnight(v) === null || Number(v.slice(0, 4)) < YEAR_MIN) { bad.push(k); return null; }
+  return v;
+}
+function readFlag(r: Record<string, unknown>, k: "latest" | "translate", bad: string[]): boolean {
+  const v = r[k];
+  if (v === null || v === undefined) return false;
+  if (typeof v !== "boolean") { bad.push(k); return false; }
+  return v;
+}
+
+export function checkReadConditions(raw: unknown): ReadCheck {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, code: "bad_condition", fields: ["mail_read"] };
+  const r = raw as Record<string, unknown>;
+  const bad: string[] = [];
+  const sender = readSender(r.sender, bad);
+  const words = readWords(r.subject_words, bad);
+  const from = readDay(r, "received_from", bad), to = readDay(r, "received_to", bad);
+  if (from && to && from > to) bad.push("received_from", "received_to");
+  const latest = readFlag(r, "latest", bad), translate = readFlag(r, "translate", bad);
+  if (bad.length) return { ok: false, code: "bad_condition", fields: [...new Set(bad)] };
+  // 대상 하한: 발신자·제목 단어·받은 기간(한쪽 끝도 됨)·latest 중 하나. translate 만으로는 채우지 않는다(§7)
+  if (!sender && words.length === 0 && !from && !to && !latest) return { ok: false, code: "needs_target" };
+  return { ok: true, c: { sender, subject_words: words, received_from: from, received_to: to, latest, translate } };
+}
+
+// in:inbox 를 붙이지 않는다(보관된 메일 포함). 스팸·휴지통은 includeSpamTrash 기본값(false)으로 빠지고, 보낸 메일·초안·채팅은 검색어가 아니라
+// 후보 메타 라벨로 거른다(부정 연산자의 API 단위가 미확정 — §3, SUMMARY-real ⓪). latest·translate 는 검색어에 들어가지 않는다.
+// windowStart = latest 시간 창의 시작 epoch 초(받은 기간 시작 뒤에 더한다). checkReadConditions 의 ok 결과만 받는다
+export function buildReadQuery(c: ReadConditions, windowStart?: number): string {
+  const quoted = (v: string): string => { if (v.includes('"')) throw new Error("buildReadQuery: unchecked value"); return `"${v}"`; };
+  const epoch = (d: string): number => { const t = seoulMidnight(d); if (t === null) throw new Error("buildReadQuery: unchecked date"); return t; };
+  const q: string[] = [];
+  if (c.sender) q.push(`from:${quoted(c.sender)}`);
+  for (const w of c.subject_words) q.push(`subject:${quoted(w)}`);
+  if (c.received_from) q.push(`after:${epoch(c.received_from)}`);
+  if (windowStart !== undefined) {
+    if (!Number.isInteger(windowStart) || windowStart < 0) throw new Error("buildReadQuery: bad window");
+    q.push(`after:${windowStart}`);
+  }
+  if (c.received_to) q.push(`before:${epoch(c.received_to) + 86_400}`);
+  return q.join(" ");
+}

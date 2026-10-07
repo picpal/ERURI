@@ -1,6 +1,6 @@
-import { classifyGmailError, GMAIL_MODIFY_SCOPE, GmailHttpError, type GmailMailApi, type GmailMessage, header } from "../_shared/gmail.ts";
+import { classifyGmailError, GMAIL_MODIFY_SCOPE, GmailHttpError, type GmailMailApi } from "../_shared/gmail.ts";
 import { buildQuery, checkConditions } from "../_shared/mail-query.ts";
-import { parseFrom } from "../_shared/unsub.ts";
+import { sampleOf } from "../_shared/mail-meta.ts";
 
 // 메일 정리(스펙 §7 "메일 정리"): POST /mail-action/preview·/execute·/undo, GET /mail-action/status?id=. 사용자 JWT 로만 user_id 를 정한다(§12 통제 4).
 // 미리보기 글(발신자·제목·날짜)과 conditions 는 응답으로만 앱에 간다 — 저장·로그 없음. 로그는 단계·결과 코드·개수·ms 만.
@@ -35,14 +35,8 @@ const err = (status: number, code: string, extra: Record<string, unknown> = {}) 
 const log = (o: Record<string, unknown>) => console.log(JSON.stringify({ mail_action: o.stage, ...o }));
 const counts = (r: Partial<Counts>) => Object.fromEntries(COUNT_KEYS.map((k) => [k, r[k] ?? null]));
 
-// UTF-16 단위로 자르되 끝에 짝 없는 서로게이트를 남기지 않는다 — iOS JSON 디코더가 응답 전체를 거절한다(리뷰 M5 Important 1)
-const clip = (s: string, n: number) => { const t = s.slice(0, n); return /[\uD800-\uDBFF]$/.test(t) ? t.slice(0, -1) : t; };
-export function sampleOf(m: GmailMessage) {
-  const f = parseFrom(header(m, "From"));
-  const t = Number(m.internalDate || NaN);                             // 비거나 숫자가 아니면 날짜만 비운다 — 표본 하나로 미리보기가 500 이 되지 않게
-  return { from: clip(f?.name || f?.address || "", 60), subject: clip(header(m, "Subject") ?? "", 100),
-           date: Number.isFinite(t) ? new Date(t).toISOString() : "" };
-}
+// 표본 줄(발신자·제목·날짜, 서로게이트 안전 자르기)은 _shared/mail-meta.ts 로 옮겼다(0.15.0 메일 요약 후보와 공유) — 동작 불변, 여기서 다시 내보낸다
+export { sampleOf };
 type Sample = ReturnType<typeof sampleOf>;
 
 export async function handleMailAction(req: Request, d: MailActionDeps): Promise<Response> {

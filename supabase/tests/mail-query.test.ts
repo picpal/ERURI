@@ -1,6 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import type { MailFields } from "../functions/chat/filters.ts";
-import { buildQuery, checkConditions, type MailConditions, sanitize, seoulMidnight } from "../functions/_shared/mail-query.ts";
+import { buildQuery, buildReadQuery, checkConditions, checkReadConditions, type MailConditions, type ReadConditions, sanitize, seoulMidnight } from "../functions/_shared/mail-query.ts";
 
 // 메일 정리 지목(스펙 §7): 칸 검사·정제·서버 조립. 잘못된 칸은 버리지 않고 거절한다(리뷰 #1)
 const base = { action: "trash", sender: null, subject_words: [], received_from: null, received_to: null, promotions: false, unread_only: false };
@@ -129,4 +129,60 @@ Deno.test("buildQuery refuses conditions that did not come from checkConditions 
   assertThrows(() => buildQuery({ ...c, subject_words: ['a"'] }));
   assertThrows(() => buildQuery({ ...c, received_from: "2026-02-30" }));
   assertThrows(() => buildQuery({ ...c, received_to: "2026-9-1" }));
+});
+
+// ── 메일 요약 칸(스펙 §7 "메일 요약", 0.15.0): 같은 정제·날짜 규칙, 대상 하한은 발신자·제목·기간·latest. in:inbox·-in: 없음 ──
+const rbase = { sender: null, subject_words: [], received_from: null, received_to: null, latest: false, translate: false, target_in_message: true };
+const rok = (raw: Record<string, unknown>): ReadConditions => {
+  const r = checkReadConditions({ ...rbase, ...raw });
+  if (!r.ok) throw new Error("expected ok, got " + JSON.stringify(r));
+  return r.c;
+};
+const rbad = (raw: unknown) => { const r = checkReadConditions(raw); return r.ok ? "ok" : r.code === "bad_condition" ? r.fields : r.code; };
+
+Deno.test("checkReadConditions: wrong fields are rejected with their names, never dropped (same rules as mail cleanup)", () => {
+  assertEquals(rbad({ ...rbase, received_from: "2026-09-30", received_to: "2026-09-01" }), ["received_from", "received_to"]);
+  assertEquals(rbad({ ...rbase, received_from: "2026-02-30" }), ["received_from"]);
+  assertEquals(rbad({ ...rbase, received_to: "2003-12-31" }), ["received_to"]);
+  assertEquals(rbad({ ...rbase, sender: "()" }), ["sender"]);
+  assertEquals(rbad({ ...rbase, sender: "-" }), ["sender"]);
+  assertEquals(rbad({ ...rbase, sender: "x".repeat(101) }), ["sender"]);
+  assertEquals(rbad({ ...rbase, subject_words: ["a", "b", "c", "d"] }), ["subject_words"]);
+  assertEquals(rbad({ ...rbase, subject_words: ["가".repeat(31)] }), ["subject_words"]);
+  assertEquals(rbad({ ...rbase, latest: "yes" }), ["latest"]);
+  assertEquals(rbad({ ...rbase, translate: "true", sender: "합성상점" }), ["translate"]);
+  assertEquals(rbad(null), ["mail_read"]);
+  assertEquals(rbad([1]), ["mail_read"]);
+});
+Deno.test("checkReadConditions: target floor is sender/subject/date(one end is enough)/latest — translate alone or nothing → needs_target", () => {
+  assertEquals(rbad({}), "needs_target");
+  assertEquals(rbad({ ...rbase, translate: true }), "needs_target");
+  assertEquals(rbad({ ...rbase, sender: "   ", subject_words: ["", " "] }), "needs_target");    // 빈 값 = 없음
+  assertEquals(rbad({ target_in_message: true }), "needs_target");                                // 검색은 이 칸을 쓰지 않는다
+  assertEquals(rok({ latest: true }), { sender: null, subject_words: [], received_from: null, received_to: null, latest: true, translate: false });
+  assertEquals(rok({ received_to: "2026-10-06" }).received_to, "2026-10-06");
+});
+Deno.test("buildReadQuery: no in:inbox, no negative operators, no is:/category:; quoted values; Seoul day bounds; latest-only is an empty query", () => {
+  const c = rok({ sender: "합성상점", subject_words: ["주문", "안내"], received_from: "2026-09-01", received_to: "2026-09-30", translate: true });
+  assertEquals(buildReadQuery(c), `from:"합성상점" subject:"주문" subject:"안내" after:${S(2026, 9, 1)} before:${S(2026, 10, 1)}`);
+  assertEquals(buildReadQuery(rok({ latest: true })), "");
+  for (const q of [buildReadQuery(c), buildReadQuery(rok({ latest: true, sender: "a@b.com" }))]) {
+    assertEquals(/(^|\s)-|in:|is:|category:/.test(q), false, q);
+  }
+});
+Deno.test("buildReadQuery: a window start adds after:<epoch> after the received range start", () => {
+  const c = rok({ received_from: "2026-10-01", latest: true });
+  assertEquals(buildReadQuery(c, 1791298800 - 3600), `after:${S(2026, 10, 1)} after:${1791298800 - 3600}`);
+  assertThrows(() => buildReadQuery(c, -1));
+  assertThrows(() => buildReadQuery(c, 1.5));
+});
+// 연산자 주입: 따옴표·괄호·콜론·OR 은 정제 뒤 따옴표 안의 글이다. 모델이 쓴 q 등 모르는 키는 읽지 않는다
+Deno.test("checkReadConditions + buildReadQuery: quotes, parens, colons, OR and a model-written q never become operators", () => {
+  const c = rok({ sender: `shop" OR from:(x)`, q: "in:anywhere -in:sent", action: "trash", promotions: true });
+  assertEquals(buildReadQuery(c), `from:"shop OR fromx"`);
+  assertEquals(rok({ subject_words: [`“ERURI”`, "요약:"] }).subject_words, ["ERURI", "요약"]);
+});
+Deno.test("mail cleanup checkConditions/buildQuery are unchanged by the read variants (regression)", () => {
+  assertEquals(buildQuery(ok({ sender: "합성상점" })), `in:inbox -is:starred from:"합성상점"`);
+  assertEquals(checkConditions({ ...base, action: "trash" }), { ok: false, code: "needs_target" });
 });
