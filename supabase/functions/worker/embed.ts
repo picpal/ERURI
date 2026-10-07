@@ -1,4 +1,4 @@
-import { type BudgetDeps, costKrw, guarded } from "../_shared/budget.ts";
+import { type BudgetDeps, costKrw, guarded, type TokenUsage } from "../_shared/budget.ts";
 import { chunkText } from "../_shared/chunk.ts";
 import { EMBED_MODEL, toPgVector } from "../_shared/embeddings.ts";
 import type { Job } from "../_shared/job.ts";
@@ -8,7 +8,7 @@ import { applyRules } from "../_shared/rules.ts";
 export type EmbedDeps = {
   source(userId: string, itemId: string): Promise<{ contentEnc: string; title: string | null } | null>;
   decrypt(userId: string, enc: string): Promise<string>;
-  embed(texts: string[]): Promise<{ vectors: number[][]; tokens: number }>;
+  embed(texts: string[], onUsage?: (u: TokenUsage | null) => void): Promise<{ vectors: number[][]; tokens: number }>;
   save(userId: string, itemId: string, chunks: { i: number; text: string; embedding: string }[]): Promise<void>;
   budget: BudgetDeps;
 };
@@ -33,15 +33,15 @@ export async function embedItem(deps: EmbedDeps, job: Job): Promise<string> {
   if (texts.length === 0) return log(job, "skipped", { reason: "empty" });
   // 비용 예약(§13): 백필 항목(레인은 백필)도 임베딩은 월 예산(Ruling E). 예상 토큰 = 글자 수(정산이 실제 토큰으로 보정)
   const chars = texts.reduce((a, t) => a + t.length, 0);
-  const { value } = await guarded(deps.budget, user, "embed", costKrw(EMBED_MODEL, { input: chars, output: 0 }), job.id, async () => {
-    // 요청당 입력 2,048개·30만 토큰 한도 → BATCH 청크씩(512자 × 256 ≈ 15만 토큰 이하)
+  const { value } = await guarded(deps.budget, user, "embed", costKrw(EMBED_MODEL, { input: chars, output: 0 }), job.id, async (_lv, bill) => {
+    // 요청당 입력 2,048개·30만 토큰 한도 → BATCH 청크씩(512자 × 256 ≈ 15만 토큰 이하). 묶음(API 응답)마다 원소 하나(§13)
     const r = { vectors: [] as number[][], tokens: 0 };
     for (let i = 0; i < texts.length; i += BATCH) {
-      const b = await deps.embed(texts.slice(i, i + BATCH));
+      const b = await deps.embed(texts.slice(i, i + BATCH), (u) => bill("embed", EMBED_MODEL, u));   // 응답 직후(꺼내기 전) — 어댑터가 부른다
       r.vectors.push(...b.vectors);
       r.tokens += b.tokens;
     }
-    return { value: r, actualKrw: costKrw(EMBED_MODEL, { input: r.tokens, output: 0 }) };
+    return r;
   });
   if (value.vectors.length !== texts.length) throw new Error("embed count_mismatch");
   await deps.save(user, itemId, texts.map((text, i) => ({ i, text, embedding: toPgVector(value.vectors[i]) })));

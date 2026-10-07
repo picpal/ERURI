@@ -11,10 +11,11 @@ const EVENT_X: TextExtraction = { kind: "event", events: [{ evidence: "합성 �
 const BUY_X: TextExtraction = { kind: "purchase", evidence: null,
   purchase: { merchant: "합성커피", products: [], ordered_at: null, amount: 32000, currency: "KRW", order_no: null, status: "paid" } };
 function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: ClassifyResult | null | Error; result?: TextExtraction;
-  failEnqueue?: number; pushed?: boolean; budget?: "ok" | "degraded" | "refused" } = {}) {
+  failEnqueue?: number; pushed?: boolean; budget?: "ok" | "degraded" | "refused"; extractThrows?: boolean } = {}) {
   const calls = { decrypt: 0, classify: [] as string[], extract: [] as { text: string; today: string }[], saved: [] as FactsInput[],
     status: [] as [string, boolean][], tokens: 0, notify: [] as string[], classifyMeta: [] as ClassifyMeta[], extractMeta: [] as TextMeta[],
-    backfill: [] as boolean[], gate: [] as [string, number][], quarantine: [] as string[], embed: [] as [string, boolean][] };
+    backfill: [] as boolean[], gate: [] as [string, number][], quarantine: [] as string[], embed: [] as [string, boolean][],
+    reserved: [] as string[], settled: [] as { k: string; m: string; lines: unknown[][] }[] };
   const base: TextItem = { contentEnc: "enc", source: "NOTIFICATION", appName: "Slack", sender: null, title: null,
     occurredAt: "2026-09-28T15:30:00Z", capturedAt: "2026-09-28T15:30:05Z", status: "queued" };
   // save_facts 처럼 status 를 extracted 로 바꾸고 제안을 기억한다 → 같은 fake 로 processText 를 다시 부르면 실제 재시도가 된다
@@ -24,7 +25,10 @@ function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: Cla
     decrypt: async () => { calls.decrypt++; return o.text ?? "[합성의원] 내일 오후 3시 진료 예약"; },
     classifier: { provider: "jev", classify: async (t, m) => { calls.classify.push(t); calls.classifyMeta.push(m); if (o.verdict instanceof Error) throw o.verdict; return o.verdict ?? null; } },
     threshold: 0.8,
-    extract: async (text, m, today) => { calls.extract.push({ text, today }); calls.extractMeta.push(m); return { result: o.result ?? EVENT_X, usage: { input_tokens: 900, output_tokens: 60 } }; },
+    extract: async (text, m, today, onUsage) => { calls.extract.push({ text, today }); calls.extractMeta.push(m);
+      onUsage?.({ input: 900, cached: 0, output: 60 });
+      if (o.extractThrows) throw new Error("openai incomplete max_output_tokens");
+      return { result: o.result ?? EVENT_X, usage: { input_tokens: 900, output_tokens: 60 } }; },
     addTokens: async (_u, n, bf) => { calls.tokens += n; calls.backfill.push(bf); },
     saveFacts: async (f) => { calls.saved.push(f); state.status = "extracted";
       return f.entries.map((_, i) => { const proposalId = f.kind === "purchase" ? null : `p${i + 1}`;
@@ -36,8 +40,9 @@ function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: Cla
     enqueueNotify: async (_u, p) => { if (state.failEnqueue > 0) { state.failEnqueue--; throw new Error("enqueue_job XX000"); } calls.notify.push(p); },
     unpushedProposals: async () => (o.pushed ? [] : state.proposals.slice(0, 1)),
     enqueueEmbed: async (_u, i, bf) => { calls.embed.push([i, bf]); },
-    budget: { reserve: async () => o.budget ?? "ok", settle: async () => {}, acquire: async () => 1, release: async () => {},
-      now: () => new Date("2026-10-15T00:00:00Z") },
+    budget: { reserve: async (_u, k) => { calls.reserved.push(k); return { level: o.budget ?? "ok", month: "2026-10-01" }; },
+      settle: async (_u, k, _e, m, lines) => { calls.settled.push({ k, m, lines: lines.map((l) => [l.kind, l.model, l.input, l.output]) }); },
+      acquire: async () => 1, release: async () => {}, now: () => new Date("2026-10-15T00:00:00Z") },
   };
   return { d, calls };
 }
@@ -271,4 +276,20 @@ Deno.test("embed job: backfill lane follows the process job; retry after a lost 
   const em = fake({ item: { status: "discarded:server:empty" } }); await processText(em.d, job());
   const q = fake({ item: { status: "discarded:server:personal" } }); await processText(q.d, job());
   assertEquals([ex.calls.embed, em.calls.embed, q.calls.embed], [[["i1", false]], [["i1", false]], []]);
+});
+Deno.test("text billing: a normal item settles one extract line; a backfill item settles one backfill line on the backfill reservation", async () => {
+  const a = fake();
+  await processText(a.d, job());
+  assertEquals(a.calls.settled, [{ k: "extract", m: "2026-10-01", lines: [["extract", "gpt-6-luna", 900, 60]] }]);
+  const b = fake();
+  await processText(b.d, job({ payload: { item_id: "i1", backfill: true } }));
+  assertEquals(b.calls.settled, [{ k: "backfill", m: "2026-10-01", lines: [["backfill", "gpt-6-luna", 900, 60]] }]);
+});
+// 응답은 왔지만 파싱 실패(incomplete) — 청구된 토큰을 정산하고 잡은 실패(재시도)로
+Deno.test("text billing: the extraction response arrives but parsing fails → the line is settled and the job throws", async () => {
+  const { d, calls } = fake({ extractThrows: true });
+  let thrown = "";
+  try { await processText(d, job()); } catch (e) { thrown = (e as Error).message; }
+  assertEquals(thrown, "openai incomplete max_output_tokens");
+  assertEquals(calls.settled[0].lines, [["extract", "gpt-6-luna", 900, 60]]);
 });

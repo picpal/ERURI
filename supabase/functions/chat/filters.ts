@@ -1,3 +1,4 @@
+import { responseUsage, type TokenUsage } from "../_shared/budget.ts";
 import { openai } from "../_shared/openai.ts";
 
 // 질문 → 검색 필터(스펙 §9 "gpt-6-luna가 필터 추출"). strict json_schema, store:false, effort none. 질문 본문은 로그에 남기지 않는다
@@ -113,22 +114,23 @@ export function scheduleOf(f: Filters): Schedule | null {
   return (Date.parse(f.event_to) - Date.parse(f.event_from)) / 86_400_000 <= SCHEDULE_MAX_DAYS ? { from: f.event_from, to: f.event_to } : null;
 }
 
+export const FILTER_MODEL = "gpt-6-luna";
 // responses.create 에 그대로 넘기는 요청(테스트가 intents 없는 요청의 바이트 동일을 고정한다). withIntent = 앱이 intents 를 보냈다(D1)
 export function filterRequest(question: string, today: string, context: ContextTurn[], withIntent = false) {
   const weekday = WEEKDAYS[new Date(`${today}T00:00:00Z`).getUTCDay()];            // "이번 주 토요일"·"다음 주" 해석용
   if (!withIntent) {
     if (context.length === 0) {
-      return { model: "gpt-6-luna", store: false, reasoning: { effort: "none" },
+      return { model: FILTER_MODEL, store: false, reasoning: { effort: "none" },
         input: [{ role: "system", content: FILTER_SYSTEM }, { role: "user", content: `오늘(서울): ${today}(${weekday})\n질문: ${question}` }],
         text: { format: { type: "json_schema", name: "search_filters", schema: FILTER_SCHEMA, strict: true } } };
     }
-    return { model: "gpt-6-luna", store: false, reasoning: { effort: "none" },
+    return { model: FILTER_MODEL, store: false, reasoning: { effort: "none" },
       input: [{ role: "system", content: `${FILTER_SYSTEM}\n${CONTEXT_FILTER_RULE}` },
               { role: "user", content: `오늘(서울): ${today}(${weekday})\n이전 대화:\n${formatContext(context)}\n질문: ${question}` }],
       text: { format: { type: "json_schema", name: "search_filters_ctx", schema: CONTEXT_FILTER_SCHEMA, strict: true } } };
   }
   const ctx = context.length > 0;
-  return { model: "gpt-6-luna", store: false, reasoning: { effort: "none" },
+  return { model: FILTER_MODEL, store: false, reasoning: { effort: "none" },
     input: [{ role: "system", content: [FILTER_SYSTEM, ...(ctx ? [CONTEXT_FILTER_RULE] : []), INTENT_RULE].join("\n") },
             { role: "user", content: ctx ? `오늘(서울): ${today}(${weekday})\n이전 대화:\n${formatContext(context)}\n질문: ${question}`
                                           : `오늘(서울): ${today}(${weekday})\n질문: ${question}` }],
@@ -146,9 +148,11 @@ export function parseFilterOutput(outputText: string, hasContext: boolean, withI
   return out;
 }
 
-export async function extractFilters(question: string, today: string, context: ContextTurn[] = [], withIntent = false): Promise<FilterOutput> {
+export async function extractFilters(question: string, today: string, context: ContextTurn[] = [], withIntent = false,
+  onUsage?: (u: TokenUsage | null) => void): Promise<FilterOutput> {
   // deno-lint-ignore no-explicit-any
   const r = await openai.responses.create(filterRequest(question, today, context, withIntent) as any);
+  onUsage?.(responseUsage(r));                                      // 상태 검사·파싱보다 먼저(스펙 §13 — 응답이 온 실패도 청구된 토큰)
   if (r.status === "incomplete") throw new Error("filters incomplete");
   return { ...parseFilterOutput(r.output_text, context.length > 0, withIntent),
     usage: r.usage ? { input_tokens: r.usage.input_tokens, output_tokens: r.usage.output_tokens } : undefined };

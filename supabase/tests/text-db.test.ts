@@ -56,6 +56,7 @@ Deno.test("process end-to-end on hosted DB: event saved once across retries; per
     await sb.from("facts").delete().eq("user_id", USER).in("item_id", ids);
     await sb.from("items").delete().eq("user_id", USER).in("id", ids);
     await sb.from("usage_counters").delete().eq("user_id", USER);
+    await sb.from("usage_ledger").delete().eq("user_id", USER);
     await sb.from("llm_slots").delete().eq("user_id", USER);                              // 추출이 LLM 슬롯 행을 만든다
     await deleteRunJobs();
   }
@@ -86,6 +87,7 @@ Deno.test("process retry on hosted DB: enqueue failed after save_fact → retry 
     await sb.from("facts").delete().eq("user_id", USER).eq("item_id", ev);              // proposals → proposal_pushes cascade
     await sb.from("items").delete().eq("user_id", USER).eq("id", ev);
     await sb.from("usage_counters").delete().eq("user_id", USER);
+    await sb.from("usage_ledger").delete().eq("user_id", USER);
     await sb.from("llm_slots").delete().eq("user_id", USER);                              // 추출이 LLM 슬롯 행을 만든다
     await deleteRunJobs();
   }

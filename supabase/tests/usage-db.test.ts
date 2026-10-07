@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert";
-import { Deferred, guarded, nextMonthSeoul } from "../functions/_shared/budget.ts";
+import { Deferred, guarded, ledgerLine, nextMonthSeoul } from "../functions/_shared/budget.ts";
 import { budgetDeps } from "../functions/_shared/budget-deps.ts";
 import { encrypt, toBytea } from "../functions/_shared/crypto.ts";
 import { deleteRunJobs, RUN, service as sb, testUser, userClient } from "./_testenv.ts";
@@ -80,20 +80,24 @@ Deno.test("llm slots: two per user, third waits; release frees", async () => {
 // 사용자당 LLM 호출이 2개를 넘지 않고, 나머지는 llm_busy 로 미뤄지며 그 예약은 되돌려지는지 본다
 Deno.test("llm slots under real concurrency: 4 overlapping guarded calls → 2 run, 2 Deferred llm_busy, their reservations undone", async () => {
   const deps = budgetDeps(sb);
+  const U = { input: 1_000, cached: 0, output: 0 };                                       // luna 입력 1천 토큰 ≈ 0.14원 — 예약 1원 안
+  const each = ledgerLine("extract", "gpt-6-luna", U).krw;
   let live = 0, peak = 0;
   try {
-    const rs = await Promise.allSettled([0, 1, 2, 3].map((i) => guarded(deps, USER, "extract", 1, `${RUN}:w${i}`, async () => {
+    const rs = await Promise.allSettled([0, 1, 2, 3].map((i) => guarded(deps, USER, "extract", 1, `${RUN}:w${i}`, async (_lv, bill) => {
       peak = Math.max(peak, ++live);
       await new Promise((r) => setTimeout(r, 1500));
       live--;
-      return { value: i, actualKrw: 0.5 };
+      bill("extract", "gpt-6-luna", U);
+      return i;
     })));
     const busy = rs.filter((r) => r.status === "rejected" && r.reason instanceof Deferred && r.reason.message === "llm_busy").length;
     assertEquals([peak, rs.filter((r) => r.status === "fulfilled").length, busy], [2, 2, 2]);
-    assertEquals((await sb.from("usage_counters").select("reserved_krw").eq("user_id", USER).single()).data!.reserved_krw, 1);   // 0.5 × 2
+    assertEquals(Number((await sb.from("usage_counters").select("reserved_krw").eq("user_id", USER).single()).data!.reserved_krw), each * 2);   // 원소 2개
     assertEquals((await sb.from("llm_slots").select("slot").eq("user_id", USER).not("holder", "is", null)).data!.length, 0);    // 모두 반납
   } finally {
     await sb.from("usage_counters").delete().eq("user_id", USER);
+    await sb.from("usage_ledger").delete().eq("user_id", USER);
     await sb.from("llm_slots").delete().eq("user_id", USER);
   }
 });

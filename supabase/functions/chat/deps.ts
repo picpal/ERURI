@@ -1,11 +1,13 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { responseUsage } from "../_shared/budget.ts";
 import { budgetDeps } from "../_shared/budget-deps.ts";
 import { decrypt } from "../_shared/crypto.ts";
-import { embed, toPgVector } from "../_shared/embeddings.ts";
+import { embedWithUsage, toPgVector } from "../_shared/embeddings.ts";
 import { openai } from "../_shared/openai.ts";
 import { ANSWER_SCHEMA, answerUserMessage, type ChatDeps, type Meta, type ProposalCard, type RawAnswer, relevantItems, type ScoredRow,
   type SearchResult, systemPrompt } from "./handler.ts";
-import { extractFilters, type Filters } from "./filters.ts";
+import { extractFilters, type Filters, FILTER_MODEL } from "./filters.ts";
+import { queryEmbedder } from "./query-vector.ts";
 
 // 모델 문서는 상위 12 청크. "보관함에서 보기" 후보는 같은 한 번의 검색의 융합 목록(의미 40 ∪ 키워드 40) 중 관련도 컷을 통과한 행(스펙 §9)
 export const DOC_CHUNKS = 12;
@@ -32,19 +34,11 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
     if (error) throw new Error(fn + " " + error.code);
     return data;
   };
-  // 기간 폴백 재검색이 같은 질문을 두 번 임베딩하지 않게 마지막 질의 벡터만 기억한다(같은 문장이면 사용자와 무관하게 같은 벡터)
-  let lastQuery: { text: string; v: Promise<number[]> } | null = null;
-  const queryVector = (text: string) => {
-    if (lastQuery?.text !== text) {
-      const v = embed([text], "query").then(([x]) => x);
-      v.catch(() => { if (lastQuery?.v === v) lastQuery = null; });
-      lastQuery = { text, v };
-    }
-    return lastQuery.v;
-  };
+  // 기간 폴백 재검색이 같은 질문을 두 번 임베딩하지 않게 마지막 질의 벡터만 기억한다 — 임베딩을 실제로 부른 요청만 원소 하나(D13)
+  const queryVector = queryEmbedder((texts, onUsage) => embedWithUsage(texts, "query", onUsage));
   return {
     authUser: async (t) => { const { data, error } = await sb.auth.getUser(t); return error ? null : data.user?.id ?? null; },
-    filters: (q, today, context, withIntent) => extractFilters(q, today, context, withIntent),
+    filters: (q, today, context, withIntent, bill) => extractFilters(q, today, context, withIntent, (u) => bill?.("chat", FILTER_MODEL, u)),
     async facts(u, f: Filters) {
       // 받은 기간은 늘 받은 시각, 일정 기간은 event·task 의 start·due 에만(0024, §9)
       const scheduled = f.event_from !== null || f.event_to !== null;
@@ -53,8 +47,8 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
         { item_id: string; kind: string; payload: Record<string, unknown>; evidence: string | null; occurred_at: string }[];
       return rows.map((r) => ({ item_id: r.item_id, occurred_at: r.occurred_at, text: factText(r) }));
     },
-    async search(u, q): Promise<SearchResult> {
-      const v = await queryVector(q.question);
+    async search(u, q, bill): Promise<SearchResult> {
+      const v = await queryVector(q.question, bill);
       const rows = (await rpc("hybrid_search", { p_user: u, p_query: q.question, p_embedding: toPgVector(v), p_limit: CANDIDATE_CHUNKS,
         p_from: q.from, p_to: q.to, p_sources: q.sources.length ? q.sources : null })) as (ScoredRow & { chunk_id: string })[];
       const candidates = relevantItems(rows);
@@ -67,7 +61,7 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
         .map((r) => ({ item_id: r!.item_id, text: r!.text, occurred_at: r!.items.occurred_at }));
       return { docs, candidates };
     },
-    async answer(input, level) {
+    async answer(input, level, bill) {
       const model = level === "degraded" ? "gpt-6-luna" : "gpt-6-sol";
       const r = await openai.responses.create({
         model, store: false, reasoning: { effort: "low" },
@@ -75,6 +69,7 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
                 { role: "user", content: answerUserMessage(input) }],
         text: { format: { type: "json_schema", name: "chat_answer", schema: ANSWER_SCHEMA, strict: true } },
       });
+      bill?.("chat", model, responseUsage(r));                       // 상태 검사·파싱보다 먼저(§13)
       if (r.status === "incomplete") throw new Error("answer incomplete");
       const u = r.usage;
       return { ...(JSON.parse(r.output_text) as RawAnswer), model, usage: u ? { input_tokens: u.input_tokens, output_tokens: u.output_tokens,

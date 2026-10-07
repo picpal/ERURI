@@ -1,6 +1,6 @@
-import { type BudgetDeps, costKrw, guarded } from "../_shared/budget.ts";
+import { type BudgetDeps, costKrw, guarded, type TokenUsage } from "../_shared/budget.ts";
 import { type Classifier, classifierMeta, type ClassifyResult, gateDecision } from "../_shared/classify.ts";
-import type { ExtractUsage } from "../_shared/extract.ts";
+import { EXTRACT_MODEL, type ExtractUsage } from "../_shared/extract.ts";
 import type { TextExtraction, TextMeta } from "../_shared/extract-text.ts";
 import { type FactsInput, type SavedFact, textFacts } from "../_shared/facts.ts";
 import type { Job } from "../_shared/job.ts";
@@ -17,7 +17,7 @@ export type TextDeps = {
   decrypt(userId: string, enc: string): Promise<string>;
   classifier: Classifier;
   threshold: number;
-  extract(text: string, meta: TextMeta, today: string): Promise<{ result: TextExtraction; usage: ExtractUsage }>;
+  extract(text: string, meta: TextMeta, today: string, onUsage?: (u: TokenUsage | null) => void): Promise<{ result: TextExtraction; usage: ExtractUsage }>;
   addTokens(userId: string, tokens: number, backfill: boolean): Promise<void>;
   saveFacts(f: FactsInput): Promise<SavedFact[]>;
   enqueueNotify(userId: string, proposalId: string): Promise<void>;
@@ -81,11 +81,10 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   // 3) 추출. 비용 예약(§13): 백필 항목은 1회 예산, 그 외는 월 예산. 소진이면 Deferred(다음 달) — 잡은 queued 로 남는다
   const kind = job.payload.backfill === true ? "backfill" : "extract";
   const est = costKrw("gpt-6-luna", { input: v.masked.length + 1200, output: 700 });
-  const { value: { result, usage } } = await guarded(deps.budget, user, kind, est, job.id, async () => {
-    const x = await deps.extract(v.masked, meta, receivedDay(item.occurredAt));   // 상대 날짜 기준일 = 받은 날(서울)
-    return { value: x, actualKrw: costKrw("gpt-6-luna", { input: x.usage.input_tokens, output: x.usage.output_tokens }) };
-  });
-  await deps.addTokens(user, usage.input_tokens + usage.output_tokens, job.payload.backfill === true);
+  // 원소는 추출 응답 직후(파싱 전) — 예약 kind 와 같은 집계 kind(extract·backfill, 스펙 §13 표)
+  const { value: { result, usage } } = await guarded(deps.budget, user, kind, est, job.id, (_lv, bill) =>
+    deps.extract(v.masked, meta, receivedDay(item.occurredAt), (u) => bill(kind, EXTRACT_MODEL, u)));   // 상대 날짜 기준일 = 받은 날(서울)
+  await deps.addTokens(user, usage.input_tokens + usage.output_tokens, job.payload.backfill === true);   // 0.16.0 에서 정리(D12)
   const facts = textFacts(user, itemId, result);
   if (facts === null) {                                              // 남길 것 없음: 원문 유지(1b 검색 대상, §7)
     // R1(2026-10-03): 0건 사유 코드·모델이 낸 원래 일정 후보 수만 로그에(본문·값 없음) — model_none 과 no_start 를 가른다

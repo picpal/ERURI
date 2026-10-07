@@ -14,7 +14,7 @@ export function embedDeps(sb: SupabaseClient): EmbedDeps {
       return r ? { contentEnc: r.content_enc, title: r.title } : null;
     },
     decrypt: (u, enc) => decrypt(u, enc),
-    embed: (texts) => embedWithUsage(texts, "document"),
+    embed: (texts, onUsage) => embedWithUsage(texts, "document", onUsage),
     async save(u, i, chunks) {
       const { error } = await sb.rpc("worker_save_chunks", { p_user: u, p_item: i, p_chunks: chunks });
       if (error) throw new Error("worker_save_chunks " + error.code);

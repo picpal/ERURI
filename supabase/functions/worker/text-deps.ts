@@ -25,7 +25,7 @@ export function textDeps(sb: SupabaseClient, o: { classifier: Classifier; thresh
     decrypt: (userId, enc) => decrypt(userId, enc),
     classifier: o.classifier,
     threshold: o.threshold,
-    extract: o.extract ?? ((text, meta, today) => extractTextDetailed(text, meta, today)),
+    extract: o.extract ?? ((text, meta, today, onUsage) => extractTextDetailed(text, meta, today, onUsage)),
     addTokens: (userId, tokens, backfill) => addExtractTokens(sb, userId, tokens, backfill),
     saveFacts: (f) => saveFacts(sb, f),
     enqueueNotify: (userId, proposalId) => enqueueNotify(sb, userId, proposalId, o.leasePrefix ?? ""),

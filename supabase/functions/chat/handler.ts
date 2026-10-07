@@ -1,4 +1,4 @@
-import { type BudgetDeps, type BudgetLevel, costKrw, Deferred, guarded } from "../_shared/budget.ts";
+import { type Bill, type BudgetDeps, type BudgetLevel, costKrw, Deferred, guarded } from "../_shared/budget.ts";
 import { type ActionIntent, ACTION_INTENTS, type ContextTurn, escTags, type FilterOutput, type Filters, formatContext, type Intent, type MailFields,
   type Schedule, scheduleOf } from "./filters.ts";
 export type { ActionIntent, ContextTurn, Filters, Intent, MailFields, Schedule } from "./filters.ts";
@@ -18,10 +18,10 @@ export type ScoredRow = { item_id: string; sem_sim: number | null; kw_score: num
 export type AnswerInput = { question: string; today: string; documents: ChatHit[]; context?: ContextTurn[]; query?: string };
 export type ChatDeps = {
   authUser(token: string): Promise<string | null>;
-  filters(question: string, today: string, context: ContextTurn[], withIntent?: boolean): Promise<FilterOutput>;   // withIntent 없음 = false(기존 테스트의 3인자 호출 그대로)
+  filters(question: string, today: string, context: ContextTurn[], withIntent?: boolean, bill?: Bill): Promise<FilterOutput>;   // withIntent 없음 = false(기존 테스트의 3인자 호출 그대로)
   facts(userId: string, f: Filters): Promise<ChatHit[]>;
-  search(userId: string, q: { question: string; from: string | null; to: string | null; sources: string[] }): Promise<SearchResult>;
-  answer(input: AnswerInput, level: BudgetLevel): Promise<RawAnswer & { usage?: Usage; model: string }>;
+  search(userId: string, q: { question: string; from: string | null; to: string | null; sources: string[] }, bill?: Bill): Promise<SearchResult>;
+  answer(input: AnswerInput, level: BudgetLevel, bill?: Bill): Promise<RawAnswer & { usage?: Usage; model: string }>;
   meta(userId: string, ids: string[]): Promise<Meta[]>;
   proposals(userId: string, ids: string[]): Promise<ProposalCard[]>;
   audit(userId: string, ids: string[]): Promise<void>;
@@ -137,10 +137,6 @@ function dedupe(docs: ChatHit[]): ChatHit[] {
   const seen = new Set<string>();
   return docs.filter((d) => (seen.has(d.item_id) ? false : (seen.add(d.item_id), true)));
 }
-function spent(model: string | null, u?: Usage, fu?: Usage): number {
-  const f = fu ? costKrw("gpt-6-luna", { input: fu.input_tokens, output: fu.output_tokens }) : 0;
-  return f + (model && u ? costKrw(model, { input: u.input_tokens, output: u.output_tokens, cached: u.cached_tokens }) : 0);
-}
 
 // UTF-16 n 단위로 자르되 서로게이트 쌍을 가르지 않는다(외톨이 서로게이트가 p_query·임베딩으로 가지 않게)
 function cut(s: string, n: number): string {
@@ -166,31 +162,30 @@ export function actionResult(intent: ActionIntent, mail: MailFields | null): Cha
 
 async function answerOnce(userId: string, question: string, deps: ChatDeps, context: ContextTurn[], allowed: Set<ActionIntent> | null): Promise<ChatOutcome> {
   const today = deps.today();
-  const { value } = await guarded(deps.budget, userId, "chat", CHAT_EST_KRW, crypto.randomUUID(), async (level) => {
-    const { filters, query, intent: raw, mail, usage: fu } = await deps.filters(question, today, context, allowed !== null);
+  // 금액은 응답마다 bill 로 쌓인 원소의 합(스펙 §13 "기능별 기록") — 필터·질의 임베딩·답변 모두 예약 chat·집계 chat
+  const { value } = await guarded(deps.budget, userId, "chat", CHAT_EST_KRW, crypto.randomUUID(), async (level, bill): Promise<ChatOutcome> => {
+    const { filters, query, intent: raw, mail } = await deps.filters(question, today, context, allowed !== null, bill);
     const intent = allowed ? resolveIntent(raw ?? "question", allowed, deps.mailActions()) : "question";
-    // 행동 의도: 검색·facts·답변 모델을 부르지 않는다 — 문서를 읽지 않으므로 감사 read 도 없다. 예약은 같고 정산은 필터 비용만(스펙 §9 "응답")
-    if (intent !== "question") {
-      return { value: { ...actionResult(intent, mail ?? null), rewritten: false, raw_intent: raw } as ChatOutcome, actualKrw: spent(null, undefined, fu) };
-    }
+    // 행동 의도: 검색·facts·답변 모델을 부르지 않는다 — 문서를 읽지 않으므로 감사 read 도 없다. 예약은 같고 정산은 필터 원소만(스펙 §9 "응답")
+    if (intent !== "question") return { ...actionResult(intent, mail ?? null), rewritten: false, raw_intent: raw } as ChatOutcome;
     // 맥락이 있으면 검색은 독립 질문으로(스펙 §9) — "거기 주소" 만으로는 키워드·임베딩이 대상을 못 고른다. 비었으면 원 질문
     const standalone = context.length && query?.trim() ? cut(query.trim(), 500) : question;
     const rewritten = standalone !== question;
     const schedule = scheduleOf(filters);          // 일정 질문이면 앱이 이 기간의 기기 캘린더를 읽는다(§9) — 거절·문서 0건이어도 싣는다
     const factDocs = await deps.facts(userId, filters);
     const q = { question: standalone, from: filters.date_from, to: filters.date_to, sources: filters.sources };
-    let s = await deps.search(userId, q);
-    // 기간은 받은 시각 조건이라 일정 날짜로 잘못 채워지면 0건이 된다 → 기간만 빼고 한 번 더(Ruling D). 후보도 이 최종 검색 기준
-    if (s.docs.length === 0 && (q.from !== null || q.to !== null)) s = await deps.search(userId, { ...q, from: null, to: null });
+    let s = await deps.search(userId, q, bill);
+    // 기간은 받은 시각 조건이라 일정 날짜로 잘못 채워지면 0건이 된다 → 기간만 빼고 한 번 더(Ruling D). 후보도 이 최종 검색 기준. 같은 문장이라 임베딩은 재사용(D13)
+    if (s.docs.length === 0 && (q.from !== null || q.to !== null)) s = await deps.search(userId, { ...q, from: null, to: null }, bill);
     const read = dedupe([...mergeFactDocs(factDocs), ...s.docs]);
     const docs = read.slice(0, 12);
     const asked = { intent: "question" as const, mail: null, raw_intent: raw };
     if (docs.length === 0) {
-      return { value: { answer: REFUSAL, source_item_ids: [], refused: true, forced_refusal: false, dropped_ids: 0, hits: [], candidates: [],
-        citations: [], proposals: [], model: null, schedule, rewritten, ...asked } as ChatOutcome, actualKrw: spent(null, undefined, fu) };
+      return { answer: REFUSAL, source_item_ids: [], refused: true, forced_refusal: false, dropped_ids: 0, hits: [], candidates: [],
+        citations: [], proposals: [], model: null, schedule, rewritten, ...asked } as ChatOutcome;
     }
     await deps.audit(userId, read.map((d) => d.item_id));                // 모델에 넣지 않고 버린 것까지 서버가 읽은 전부(§12 통제 4)
-    const raw2 = await deps.answer({ question, today, documents: docs, context, query: rewritten ? standalone : undefined }, level);
+    const raw2 = await deps.answer({ question, today, documents: docs, context, query: rewritten ? standalone : undefined }, level, bill);
     const v = validateAnswer(raw2, docs);
     const candidates = pickCandidates({ refused: v.refused, cited: v.source_item_ids,
       facts: factsDistinct(filters) ? factDocs.map((d) => d.item_id) : [], searched: s.candidates });
@@ -198,8 +193,7 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps, cont
       : await Promise.all([deps.meta(userId, v.source_item_ids), deps.proposals(userId, v.source_item_ids)]);
     const byId = new Map(meta.map((m) => [m.item_id, m]));
     const citations = v.source_item_ids.map((id) => byId.get(id)).filter((m): m is Meta => m !== undefined);   // 답변의 인용 순서
-    return { value: { ...v, hits: docs.map((d) => d.item_id), candidates, citations, proposals, model: raw2.model, schedule, rewritten, ...asked },
-      actualKrw: spent(raw2.model, raw2.usage, fu) };
+    return { ...v, hits: docs.map((d) => d.item_id), candidates, citations, proposals, model: raw2.model, schedule, rewritten, ...asked };
   });
   return value;
 }

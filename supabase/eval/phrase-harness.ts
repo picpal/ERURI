@@ -22,7 +22,7 @@ export async function runPhrase(p: { id: string; text: string }, o: { classifier
     enqueueNotify: async () => {},
     unpushedProposals: async () => [],
     enqueueEmbed: async () => {},
-    budget: { reserve: async () => "ok", settle: async () => {}, acquire: async () => 1, release: async () => {}, now: () => new Date() },
+    budget: { reserve: async () => ({ level: "ok", month: "2026-10-01" }), settle: async () => {}, acquire: async () => 1, release: async () => {}, now: () => new Date() },
   };
   await processText(deps, { id: `eval-${p.id}`, kind: "process", user_id: "eval", payload: { item_id: p.id }, attempts: 1, checkpoint: null });
   return { status, kind, tokens };

@@ -1,3 +1,4 @@
+import { responseUsage, type TokenUsage } from "./budget.ts";
 import { openai } from "./openai.ts";
 import { clean, EXTRACT_MODEL, type ExtractedEvent, type ExtractUsage, normalizeDateTime, normalizeEvent, parseStructured, type RawResponse,
   UNCERTAIN } from "./extract.ts";
@@ -197,8 +198,10 @@ export function parseTextExtractResponse(r: RawResponse, today: string): TextExt
   return normalizeTextExtraction(parseStructured(r) as RawText, today);
 }
 
-export async function extractTextDetailed(text: string, meta: TextMeta, today: string): Promise<{ result: TextExtraction; usage: ExtractUsage }> {
+export async function extractTextDetailed(text: string, meta: TextMeta, today: string,
+  onUsage?: (u: TokenUsage | null) => void): Promise<{ result: TextExtraction; usage: ExtractUsage }> {
   const r = await openai.responses.create(buildTextExtractRequest(text, meta, today));
+  onUsage?.(responseUsage(r));                                      // 파싱(incomplete·refusal·형식 오류에서 던짐)보다 먼저 — 청구된 토큰(§13)
   return { result: parseTextExtractResponse(r as unknown as RawResponse, today),
     usage: { input_tokens: r.usage?.input_tokens ?? 0, output_tokens: r.usage?.output_tokens ?? 0 } };
 }

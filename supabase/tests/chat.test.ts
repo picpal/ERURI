@@ -33,28 +33,36 @@ Deno.test("documents are wrapped as <document id date> blocks and cannot close t
 function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; searches?: ChatHit[][]; candidates?: string[][];
   raw?: { answer: string; source_item_ids: string[]; refused: boolean };
   level?: "ok" | "degraded" | "refused"; filters?: Partial<Filters>; slots?: (number | null)[];
-  intent?: "question" | "add_event" | "mail_action"; mail?: MailFields | null; mailOn?: boolean } = {}) {
+  intent?: "question" | "add_event" | "mail_action"; mail?: MailFields | null; mailOn?: boolean;
+  bills?: { filter?: boolean; embed?: boolean; answer?: boolean; answerThrows?: boolean; answerBadJson?: boolean } } = {}) {
   const seen = { answer: [] as { docs: string[]; level: string }[], audit: [] as string[][], search: [] as unknown[], sleeps: [] as number[],
-    settled: [] as number[], facts: 0, withIntent: [] as boolean[] };
+    settled: [] as number[], lines: [] as [string, string][][], facts: 0, withIntent: [] as boolean[] };
   const slots = [...(o.slots ?? [])];
-  const budget: BudgetDeps = { reserve: async () => o.level ?? "ok", settle: async (_u, _k, _e, actual) => { seen.settled.push(actual); },
+  const budget: BudgetDeps = { reserve: async () => ({ level: o.level ?? "ok", month: "2026-10-01" }),
+    settle: async (_u, _k, _e, _m, lines) => { seen.settled.push(lines.reduce((a, l) => a + l.krw, 0)); seen.lines.push(lines.map((l) => [l.kind, l.model])); },
     acquire: async () => (slots.length ? slots.shift()! : 1), release: async () => {}, now: () => new Date("2026-10-01T00:00:00Z") };
   const d: ChatDeps = {
     authUser: async (t) => (t === "good" ? "user-1" : null),
-    filters: async (_q, _t, _c, withIntent) => {
+    filters: async (_q, _t, _c, withIntent, bill) => {
       seen.withIntent.push(withIntent === true);
+      if (o.bills?.filter) bill?.("chat", "gpt-6-luna", { input: 800, cached: 0, output: 100 });
       const f = { filters: { date_from: null, date_to: null, event_from: null, event_to: null, sources: [], kinds: [], merchant: null, ...o.filters } };
       return withIntent ? { ...f, intent: o.intent ?? "question", mail: o.mail ?? null } : f;
     },
     facts: async () => { seen.facts++; return o.facts ?? []; },
-    search: async (_u, q) => {
+    search: async (_u, q, bill) => {
       seen.search.push(q);
+      if (o.bills?.embed && seen.search.length === 1) bill?.("chat", "text-embedding-3-large", { input: 12, cached: 0, output: 0 });   // 실제 deps 는 같은 문장이면 재사용
       const docs = o.searches ? o.searches.shift() ?? [] : o.hits ?? hits;
       // 후보를 따로 주지 않으면 문서와 같은 항목(검색 한 번의 융합 목록이 문서보다 길 수 있다는 것은 아래 테스트가 본다)
       return { docs, candidates: o.candidates ? o.candidates.shift() ?? [] : docs.map((d) => d.item_id) };
     },
-    answer: async (x, level) => { seen.answer.push({ docs: x.documents.map((d) => d.item_id), level });
-      return { ...(o.raw ?? { answer: "쿠팡", source_item_ids: ["i1"], refused: false }), model: level === "degraded" ? "gpt-6-luna" : "gpt-6-sol" }; },
+    answer: async (x, level, bill) => { seen.answer.push({ docs: x.documents.map((d) => d.item_id), level });
+      const model = level === "degraded" ? "gpt-6-luna" : "gpt-6-sol";
+      if (o.bills?.answerThrows) throw new TypeError("fetch failed");                     // 응답 없음(네트워크) — 원소 없음
+      if (o.bills?.answer) bill?.("chat", model, { input: 5000, cached: 1000, output: 400 });
+      if (o.bills?.answerBadJson) throw new Error("answer incomplete");                 // 응답은 옴(원소 있음) — 파싱 실패
+      return { ...(o.raw ?? { answer: "쿠팡", source_item_ids: ["i1"], refused: false }), model }; },
     meta: async (_u, ids) => ids.map((id) => ({ item_id: id, source: "GMAIL", app_name: null, title: "합성", sender: null, occurred_at: "2026-07-03T12:14:00Z", expired: false })),
     proposals: async () => [],
     audit: async (_u, ids) => { seen.audit.push(ids); },
@@ -578,3 +586,35 @@ Deno.test({ name: "extractFilters (live): explicit add request → add_event; as
   const mail = await extractFilters("합성상점에서 온 광고 메일 휴지통에 버려줘", "2026-10-07", [], true);
   assertEquals([mail.intent, mail.mail?.action, mail.mail?.promotions], ["mail_action", "trash", true]);
 } });
+// 스펙 §13·§15 USAGE-ledger deno: chat 은 필터·질의 임베딩·답변 원소 셋을 kind chat 으로
+Deno.test("chat billing: filter, query embedding and answer lines are settled under kind chat", async () => {
+  const { d, seen } = deps({ bills: { filter: true, embed: true, answer: true } });
+  await answerQuestion("user-1", "에어팟", d);
+  assertEquals(seen.lines, [[["chat", "gpt-6-luna"], ["chat", "text-embedding-3-large"], ["chat", "gpt-6-sol"]]]);
+  assert(seen.settled[0] > 0);
+});
+Deno.test("chat billing: the answer call fails without a response after the filter and embedding responses → only those two lines are settled", async () => {
+  const { d, seen } = deps({ bills: { filter: true, embed: true, answer: true, answerThrows: true } });
+  let thrown = "";
+  try { await answerQuestion("user-1", "에어팟", d); } catch (e) { thrown = (e as Error).message; }
+  assertEquals(thrown, "fetch failed");
+  assertEquals(seen.lines, [[["chat", "gpt-6-luna"], ["chat", "text-embedding-3-large"]]]);
+});
+Deno.test("chat billing: the answer response arrives but fails to parse → its line is settled too (billed before parsing)", async () => {
+  const { d, seen } = deps({ bills: { filter: true, embed: true, answer: true, answerBadJson: true } });
+  let thrown = "";
+  try { await answerQuestion("user-1", "에어팟", d); } catch (e) { thrown = (e as Error).message; }
+  assertEquals(thrown, "answer incomplete");
+  assertEquals(seen.lines, [[["chat", "gpt-6-luna"], ["chat", "text-embedding-3-large"], ["chat", "gpt-6-sol"]]]);
+});
+Deno.test("chat billing: no documents (refusal without an answer call) still settles the filter and embedding lines; date fallback re-search adds no second embedding line", async () => {
+  const { d, seen } = deps({ bills: { filter: true, embed: true, answer: true }, searches: [[], []], filters: { date_from: "2026-09-01T00:00:00+09:00" } });
+  const r = await answerQuestion("user-1", "9월에 받은 합성 메일", d);
+  assertEquals([r.refused, seen.search.length, seen.answer.length], [true, 2, 0]);
+  assertEquals(seen.lines, [[["chat", "gpt-6-luna"], ["chat", "text-embedding-3-large"]]]);
+});
+Deno.test("chat billing: an action intent settles only the filter line (no search → no embedding line)", async () => {
+  const { d, seen } = deps({ bills: { filter: true, embed: true, answer: true }, intent: "add_event" });
+  await answerQuestion("user-1", "합성치과 10/20 15시 등록해줘", d, [], new Set(["add_event"]));
+  assertEquals(seen.lines, [[["chat", "gpt-6-luna"]]]);
+});

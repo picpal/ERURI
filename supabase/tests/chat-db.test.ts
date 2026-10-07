@@ -87,7 +87,7 @@ Deno.test("chat pipeline (real facts/hybrid RPCs): mail received 9/10 about a 10
       p_evidence: "10월 20일 오전 10시 합성빌딩", p_action: null })).error, null);
     assertEquals((await sb.from("item_chunks").insert({ item_id: id, user_id: USER, chunk_index: 0, text: `합성 미팅 초대\n${text}` })).error, null);
     const real = chatDeps(sb);
-    const budget: BudgetDeps = { reserve: async () => "ok", settle: async () => {}, acquire: async () => 1, release: async () => {}, now: () => new Date() };
+    const budget: BudgetDeps = { reserve: async () => ({ level: "ok", month: "2026-10-01" }), settle: async () => {}, acquire: async () => 1, release: async () => {}, now: () => new Date() };
     const run = async (f: Partial<Filters>) => {
       const searches: { from: string | null }[] = [];
       const d: ChatDeps = { ...real, budget, audit: async () => {},

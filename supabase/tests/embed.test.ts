@@ -11,16 +11,18 @@ function fake(src: { contentEnc: string; title: string | null } | null, body = B
   const batches: number[] = [];
   const settled: number[] = [];
   let decrypts = 0;
-  const budget: BudgetDeps = { reserve: async (_u, k) => { kinds.push(k); return reserve(k); },
-    settle: async (_u, _k, _e, a) => { settled.push(a); }, acquire: async () => 1, release: async () => {}, now: () => new Date() };
+  const lines: [string, number][][] = [];
+  const budget: BudgetDeps = { reserve: async (_u, k) => { kinds.push(k); return { level: reserve(k), month: "2026-10-01" }; },
+    settle: async (_u, _k, _e, _m, ls) => { settled.push(ls.reduce((a, l) => a + l.krw, 0)); lines.push(ls.map((l) => [l.kind, l.input])); },
+    acquire: async () => 1, release: async () => {}, now: () => new Date() };
   const d: EmbedDeps = {
     source: async () => src,
     decrypt: async () => { decrypts++; return body; },
-    embed: async (texts) => { batches.push(texts.length); return { vectors: texts.map(() => Array(512).fill(0.01)), tokens: 40 }; },
+    embed: async (texts, onUsage) => { batches.push(texts.length); onUsage?.({ input: 40, cached: 0, output: 0 }); return { vectors: texts.map(() => Array(512).fill(0.01)), tokens: 40 }; },
     save: async (_u, _i, chunks) => { saved.push(chunks); },
     budget,
   };
-  return { d, saved, kinds, batches, settled, decrypts: () => decrypts };
+  return { d, saved, kinds, batches, settled, lines, decrypts: () => decrypts };
 }
 const job: Job = { id: "j1", kind: "embed", user_id: "u1", payload: { item_id: "i1" }, attempts: 1, checkpoint: null };
 
@@ -59,4 +61,9 @@ Deno.test("embed: rules re-applied — card masked in chunks, OTP body not embed
   const otp = fake({ contentEnc: "enc", title: "합성 인증" }, "[합성은행] 인증번호 482913 을 입력하세요.");
   assertEquals(await embedItem(otp.d, job), "skipped");
   assertEquals([otp.saved.length, otp.kinds.length], [0, 0]);
+});
+Deno.test("embed billing: one embed line per batch call (3 batches → 3 lines, tokens per batch)", async () => {
+  const { d, lines } = fake({ contentEnc: "enc", title: null }, "가".repeat(512 * 600));
+  await embedItem(d, job);
+  assertEquals(lines, [[["embed", 40], ["embed", 40], ["embed", 40]]]);
 });

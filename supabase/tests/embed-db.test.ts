@@ -82,6 +82,7 @@ Deno.test("embed job with real deps: chunks + 512-dim vectors saved, decrypt aud
     await sb.from("items").delete().eq("user_id", USER).eq("id", item);
     await sb.from("audit_log").delete().eq("user_id", USER).eq("target", item);
     await sb.from("usage_counters").delete().eq("user_id", USER);
+    await sb.from("usage_ledger").delete().eq("user_id", USER);
     await sb.from("llm_slots").delete().eq("user_id", USER);
   }
 });
@@ -104,6 +105,7 @@ Deno.test("embed backfill-lane job with the backfill budget exhausted: embedded 
     await sb.from("items").delete().eq("user_id", USER).eq("id", item);
     await sb.from("audit_log").delete().eq("user_id", USER).eq("target", item);
     await sb.from("usage_counters").delete().eq("user_id", USER);
+    await sb.from("usage_ledger").delete().eq("user_id", USER);
     await sb.from("llm_slots").delete().eq("user_id", USER);
   }
 });
@@ -133,6 +135,7 @@ Deno.test({ name: "deployed worker: new item gets chunks with vectors within 5 m
     await sb.from("items").delete().eq("user_id", USER).eq("id", item as string);
     await sb.from("audit_log").delete().eq("user_id", USER).eq("action", "decrypt").eq("target", item as string);
     await sb.from("usage_counters").delete().eq("user_id", USER);
+    await sb.from("usage_ledger").delete().eq("user_id", USER);
     await sb.from("llm_slots").delete().eq("user_id", USER);
   }
 } });
