@@ -157,7 +157,33 @@ final class MailSummaryTests: XCTestCase {
     XCTAssertEqual(MailSummary.fields(v), .init(translate: true, targetInMessage: false))
     let w = try! JSONDecoder().decode(JSONValue.self, from: Data(#"{"sender":"합성"}"#.utf8))
     XCTAssertEqual(MailSummary.fields(w), .init(translate: false, targetInMessage: true))
-    XCTAssertNil(MailSummary.fields(nil))
+    XCTAssertNil(MailSummary.fields(.string("x")))
+  }
+
+  // 최종 리뷰 I1: chat 이 mail_read null 을 주면 빈 칸 검색 → 서버 needs_target 되묻기("요약해줘", 맥락 없음)
+  func testNullMailReadSearchesWithEmptyBody() throws {
+    let a = try XCTUnwrap(ChatReply.decode(Data(#"{"answer_id":"x","answer":"","refused":false,"source_item_ids":[],"citations":[],"proposals":[],"hits":[],"intent":"mail_summary","mail_read":null}"#.utf8)))
+    XCTAssertEqual(MailSummary.fields(a.mail_read), .init(translate: false, targetInMessage: false))
+    let cur = ChatHistory.Record(at: t0, kind: .question, question: "요약해줘")
+    XCTAssertEqual(MailSummary.followUp([cur], current: cur.id, now: t0, targetInMessage: MailSummary.fields(a.mail_read)!.targetInMessage), .none)
+    let body = try XCTUnwrap(MailSummary.searchBody(a.mail_read))
+    XCTAssertTrue(body.isEmpty)
+    XCTAssertEqual(try JSONSerialization.data(withJSONObject: body), Data("{}".utf8))
+    XCTAssertEqual(MailSummary.searchBody(.null)?.isEmpty, true)
+    XCTAssertNil(MailSummary.searchBody(.string("x")))
+    let obj = try JSONDecoder().decode(JSONValue.self, from: Data(#"{"sender":"합성"}"#.utf8))
+    XCTAssertEqual(MailSummary.searchBody(obj)?["sender"] as? String, "합성")
+  }
+
+  // 최종 리뷰 I1: 요약 뒤 "번역해줘"에 mail_read null 이 와도 앞 토큰으로 이어서 읽기
+  func testNullMailReadAfterSummaryFollowsUpWithToken() throws {
+    var t = MailSummaryTurn(phase: .ended)
+    t.read = r(readJSON); t.readAt = t0.addingTimeInterval(-50)
+    let prev = ChatHistory.Record(at: t0.addingTimeInterval(-60), kind: .mailSummary, question: "합성학원 메일 요약해줘", mailRead: t)
+    let cur = ChatHistory.Record(at: t0, kind: .question, question: "번역해줘")
+    let a = try XCTUnwrap(ChatReply.decode(Data(#"{"answer_id":"x","answer":"","refused":false,"source_item_ids":[],"citations":[],"proposals":[],"hits":[],"intent":"mail_summary","mail_read":null}"#.utf8)))
+    let f = try XCTUnwrap(MailSummary.fields(a.mail_read))
+    XCTAssertEqual(MailSummary.followUp([prev, cur], current: cur.id, now: t0, targetInMessage: f.targetInMessage), .token("v1.n.t"))
   }
 
   func testTurnDecodesLeniently_CandidatesExpireAfter10Minutes() throws {

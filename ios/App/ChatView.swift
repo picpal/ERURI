@@ -578,7 +578,7 @@ struct ChatView: View {
           }
           if MailSummary.isMailSummary(a.intent) {
             // 채팅 메일 요약(§9, 0.15.0): 답이 아니다 — reply 를 저장하지 않는다. 바로 앞 요약 턴 + 지금 글이 대상을 말하지 않음이면 앞 토큰으로 읽기(검색 없음),
-            // 아니면 mail_read 칸 그대로 검색(검사는 서버 한 곳). 칸 값·글은 로그에 없다
+            // 아니면 mail_read 칸 그대로 검색(검사는 서버 한 곳 — null 이면 빈 칸으로 needs_target 되묻기). 칸 값·글은 로그에 없다
             DiagLog.append("CHAT intent mail_summary ctx=\(withContext ? 1 : 0)")
             let f = MailSummary.fields(a.mail_read)
             let translate = f?.translate ?? false
@@ -589,7 +589,7 @@ struct ChatView: View {
             case .expired:
               settle(id, epoch) { $0.record.kind = .mailSummary; $0.record.mailRead = MailSummaryTurn(phase: .ended, translate: translate, note: MailSummaryText.followExpired) }
             case .none:
-              guard let body = a.mail_read?.foundation as? [String: Any] else {
+              guard let body = MailSummary.searchBody(a.mail_read) else {
                 settle(id, epoch) { $0.record.kind = .mailSummary; $0.record.mailRead = MailSummaryTurn(phase: .ended, note: MailSummaryText.failed) }
                 return
               }

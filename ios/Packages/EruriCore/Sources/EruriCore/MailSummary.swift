@@ -50,15 +50,28 @@ public enum MailSummary {
   public static func search(_ d: Data) -> Search? { try? JSONDecoder().decode(Search.self, from: d) }
   public static func read(_ d: Data) -> Read? { try? JSONDecoder().decode(Read.self, from: d) }
 
-  /// chat 응답 mail_read 칸에서 앱이 직접 쓰는 두 값(나머지는 해석하지 않고 그대로 서버에 보낸다). target_in_message 가 없으면 참 — 검색으로(앞 메일을 다시 읽지 않게)
+  /// chat 응답 mail_read 칸에서 앱이 직접 쓰는 두 값(나머지는 해석하지 않고 그대로 서버에 보낸다). target_in_message 가 없으면 참 — 검색으로(앞 메일을 다시 읽지 않게).
+  /// 칸이 null·없음이면 "대상 없음"(최종 리뷰 I1 — 모델은 말하지 않은 조건을 채우지 않는다): 직전 요약 뒤엔 이어서 읽기, 아니면 빈 칸 검색 → 서버 needs_target 되묻기
   public struct Fields: Equatable, Sendable {
     public let translate: Bool; public let targetInMessage: Bool
     public init(translate: Bool, targetInMessage: Bool) { self.translate = translate; self.targetInMessage = targetInMessage }
   }
   public static func fields(_ v: JSONValue?) -> Fields? {
-    guard case .object(let o)? = v else { return nil }
-    func flag(_ k: String, _ fallback: Bool) -> Bool { if case .bool(let b)? = o[k] { return b }; return fallback }
-    return Fields(translate: flag("translate", false), targetInMessage: flag("target_in_message", true))
+    switch v {
+    case nil, .null?: return Fields(translate: false, targetInMessage: false)
+    case .object(let o)?:
+      func flag(_ k: String, _ fallback: Bool) -> Bool { if case .bool(let b)? = o[k] { return b }; return fallback }
+      return Fields(translate: flag("translate", false), targetInMessage: flag("target_in_message", true))
+    default: return nil
+    }
+  }
+  /// 검색 요청 본문 — mail_read 칸 그대로, null·없음이면 빈 칸(서버가 needs_target). 객체도 null 도 아니면 nil(요약 실패)
+  public static func searchBody(_ v: JSONValue?) -> [String: Any]? {
+    switch v {
+    case nil, .null?: return [:]
+    case .object?: return v?.foundation as? [String: Any]
+    default: return nil
+    }
   }
 
   /// 검색 결과 다음 단계(스펙 §9 턴 흐름): 완결일 때만 0통 = 없음, 1통이거나 latest 면 바로 읽기. 미완결이면 1통이어도 카드
