@@ -49,6 +49,16 @@ Deno.test("finishSummary: ok without lines or ask without a question → Summary
   const a = finishSummary({ ...OK, status: "ask", lines: ["무시"], ask: "어떤 환불 내용을 찾으세요?" + "가".repeat(300) }, { translate: false, bodyLen: 10 });
   assertEquals([a.status, a.summary, a.ask!.length, a.translation], ["ask", null, 200, null]);
 });
+
+Deno.test("finishSummary: ask keeps one sentence — the last one ending in a question mark, else the last sentence (SUMMARY-eval ② ⑧, Ruling S7-r4)", () => {
+  const ask = (q: string) => finishSummary({ ...OK, status: "ask", lines: [], ask: q }, { translate: false, bodyLen: 10 }).ask;
+  assertEquals(ask("이 메일은 로그인 알림이라 환불 내용이 없어요. 환불 안내가 온 다른 메일을 찾으시나요?"), "환불 안내가 온 다른 메일을 찾으시나요?");
+  assertEquals(ask("어떤 내용을 찾으세요? 이 메일에는 환불 얘기가 없어요. 다른 메일인가요?\n"), "다른 메일인가요?");
+  assertEquals(ask("어떤 내용을 찾으세요？ 이 메일은 로그인 알림입니다."), "어떤 내용을 찾으세요？");
+  assertEquals(ask("이 메일에는 환불 얘기가 없어요. 원하는 내용을 다시 말해 주세요."), "원하는 내용을 다시 말해 주세요.");
+  assertEquals(ask("  금액 3.5% 안내 메일인데 어떤 내용을 찾으세요?  "), "금액 3.5% 안내 메일인데 어떤 내용을 찾으세요?");   // 숫자 속 점은 문장 끝이 아님
+  assertEquals(ask("다른 메일을 찾으시나요"), "다른 메일을 찾으시나요");
+});
 Deno.test("finishSummary: translation only when asked and the mail is not Korean; truncated when the body was over 4,000 or the translation was clipped", () => {
   const en = { ...OK, language: "en", translation: "번역 글" };
   assertEquals(finishSummary(en, { translate: false, bodyLen: 100 }).translation, null);

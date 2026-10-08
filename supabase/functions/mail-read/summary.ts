@@ -71,14 +71,21 @@ export function parseSummary(r: RawResponse): SummaryOutput {
   return x as unknown as SummaryOutput;
 }
 
-// 서버 후처리(스펙 §7): ok 인데 줄 0개·ask 인데 질문 없음 → 실패. 항목 5개·200자, ask 200자, 번역 12,000자(짝 없는 서로게이트 없이).
+// ask 는 한 문장(스펙 §7): 모델이 설명 + 질문 두 문장을 자주 써서(SUMMARY-eval ② ⑧, Ruling S7-r4) 물음표로 끝나는 마지막 문장만, 없으면 마지막 문장.
+// 문장 끝 = 마침표·물음표·느낌표 뒤 공백(숫자 속 점은 끝이 아님). 고를 문장이 없으면 다듬은 원문 그대로
+export function oneSentence(q: string): string {
+  const s = q.trim().split(/(?<=[.?!。？！])\s+/).map((x) => x.trim()).filter(Boolean);
+  return s.findLast((x) => /[?？]["'”’)\]」]*$/.test(x)) ?? s.at(-1) ?? q.trim();
+}
+
+// 서버 후처리(스펙 §7): ok 인데 줄 0개·ask 인데 질문 없음 → 실패. 항목 5개·200자, ask 한 문장·200자, 번역 12,000자(짝 없는 서로게이트 없이).
 // translate 가 아니거나 한국어 메일이면 번역을 버린다. translation_truncated = 번역을 돌려줄 때 본문이 4,000자보다 길었거나 번역을 잘랐음
 export function finishSummary(o: SummaryOutput, x: { translate: boolean; bodyLen: number }): Finished {
   if (o.status === "ok" && o.lines.length === 0) throw new SummaryFailed("empty");
   if (o.status === "ask" && !(o.ask ?? "").trim()) throw new SummaryFailed("empty_ask");
   const cap = (xs: string[]) => xs.slice(0, ITEMS_MAX).map((s) => clip16(s, ITEM_CHARS));
   const language = o.language.trim().toLowerCase().split(/[-_]/)[0].slice(0, 8);   // ko-KR·zh_TW → 지역 꼬리 없이(최종 리뷰 Minor 2)
-  if (o.status === "ask") return { status: "ask", summary: null, language, translation: null, translation_truncated: false, ask: clip16(o.ask!.trim(), ASK_CHARS) };
+  if (o.status === "ask") return { status: "ask", summary: null, language, translation: null, translation_truncated: false, ask: clip16(oneSentence(o.ask!), ASK_CHARS) };
   let translation: string | null = null, truncated = false;
   if (x.translate && language !== "ko" && o.translation) {
     const c = clipText(o.translation, TRANSLATION_CHARS);
