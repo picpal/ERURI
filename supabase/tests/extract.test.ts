@@ -169,3 +169,10 @@ Deno.test("mediaTypeOf maps extensions", () => {
   assertEquals([mediaTypeOf("a/b.jpg"), mediaTypeOf("a/b.JPEG"), mediaTypeOf("b.png"), mediaTypeOf("b.pdf"), mediaTypeOf("b.gif")],
     ["image/jpeg", "image/jpeg", "image/png", "application/pdf", null]);
 });
+
+Deno.test("normalize: no end in the text (end null) → model's uncertain end is dropped (spec §8 — '18:00 이후' must stay addable)", () => {
+  const e = normalizeEvent({ title: "팀 회식", start: "2026-10-14T18:00:00+09:00", end: null, location: null, uncertain: ["end"] });
+  assertEquals([e.end, e.uncertain], [null, []]);
+  const kept = normalizeEvent({ title: "x", start: "2026-10-14T18:00:00+09:00", end: null, location: null, uncertain: ["end", "ampm"] });
+  assertEquals(kept.uncertain, ["ampm"]);
+});

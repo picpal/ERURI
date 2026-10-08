@@ -89,6 +89,7 @@ const withYear = (value: string | null, y: number) => (value === null ? null : S
 
 export function normalizeEvent(raw: RawEvent, today = seoulToday()): ExtractedEvent {
   const uncertain = new Set(raw.uncertain.filter((u) => (UNCERTAIN as readonly string[]).includes(u)));
+  if (raw.end === null) uncertain.delete("end");                        // 종료가 문서에 없으면 uncertain 아님(§8) — 모델이 넣어도 뺀다("18:00 이후"가 REVIEW 로 빠졌다, 0.13.0 실기기)
   if (raw.year_in_text === false && raw.start !== null) uncertain.add("year");
   if (raw.lunar === true) uncertain.add("date");                         // 음력 환산은 사용자 확인(실측에서 하루 틀린 사례)
   let start = normalizeDateTime(raw.start);
