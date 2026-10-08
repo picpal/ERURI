@@ -6,7 +6,7 @@ import { assert, assertEquals } from "jsr:@std/assert";
 export type Row = Record<string, any>;
 export type Q = (sql: string, params?: unknown[]) => Promise<Row[]>;
 export type Ctx = { q: Q; user: string; conn: string; prefix: string; tag: string };
-export const MIGRATION_0030 = new URL("../migrations-pending/0030_mail_cleanup.sql", import.meta.url);   // M10 Step 3 이 ../migrations/ 로 바꾼다
+export const MIGRATION_0030 = new URL("../migrations/0030_mail_cleanup.sql", import.meta.url);   // M10 Step 3 이 ../migrations/ 로 바꾼다
 
 export const arr = (xs: string[]) => "{" + xs.map((x) => `"${x}"`).join(",") + "}";
 const one = async (q: Q, sql: string, p: unknown[] = []) => (await q(sql, p))[0];

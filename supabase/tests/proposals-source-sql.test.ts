@@ -6,7 +6,7 @@ import { PGLITE_STUBS } from "./_pglite-stubs.ts";
 // 0031 제안 목록 출처 열(2026-10-07 사용자 요청, 스펙 §10 대기 목록 출처 열·§11): 로컬 PGlite 에 0030 → 0026 → 0031 을 얹어
 // 반환 열·값·권한·security definer·search_path 를 본다. 호스팅 DB 는 건드리지 않는다(M10 에서 0030 과 함께 적용). 값은 합성만
 const MIGRATION_0026 = new URL("../migrations/0026_proposal_list_all_day.sql", import.meta.url);
-const MIGRATION_0031 = new URL("../migrations-pending/0031_pending_proposals_source.sql", import.meta.url);   // M10 이 ../migrations/ 로 옮긴다
+const MIGRATION_0031 = new URL("../migrations/0031_pending_proposals_source.sql", import.meta.url);   // M10 이 ../migrations/ 로 옮긴다
 
 // 0031 이 닿는 것만 — 열은 원본(0001 items·facts·proposals, 0021 dismissed, 0025 ordinal)과 같게. auth.uid() 는 Supabase 처럼 JWT 클레임 sub
 const STUBS = `
