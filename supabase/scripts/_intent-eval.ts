@@ -11,9 +11,11 @@ export type Row = { id: string; group: string; expected: Intent; got: Intent; ma
 const WANT = { question: 50, add_event: 18, mail_action: 21, mail_summary: 23 } as const;
 const GROUP_MIN: Record<string, number> = { confusable_ctx: 6, quoted: 4, prev_command: 4, negation: 4, ability: 3, add_ctx: 3, add_polite: 3, mail_ctx: 2, mail_polite: 2,
   summary: 8, summary_translate: 3, summary_latest: 2, summary_ctx: 2, summary_follow: 2, summary_polite: 2, summary_both: 1, summary_gate: 3 };
-// 3회 모두 기대값이어야 하는 문장: 0.13.0 ADD-sim(a01·a12·a13·q04), 0.14.0 메일 정리 게이트(m01·m18~m20), 0.15.0 요약 게이트(s20~s22)·직전 요약 뒤 후속(s15 target 만·s16)
+// 3회 모두 기대값이어야 하는 문장: 0.13.0 ADD-sim(a01·a12·a13·q04), 0.14.0 메일 정리 게이트(m01·m18~m20), 0.15.0 요약 게이트(s20~s22)·직전 요약 뒤 후속(s15 target·translate 만·s16)
+// — 재현율 0.9 합격선은 특정 문장의 실패를 허용하므로 게이트 문장을 고정한다(Fable F2, 메일 정리 계획 리뷰 N-M11)
 export const GATE = ["a01", "a12", "a13", "q04", "m01", "m18", "m19", "m20", "s15", "s16", "s20", "s21", "s22"] as const;
 
+// --runs N: 1 이상 정수만(없으면 1). NaN 이면 0행이 되어 gate_cases 가 빈 every 로 참이 된다(최종 리뷰 Minor 2)
 export function parseRuns(args: string[]): number | null {
   const i = args.indexOf("--runs");
   if (i < 0) return 1;
@@ -55,10 +57,11 @@ export function sameMail(want: MailFields, got: MailFields | null): boolean {
   return want.action === got.action && who(want.sender) === who(got.sender) && words(want) === words(got) &&
     want.received_from === got.received_from && want.received_to === got.received_to && want.promotions === got.promotions && unread(want) === unread(got);
 }
-// 메일 요약 칸(0.15.0): 같은 동등 + latest·translate·target_in_message. targetOnly(judge "target") = target_in_message 만(D14)
+// 메일 요약 칸(0.15.0): 같은 동등 + latest·translate·target_in_message. targetOnly(judge "target") = target_in_message·translate 만 — 대상 칸은 맥락으로
+// 채워도 되지만(D14) translate 는 지금 글에서만 나오고, 놓치면 앱이 표시 없이 재요약만 한다(최종 리뷰 I4)
 export function sameRead(want: MailReadFields, got: MailReadFields | null, targetOnly: boolean): boolean {
   if (!got) return false;
-  if (targetOnly) return want.target_in_message === got.target_in_message;
+  if (targetOnly) return want.target_in_message === got.target_in_message && want.translate === got.translate;
   const who = (s: string | null) => (s === null ? null : s.trim().toLowerCase());
   const words = (m: MailReadFields) => [...new Set(m.subject_words.map((w) => w.trim().toLowerCase()).filter((w) => w.length > 0))].sort().join("|");
   return who(want.sender) === who(got.sender) && words(want) === words(got) && want.received_from === got.received_from &&
@@ -70,13 +73,14 @@ export function judge(c: Case, g: Got): Row {
   let read_ok: boolean | null = null, target_ok: boolean | null = null;
   if (c.intent === "mail_summary") {
     const hit = g.intent === "mail_summary";
+    // target 분모에 의도 실패(mail_summary → 다른 의도)도 넣는다 — 스펙 "target_in_message 일치 ≥ 95%"보다 엄격한 해석(S6 리뷰 Minor 3)
     target_ok = hit && !!g.mail_read && g.mail_read.target_in_message === c.mail_read!.target_in_message;
-    read_ok = c.judge === "target" ? null : hit ? sameRead(c.mail_read!, g.mail_read, false) : false;
+    read_ok = hit ? sameRead(c.mail_read!, g.mail_read, c.judge === "target") : false;
   }
   return { id: c.id, group: c.group, expected: c.intent, got: g.intent, mail_ok, read_ok, target_ok };
 }
 
-// 게이트 문장: 모든 회차에서 의도·칸(후속 s15 는 target 만)이 맞아야 한다. 행이 없는 id 도 실패(빈 every 방지)
+// 게이트 문장: 모든 회차에서 의도·칸(후속 s15 는 target·translate 만)이 맞아야 한다. 행이 없는 id 도 실패(빈 every 방지)
 export function gateCases(rows: Row[]): boolean {
   return GATE.every((id) => {
     const xs = rows.filter((r) => r.id === id);

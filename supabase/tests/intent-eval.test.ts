@@ -91,21 +91,24 @@ Deno.test("validateCases: mail_read only on mail_summary cases; judge only on ma
   const p = validateCases(bad);
   assert(p.some((x) => x.startsWith("q01")) && p.some((x) => x.startsWith("s16")), JSON.stringify(p));
 });
-Deno.test("sameRead: sender case/space-insensitive, subject word set, dates and flags exact; targetOnly compares target_in_message only", () => {
+Deno.test("sameRead: sender case/space-insensitive, subject word set, dates and flags exact; targetOnly compares target_in_message and translate only", () => {
   assertEquals(sameRead(RD(), RD({ sender: " 합성상점 " }), false), true);
   assertEquals(sameRead(RD({ subject_words: ["ERURI", "요약"] }), RD({ subject_words: ["요약", "ERURI", " "] }), false), true);
   assertEquals(sameRead(RD(), RD({ latest: true }), false), false);
   assertEquals(sameRead(RD(), RD({ target_in_message: false }), false), false);
-  assertEquals(sameRead(RD({ sender: null, translate: true, target_in_message: false }), RD({ sender: "합성은행", target_in_message: false }), true), true);
+  assertEquals(sameRead(RD({ sender: null, translate: true, target_in_message: false }), RD({ sender: "합성은행", translate: true, target_in_message: false }), true), true);
+  assertEquals(sameRead(RD({ sender: null, translate: true, target_in_message: false }), RD({ sender: "합성은행", target_in_message: false }), true), false);   // I4: 번역 놓침
   assertEquals(sameRead(RD(), null, false), false);
 });
-Deno.test("judge: read_ok/target_ok only for mail_summary; a judge:'target' case leaves read_ok null", () => {
+Deno.test("judge: read_ok/target_ok only for mail_summary; a judge:'target' case judges read_ok on target and translate only", () => {
   const q = judge(file.cases.find((c) => c.id === "q01")!, { intent: "question", mail: null, mail_read: null });
   assertEquals([q.read_ok, q.target_ok], [null, null]);
   assertEquals(judge(sCase(), { intent: "mail_summary", mail: null, mail_read: RD() }), { id: "s99", group: "summary", expected: "mail_summary", got: "mail_summary",
     mail_ok: null, read_ok: true, target_ok: true });
   const f = judge(sCase({ judge: "target", mail_read: RD({ sender: null, target_in_message: false }) }), { intent: "mail_summary", mail: null, mail_read: RD({ target_in_message: false }) });
-  assertEquals([f.read_ok, f.target_ok], [null, true]);
+  assertEquals([f.read_ok, f.target_ok], [true, true]);
+  const s15 = file.cases.find((c) => c.id === "s15")!;
+  assertEquals(judge(s15, { intent: "mail_summary", mail: null, mail_read: { ...s15.mail_read!, sender: "합성은행", translate: false } }).read_ok, false);   // I4
   assertEquals(judge(sCase(), { intent: "mail_action", mail: null, mail_read: null }).read_ok, false);
 });
 Deno.test("summarize: recall per action, any action↔action confusion fails, read match ≥ 0.9 and target ≥ 0.95 when read-judged", () => {
@@ -117,11 +120,12 @@ Deno.test("summarize: recall per action, any action↔action confusion fails, re
   assertEquals(summarize([...all, row("mail_summary", "mail_action", { read_ok: false, target_ok: false })], 1, true, true).confusion, 1);
   const weakTarget = all.map((r, i) => i < 1 ? { ...r, target_ok: false } : r);
   assertEquals(summarize(weakTarget, 1, true, true).gate, "fail");                  // target 0.9 < 0.95
-  assertEquals(summarize(weakTarget, 1, true, false).gate, "pass");                 // read 판정 안 하면 0.14.0 기준
+  assertEquals(summarize(weakTarget, 1, true, false).gate, "pass");                 // 칸 판정만 0.14.0 기준
 });
-Deno.test("gateCases: 0.15.0 gate ids (s20~s22) and follow-ups (s15 target only, s16) must hold in every run", () => {
+Deno.test("gateCases: 0.15.0 gate ids (s20~s22) and follow-ups (s15 target and translate only, s16) must hold in every run", () => {
   assert(GATE.includes("s15") && GATE.includes("s22"));
-  const rows = GATE.map((id) => ({ id, group: "g", expected: "mail_summary" as Intent, got: "mail_summary" as Intent, mail_ok: null, read_ok: id === "s15" ? null : true, target_ok: true }));
+  const rows = GATE.map((id) => ({ id, group: "g", expected: "mail_summary" as Intent, got: "mail_summary" as Intent, mail_ok: null, read_ok: true, target_ok: true }));
   assertEquals(gateCases(rows), true);
   assertEquals(gateCases(rows.map((r) => r.id === "s15" ? { ...r, target_ok: false } : r)), false);
+  assertEquals(gateCases(rows.map((r) => r.id === "s15" ? { ...r, read_ok: false } : r)), false);   // I4: s15 번역 놓침
 });
