@@ -5,7 +5,7 @@ import { RUN, testUser } from "./_testenv.ts";
 // 호스팅 DB. 전용 테스트 사용자·실행 태그만(AGENTS.md §7). 0029 일일 광고 공백 스캔(스펙 §7 도착 경로, 리뷰 U4-I2).
 // proposals-dedupe-db 와 같은 방식: 0029 를 한 트랜잭션 안에서만 적용하고 부른 뒤 **롤백** — db push(U6b) 전에도 뒤에도 같은 결과.
 // 연결·잡 행도 같은 트랜잭션에서 만들어 롤백으로 사라진다(운영 워커는 커밋 전 행을 보지 못한다)
-const MIGRATION = await Deno.readTextFile(new URL("../migrations-pending/0029_unsub_gap_scan.sql", import.meta.url));
+const MIGRATION = await Deno.readTextFile(new URL("../migrations/0029_unsub_gap_scan.sql", import.meta.url));
 const DAY_S = 86_400;
 
 function connect() {
