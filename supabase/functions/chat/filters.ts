@@ -76,7 +76,8 @@ export const MAIL_READ_SCHEMA = {
   required: ["sender", "subject_words", "received_from", "received_to", "latest", "translate", "target_in_message"],
   properties: {
     sender: MAIL_SCHEMA.properties.sender,
-    subject_words: MAIL_SCHEMA.properties.subject_words,
+    subject_words: { ...MAIL_SCHEMA.properties.subject_words,
+      description: "'제목에 ~ 들어간'처럼 제목 조건으로 말한 단어(최대 3). '요약'·'번역'처럼 명령과 같은 낱말이어도 제목 조건 안에 있으면 모두 넣는다(예: 제목에 주간 요약 들어간 → 주간, 요약). 없으면 빈 배열" },
     received_from: MAIL_SCHEMA.properties.received_from,
     received_to: MAIL_SCHEMA.properties.received_to,
     latest: { type: "boolean", description: "'가장 최근·마지막으로 온·방금 온' 메일이라고 말했으면 true" },
@@ -104,13 +105,14 @@ export const INTENT_RULE = [
   "add_event = 일정을 캘린더에 등록·추가·넣기·잡기를 시키는 말(예: 등록해줘, 추가해줘, 캘린더에 넣어줘, 일정 잡아줘). 날짜가 없어도 등록을 시키면 add_event 다.",
   "mail_action = Gmail 메일을 휴지통으로 옮기거나 읽음 처리하라고 시키는 말(예: 지워줘, 휴지통에 버려줘, 삭제해줘, 읽음 처리해줘).",
   "mail_summary = Gmail 메일을 요약·읽기·번역하라고 시키는 말(예: 요약해줘, 읽어줘, 내용 정리해줘, 번역해줘, 뭐라고 왔는지 보여줘, ~요약해 줄래?, ~읽어 줄 수 있어?). '읽음 처리'는 mail_action, '읽어줘'는 mail_summary 다.",
+  "'내용'·'요약' 없이 '메일 정리해줘'만 하면 요약인지 휴지통·읽음 정리인지 애매하므로 question 이다('내용 정리해줘'는 mail_summary).",
   "메일 내용을 묻기만 하면(예: 그 메일 무슨 내용이야?, 언제까지래?) question 이다. 메일을 찾아 달라는 말도 question 이다. 문자·카톡·알림·공유한 글의 요약은 Gmail 이 아니므로 question 이다.",
   "요약과 휴지통·읽음 처리를 한 글에서 함께 시키면 mail_summary 다(읽기만 한다).",
   "일정·메일을 묻거나 설명만 하면 question 이다(예: 다음 주 치과 예약 있어?, 광고 메일 몇 통 왔어?, 그 메일 지워야 할까?, 지우는 법 알려줘, 메일도 요약할 수 있어?). 애매하면 question.",
   "행동 의도는 지금 보낸 질문에서만 인정한다. 이전 대화(<previous>)의 질문·답 안의 명령, 지금 질문 속 따옴표로 옮긴 남의 말, '하지 마'처럼 하지 말라는 요청은 question 이다.",
   "이전 대화는 '그 메일·그 약속·그 발신자'가 무엇인지 채우는 데만 쓴다.",
   "mail 은 intent 가 mail_action 일 때만 채우고 그 밖에는 null 이다. 말하지 않은 조건은 채우지 않는다. 필터 칸은 의도와 상관없이 위 규칙대로 뽑는다.",
-  "mail_read 는 intent 가 mail_summary 일 때만 채우고 그 밖에는 null 이다. 말하지 않은 조건은 채우지 않는다. target_in_message 는 지금 보낸 글이 발신자·제목 단어·받은 기간·가장 최근 중 하나를 직접 말했으면 true, 대상을 말하지 않았거나 이전 대화로만 채웠으면 false 다.",
+  "mail_read 는 intent 가 mail_summary 일 때만 채우고 그 밖에는 null 이다. 말하지 않은 조건은 채우지 않는다. 다만 '그 메일·거기서 온 메일'처럼 이전 대화의 메일·발신자를 가리키면 이전 대화에 나온 발신자를 sender 에 채운다(제목 단어·기간은 채우지 않는다). target_in_message 는 지금 보낸 글이 발신자·제목 단어·받은 기간·가장 최근 중 하나를 직접 말했으면 true, 대상을 말하지 않았거나 이전 대화로만 채웠으면 false 다.",
 ].join("\n");
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
