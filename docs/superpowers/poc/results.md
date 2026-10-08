@@ -164,3 +164,20 @@ PoC 프로젝트 은퇴(스펙 §11, M1 게이트 통과 직후 — Gmail revoke
 - **시뮬레이터 UI 실측 도구**: `scripts/sim.sh uitest [EruriPoCUITests/SimRemeasureUITests/<테스트>]`, 로그는 `scripts/sim.sh log [n]`.
 - **FM 폴백**: FM 불가·타임아웃·에러 모두 같은 폴백(카톡·인스타 폐기, 그 외 `device_filter="rules"`로 적재, `kind=unknown` 로그)이다. `CaptureItem.deviceFilter`에 저장된다.
 
+
+## SUMMARY-eval ② (메일 요약 품질, 0.15.0, 2026-10-08)
+
+합성 메일 14통(`supabase/eval/mail-summary-cases.json`) × 3회, 실제 gpt-6-luna, 로컬 러너 `supabase/scripts/eval-mail-summary.ts`. 시각 2026-10-08 21:18~21:20 KST(main override — 측정 창 밖). 출력 글은 `supabase/eval/mail-summary.local.json`(gitignore)에만.
+
+- 자동 판정(4회차 = 지시문 3차 수정 뒤): `{"gate":"pass","runs":3,"ok_status":true,"fact_rate":1,"fact_each":true,"added_facts":0,"translation":true,"injection":true,"ask":true,"otp":true,"card":true,"attachments":true,"avg_input_tokens":1943,"avg_output_tokens":131,"model":"gpt-6-luna","avg_krw":0.3638}`
+- 요청당 평균 입력 1,943 · 출력 131 토큰 ≈ 0.364원.
+- 짧음 표시 사례 `e04`·`e13`·`e14`(`lines_min: 1` — 원문 문장 1~2개, 스펙 §15 "짧음 표시 사례만 1~2 허용"). `e10`은 원문 문장 3개라 `lines_min: 3`(Fable 계획 리뷰 L6). 사례·기대값은 고치지 않음.
+- 지시문(`SUMMARY_SYSTEM`·스키마 설명) 수정 3회(Ruling S7-r3로 3차 허용):
+  | 회차 | 결과 | 원인 → 수정 |
+  |---|---|---|
+  | 1 | fail · added_facts 7 | e02·e03·e06·e09가 `<mail date>`(받은 시각)를 `dates`에 넣음 → 1차: dates는 본문 날짜만 |
+  | 2 | fail · ok_status false | e10 2회 2줄(소개 줄 생략) → 2차: 받은 시각 규칙을 dates로만 좁히고 짧은 메일 예외 명시 |
+  | 3 | fail · ok_status false | e10 1회 2줄 → 3차: 줄 수 규칙(짧아도 소개·핵심·할 일/안내로 나눠 3줄 이상) |
+  | 4 | **pass** | — |
+- e02(HTML 뉴스레터 — 표 셀 붙음·이름 엔티티) 자동 확인: 3회 모두 엔티티(`&zwnj;`·`&middot;`) 잔존 0, facts_ok 3/3, forbidden 위반 0.
+- 수동 검토(리뷰어 pane, opus/high, `.context/summary-review.prompt.md`): **대기** — 표 `| 사례 | 회 | ①~⑧ 위반 | 비고 |`와 위반 총수는 검토 뒤 이 절에 붙인다.
