@@ -150,7 +150,7 @@ export const CASES: { name: string; run(c: Ctx): Promise<void> }[] = [
     const [, b, d] = ids3(c);
     assertEquals(await progress(c, id, "execute", 1, 3, [b, d], []), false);          // 마감 뒤 늦게 깬 워커: 기록 없음
     assertEquals((await row(c, id)).ok_ids, [a]);
-    const other = (await one(c.q, "select enqueue_job($1::uuid, 'process', $2, $3::jsonb) as id", [c.user, c.prefix + "p", JSON.stringify({ id })])).id;
+    const other = (await one(c.q, "select enqueue_job($1::uuid, 'process', $2, $3::text::jsonb) as id", [c.user, c.prefix + "p", JSON.stringify({ id })])).id;
     await dead(c, other);
     assertEquals((await row(c, id)).status, "partial");
   } },
@@ -305,7 +305,7 @@ export const CASES: { name: string; run(c: Ctx): Promise<void> }[] = [
   } },
   { name: "priority: mail-action 20; backfill 40, gmail-fetch 20, process 30 unchanged", run: async (c) => {
     const pr = async (kind: string, payload: Record<string, unknown>) => {          // 넣기와 읽기를 나눈다 — WHERE 안의 volatile 호출은 행마다 돈다
-      const id = (await one(c.q, "select enqueue_job($1::uuid, $2, $3, $4::jsonb) as id", [c.user, kind, c.prefix + kind, JSON.stringify(payload)])).id;
+      const id = (await one(c.q, "select enqueue_job($1::uuid, $2, $3, $4::text::jsonb) as id", [c.user, kind, c.prefix + kind, JSON.stringify(payload)])).id;
       return (await one(c.q, "select priority from jobs where id = $1::uuid", [id])).priority;
     };
     assertEquals([await pr("mail-action", {}), await pr("gmail-fetch", { backfill: true }), await pr("gmail-fetch", {}), await pr("process", {})], [20, 40, 20, 30]);
