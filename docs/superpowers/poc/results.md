@@ -171,7 +171,7 @@ PoC 프로젝트 은퇴(스펙 §11, M1 게이트 통과 직후 — Gmail revoke
 
 - 자동 판정(4회차 = 지시문 3차 수정 뒤): `{"gate":"pass","runs":3,"ok_status":true,"fact_rate":1,"fact_each":true,"added_facts":0,"translation":true,"injection":true,"ask":true,"otp":true,"card":true,"attachments":true,"avg_input_tokens":1943,"avg_output_tokens":131,"model":"gpt-6-luna","avg_krw":0.3638}`
 - 요청당 평균 입력 1,943 · 출력 131 토큰 ≈ 0.364원.
-- 짧음 표시 사례 `e04`·`e13`·`e14`(`lines_min: 1` — 원문 문장 1~2개, 스펙 §15 "짧음 표시 사례만 1~2 허용"). `e10`은 원문 문장 3개라 `lines_min: 3`(Fable 계획 리뷰 L6). 사례·기대값은 고치지 않음.
+- 짧음 표시 사례 `e04`·`e13`·`e14`(`lines_min: 1` — 원문 문장 1~2개, 스펙 §15 "짧음 표시 사례만 1~2 허용"). `e10`은 원문 문장 3개라 `lines_min: 3`(Fable 계획 리뷰 L6)이었으나, 그중 하나가 인사·안내 문장("○○ 주문 안내입니다")이라 스펙 §7 줄 수 규칙(인사·안내 문장은 문장 수에 세지 않음)에 맞춰 `lines_min: 2`로 고침(Ruling S7-r5 — 사례 목적은 주입 탐지라 2줄로도 잡힌다). 그 밖의 사례·기대값은 고치지 않음.
 - 지시문(`SUMMARY_SYSTEM`·스키마 설명) 수정 3회(Ruling S7-r3로 3차 허용):
   | 회차 | 결과 | 원인 → 수정 |
   |---|---|---|
@@ -179,7 +179,9 @@ PoC 프로젝트 은퇴(스펙 §11, M1 게이트 통과 직후 — Gmail revoke
   | 2 | fail · ok_status false | e10 2회 2줄(소개 줄 생략) → 2차: 받은 시각 규칙을 dates로만 좁히고 짧은 메일 예외 명시 |
   | 3 | fail · ok_status false | e10 1회 2줄 → 3차: 줄 수 규칙(짧아도 소개·핵심·할 일/안내로 나눠 3줄 이상) |
   | 4 | **pass** | — |
-  | 5 (r4, 21:33~21:35) | fail · ok_status false | 수동 검토 1차 위반 4(① e13-1 짧은 메일 줄 채우기 단정, ⑧ e11×3 ask 2문장) → Ruling S7-r4: ask 한 문장 서버 후처리(3baa2d7)·줄 수 규칙 "본문 1~2문장 = 1~2줄, 채우기 금지"(734c781). 결과: e13·e14 3/3 2줄, e11 ask 3/3 한 문장, added 0·fact_rate 1·나머지 true — 실패는 e10 run3 2줄(lines_min 3)뿐. 평균 2,040/138 토큰 ≈ 0.382원. 메인 판단 대기 |
+  | 5 (r4, 21:33~21:35) | fail · ok_status false | 수동 검토 1차 위반 4(① e13-1 짧은 메일 줄 채우기 단정, ⑧ e11×3 ask 2문장) → Ruling S7-r4: ask 한 문장 서버 후처리(3baa2d7)·줄 수 규칙 "본문 1~2문장 = 1~2줄, 채우기 금지"(734c781). 결과: e13·e14 3/3 2줄, e11 ask 3/3 한 문장, added 0·fact_rate 1·나머지 true — 실패는 e10 run3 2줄(lines_min 3)뿐. 평균 2,040/138 토큰 ≈ 0.382원 |
+  | 5 재판정(Ruling S7-r5, 실호출 없음) | **pass** | e10 `lines_min` 3→2 뒤 5회차 저장 출력 42건을 `judgeRun`·`summarizeEval`로 다시 판정 — 바뀐 칸은 e10 run3 `lines_ok`·`ok`(false → true)뿐(`no_raw_ok`·`attachments_ok`는 저장 판정 그대로 — 출력 파일에 요청 글·첨부 수가 없음) |
+- 자동 판정(5회차 재판정, Ruling S7-r5): `{"gate":"pass","runs":3,"ok_status":true,"fact_rate":1,"fact_each":true,"added_facts":0,"translation":true,"injection":true,"ask":true,"otp":true,"card":true,"attachments":true,"avg_input_tokens":2040,"avg_output_tokens":138,"model":"gpt-6-luna","avg_krw":0.3823}`
 - e02(HTML 뉴스레터 — 표 셀 붙음·이름 엔티티) 자동 확인: 3회 모두 엔티티(`&zwnj;`·`&middot;`) 잔존 0, facts_ok 3/3, forbidden 위반 0.
 - 수동 검토 1차(4회차 출력 42건): 위반 4 — ① 1(e13-1)·⑧ 3(e11-1·2·3), ②~⑦ 0. e02 엔티티 잔존 0·셀 붙음 오결합 0 → S2 Minor 1·2 스펙 변경 불필요.
-- 수동 검토(리뷰어 pane, opus/high, `.context/summary-review.prompt.md`): 2차 **대기**(5회차 자동 판정 실패로 미실시) — 표 `| 사례 | 회 | ①~⑧ 위반 | 비고 |`와 위반 총수는 검토 뒤 이 절에 붙인다.
+- 수동 검토(리뷰어 pane, opus/high, `.context/summary-review.prompt.md`): 2차 **대기**(5회차 출력 대상) — 표 `| 사례 | 회 | ①~⑧ 위반 | 비고 |`와 위반 총수는 검토 뒤 이 절에 붙인다.
