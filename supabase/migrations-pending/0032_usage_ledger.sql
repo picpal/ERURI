@@ -32,7 +32,7 @@ create or replace function usage_ledger_pair(p_reserve text, p_line text) return
     else false end;
 $$;
 
--- 원소 {kind, model, input, cached, output, krw}: 모든 키가 있고 타입이 맞고, 토큰은 0 이상 정수·cached ≤ input, krw ≥ 0, model 1~60자.
+-- 원소 {kind, model, input, cached, output, krw}: 모든 키가 있고 타입이 맞고, 토큰은 0 이상 bigint 범위 정수·cached ≤ input, krw ≥ 0, model 1~60자.
 -- case 로 타입을 먼저 본다(and 는 평가 순서를 보장하지 않아 문자열 숫자가 캐스트 오류가 될 수 있다)
 create or replace function usage_line_ok(l jsonb) returns boolean language sql immutable as $$
   select case when jsonb_typeof(l) = 'object' and jsonb_typeof(l->'kind') = 'string' and jsonb_typeof(l->'model') = 'string'
@@ -40,9 +40,9 @@ create or replace function usage_line_ok(l jsonb) returns boolean language sql i
                    and jsonb_typeof(l->'output') = 'number' and jsonb_typeof(l->'krw') = 'number'
     then l->>'kind' in ('chat', 'mail_summary', 'extract', 'backfill', 'embed', 'vision')
       and char_length(l->>'model') between 1 and 60
-      and (l->>'input')::numeric >= 0 and (l->>'input')::numeric = trunc((l->>'input')::numeric)
-      and (l->>'cached')::numeric >= 0 and (l->>'cached')::numeric = trunc((l->>'cached')::numeric)
-      and (l->>'output')::numeric >= 0 and (l->>'output')::numeric = trunc((l->>'output')::numeric)
+      and (l->>'input')::numeric between 0 and 9223372036854775807 and (l->>'input')::numeric = trunc((l->>'input')::numeric)
+      and (l->>'cached')::numeric between 0 and 9223372036854775807 and (l->>'cached')::numeric = trunc((l->>'cached')::numeric)
+      and (l->>'output')::numeric between 0 and 9223372036854775807 and (l->>'output')::numeric = trunc((l->>'output')::numeric)
       and (l->>'cached')::numeric <= (l->>'input')::numeric
       and (l->>'krw')::numeric >= 0
     else false end;
@@ -64,7 +64,7 @@ create or replace function reserve_usage_month(p_user uuid, p_kind text, p_est_k
 #variable_conflict use_column
 declare v_month date := seoul_month(); cap numeric; used numeric;
 begin
-  if p_kind not in ('extract', 'chat', 'embed', 'vision', 'backfill') then raise exception 'bad kind'; end if;
+  if p_kind is null or p_kind not in ('extract', 'chat', 'embed', 'vision', 'backfill') then raise exception 'bad kind'; end if;
   if p_est_krw is null or p_est_krw < 0 then raise exception 'bad estimate'; end if;
   insert into usage_counters (user_id, month) values (p_user, v_month) on conflict do nothing;
   if p_kind = 'backfill' then
@@ -85,7 +85,7 @@ end $$;
 create or replace function settle_usage_lines(p_user uuid, p_kind text, p_est_krw numeric, p_month date, p_lines jsonb) returns void language plpgsql as $$
 declare cur date := seoul_month(); l jsonb; total numeric := 0;
 begin
-  if p_kind not in ('extract', 'chat', 'embed', 'backfill') then raise exception 'bad kind'; end if;
+  if p_kind is null or p_kind not in ('extract', 'chat', 'embed', 'backfill') then raise exception 'bad kind'; end if;
   if p_est_krw is null or p_est_krw < 0 then raise exception 'bad estimate'; end if;
   if p_month is null or p_month not in (cur, (cur - interval '1 month')::date) then raise exception 'bad_month'; end if;
   if p_lines is null or jsonb_typeof(p_lines) <> 'array' or jsonb_array_length(p_lines) > 50 then raise exception 'bad_lines'; end if;

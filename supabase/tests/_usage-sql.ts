@@ -91,8 +91,26 @@ export const USAGE_CASES: UsageCase[] = [
       [[{ ...ok, input: -1 }], "bad_line"], [[{ ...ok, cached: 11 }], "bad_line"], [[{ ...ok, output: 1.5 }], "bad_line"],
       [Array.from({ length: 51 }, () => ok), "bad_lines"], [[{ ...ok, model: "" }], "bad_line"], [[{ ...ok, model: "m".repeat(61) }], "bad_line"],
       [[{ ...ok, krw: -0.01 }], "bad_line"], [[{ ...ok, input: "10" }], "bad_line"], [[{ kind: "chat", model: "gpt-6-luna", input: 1, output: 1, krw: 0 }], "bad_line"],
-      [{ kind: "chat" }, "bad_lines"], [[{ ...ok, kind: "jev" }], "bad_line"]];
+      [{ kind: "chat" }, "bad_lines"], [[{ ...ok, kind: "jev" }], "bad_line"],
+      // bigint 상한 밖(2^63 — JSON 에서 9223372036854776000)은 캐스트 오류가 아니라 bad_line(L1 리뷰 Minor 3)
+      [[{ ...ok, input: 2 ** 63 }], "bad_line"], [[{ ...ok, input: 2 ** 63, cached: 2 ** 63 }], "bad_line"], [[{ ...ok, output: 1e20 }], "bad_line"]];
     for (const [lines, msg] of bad) await settleFails(c, "chat", 1, a.month, lines, msg);
+    assertEquals((await counters(c, a.month))!.reserved, 1);
+    assertEquals(await ledger(c, a.month), []);
+  } },
+  { name: "bad kind · bad estimate · null arguments raise and change nothing (settle_usage_lines, reserve_usage_month, record_usage)", run: async (c) => {
+    const a = await reserve(c, "chat", 1);
+    const line = [L("chat", "gpt-6-luna", 10, 0, 1, 0.01)];
+    const S = "select settle_usage_lines($1::uuid, $2, $3::numeric, $4::date, $5::jsonb)";
+    for (const [kind, est, month, lines, msg] of [
+      ["vision", 1, a.month, line, "bad kind"], ["jev", 1, a.month, line, "bad kind"], [null, 1, a.month, line, "bad kind"],
+      ["chat", -1, a.month, line, "bad estimate"], ["chat", null, a.month, line, "bad estimate"],
+      ["chat", 1, null, line, "bad_month"], ["chat", 1, a.month, null, "bad_lines"],
+    ] as const) await fails(c, S, [c.user, kind, est, month, lines === null ? null : JSON.stringify(lines)], msg);
+    const R = "select * from reserve_usage_month($1::uuid, $2, $3::numeric)";
+    for (const [kind, est, msg] of [["jev", 1, "bad kind"], [null, 1, "bad kind"], ["chat", -1, "bad estimate"], ["chat", null, "bad estimate"]] as const)
+      await fails(c, R, [c.user, kind, est], msg);
+    await fails(c, "select record_usage($1::uuid, $2::jsonb)", [c.user, null], "bad_lines");
     assertEquals((await counters(c, a.month))!.reserved, 1);
     assertEquals(await ledger(c, a.month), []);
   } },
