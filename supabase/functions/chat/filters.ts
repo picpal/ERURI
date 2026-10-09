@@ -166,11 +166,19 @@ export function filterRequest(question: string, today: string, context: ContextT
 export type FilterOutput = { filters: Filters; query?: string; intent?: Intent; mail?: MailFields | null; mail_read?: MailReadFields | null;
   usage?: { input_tokens: number; output_tokens: number } };
 // 모델 출력 → 필터(7칸만 — query·intent·mail·mail_read 가 필터 객체에 섞이지 않게) + 독립 질문 + 의도. intent·mail·mail_read 키는 withIntent 일 때만 있다
-export function parseFilterOutput(outputText: string, hasContext: boolean, withIntent: boolean): Omit<FilterOutput, "usage"> {
+// 출처 칸 후처리(스펙 §9 "출처 칸 후처리", 2026-10-10 D1 회귀): intents 경로에서 GMAIL 은 지금 질문·맥락 query 가 메일을 말할 때만 남긴다.
+// INTENT_RULE 의 메일 예시("언제까지래?")가 "~언제야?" 질문에 GMAIL 을 붙여 공유 항목을 못 찾았다(16회 중 10회, 0.14.0 필터 0/8)
+const NAMES_MAIL = /메일|편지함|gmail|mail/i;
+export function parseFilterOutput(outputText: string, hasContext: boolean, withIntent: boolean, question?: string): Omit<FilterOutput, "usage"> {
   const { query, intent, mail, mail_read, ...f } = JSON.parse(outputText) as Filters & { query?: string; intent?: unknown; mail?: MailFields | null;
     mail_read?: MailReadFields | null };
   const out: Omit<FilterOutput, "usage"> = { filters: normalizeFilters(f), query: hasContext ? query : undefined };
-  if (withIntent) { out.intent = asIntent(intent); out.mail = mail ?? null; out.mail_read = mail_read ?? null; }
+  if (withIntent) {
+    out.intent = asIntent(intent); out.mail = mail ?? null; out.mail_read = mail_read ?? null;
+    if (question !== undefined && !NAMES_MAIL.test(`${question}\n${hasContext ? query ?? "" : ""}`)) {
+      out.filters = { ...out.filters, sources: out.filters.sources.filter((x) => x !== "GMAIL") };
+    }
+  }
   return out;
 }
 
@@ -180,6 +188,6 @@ export async function extractFilters(question: string, today: string, context: C
   const r = await openai.responses.create(filterRequest(question, today, context, withIntent) as any);
   onUsage?.(responseUsage(r));                                      // 상태 검사·파싱보다 먼저(스펙 §13 — 응답이 온 실패도 청구된 토큰)
   if (r.status === "incomplete") throw new Error("filters incomplete");
-  return { ...parseFilterOutput(r.output_text, context.length > 0, withIntent),
+  return { ...parseFilterOutput(r.output_text, context.length > 0, withIntent, question),
     usage: r.usage ? { input_tokens: r.usage.input_tokens, output_tokens: r.usage.output_tokens } : undefined };
 }

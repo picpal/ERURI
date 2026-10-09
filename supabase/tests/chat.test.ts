@@ -643,6 +643,22 @@ Deno.test("parseFilterOutput: mail_read never leaks into the 7 filter fields; ab
   assertEquals(parseFilterOutput(raw.replace(`,"mail_read":${JSON.stringify(READ)}`, ""), false, true).mail_read, null);
   assertEquals(parseFilterOutput(raw, false, false).mail_read, undefined);
 });
+// D1 회귀(2026-10-10, 스펙 §9 "출처 칸 후처리"): 의도 규칙의 메일 예시가 "~언제야?" 질문에 GMAIL 출처를 붙여 공유 항목을 못 찾았다(16회 중 10회)
+Deno.test("parseFilterOutput with intents: GMAIL source only when the question (or the context query) names mail; other sources and the no-intents path unchanged", () => {
+  const out = (sources: string[], o: { query?: string } = {}) => JSON.stringify({ date_from: null, date_to: null, event_from: null, event_to: null, sources,
+    kinds: ["event"], merchant: null, ...o, intent: "question", mail: null, mail_read: null });
+  const src = (raw: string, ctx: boolean, withIntent: boolean, q: string) => parseFilterOutput(raw, ctx, withIntent, q).filters.sources;
+  assertEquals(src(out(["GMAIL"]), false, true, "합성상사 분기 회의 언제야?"), []);
+  assertEquals(src(out(["GMAIL", "MESSAGES"]), false, true, "합성상사 분기 회의 언제야?"), ["MESSAGES"]);
+  assertEquals(src(out(["SHARE"]), false, true, "합성상사 분기 회의 언제야?"), ["SHARE"]);
+  for (const q of ["합성상점 메일 언제 왔어?", "지난달 받은 이메일 중 견적 있어?", "Gmail 에 온 합성 안내 뭐야?", "받은편지함에 합성레터 있어?", "합성 MAIL 알려줘"])
+    assertEquals(src(out(["GMAIL"]), false, true, q), ["GMAIL"], q);
+  // 맥락: 지금 글에 메일이 없어도 모델이 채운 독립 질문(query)이 메일을 말하면 남긴다 / 둘 다 없으면 뺀다
+  assertEquals(src(out(["GMAIL"], { query: "합성상점에서 온 메일 언제 왔어?" }), true, true, "거기서 온 거 언제야?"), ["GMAIL"]);
+  assertEquals(src(out(["GMAIL"], { query: "합성상사 분기 회의 몇 시에 시작해?" }), true, true, "몇 시에 시작해?"), []);
+  // intents 없는 요청(0.12.x)은 출력도 그대로
+  assertEquals(src(out(["GMAIL"]), false, false, "합성상사 분기 회의 언제야?"), ["GMAIL"]);
+});
 Deno.test("resolveIntent: mail_summary only when the app lists it and MAIL_READ is on; parseIntents knows mail_summary", () => {
   const all = new Set(["add_event", "mail_action", "mail_summary"] as const);
   assertEquals(resolveIntent("mail_summary", all, false, true), "mail_summary");
