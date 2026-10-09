@@ -7,7 +7,7 @@ export type Row = Record<string, any>;
 export type Q = (sql: string, params?: unknown[]) => Promise<Row[]>;
 export type UCtx = { q: Q; user: string; other: string; clock: ((iso: string | null) => Promise<void>) | null };
 export type UsageCase = { name: string; clock?: true; privileges?: true; run(c: UCtx): Promise<void> };
-export const MIGRATION_0032 = new URL("../migrations-pending/0032_usage_ledger.sql", import.meta.url);   // D1 단계가 ../migrations/ 로 바꾼다
+export const MIGRATION_0032 = new URL("../migrations/0032_usage_ledger.sql", import.meta.url);   // D1 에서 migrations-pending/ 에서 옮김
 export const USAGE_FUNCTIONS = ["usage_ledger_pair", "usage_line_ok", "usage_ledger_add", "reserve_usage_month", "settle_usage_lines", "record_usage",
   "usage_breakdown", "audit_mail_read"];
 
@@ -19,7 +19,7 @@ async function reserve(c: UCtx, kind: string, est: number, user = c.user, fn = "
   return { status: r.status as string, month: r.month as string };
 }
 const settle = (c: UCtx, kind: string, est: number, month: string, lines: unknown, user = c.user) =>
-  c.q("select settle_usage_lines($1::uuid, $2, $3::numeric, $4::date, $5::jsonb)", [user, kind, est, month, JSON.stringify(lines)]);
+  c.q("select settle_usage_lines($1::uuid, $2, $3::numeric, $4::date, $5::text::jsonb)", [user, kind, est, month, JSON.stringify(lines)]);
 async function counters(c: UCtx, month: string, user = c.user): Promise<{ reserved: number; backfill: number } | null> {
   const r = await c.q("select reserved_krw::text as r, backfill_reserved_krw::text as b from usage_counters where user_id = $1::uuid and month = $2::date", [user, month]);
   return r.length ? { reserved: Number(r[0].r), backfill: Number(r[0].b) } : null;
@@ -30,16 +30,17 @@ async function ledger(c: UCtx, month: string, user = c.user) {
     .map((r) => ({ kind: r.kind, model: r.model, calls: Number(r.calls), input: Number(r.i), cached: Number(r.ca), output: Number(r.o), krw: Number(r.k) }));
 }
 const monthAt = async (c: UCtx, shift: string) => (await one(c, `select (seoul_month() + interval '${shift}')::date::text as m`)).m as string;
-// 예외를 기대하는 문장은 savepoint 안에서 — 실패한 문장이 바깥 트랜잭션을 오류 상태로 두지 않게
+// 예외를 기대하는 문장은 savepoint 안에서 — 실패한 문장이 바깥 트랜잭션을 오류 상태로 두지 않게. 메시지는 완전 일치("bad_lines" 가 "bad_line" 을 포함해 헛통과하지 않게).
+// jsonb 인수는 $n::text::jsonb — postgres.js(prepare:false)는 $n::jsonb 에 묶인 문자열을 JSON 문자열 스칼라로 보낸다(ffdc564, D1 호스팅 실행)
 async function fails(c: UCtx, sql: string, p: unknown[], msg: string) {
   await c.q("savepoint usage_expect");
   let err = "";
   try { await c.q(sql, p); } catch (e) { err = e instanceof Error ? e.message : String(e); }
   await c.q("rollback to savepoint usage_expect");
-  assert(err.includes(msg), `expected "${msg}", got "${err || "no error"}"`);
+  assertEquals(err, msg, `expected "${msg}", got "${err || "no error"}"`);
 }
 const settleFails = (c: UCtx, kind: string, est: number, month: string, lines: unknown, msg: string) =>
-  fails(c, "select settle_usage_lines($1::uuid, $2, $3::numeric, $4::date, $5::jsonb)", [c.user, kind, est, month, JSON.stringify(lines)], msg);
+  fails(c, "select settle_usage_lines($1::uuid, $2, $3::numeric, $4::date, $5::text::jsonb)", [c.user, kind, est, month, JSON.stringify(lines)], msg);
 async function breakdownAs(c: UCtx, user: string) {
   await c.q("select set_config('request.jwt.claim.sub', $1, true)", [user]);
   const rows = await c.q("select kind, model, calls, krw::text as k from usage_breakdown()");
@@ -101,7 +102,7 @@ export const USAGE_CASES: UsageCase[] = [
   { name: "bad kind · bad estimate · null arguments raise and change nothing (settle_usage_lines, reserve_usage_month, record_usage)", run: async (c) => {
     const a = await reserve(c, "chat", 1);
     const line = [L("chat", "gpt-6-luna", 10, 0, 1, 0.01)];
-    const S = "select settle_usage_lines($1::uuid, $2, $3::numeric, $4::date, $5::jsonb)";
+    const S = "select settle_usage_lines($1::uuid, $2, $3::numeric, $4::date, $5::text::jsonb)";
     for (const [kind, est, month, lines, msg] of [
       ["vision", 1, a.month, line, "bad kind"], ["jev", 1, a.month, line, "bad kind"], [null, 1, a.month, line, "bad kind"],
       ["chat", -1, a.month, line, "bad estimate"], ["chat", null, a.month, line, "bad estimate"],
@@ -110,14 +111,14 @@ export const USAGE_CASES: UsageCase[] = [
     const R = "select * from reserve_usage_month($1::uuid, $2, $3::numeric)";
     for (const [kind, est, msg] of [["jev", 1, "bad kind"], [null, 1, "bad kind"], ["chat", -1, "bad estimate"], ["chat", null, "bad estimate"]] as const)
       await fails(c, R, [c.user, kind, est], msg);
-    await fails(c, "select record_usage($1::uuid, $2::jsonb)", [c.user, null], "bad_lines");
+    await fails(c, "select record_usage($1::uuid, $2::text::jsonb)", [c.user, null], "bad_lines");
     assertEquals((await counters(c, a.month))!.reserved, 1);
     assertEquals(await ledger(c, a.month), []);
   } },
   { name: "record_usage takes vision lines only and never touches usage_counters", run: async (c) => {
     const m = await monthAt(c, "0 month");
-    await c.q("select record_usage($1::uuid, $2::jsonb)", [c.user, JSON.stringify([L("vision", "gpt-6-luna", 4000, 0, 100, 0.63)])]);
-    await fails(c, "select record_usage($1::uuid, $2::jsonb)", [c.user, JSON.stringify([L("chat", "gpt-6-luna", 1, 0, 1, 0)])], "bad_pair");
+    await c.q("select record_usage($1::uuid, $2::text::jsonb)", [c.user, JSON.stringify([L("vision", "gpt-6-luna", 4000, 0, 100, 0.63)])]);
+    await fails(c, "select record_usage($1::uuid, $2::text::jsonb)", [c.user, JSON.stringify([L("chat", "gpt-6-luna", 1, 0, 1, 0)])], "bad_pair");
     assertEquals(await ledger(c, m), [{ kind: "vision", model: "gpt-6-luna", calls: 1, input: 4000, cached: 0, output: 100, krw: 0.63 }]);
     assertEquals(await counters(c, m), null);
   } },
@@ -157,7 +158,7 @@ export const USAGE_CASES: UsageCase[] = [
     const a = await reserve(c, "chat", 2);
     await c.clock!(AFTER_MIDNIGHT);
     await settle(c, "chat", 2, a.month, [L("chat", "gpt-6-luna", 1000, 0, 100, 0.3)]);
-    await c.q("select record_usage($1::uuid, $2::jsonb)", [c.user, JSON.stringify([L("vision", "gpt-6-luna", 4000, 0, 100, 0.63)])]);
+    await c.q("select record_usage($1::uuid, $2::text::jsonb)", [c.user, JSON.stringify([L("vision", "gpt-6-luna", 4000, 0, 100, 0.63)])]);
     assertEquals(await breakdownAs(c, c.user), [{ kind: "vision", model: "gpt-6-luna", calls: 1, krw: 0.63 }]);
   } },
   { name: "reserve_usage_month ⓔ: same statuses and increments as 0014 reserve_usage (ok → degraded at 80% → refused; backfill own cap)", run: async (c) => {
