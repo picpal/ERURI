@@ -41,9 +41,9 @@ export function opFor(action: Action, phase: Phase): Op {
     return { batch: (a, ids) => a.batchModify(ids, ["TRASH"], []), single: (a, id) => a.trash(id),
              singleUnits: UNITS.trash, reached: (l) => l.includes("TRASH") };
   }
-  if (action === "trash") {
-    return { batch: (a, ids) => a.batchModify(ids, [], ["TRASH"]), single: (a, id) => a.untrash(id),
-             singleUnits: UNITS.untrash, reached: (l) => !l.includes("TRASH") };
+  if (action === "trash") {                        // Gmail 은 TRASH 를 붙일 때 INBOX 를 뗀다 — 대상은 늘 in:inbox 라 INBOX 를 다시 붙인다(MAIL-real U5). untrash 는 이전 라벨 복원
+    return { batch: (a, ids) => a.batchModify(ids, ["INBOX"], ["TRASH"]), single: (a, id) => a.untrash(id),
+             singleUnits: UNITS.untrash, reached: (l) => !l.includes("TRASH") && l.includes("INBOX") };
   }
   if (action !== "read") throw new Error("mail_bad_action");          // 모르는 동작을 읽음으로 떨어뜨리지 않는다(M4b 리뷰 Minor 7)
   if (phase === "execute") {

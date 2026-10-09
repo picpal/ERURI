@@ -229,19 +229,31 @@ Deno.test("read: execute removes UNREAD in one batch; batch 404 → per-message 
   assertEquals(r3.st.gmail, ["batch:3:+UNREAD:-"]);
 });
 
-Deno.test("undo trash follows the execute method: single → untrash each (5 units), batch → remove TRASH once; trash batch 404 → per-message (D9)", async () => {
+Deno.test("undo trash follows the execute method: single → untrash each (5 units), batch → remove TRASH and add INBOX back once; trash batch 404 → per-message (D9)", async () => {
   const s = harness({ phase: "undo", method: "single" });
   assertEquals(await mailActionJob(s.d, job("undo")), "done");
   assertEquals([s.st.gmail, s.st.taken], [["untrash:m1", "untrash:m2", "untrash:m3"], [15]]);
   const b = harness({ phase: "undo", method: "batch" });
   assertEquals(await mailActionJob(b.d, job("undo")), "done");
-  assertEquals(b.st.gmail, ["batch:3:+:-TRASH"]);
+  assertEquals(b.st.gmail, ["batch:3:+INBOX:-TRASH"]);                        // Gmail 은 TRASH 를 붙일 때 INBOX 를 뗀다 — 대상은 늘 in:inbox(MAIL-real U5)
   const g = harness({ api: { batchModify: () => Promise.reject(E(404)) } });
   assertEquals(await mailActionJob(g.d, job()), "done");                        // 휴지통 batch 404 = 사라진 id 섞임 → 건별(그 id 만 실패)
   assertEquals([g.st.gmail, g.st.method, g.st.taken], [["trash:m1", "trash:m2", "trash:m3"], "single", [50, 60]]);
   const u = harness({ phase: "undo", method: "batch", api: { batchModify: () => Promise.reject(E(404)), untrash: (id) => id === "m2" ? Promise.reject(E(404)) : Promise.resolve() } });
   assertEquals(await mailActionJob(u.d, job("undo")), "done");
   assertEquals([u.st.ok, u.st.failed, u.st.method], [["m1", "m3"], ["m2"], "batch"]);   // 되돌리기 전환은 method 에 남기지 않는다
+});
+
+Deno.test("undo trash reaches its target only when TRASH is gone and INBOX is back (MAIL-real U5); untrash single stays as is", async () => {
+  const o = opFor("trash", "undo");
+  assertEquals([o.reached(["INBOX", "UNREAD"]), o.reached(["UNREAD"]), o.reached(["TRASH", "INBOX"]), o.reached(["TRASH"])], [true, false, false, false]);
+  const r = harness({ phase: "undo", method: "batch", api: { batchModify: () => Promise.reject(E(503)),
+    labels: (id) => Promise.resolve({ id, labelIds: id === "m2" ? ["UNREAD"] : ["INBOX"] }) } });
+  assertEquals(await mailActionJob(r.d, job("undo", 5)), "verified");
+  assertEquals([r.st.ok, r.st.failed], [["m1", "m3"], ["m2"]]);                  // 보관 상태(TRASH·INBOX 둘 다 없음)는 되돌리기 실패
+  const s = harness({ phase: "undo", method: "single" });
+  assertEquals(await mailActionJob(s.d, job("undo")), "done");
+  assertEquals(s.st.gmail, ["untrash:m1", "untrash:m2", "untrash:m3"]);
 });
 
 Deno.test("unknown action from the row → plain error before the token and any Gmail call; opFor refuses it too", async () => {
