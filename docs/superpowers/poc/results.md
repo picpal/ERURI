@@ -207,3 +207,22 @@ PoC 프로젝트 은퇴(스펙 §11, M1 게이트 통과 직후 — Gmail revoke
 - 위반 총수: **0** (1차 4 → 2차 1 → 3차 0).
 - e02 추가 확인(3차): 3회 모두 엔티티 잔존 아니오 · 셀 붙음 흔적(사실 오결합·숫자 붙음·조건 뒤바뀜) 아니오. 결론: S2 Minor 1·2(표 셀 구분·이름 엔티티 디코드) 스펙 변경 **불필요** — 4~6회차 e02 9/9 잔존 0·행별 날짜·금액·조건 결합 정확(e02는 회귀 사례로 유지).
 - **판정: 통과** — 자동(6회차 pass) + 수동 42출력 위반 0. 요청당 평균 입력 2,393 · 출력 140 토큰 ≈ 0.433원(6회차). 지시문 수정은 위 표(1~3차 dates·줄 수, r4 ask 후처리·짧은 메일 줄 수, r6 ask 내용·소개 줄).
+
+## MAIL-real (메일 정리 0.14.0, 2026-10-09~10)
+
+TestFlight 0.14.0 (`202610082030`, ASC VALID 2026-10-08 20:33:59 KST). Step 0(10-08 20:04): GCP 데이터 액세스 범위 목록 비어 있음(readonly 도 없음) — 추가하지 않음(Ruling M12-0, Testing 모드는 목록 밖 범위도 테스트 사용자에게 요청 가능). 사용자 다시 연결 10-08 23:16 KST(readonly + modify). `$T1` 2026-10-08T15:17:26Z · `$T2` 2026-10-09T10:48:09Z · `$E2`(② 재실행 전 1차 실행) 2026-10-09T12:02:30Z. 배포: worker v21 → **v25**(2026-10-09 21:32:33 KST, 배포 HEAD = `B14` `3eaf9a0` + MAIL-deploy cherry-pick(`b58f1a3`) + `59bdeae`→`3b366b9`) · mail-action v1 · gmail-connect v5 · chat v10. 행 3개(mail_actions): trash done·batch 3 → undone(1차, INBOX 미복원) · trash done·batch 3 → undone(재실행) · read done·batch **4** → undone.
+
+| 단계 | 전제 | 판정 | 근거(개수·코드만) |
+|---|---|---|---|
+| ⓪ probe | U2 403 권한 reason | 측정 기회 없음 — 문서 근거로 수용 | `skipped_already_modify`(다시 연결이 modify 를 먼저 붙임). 권한 reason 은 M2 `SCOPE_REASONS` 단위 테스트에 기댄다 |
+| ① 권한 업데이트 | U3 addScopes → 새 serverAuthCode·refresh token, 연결·백필 불변, 동기화 지속 | 해당 없음(재연결이 먼저) | 버튼 없음(이미 modify). status active, has_modify true, `$T1` 이후 백필 잡 0 true, 대조 메일 id 수집 1·`control_items` 1·synced_after_t1 true |
+| ② 휴지통 | U1 batchModify TRASH / U6 한글 제목 검색 | 통과(batch) | 3건·표본 합성 1~3 true(사용자 확인), status done·method batch·ok 3·failed 0(두 번 모두), 대조 받은편지함 true, elapsed_ms 미기록 |
+| ③ 동기화 | U4 휴지통·되돌리기가 새 메일로 오지 않음(sync 관측 뒤) | 통과 | synced_after_exec true(`$E2` 뒤·마지막 되돌리기 `undone_at` 뒤 둘 다), `$T2` 이후 gmail-fetch 잡 중 3통 id 포함 0(②·⑤ 뒤 두 번), 3통 items 3(늘지 않음) |
+| ④ 되돌리기 | U5 INBOX 복원 | 실패 → 수정 → 통과 | 1차: "되돌렸어요"인데 3통 라벨에 TRASH·INBOX 둘 다 없음(보관 상태 — batchModify(+TRASH)가 INBOX 를 떼고 undo(-TRASH)가 붙이지 않음). Ruling M12-U5 → `59bdeae`(undo batch = `batchModify(ids, ["INBOX"], ["TRASH"])`, reached = !TRASH && INBOX) → worker v25 → 사용자가 3통을 받은편지함으로 옮긴 뒤 ②·④ 재실행: 받은편지함 3통 true, 라벨 INBOX·UNREAD 복원 |
+| ⑤ 읽음·되돌리기 | 읽음은 조건 메일만, 되돌리기 정확 | 동작 통과 · 범위 문제(원인 미확정, 코드 결함 재현 안 됨) | 미리보기·실행 **4건**(합성 3 + 대조 1 — msg_ids 에 대조 id 포함), 읽음 done·batch, 되돌리기 4/4 안 읽음 복원·대조 받은편지함·안 읽음 true. 조건 줄 미확보. 아래 재현 조사 |
+
+**⑤ 범위 재현 조사(2026-10-10, Ruling M12-read):**
+- 경로: 앱은 chat `mail` 칸을 그대로 mail-action 에 넘긴다(`MailCleanup.swift` `MailFields` — 읽음·휴지통 같은 코드). 서버는 `checkConditions` → `buildQuery` = `in:inbox -is:starred subject:"ERURI" subject:"테스트" is:unread`. 휴지통 문장과 다른 것은 `is:unread` 뿐이라, 같은 칸이면 읽음 쪽이 더 넓어질 수 없다 → ⑤ 회차의 칸이 달랐다.
+- 배포 chat(v10, 대시보드 13) 실호출(테스트 사용자 19, `intents` add_event·mail_action): 읽음 문장 13/13 `subject_words ["ERURI","테스트"]`·`unread_only true`, 휴지통 문장 3/3 `["ERURI","테스트"]`. 변형(붙여쓰기 `ERURI테스트`·대괄호·소문자·띄어쓰기) 2회씩·직전 휴지통 턴 맥락 3회도 '테스트' 누락 0.
+- 실사용자 Gmail 읽기 list(검색만, 개수·포함 여부만): 서버 조립 읽음 검색어 3통·대조 없음, 휴지통·휴지통+안 읽음 3통, 변형(`"ERURI테스트"`·`"ERURI 테스트"`·`"eruri"`) 모두 3통. **`subject:"ERURI"` 단독 + `is:unread` 만 4통(합성 3 + 대조)** — ⑤ 실측과 같은 집합.
+- 결론: 검색어 조립·정제·Gmail 검색·앱 전달은 결함 없음(재현 0/21). ⑤ 회차는 '테스트'가 빠진 칸(`["ERURI"]` 추정)으로 미리보기됐다 — 그 회차의 모델 칸 출력 변동이나 입력 차이 중 하나로, 기록이 없어 가를 수 없다(서버는 조건을 저장·로그하지 않는다 §12). 미리보기 카드가 4건과 표본을 보여 줬으므로 확인 단계는 동작했다. 앱 대화 기록(기기, 30일)의 그 카드 조건 줄로 확정할 수 있다. INTENT-eval 은 이 문장(`m20`)과 휴지통 문장(`m19`)을 0.14.0 M7 부터 이미 갖고 있다.
