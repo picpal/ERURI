@@ -62,7 +62,7 @@
 | K3 | 0033 위치·적용 | `supabase/migrations-pending/0033_chat_edit.sql`로 만들고 D1에서 `supabase/migrations/`로 옮겨 `db push`(0032 다음). 그 전에는 PGlite만, 호스팅 트랜잭션 테스트(롤백)·동시 고치기 사례도 D1 | 0030·0032 선례 |
 | K4 | `EDIT-eval` 실행 방식 | **로컬 러너**: ① 의도·칸 24사례 = `extractFilters(…, edit)`를 `<registered>` 합성 값으로 직접 부른다(INTENT-eval 러너와 같은 방식 — DB·사용자 없음, OpenAI 키만) ② 추출 경로 오전·오후 8사례 = `buildTextExtractRequest`·`normalizeTextExtraction`(워커가 쓰는 같은 코드, `app_name = "채팅"` SHARE 메타)을 직접 부른다. 배포된 chat·ingest 경로는 D1의 **`EDIT-deploy`** 스모크(테스트 사용자 22 — 실제 ingest → 워커 추출 → `/chat` `edit_target` → DB 버전 확인)가 맡는다. E0이 스펙 §15 EDIT-eval 문장("배포된 chat, 테스트 사용자 22, … ingest 경로로")을 이 문장으로 바꾸고 `EDIT-deploy`를 게이트에 더한다 | 배포가 0.15.0 G2 뒤로 묶여 있어(K2) 배포본 평가는 프롬프트 실패를 늦게 찾는다. 0.15.0 S6·S7도 로컬 러너였다. 판정 대상(필터 출력·추출 결과)은 같은 코드라 결과가 같고, 배포 경로 자체는 스모크가 본다 |
 | K5 | SQL 구조 | 내부 함수 `chat_edit_state(p_user, p_proposal, p_lock, p_edit)`(대상 판정 — `p_edit`이면 30분·`multi`도 본다, `p_lock`이면 그 fact의 제안 행을 `for update`)와 `chat_edit_apply(p_user, p_fact, p_patch, p_clear)`(새 버전 규칙 — 잠금 안에서만 부른다). `chat_edit_target`·`chat_edit_proposal`·`resolve_uncertain`이 이 둘을 쓴다. B에서 지울 `uncertain` 코드(`p_clear`)는 TS(E3 `confirmedCodes`)가 정하고 SQL은 코드 이름만 검사한다 | 스펙 §9 C 서버 "같은 내부 함수". 확인 코드 규칙(날짜 바뀜·칸이 옴·표지)은 사용자 글이 필요해 TS에 둔다 — 한 곳에서 테스트한다 |
-| K6 | `no_change` | chat 서버 4(재검증 뒤)는 스펙 그대로 **네 칸**이 지금 값과 같으면 `no_change`(RPC 안 부름 — `uncertain`만 바뀌는 고치기는 없다: 18:00 제안에 "오후 6시 맞아" → "바뀐 내용이 없어요", `ampm`은 C 버튼으로). `chat_edit_apply`의 `no_change`는 네 칸 **과 `uncertain`**이 모두 같을 때만 — C의 [장소 없이 추가](장소가 이미 null)·`ampm` "그대로" 값이 코드를 지우는 새 버전이 되게 | 스펙 §9 B 서버 4 문장 그대로 + C 표 "그대로" 허용. "오후 6시 맞아"가 버튼을 한 번 더 부르는 UX는 사용자 결정 후보로 스펙 §16 "남는 것"에 적었다(Fable 플랜 리뷰 N9 — 바꾸면 chat이 `confirmedCodes`가 비지 않을 때 RPC를 부르면 된다) |
+| K6 | `no_change`·확인 코드만 푸는 고치기 | chat 서버 4(재검증 뒤): 네 칸이 지금 값과 같고 **이번 글이 확인한 코드(`confirmedCodes`)도 없으면** `no_change`(RPC 안 부름). 값이 같아도 확인 코드가 있으면 빈 patch + 그 코드로 RPC — 18:00 제안에 "오후 6시 맞아" → `ampm`만 지운 새 버전(`ok`, 앱 머리 "확인했어요", `전 → 후` 줄 없음 → [캘린더에 추가]). `chat_edit_apply`의 `no_change`는 네 칸 **과 `uncertain`**이 모두 같을 때만(그 코드가 이미 풀렸으면 `no_change`) — C의 [장소 없이 추가](장소가 이미 null)·`ampm` "그대로" 값도 코드를 지우는 새 버전. `chat_edit_proposal`은 빈 patch를 `p_clear`가 있을 때만 받는다 | 사용자 결정 "H3 후속"(문장에 오전·오후 표지가 있으면 서버 규칙으로 `ampm` 확정)의 적용 — 2026-10-10 메인 판정 (B)(Fable 플랜 리뷰 N9). 처음 안(네 칸이 같으면 `no_change`, 버튼으로 한 번 더)은 표지를 말한 사용자에게 같은 질문을 다시 했다. E0이 아니라 이 판정 커밋이 스펙 B 서버 4·B 앱 머리 문장을 고쳤다 |
 | K7 | 장소 비우기 표현 | 모델·`resolve_uncertain`의 `""` → payload `location: null`. 응답 `after.location` null → 카드 "없음" | 추출 정규화(`clean` → null)와 같은 표현 — 카드·브리핑·`ProposalReview.place`가 null을 이미 "장소 없음"으로 다룬다 |
 | K8 | `resolve_uncertain` 값 형식·끝 이동 | `ampm`·`year`: 새 시작 문자열(시각 `YYYY-MM-DDTHH:MM:SS+09:00`, 종일 `YYYY-MM-DD`), `date`: `YYYY-MM-DD`(서버가 지금 시각을 붙인다), `location`: `""`. 끝은 시각이면 시작과 같은 시간 차이, 날짜만이면 같은 날 수만큼 옮긴다. **시작이 없던 제안**(`date` 질문)의 끝은 null로 둔다 | 스펙 C "그 칸만 바꿀 수 있게"를 서버가 문자열 비교로 검사할 수 있게. 시작 없는 제안은 차이를 잴 기준이 없다 |
 | K9 | [장소 없이 추가] | `location` 질문은 **`uncertain`에 `location`만 남았을 때만**(`end`·`tz`가 같이 있으면 질문 없이 확인 필요 문구) | 스펙 표 "남은 코드가 없으면 같은 탭으로 바로 추가 … 다른 코드가 남았으면 이 질문은 나오지 않는다" — 버튼 이름이 "추가"라 추가할 수 없는 상태에선 묻지 않는다 |
@@ -223,7 +223,7 @@ public enum Briefing { static func isPeriod; static func build(...) -> Model; st
 | U3 | 다른 캘린더로 옮긴 일정은 `event(withIdentifier:)`로 못 찾을 수 있고, 넓은 표식 조회(±1년)가 찾는다 | Apple 문서 "식별자가 바뀔 가능성이 높다" | EDIT-sim ⑪ⓑ | 넓은 조회도 못 찾으면 실패로 적고 메인 보고(스펙 H2 리스크) |
 | U4 | `gpt-6-luna`가 `edit_event` 의도·칸을 EDIT-eval 기준(의도 ≥ 22/24, 칸 ≥ 13/14, 오분류 0)대로 고른다 | 미측정 | E5 | `EDIT_RULE`·`EDIT_SCHEMA` 설명을 고쳐 다시(최대 2회), INTENT-eval 회귀도 다시. 그래도 실패면 메인 보고(모델 전환은 사용자 결정) |
 | U5 | 추출이 모호한 시각(오전·오후 말 없음)에 `ampm`을 넣고 명확한 시각엔 넣지 않는다(모호 4/4·명확 4/4) | 미측정(Codex M8) | E5 ② | `extract-text.ts` 지시문 보강(E5 Step 6) → 다시 → D1에서 worker 배포 |
-| U6 | PGlite가 `set role authenticated` 아래 `security definer` 함수의 내부 함수 호출·`has_function_privilege`를 Supabase처럼 재현한다 | 계획 작성 중 스크래치(저장소 밖)에서 이 계획의 0033·사례 그대로 PGlite 28/28 통과(2026-10-09), 플랜 리뷰 반영 뒤 29/29(2026-10-10 — 결과 일관성 가드 사례 포함) — 호스팅은 미실측 | E2 Step 2, D1 Step 3 | 안 되면 권한·정의자 사례는 `hostedOnly`로 표시하고 D1 호스팅 테스트로만 판정 |
+| U6 | PGlite가 `set role authenticated` 아래 `security definer` 함수의 내부 함수 호출·`has_function_privilege`를 Supabase처럼 재현한다 | 계획 작성 중 스크래치(저장소 밖)에서 이 계획의 0033·사례 그대로 PGlite 28/28 통과(2026-10-09), 플랜 리뷰 반영 뒤 30/30(2026-10-10 — 결과 일관성 가드·확인 코드만 푸는 사례 포함) — 호스팅은 미실측 | E2 Step 2, D1 Step 3 | 안 되면 권한·정의자 사례는 `hostedOnly`로 표시하고 D1 호스팅 테스트로만 판정 |
 | U7 | SwiftUI `DatePicker(.compact)`가 `List` 행 안에서 행 탭과 섞이지 않고 열린다 | 미확인 | EDIT-sim ⑨ `date` | 안 되면 날짜 선택을 `sheet`(그래픽 스타일)로 — 같은 [이 날로] |
 
 ### 실기기가 필요한 이유 (EDIT-real만)
@@ -290,7 +290,7 @@ Expected: HEAD가 계획 커밋 `d0ac95b`(`docs(plan): 0.16.0 chat schedule edit
 - [ ] **Step 2: 스펙 §9·§10·§15 문장 고치기(제자리 교체 — 앞뒤 문장은 그대로)**
 
 1. §9 C **시작이 없는 제안** 줄의 `추출이 날짜를 못 읽으면 \`start\` null + \`uncertain: [date]\`로 제안을 만든다(\`extract.ts\`).`를 `이미지 경로 추출(\`extract.ts\`)은 날짜를 못 읽으면 \`start\` null + \`uncertain: [date]\`로 제안을 만든다 — 텍스트 경로(채팅 등록 포함)는 시작을 못 읽은 일정을 버리고 \`year\`도 \`uncertain\`에서 지우므로(\`extract-text.ts\` \`noYear\`) 채팅 등록 카드의 "날짜 미정"·\`year\` 질문은 옛 행·심은 행에서만 생긴다(게이트는 심은 행으로 잰다, 계획 \`2026-10-08-chat-schedule-edit.md\` K14).`로 바꾼다.
-2. §9 B 서버 4 끝 문장 `남은 칸이 없거나 모두 지금 값과 같으면 \`no_change\`(새 버전 없음).` 뒤에 `\`uncertain\`만 바뀌는 고치기는 없다 — 네 칸이 같으면 확인 코드가 있어도 \`no_change\`이고 남은 코드는 C 버튼이 묻는다. RPC 안(\`chat_edit_apply\`)의 \`no_change\`는 네 칸과 \`uncertain\`이 모두 같을 때만이다(C의 [장소 없이 추가]·\`ampm\` "그대로"가 코드를 지우는 새 버전이 되게, 계획 K6). 장소 \`""\`는 payload \`location: null\`로 저장하고 응답 \`after.location\`도 null이다(카드 "없음", 계획 K7).`를 더한다.
+2. §9 B 서버 4의 `… 그 코드만 지우는 새 버전을 만든다 — RPC 안에서 그 코드가 \`uncertain\`에 없으면(이미 풀림) \`no_change\`(2026-10-10 메인 판정 (B), 플랜 리뷰 Fable N9).` 문장(플랜 리뷰 판정 커밋이 넣었다) 뒤에 `RPC 안(\`chat_edit_apply\`)의 \`no_change\`는 네 칸과 \`uncertain\`이 모두 같을 때만이다(C의 [장소 없이 추가]·\`ampm\` "그대로"가 코드를 지우는 새 버전이 되게, 계획 K6). 장소 \`""\`는 payload \`location: null\`로 저장하고 응답 \`after.location\`도 null이다(카드 "없음", 계획 K7).`를 더한다.
 3. §9 C **서버** 줄 끝 `반환 \`{status: ok|not_found|not_uncertain|bad_value, proposal_id, version}\`. 모델 호출이 없어 비용이 들지 않는다.` 뒤에 `값 형식(계획 K8): \`ampm\`·\`year\` = 새 시작 문자열(시각 \`YYYY-MM-DDTHH:MM:SS+09:00\`, 종일 \`YYYY-MM-DD\`), \`date\` = \`YYYY-MM-DD\`(서버가 지금 시각을 붙인다), \`location\` = \`""\`. 되묻기 대상이 아닌 코드(\`end\`·\`tz\`·모르는 값)는 \`bad_value\`, 대상 코드인데 \`uncertain\`에 없으면 \`not_uncertain\`. 끝은 시각이면 같은 시간 차이, 날짜만이면 같은 날 수만큼 옮기고, 시작이 없던 제안(\`date\`)의 끝은 null이다. 앱은 \`location\` 질문을 \`uncertain\`에 \`location\`만 남았을 때만(계획 K9), \`ampm\` 질문을 시작이 시각일 때만(K10) 보인다 — 아니면 지금 문구 "내용 확인이 필요해 바로 추가하지 않음".`를 더한다.
 4. §9 B 앱 표 아래 `- \`expired\`·\`multi\`·\`not_found\`·\`no_change\`는 카드 없이 한 줄이다.` 줄 앞에 새 줄 `    - 새 버전이 \`succeeded\` \`update_event\`인데 새 표식 일정을 그 창에서 찾지 못하면(바꾼 뒤 옮김·지움) §10 바꾸기 3을 그 버전 자신(기준·새 표식 = 그 pid, 식별자 = 로컬 실행 기록 또는 제안 \`eventkit_id\`)으로 다시 돌린다 — 찾으면(옮김) "✅ 캘린더도 바꿨어요 · 캘린더에서는 M/D HH:mm"(버튼 없음), 삭제 확인이면 "캘린더에서 지운 일정이에요" + [캘린더에 추가](다시 추가), 확인 불가면 그 문구(버튼 없음)(계획 K11). 고치기 카드·원래 등록 카드·항목 상세는 같은 판정 함수를 쓴다 — 응답 \`edit\`의 \`before\`·\`after\`는 머리와 \`전 → 후\` 줄에만 쓰고 상태는 카드가 따라가는 제안 행을 다시 읽어 정한다(계획 K27). 표의 "\`stale\` — 뒤 턴에서 다시 고침"은 다른 턴이 고친 경우다 — 같은 고치기 카드의 되묻기 버튼이 만든 새 버전은 그 카드가 따라간다(앱이 턴에 \`editPid\`를 두고 C 성공 때 갱신, 계획 K31). 고친 일정의 [캘린더에 추가]는 일정 답 카드와 같은 확인창 경로다(겹침·비슷한 일정이면 확인 뒤 추가, 계획 K34).`을 넣는다(들여쓰기 4칸, 다음 줄과 같은 수준).
 5. §10 **계보 확인** 줄의 `못 읽으면 저장하지 않고 "확인하지 못했어요. 다시 눌러 주세요." — version > 1인 제안에서만)` 뒤에 `(조회는 \`proposals?id=eq.<pid>&select=…,fact_id,facts(proposals(id,version,status,start:payload->>start,end_at:payload->>end))\` 한 요청, 결과 코드 \`fail:lineage_unknown\` — 계획 K13)`를 더하고, 같은 줄의 `같은 fact에 더 새 버전이 있으면 "이미 처리된 제안" 알림을 띄우지 않는다(카드가 처리한다)` 뒤에 `(앱은 보고 결과가 \`stale\`이면 "변경된 제안" 알림을 띄우지 않는다 — 0.16.0 전에는 \`stale\`을 쓰는 서버 경로가 없어 \`stale\` = 같은 fact에 새 버전이 있음, \`changed\`는 지금처럼 알림, 계획 K12)`를 더한다.
@@ -310,7 +310,7 @@ Expected: HEAD가 계획 커밋 `d0ac95b`(`docs(plan): 0.16.0 chat schedule edit
 ```markdown
 ### 2026-10-08 채팅 일정 개선 구현 계획 세부 (계획 `2026-10-08-chat-schedule-edit.md`, 메인 판단 — 사용자 재검토 가능)
 
-계획이 스펙의 빈칸을 채운 것: ① 0.15.0 배포·업로드는 0.16.0 코드가 들어오기 전 커밋 `B15`의 worktree에서(K1) ② 0.16.0 배포·업로드는 0.15.0 G2 `SUMMARY-real` 뒤, R-B9는 기다리지 않고 들어와 있으면 같은 빌드(K2) ③ 0033은 `migrations-pending/` → D1에서 0032 다음(K3) ④ EDIT-eval은 로컬 러너, 배포 경로는 EDIT-deploy 스모크(K4) ⑤ 내부 함수 `chat_edit_state`(판정·잠금)·`chat_edit_apply`(새 버전), 지울 확인 코드는 chat이 정한다(K5) ⑥ `no_change`는 네 칸, RPC 안은 네 칸 + `uncertain`(K6) ⑦ 장소 비우기 = payload null(K7) ⑧ 되묻기 값 형식·끝 이동·시작 없던 제안의 끝 null(K8) ⑨ [장소 없이 추가]는 `location`만 남았을 때(K9) ⑩ `ampm` 질문은 시작이 시각일 때(K10) ⑪ 바꾼 뒤 새 표식이 그 창에 없으면 그 버전 자신으로 바꾸기 3을 다시 — 옮김은 위치, 지움은 [캘린더에 추가](다시 추가), 확인 불가는 그 문구(K11) ⑫ 늦은 `stale` 보고는 알림 없음(K12) ⑬ 계보 조회 한 요청·실패 코드(K13) ⑭ 텍스트 경로는 시작 없는 일정을 버리고 `year`를 지운다 — "날짜 미정"·`year` 질문은 심은 행으로 잰다(K14) ⑮ 다건 등록 맥락 줄은 `proposalIDs` 순서(K15) ⑯ 고치기 턴 = `/chat` 응답 그대로(K16) ⑰ 업로드 가드 0.16.0(K17) ⑱ 새 화면만 새 파일로 — 기존 카드 행 이동은 이월(K18) ⑲ 테스트 사용자 21·22·23(K19) ⑳ 보고 실패 주입은 DEBUG 전용(K21) ㉑ 브리핑 합친 줄은 캘린더 값, 기간 밖으로 옮긴 일정·찾지 못한 일정은 목록 밖(아래 줄), 캘린더에 없는 제안은 목록 줄 + 아래 버튼 행, 같은 약속 두 제안은 한 줄(K22) ㉒ 대상 읽기 감사는 SQL 안(K23) ㉓ 0.15.0 의도 스키마는 그대로, 편집 스키마를 따로(K24) ㉔ 바꾸기 결과 코드(K25) ㉕ 보내기 전 재전송은 미보고가 있을 때만 5초(K26) ㉖ 카드 상태 판정 한 함수(K27) ㉗ "날짜 미정" 카드는 채팅 등록·고치기 카드만(K28) ㉘ 종일 일정 값 비교의 끝 날짜 읽기는 EDIT-sim ⑫로 확인(U2) ㉙ EDIT-sim ⑪ⓓ는 표식까지 지워야 "확인 불가"가 재현된다(K29). 플랜 리뷰(Codex·Fable, 2026-10-10) 반영: ㉚ 동시 고치기는 결과 일관성 가드(끝이 시작과 맞지 않으면 최고 버전 길이) + 전송 중 버튼 끔, 예상 버전 검사는 두지 않는다(K30) ㉛ 고치기 카드는 턴의 `editPid`(같은 카드의 되묻기가 만든 새 버전)를 따라간다(K31) ㉜ 모델의 `edit.end`는 사용자가 끝을 말했을 때만(K32) ㉝ 답 카드의 `update_event`는 fact 버전 조회로 실제 버전·식별자를 읽는다(K33) ㉞ 고친 일정의 [캘린더에 추가]는 일정 답 카드와 같은 확인창 경로, 바꾼 뒤 지운 일정은 다시 추가(K34).
+계획이 스펙의 빈칸을 채운 것: ① 0.15.0 배포·업로드는 0.16.0 코드가 들어오기 전 커밋 `B15`의 worktree에서(K1) ② 0.16.0 배포·업로드는 0.15.0 G2 `SUMMARY-real` 뒤, R-B9는 기다리지 않고 들어와 있으면 같은 빌드(K2) ③ 0033은 `migrations-pending/` → D1에서 0032 다음(K3) ④ EDIT-eval은 로컬 러너, 배포 경로는 EDIT-deploy 스모크(K4) ⑤ 내부 함수 `chat_edit_state`(판정·잠금)·`chat_edit_apply`(새 버전), 지울 확인 코드는 chat이 정한다(K5) ⑥ `no_change`는 네 칸이 같고 확인 코드도 없을 때(확인 코드만 있으면 그 코드만 지우는 새 버전 — 2026-10-10 메인 판정 (B)), RPC 안은 네 칸 + `uncertain`(K6) ⑦ 장소 비우기 = payload null(K7) ⑧ 되묻기 값 형식·끝 이동·시작 없던 제안의 끝 null(K8) ⑨ [장소 없이 추가]는 `location`만 남았을 때(K9) ⑩ `ampm` 질문은 시작이 시각일 때(K10) ⑪ 바꾼 뒤 새 표식이 그 창에 없으면 그 버전 자신으로 바꾸기 3을 다시 — 옮김은 위치, 지움은 [캘린더에 추가](다시 추가), 확인 불가는 그 문구(K11) ⑫ 늦은 `stale` 보고는 알림 없음(K12) ⑬ 계보 조회 한 요청·실패 코드(K13) ⑭ 텍스트 경로는 시작 없는 일정을 버리고 `year`를 지운다 — "날짜 미정"·`year` 질문은 심은 행으로 잰다(K14) ⑮ 다건 등록 맥락 줄은 `proposalIDs` 순서(K15) ⑯ 고치기 턴 = `/chat` 응답 그대로(K16) ⑰ 업로드 가드 0.16.0(K17) ⑱ 새 화면만 새 파일로 — 기존 카드 행 이동은 이월(K18) ⑲ 테스트 사용자 21·22·23(K19) ⑳ 보고 실패 주입은 DEBUG 전용(K21) ㉑ 브리핑 합친 줄은 캘린더 값, 기간 밖으로 옮긴 일정·찾지 못한 일정은 목록 밖(아래 줄), 캘린더에 없는 제안은 목록 줄 + 아래 버튼 행, 같은 약속 두 제안은 한 줄(K22) ㉒ 대상 읽기 감사는 SQL 안(K23) ㉓ 0.15.0 의도 스키마는 그대로, 편집 스키마를 따로(K24) ㉔ 바꾸기 결과 코드(K25) ㉕ 보내기 전 재전송은 미보고가 있을 때만 5초(K26) ㉖ 카드 상태 판정 한 함수(K27) ㉗ "날짜 미정" 카드는 채팅 등록·고치기 카드만(K28) ㉘ 종일 일정 값 비교의 끝 날짜 읽기는 EDIT-sim ⑫로 확인(U2) ㉙ EDIT-sim ⑪ⓓ는 표식까지 지워야 "확인 불가"가 재현된다(K29). 플랜 리뷰(Codex·Fable, 2026-10-10) 반영: ㉚ 동시 고치기는 결과 일관성 가드(끝이 시작과 맞지 않으면 최고 버전 길이) + 전송 중 버튼 끔, 예상 버전 검사는 두지 않는다(K30) ㉛ 고치기 카드는 턴의 `editPid`(같은 카드의 되묻기가 만든 새 버전)를 따라간다(K31) ㉜ 모델의 `edit.end`는 사용자가 끝을 말했을 때만(K32) ㉝ 답 카드의 `update_event`는 fact 버전 조회로 실제 버전·식별자를 읽는다(K33) ㉞ 고친 일정의 [캘린더에 추가]는 일정 답 카드와 같은 확인창 경로, 바꾼 뒤 지운 일정은 다시 추가(K34).
 ```
 
 - [ ] **Step 4: 0.15.0 계획에 `B15` 문단**
@@ -351,7 +351,7 @@ Expected: 해시 한 줄 — 이것이 `B15`. 메인에게 보고에 적는다(0
   - `chat_edit_state(p_user uuid, p_proposal uuid, p_lock boolean, p_edit boolean) returns table (status text, fact_id uuid, item_id uuid, top_id uuid, top_version int, top_action text, top_status text, top_payload jsonb)` — 상태 `ok`·`not_found`·`expired`·`multi`.
   - `chat_edit_apply(p_user uuid, p_fact uuid, p_patch jsonb, p_clear text[]) returns jsonb` — `{status: "ok"|"no_change", proposal_id, version, action, before: {title,start,end,location}, after: {…}}`.
   - `chat_edit_target(p_user uuid, p_proposal uuid) returns jsonb` — `{status}` 또는 `{status:"ok", proposal_id, action, title, start, end, location}`.
-  - `chat_edit_proposal(p_user uuid, p_proposal uuid, p_patch jsonb, p_clear text[]) returns jsonb` — apply 결과 또는 `{status: "expired"|"not_found"|"multi"}`. 예외 메시지 `bad_patch`·`bad_clear`.
+  - `chat_edit_proposal(p_user uuid, p_proposal uuid, p_patch jsonb, p_clear text[]) returns jsonb` — apply 결과 또는 `{status: "expired"|"not_found"|"multi"}`. 예외 메시지 `bad_patch`(빈 patch는 `p_clear`가 있을 때만 받는다 — K6)·`bad_clear`.
   - 도우미 `chat_edit_day(text) → date`, `chat_edit_ts(text) → timestamptz`, `chat_edit_iso(timestamptz) → text`(서울 `+09:00`), `chat_edit_values(jsonb) → jsonb`(네 칸), `chat_edit_moved(p_start text, p_end text, p_new text) → jsonb {start, end}`(E2가 쓴다).
   - `chat_proposals(p_user uuid, p_items uuid[])` — 시그니처 그대로, fact별 최고 버전이 `proposed`·`succeeded`일 때만.
 
@@ -531,6 +531,16 @@ export const EDIT_CASES: EditCase[] = [
     const r = await edit(c, s.props[0], { title: "합성 미팅" });
     assertEquals([r.status, r.proposal_id, r.version], ["no_change", s.props[0], 1]);
     assertEquals((await versions(c, s.facts[0])).length, 1);
+  } },
+  { name: "empty patch with confirmed codes (\"오후 6시 맞아\", K6): a new version that only drops the code; a code no longer in uncertain → no_change", run: async (c) => {
+    const s = await seed(c, "ec", [{ title: "합성 저녁", start: await at(c, 2, "18:00"), uncertain: ["ampm", "tz"] }]);
+    const r = await edit(c, s.props[0], {}, ["ampm"]);
+    assertEquals([r.status, r.version, r.action, r.after.start], ["ok", 2, "create_event", await at(c, 2, "18:00")]);
+    assertEquals(r.before, r.after);                                                                       // 값은 그대로
+    const v = await versions(c, s.facts[0]);
+    assertEquals([v[0].status, v[1].payload.uncertain], ["stale", ["tz"]]);
+    const n = await edit(c, r.proposal_id, {}, ["ampm"]);                                                  // 이미 풀린 코드 — 새 행 없음
+    assertEquals([n.status, n.version, (await versions(c, s.facts[0])).length], ["no_change", 2, 2]);
   } },
   { name: "p_clear removes only the listed codes (date gone; ampm, year, tz kept); an empty clear keeps all", run: async (c) => {
     const s = await seed(c, "cl", [{ title: "합성 미팅", start: await at(c, 2, "06:00"), uncertain: ["date", "ampm", "year", "tz"] }]);
@@ -896,11 +906,14 @@ begin
   return jsonb_build_object('status', 'ok', 'proposal_id', s.top_id, 'action', s.top_action) || chat_edit_values(s.top_payload);
 end $$;
 
--- ── B 서버 5: 고치기(chat 함수, service role, 한 트랜잭션). 잠근 뒤 1의 검사를 다시 하고(그 사이 추가·무시·다른 고치기) 새 버전 규칙 ──
+-- ── B 서버 5: 고치기(chat 함수, service role, 한 트랜잭션). 잠근 뒤 1의 검사를 다시 하고(그 사이 추가·무시·다른 고치기) 새 버전 규칙.
+--    p_patch 가 비어 있으면 p_clear 의 코드만 지운다(값이 같고 확인 코드만 있는 글 — 그 코드가 이미 없으면 apply 가 no_change) ──
 create function chat_edit_proposal(p_user uuid, p_proposal uuid, p_patch jsonb, p_clear text[]) returns jsonb language plpgsql set search_path = public as $$
 declare s record;
 begin
-  if p_patch is null or jsonb_typeof(p_patch) <> 'object' or p_patch = '{}'::jsonb
+  -- 빈 patch 는 확인 코드(p_clear)가 있을 때만 — 값은 그대로이고 이번 글이 확인한 코드만 지우는 고치기("오후 6시 맞아", 계획 K6)
+  if p_patch is null or jsonb_typeof(p_patch) <> 'object'
+     or (p_patch = '{}'::jsonb and cardinality(coalesce(p_clear, '{}'::text[])) = 0)
      or exists (select 1 from jsonb_each(p_patch) e
                 where e.key not in ('title', 'start', 'end', 'location')
                    or jsonb_typeof(e.value) not in ('string', 'null')
@@ -934,7 +947,7 @@ revoke execute on function chat_edit_day(text), chat_edit_ts(text), chat_edit_is
 - [ ] **Step 4: 통과 확인**
 
 Run: `deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/edit-sql.test.ts && deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/proposals-source-sql.test.ts && deno check supabase/tests/edit-db.test.ts && grep -n '_testenv' supabase/tests/edit-sql.test.ts supabase/tests/_edit-sql.ts`
-Expected: `edit-sql` 사례 19개 통과(결과 일관성 가드 사례 포함), 0031 사례 회귀 없음, `edit-db` 타입 오류 없음(실행은 D1), grep 0줄. PGlite가 `set local role authenticated` 안에서 `report_execution`(security definer)을 부르지 못하면(U6) 그 사례 오류 메시지를 보고 메인에게 — 사례를 지우지 않는다.
+Expected: `edit-sql` 사례 20개 통과(결과 일관성 가드·확인 코드만 푸는 사례 포함), 0031 사례 회귀 없음, `edit-db` 타입 오류 없음(실행은 D1), grep 0줄. PGlite가 `set local role authenticated` 안에서 `report_execution`(security definer)을 부르지 못하면(U6) 그 사례 오류 메시지를 보고 메인에게 — 사례를 지우지 않는다.
 
 - [ ] **Step 5: 커밋**
 
@@ -1071,7 +1084,7 @@ export const resolve = (c: ECtx, pid: string, code: string, value: string, user 
 - [ ] **Step 2: 실패 확인**
 
 Run: `deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/edit-sql.test.ts 2>&1 | grep -E "resolve|FAILED|passed" | tail -14`
-Expected: `resolve …` 사례 10개 FAIL(`function resolve_uncertain(uuid, text, text) does not exist`), E1 사례 19개 통과.
+Expected: `resolve …` 사례 10개 FAIL(`function resolve_uncertain(uuid, text, text) does not exist`), E1 사례 20개 통과.
 
 - [ ] **Step 3: 함수 작성**
 
@@ -1139,7 +1152,7 @@ grant execute on function resolve_uncertain(uuid, text, text) to authenticated;
 - [ ] **Step 4: 통과 확인**
 
 Run: `deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/edit-sql.test.ts && deno check supabase/tests/edit-db.test.ts`
-Expected: 사례 29개 통과(E1 19 + E2 10). PGlite가 정의자 함수 안 내부 호출·역할 전환을 Supabase와 다르게 다뤄 실패하면(U6) 사례를 지우거나 건너뛰지 말고 오류 메시지를 메인에게 알린다 — 그 사례는 D1 Step 3 호스팅 테스트로 판정한다.
+Expected: 사례 30개 통과(E1 20 + E2 10). PGlite가 정의자 함수 안 내부 호출·역할 전환을 Supabase와 다르게 다뤄 실패하면(U6) 사례를 지우거나 건너뛰지 말고 오류 메시지를 메인에게 알린다 — 그 사례는 D1 Step 3 호스팅 테스트로 판정한다.
 
 - [ ] **Step 5: 커밋**
 
@@ -1576,11 +1589,20 @@ Deno.test("edit with a target that is not ok: filter gets no block; edit_event a
     assertEquals([seen.editArg[0], seen.apply.length, j.edit], [{ registered: null }, 0, { status, before: null, after: null, proposal_id: null, action: null }]);
   }
 });
-Deno.test("no_change: nothing left after revalidation → no RPC; before = after = current values, the current top id and action", async () => {
+Deno.test("no_change: nothing left after revalidation and no confirmed code → no RPC; before = after = current values, the current top id and action", async () => {
   const { d, seen } = edeps({ edit: { start: "2026-10-10T11:00:00+09:00", end: null, title: "합성 치과 예약", location: null } });
   const j = await (await handleChat(req({ question: "11시 맞아", intents: ALL, edit_target: PID }), d)).json();
   const v = (T_OK as { values: EventValues }).values;
   assertEquals([seen.apply.length, j.edit], [0, { status: "no_change", before: v, after: v, proposal_id: "p1", action: "create_event" }]);
+});
+Deno.test("same values with an am/pm marker (\"오후 6시 맞아\", K6): empty patch and the confirmed code go to the RPC; edit ok with before = after", async () => {
+  const six: EventValues = { title: "합성 저녁", start: "2026-10-14T18:00:00+09:00", end: null, location: null };
+  const { d, seen } = edeps({ target: { status: "ok", proposal_id: "p1", action: "create_event", values: six },
+    edit: { start: "2026-10-14T18:00:00+09:00", end: null, title: null, location: null },
+    apply: { status: "ok", proposal_id: "p2", action: "create_event", before: six, after: six } });
+  const j = await (await handleChat(req({ question: "오후 6시 맞아", intents: ALL, edit_target: PID }), d)).json();
+  assertEquals(seen.apply, [{ patch: {}, clear: ["ampm"] }]);
+  assertEquals([j.edit.status, j.edit.proposal_id, j.edit.before, j.edit.after], ["ok", "p2", six, six]);
 });
 Deno.test("edit race: the RPC re-checks and returns expired → response expired with null values", async () => {
   const { d } = edeps({ edit: { start: null, end: null, title: "합성 회의", location: null }, apply: { status: "expired" } });
@@ -1794,7 +1816,8 @@ export function actionResult(intent: ActionIntent, mail: MailFields | null, mail
     model: null, schedule: null, intent, mail: intent === "mail_action" ? mail : null, mail_read: intent === "mail_summary" ? mailRead : null, edit: null };
 }
 
-// 방금 등록한 일정 고치기(스펙 §9 B 서버 3~6): 대상이 ok 가 아니면 그 상태로(쓰기 없음). 재검증 뒤 바뀐 칸이 없으면 no_change(RPC 없음, 계획 K6).
+// 방금 등록한 일정 고치기(스펙 §9 B 서버 3~6): 대상이 ok 가 아니면 그 상태로(쓰기 없음). 재검증 뒤 바뀐 칸도 이번 글이 확인한 코드도 없으면
+// no_change(RPC 없음). 바뀐 칸이 없어도 확인 코드가 있으면 빈 patch 로 RPC — 코드만 지우는 새 버전("오후 6시 맞아", 계획 K6 — 메인 판정 (B)).
 // 지울 uncertain 코드는 이번 글 기준(H3 후속). before·after 는 RPC 가 잠근 뒤 읽은 값. fields·marker 는 로그용(값 없음)
 export async function runEdit(userId: string, message: string, deps: ChatDeps, target: EditTargetRead, raw: EditRaw | null):
   Promise<{ edit: EditResult; fields: string[]; marker: boolean }> {
@@ -1804,10 +1827,11 @@ export async function runEdit(userId: string, message: string, deps: ChatDeps, t
   if (target.status !== "ok") return empty(target.status);
   const r = revalidate(target.values, raw);
   const fields = Object.keys(r.patch);
-  if (fields.length === 0) {
+  const clear = confirmedCodes(target.values, r, message);
+  if (fields.length === 0 && clear.length === 0) {
     return { edit: { status: "no_change", before: target.values, after: target.values, proposal_id: target.proposal_id, action: target.action }, fields, marker };
   }
-  const a = await deps.editApply(userId, target.proposal_id, r.patch, confirmedCodes(target.values, r, message));
+  const a = await deps.editApply(userId, target.proposal_id, r.patch, clear);       // 그 코드가 이미 풀렸으면 RPC 가 no_change
   if (a.status === "ok" || a.status === "no_change") {
     return { edit: { status: a.status, before: a.before, after: a.after, proposal_id: a.proposal_id, action: a.action }, fields, marker };
   }
@@ -1883,14 +1907,14 @@ export async function answerQuestion(userId: string, question: string, deps: Cha
 - [ ] **Step 6: 통과 확인**
 
 Run: `deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/chat-edit.test.ts supabase/tests/chat.test.ts supabase/tests/intent-eval.test.ts supabase/tests/query-vector.test.ts && deno check supabase/functions/chat/index.ts supabase/scripts/*.ts supabase/tests/*.ts`
-Expected: `chat-edit` 사례 30개(E3 16 + E4 14) 통과, `chat.test.ts` 회귀 없음(0.12.0 고정 해시 사례 포함 — `LIVE_LLM` 사례는 ignored), `intent-eval` 판정 테스트 통과, 타입 오류 없음(`chat-db.test.ts`의 `{ ...real, … }`는 새 칸을 `real`에서 받는다).
+Expected: `chat-edit` 사례 31개(E3 16 + E4 15) 통과, `chat.test.ts` 회귀 없음(0.12.0 고정 해시 사례 포함 — `LIVE_LLM` 사례는 ignored), `intent-eval` 판정 테스트 통과, 타입 오류 없음(`chat-db.test.ts`의 `{ ...real, … }`는 새 칸을 `real`에서 받는다).
 
 - [ ] **Step 7: 게이트 기록**
 
 `docs/superpowers/phase1/gates.md` 표 끝에 행을 더한다(근거 칸은 실제 출력 수치로):
 
 ```markdown
-| EDIT-server | 0.16.0 chat 고치기·0033(로컬): ① chat — edit_target 무시 조건·0.15.0 요청 바이트 동일(고정 해시)·enum 다섯 값·edit 칸·<registered> 블록(대상 ok 일 때만, 꺾쇠 치환)·재검증·no_change·대상 상태별 응답·로그 값 없음·사용량 chat 한 줄 ② SQL(PGlite) 새 버전 규칙·결과 일관성 가드·늦은 보고·30분 경계·not_found·multi·감사·chat_proposals 최고 버전·권한 ③ resolve_uncertain | 대기 | 로컬 통과: chat-edit 30/30, edit-sql 29/29(E1·E2), chat.test 회귀 0. 호스팅 트랜잭션·동시 고치기는 0.16.0 D1 Step 3 | | 2026-10-0x |
+| EDIT-server | 0.16.0 chat 고치기·0033(로컬): ① chat — edit_target 무시 조건·0.15.0 요청 바이트 동일(고정 해시)·enum 다섯 값·edit 칸·<registered> 블록(대상 ok 일 때만, 꺾쇠 치환)·재검증·no_change·대상 상태별 응답·로그 값 없음·사용량 chat 한 줄 ② SQL(PGlite) 새 버전 규칙·결과 일관성 가드·늦은 보고·30분 경계·not_found·multi·감사·chat_proposals 최고 버전·권한 ③ resolve_uncertain | 대기 | 로컬 통과: chat-edit 31/31, edit-sql 30/30(E1·E2), chat.test 회귀 0. 호스팅 트랜잭션·동시 고치기는 0.16.0 D1 Step 3 | | 2026-10-0x |
 ```
 
 - [ ] **Step 8: 커밋**
@@ -2219,7 +2243,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `ChatReply.Proposal`·`JSONValue`·`ProposalTiming`·`ProposalReview.place`·`ProposalFlow.conflictCount`·`ScheduleCard.span`·`ScheduleCard.statusText`(기존).
 - Produces:
-  - `ChatEdit.intent = "edit_event"`, `isEdit(_:)`, `Values(title:start:end:location:)`·`Values.init?(_ v: JSONValue?)`, `Response { status, before, after, proposal_id, action }`, `whenText(start:end:) -> String`, `lineBody(title:start:end:) -> String`, `registeredPrefix = "등록함: "`·`editedPrefix = "고침: "`, `contextLine(_ r: Response?) -> String?`, `diffLines(_ r: Response) -> [String]`, `oneLine(_ status: String) -> String?`, `query(proposalID:) -> String`, `decodeFact(_ data: Data) -> FactVersions?`, `changeFeedback(_ outcome: String) -> (text: String, retry: Bool)`.
+  - `ChatEdit.intent = "edit_event"`, `isEdit(_:)`, `Values(title:start:end:location:)`·`Values.init?(_ v: JSONValue?)`, `Response { status, before, after, proposal_id, action }`, `whenText(start:end:) -> String`, `headerText(_ r: Response) -> String`, `lineBody(title:start:end:) -> String`, `registeredPrefix = "등록함: "`·`editedPrefix = "고침: "`, `contextLine(_ r: Response?) -> String?`, `diffLines(_ r: Response) -> [String]`, `oneLine(_ status: String) -> String?`, `query(proposalID:) -> String`, `decodeFact(_ data: Data) -> FactVersions?`, `changeFeedback(_ outcome: String) -> (text: String, retry: Bool)`.
   - `ChatEditText`(스펙 B 앱 표 문구 전부 + `conflictLine(_:)`).
   - `ProposalVersion { id, action, status, version, payload, eventkitID }` + `title`·`start`·`end`·`location`·`displayTitle`·`uncertain`·`before`·`basePID`·`values`·`proposal(itemID:)`, `FactVersions { itemID, ordinal, versions }` + `top`·`contains(_:)`.
   - `ChatHistory.Kind.editEvent`, `Record.proposalIDs: [String]?`, `Record.contextLine: String?`, `Record.editPid: String?`, `ChatHistory.context(_:now:)`(등록·고치기 턴 포함), `ChatHistory.editTarget(_:now:) -> String?`, `ChatHistory.rewriteContext(_:factVersions:line:) -> [Record]?`, `ChatHistory.editSubject(_:) -> String?`.
@@ -2264,6 +2288,14 @@ final class ChatEditTests: XCTestCase {
     XCTAssertEqual(ChatEdit.oneLine("not_found"), "고칠 일정을 찾지 못했어요.")
     XCTAssertNil(ChatEdit.oneLine("ok"))
     XCTAssertEqual(ChatEditText.expired, "등록한 지 30분이 지나 채팅으로는 고칠 수 없어요. 캘린더에서 직접 고치거나 새로 등록해 주세요.")
+  }
+  /// 값은 그대로이고 확인 코드만 풀린 ok(스펙 B 서버 4 — "오후 6시 맞아", 계획 K6): 머리 "확인했어요", 전 → 후 줄 없음, 맥락 줄은 그대로 "고침:"
+  func testHeaderSaysConfirmedWhenOnlyCodesWereCleared() throws {
+    XCTAssertEqual(ChatEdit.headerText(try resp(okJSON)), "일정을 고쳤어요")
+    let same = try resp(#"{"status":"ok","proposal_id":"p2","action":"create_event","before":{"title":"합성 저녁","start":"2026-10-14T18:00:00+09:00","end":null,"location":null},"after":{"title":"합성 저녁","start":"2026-10-14T18:00:00+09:00","end":null,"location":null}}"#)
+    XCTAssertEqual([ChatEdit.headerText(same), ChatEditText.confirmedOnly], ["확인했어요", "확인했어요"])
+    XCTAssertEqual(ChatEdit.diffLines(same), [])
+    XCTAssertEqual(ChatEdit.contextLine(same), "고침: 합성 저녁 · 10/14(수) 18:00")
   }
   func testQueryAndDecodeFactKeepAllVersionsAscending() throws {
     XCTAssertEqual(ChatEdit.query(proposalID: "p2"), "rest/v1/proposals?id=eq.p2&select=id,facts(item_id,ordinal,proposals(id,action,status,version,payload,eventkit_id))")
@@ -2436,6 +2468,8 @@ public enum ChatEdit {
     if placeText(b.location) != placeText(a.location) { out.append("장소 \(placeText(b.location)) → \(placeText(a.location))") }
     return out
   }
+  /// 카드 머리(스펙 B 앱): 바뀐 칸이 있으면 "일정을 고쳤어요", 값은 그대로이고 이번 글이 확인한 코드만 풀렸으면(B 서버 4 — "오후 6시 맞아") "확인했어요"
+  public static func headerText(_ r: Response) -> String { diffLines(r).isEmpty ? ChatEditText.confirmedOnly : ChatEditText.header }
 
   /// 맥락 줄(스펙 A): 본문 "제목 · 시각", 앞말은 턴 종류("등록함: "·"고침: ")
   public static let registeredPrefix = "등록함: ", editedPrefix = "고침: "
@@ -2488,6 +2522,7 @@ public enum ChatEdit {
 /// 고치기 카드·상태 문구(스펙 §9 B 앱 표·§10 결과). 후보를 바꾸면 이 파일과 그 테스트만 고친다
 public enum ChatEditText {
   public static let header = "일정을 고쳤어요"
+  public static let confirmedOnly = "확인했어요"                // 값은 그대로, 확인 코드만 풀림(계획 K6)
   public static let expired = "등록한 지 30분이 지나 채팅으로는 고칠 수 없어요. 캘린더에서 직접 고치거나 새로 등록해 주세요."
   public static let multi = "여러 일정을 함께 등록한 글은 채팅으로 고칠 수 없어요. 캘린더에서 직접 고쳐 주세요."
   public static let notFound = "고칠 일정을 찾지 못했어요."
@@ -4062,12 +4097,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 import SwiftUI
 import EruriCore
 
-/// 고친 일정 카드의 머리(스펙 §9 B 앱): "일정을 고쳤어요" + 바뀐 칸만 "전 → 후"
+/// 고친 일정 카드의 머리(스펙 §9 B 앱): "일정을 고쳤어요"(값이 같고 확인 코드만 풀렸으면 "확인했어요" — ChatEdit.headerText) + 바뀐 칸만 "전 → 후"
 struct EditHeaderView: View {
+  let header: String
   let diff: [String]
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
-      Text(ChatEditText.header).font(.subheadline).bold().accessibilityIdentifier("edit-header")
+      Text(header).font(.subheadline).bold().accessibilityIdentifier("edit-header")
       ForEach(diff, id: \.self) { Text($0).font(.caption).accessibilityIdentifier("edit-diff") }
     }
   }
@@ -4330,7 +4366,7 @@ extension Optional where Wrapped == ChatView.EditState {
     if let e = a.edit, let one = ChatEdit.oneLine(e.status) {
       Text(one).font(.subheadline).accessibilityIdentifier("edit-oneline")
     } else if let e = a.edit {
-      EditHeaderView(diff: ChatEdit.diffLines(e))
+      EditHeaderView(header: ChatEdit.headerText(e), diff: ChatEdit.diffLines(e))
       entryRows(t)
     } else {
       Text(ChatHistoryText.unreadableReply).foregroundStyle(.red)
@@ -4891,7 +4927,7 @@ Expected: 0 실패(호스팅 DB 사례 포함 — 테스트 사용자 행만), �
 - [ ] **Step 3: 호스팅 트랜잭션 SQL 테스트 → `0033` 적용**
 
 Run: `EDIT_DB_TEST=1 deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/edit-db.test.ts`
-Expected: `0033 applied in the rolled-back transaction`, 사례 29개 `ok` 줄(E1 19 + E2 10 — PGlite에서 판정을 미룬 권한·정의자 사례 포함), 동시 사례는 `skip: 0033 not applied yet`. 호스팅 `items` 직접 insert가 트리거·제약으로 막히면 `_edit-sql.ts` `seed`를 `insert_item` RPC로 바꾸고(같은 칸) PGlite 테스트도 다시 돌린 뒤 진행한다.
+Expected: `0033 applied in the rolled-back transaction`, 사례 30개 `ok` 줄(E1 20 + E2 10 — PGlite에서 판정을 미룬 권한·정의자 사례 포함), 동시 사례는 `skip: 0033 not applied yet`. 호스팅 `items` 직접 insert가 트리거·제약으로 막히면 `_edit-sql.ts` `seed`를 `insert_item` RPC로 바꾸고(같은 칸) PGlite 테스트도 다시 돌린 뒤 진행한다.
 
 Run: `git mv supabase/migrations-pending/0033_chat_edit.sql supabase/migrations/ && sed -i '' 's#"../migrations-pending/0033_chat_edit.sql"#"../migrations/0033_chat_edit.sql"#' supabase/tests/_edit-sql.ts && rmdir supabase/migrations-pending 2>/dev/null; git status --short`
 Expected: `R …/0033_chat_edit.sql`·`M supabase/tests/_edit-sql.ts`만.
@@ -4900,7 +4936,7 @@ Run: `supabase db push --dry-run`
 Expected: 적용 대상이 `0033_chat_edit.sql` **하나뿐**. 아니면 push하지 않고 멈춘다.
 
 Run: `supabase db push --yes && EDIT_DB_TEST=1 deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/edit-db.test.ts supabase/tests/edit-sql.test.ts supabase/tests/proposals-source-sql.test.ts supabase/tests/proposals-review-db.test.ts`
-Expected: 적용 성공, `0033 already applied` + 사례 29개, **동시 사례 통과**(B가 `lock timeout`, version 1·2뿐, 정리 후 그 항목 없음), 0021·0031 회귀 없음. 0033은 함수만 더하고 `chat_proposals`를 최고 버전만으로 바꾼다 — 배포된 0.15.0 chat은 `chat_proposals`를 그대로 부르므로 이 시점부터 채팅 답 카드가 옛·새 버전 두 장이 되지 않는다(아직 고친 제안이 없으므로 결과는 같다). 아래 배포가 실패해도 0033은 되돌리지 않는다.
+Expected: 적용 성공, `0033 already applied` + 사례 30개, **동시 사례 통과**(B가 `lock timeout`, version 1·2뿐, 정리 후 그 항목 없음), 0021·0031 회귀 없음. 0033은 함수만 더하고 `chat_proposals`를 최고 버전만으로 바꾼다 — 배포된 0.15.0 chat은 `chat_proposals`를 그대로 부르므로 이 시점부터 채팅 답 카드가 옛·새 버전 두 장이 되지 않는다(아직 고친 제안이 없으므로 결과는 같다). 아래 배포가 실패해도 0033은 되돌리지 않는다.
 
 ```bash
 git add supabase/migrations/0033_chat_edit.sql supabase/tests/_edit-sql.ts
@@ -5033,7 +5069,7 @@ Expected: 단계 6줄 모두 `"ok":true`, 마지막 `"gate":"pass"`, `left 0`. �
 
 - [ ] **Step 7: 기록·커밋**
 
-`gates.md`의 `EDIT-server` 행 상태를 **통과**로, 근거 칸에 `호스팅: edit-db 29/29 + 동시 고치기(lock timeout, version 1·2), 0033 적용 <시각>`을 덧붙이고, 행을 더한다:
+`gates.md`의 `EDIT-server` 행 상태를 **통과**로, 근거 칸에 `호스팅: edit-db 30/30 + 동시 고치기(lock timeout, version 1·2), 0033 적용 <시각>`을 덧붙이고, 행을 더한다:
 
 ```markdown
 | EDIT-deploy | 0.16.0 배포(0033 → chat[→ worker]): 배포 경로 ingest → 추출 → /chat edit_event → 버전 규칙(테스트 사용자 22) — 추가 전 v2 create·v1 stale·fact 날짜, 보고 뒤 v3 update(before·base·eventkit_id), edit_target 없음 → 고치기 아님, 30분 지남 → 쓰기 없음, resolve 가드 + 회귀(smoke-chat ×2·smoke-intent[·smoke-process·LNK-eval]) | 통과 | <시각>, 배포 HEAD <해시>(chat v<n>), smoke-edit 6/6, 남은 행 0 | <커밋> | <날짜> |
@@ -5363,6 +5399,7 @@ import XCTest
     launch(); ask(ProcessInfo.processInfo.environment["GATE_TEXT"] ?? "3시로 바꿔줘")
     _ = first("edit-header", 60); sleep(3)
     report("SAY")
+    log("SAYH confirmedOnly=\(waitLabel("edit-header", "확인했어요", 1)) diff=\(id("edit-diff").count)")   // 고정 문구·개수만
   }
   /// 말 없이 화면만(주입·시드한 카드, ⑩ 경합·⑪ⓓ)
   func testLook() { launch(); sleep(8); report("LOOK") }
@@ -5485,6 +5522,8 @@ $S reg c9n "{\"facts\":[[{\"payload\":{\"title\":\"합성 미정\",\"start\":nul
 $S reg c9y "{\"facts\":[[{\"payload\":{\"title\":\"합성 내후년\",\"start\":\"2028-03-02T10:00:00+09:00\",\"uncertain\":[\"date\",\"year\"]}}]]}"; $G/inject.sh reg:c9y; $G/drive.sh $T/test09b_date
 $S reg c9e "{\"facts\":[[{\"payload\":{\"title\":\"합성 끝모호\",\"start\":\"$(D 5)T10:00:00+09:00\",\"end\":\"$(D 5)T12:00:00+09:00\",\"uncertain\":[\"end\"]}}]]}"; $G/inject.sh reg:c9e; $G/drive.sh $T/test09c_endOnly
 $S reg c9h "{\"facts\":[[{\"payload\":{\"title\":\"합성 새벽\",\"start\":\"$(D 3)T06:00:00+09:00\",\"uncertain\":[\"ampm\"]}}]]}"; $G/inject.sh reg:c9h; say "앗 내일이야"; tap ask-pm; tap scheduleCard.add; CAL '{"op":"count","title":"합성 새벽"}'
+# ⑨ 표지만 말함(K6 — 메인 판정 (B)): 18:00 + ampm 확인 필요 → "오후 6시 맞아" → 코드만 지운 새 버전("확인했어요", 되묻기 없음) → [캘린더에 추가] → 1건
+$S reg c9m "{\"facts\":[[{\"payload\":{\"title\":\"합성 맞아\",\"start\":\"$(D 3)T18:00:00+09:00\",\"uncertain\":[\"ampm\"]}}]]}"; $G/inject.sh reg:c9m; say "오후 6시 맞아"; tap scheduleCard.add; CAL '{"op":"count","title":"합성 맞아"}'; $S status c9m
 # ⑩ 보고 지연(H1): 훅 켬 → 등록·추가 → 고치기 → "고치기 전 일정" → 바꾸기 → 1건·표식 v2. 훅 끔 → 활성화 → v1 stale·v2 succeeded
 $G/inject.sh none; CAL '{"op":"hook","on":true}'; reg "합성 회의 모레 11:00–12:00 등록해줘"; say "내일이야"; tap edit-change; CAL '{"op":"count","title":"합성 회의"}'
 CAL '{"op":"hook","on":false}'; xcrun simctl launch "$(cat $G/udid)" com.picpal.eruri >/dev/null; sleep 15; $S status-item
@@ -5528,6 +5567,7 @@ E9 year=true/true ampm=true/true loc=true/true registered>=1 / cal count=1 start
 E9d question=true applied=true addable=true noYearAfter=true (c9d) / undated>=1 (c9n) → count=1 allDay=true / noYearAfter=true (c9y)
 E9e review=true ask=0
 c9h: SAY am>=1 change=0 → TAP ask-pm=true → TAP scheduleCard.add=true → count=1 start 18:00(내일)
+c9m: SAY am=0 / SAYH confirmedOnly=true diff=0 → TAP scheduleCard.add=true → count=1 start 18:00 / status c9m 1:create_event:stale,2:create_event:succeeded
 ⑩ SAY lineage=true change=1 → TAP edit-change=true → count=1 start 내일 marker≠v1 / status-item 1:create_event:stale,2:create_event:succeeded (알림 없음 — DiagLog "report stale")
 ⑩ 경합 LOOK lineage=true change=1 / TAB found=true lineageText=true / cal count=1 (합성 경합)
 ⑪ a: SAY modified=true count=1 / b: SAY modified=true count=1 / c: SAY deleted=true add=1 count=0 / d: LOOK unknown=true change=0 add=0 count=1
@@ -5596,7 +5636,7 @@ B6 brief=1 open>=3 missing=0 prompt>=1
 통과면 `ios/project.yml`의 `MARKETING_VERSION: 0.15.0`을 `0.16.0`으로 바꾸고, `gates.md`에 행 둘을 더한다:
 
 ```markdown
-| EDIT-sim | 0.16.0 시뮬레이터(테스트 사용자 23, 배포 chat·0033, 전용 UDID): ① 추가 전 고치기·전 → 후·1건 ② 바꾸기 같은 식별자·표식 이동 ③ 손댄 일정 안내 ④ 지운 일정 + [캘린더에 추가](겹치면 확인창 뒤 추가) ⑤ [겹쳐도 바꾸기] ⑥ 한 줄 상태 넷 ⑦ 맥락 줄(단위 테스트 + ctx n) ⑧ 재실행·다시 고친 카드 ⑨ 되묻기 year→ampm→location 한 탭 추가·date·시작 없음·date+year·end 문구·말로 고친 뒤 ampm ⑩ 보고 지연 → 고치기 전 일정 → 바꾸기 1건·늦은 stale 알림 없음·옛 버전 경합 ⑪ⓐⓑⓒⓓ ⑫ 종일 제목만(1일·2일) | 통과 | <시각>, HEAD <해시>, 시뮬레이터 ERURI gate0160, expected 일치 <n>줄, 정리 items <n>·events <n> | <커밋> | <날짜> |
+| EDIT-sim | 0.16.0 시뮬레이터(테스트 사용자 23, 배포 chat·0033, 전용 UDID): ① 추가 전 고치기·전 → 후·1건 ② 바꾸기 같은 식별자·표식 이동 ③ 손댄 일정 안내 ④ 지운 일정 + [캘린더에 추가](겹치면 확인창 뒤 추가) ⑤ [겹쳐도 바꾸기] ⑥ 한 줄 상태 넷 ⑦ 맥락 줄(단위 테스트 + ctx n) ⑧ 재실행·다시 고친 카드 ⑨ 되묻기 year→ampm→location 한 탭 추가·date·시작 없음·date+year·end 문구·말로 고친 뒤 ampm·표지만 말함("확인했어요") ⑩ 보고 지연 → 고치기 전 일정 → 바꾸기 1건·늦은 stale 알림 없음·옛 버전 경합 ⑪ⓐⓑⓒⓓ ⑫ 종일 제목만(1일·2일) | 통과 | <시각>, HEAD <해시>, 시뮬레이터 ERURI gate0160, expected 일치 <n>줄, 정리 items <n>·events <n> | <커밋> | <날짜> |
 | BRIEF-sim | 0.16.0 기간 브리핑(주입 답 + 시드 제안 + 시뮬레이터 캘린더): 한 목록(합친 줄·캘린더 줄 탭 없음·미반영 꼬리)·없는 일정 2건 → 추가로 1건·0건·찾지 못한 일정 1건(N 밖)·항목 상세 열기·하루 질문은 카드·전체 접근 없음 | 통과 | <시각>, B1~B6 | <커밋> | <날짜> |
 ```
 
@@ -5684,7 +5724,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **4. Review Focus** — 다섯 줄 모두 소유 태스크에 테스트가 있다: ① E4 `registeredBlock escapes tags…`·`filterRequest with edit: … only when the target is ok` ② E3 `when: offset forms…`·`revalidate: unreadable values…`, E5 `start_no_offset` 코드 ③ P4 `testSameAppointmentFromTwoSourcesIsOneLine` ④ P2 `testChangeDoneWhenNewMarkerExists`, P5 게이트 순서(기록 → 새 표식) ⑤ P3 `testAmpmChoicesUseSeoulForAUTCDevice`·P4 `testAllDayInAnotherZoneStaysOnItsSeoulDay`·P2 `testAllDayUserModifiedUsesSeoulDays`.
 
-**5. 계획 작성 중 실측(스크래치 — 저장소 밖, 2026-10-09)** — 이 계획의 코드 블록을 그대로 꺼내 돌렸다: 0033(E1+E2) + `_edit-sql.ts` 사례 → PGlite **28/28**, `chat/edit.ts` + E4 고친 `filters`·`handler`·`deps` + `chat-edit.test.ts`·`chat.test.ts` → **88 통과**(0.15.0 바이트 동일 고정 해시 포함 — 이때 `chat.test.ts`의 응답 전체 비교 한 곳이 `edit: null` 때문에 깨져 E4 Step 2에 고칠 줄을 넣었다), `_edit-eval`·`eval-edit`·`intent-eval` → 타입 검사·**17 통과**. Swift(P1~P8)는 빌드하지 않았다(시뮬레이터 빌드는 실행 pane 몫) — 컴파일 위험은 리뷰 대상. **플랜 리뷰 반영 뒤(2026-10-10)**: 0033(E1+E2, 가드 포함) + `_edit-sql.ts` 사례를 같은 방식으로 꺼내 PGlite **29/29**, 가드 블록을 지우면 가드 사례만 실패(사례가 가드를 잰다). E4에 더한 사례(`edit ok, date only as EDIT_RULE asks …`)와 Swift 변경(P1 `editPid`·P2 `applied`·P3 `okProposalID`·P5·P6a·P6b·P8)은 손으로 추적만 했다 — 실행 pane이 각 태스크 테스트로 확인한다.
+**5. 계획 작성 중 실측(스크래치 — 저장소 밖, 2026-10-09)** — 이 계획의 코드 블록을 그대로 꺼내 돌렸다: 0033(E1+E2) + `_edit-sql.ts` 사례 → PGlite **28/28**, `chat/edit.ts` + E4 고친 `filters`·`handler`·`deps` + `chat-edit.test.ts`·`chat.test.ts` → **88 통과**(0.15.0 바이트 동일 고정 해시 포함 — 이때 `chat.test.ts`의 응답 전체 비교 한 곳이 `edit: null` 때문에 깨져 E4 Step 2에 고칠 줄을 넣었다), `_edit-eval`·`eval-edit`·`intent-eval` → 타입 검사·**17 통과**. Swift(P1~P8)는 빌드하지 않았다(시뮬레이터 빌드는 실행 pane 몫) — 컴파일 위험은 리뷰 대상. **플랜 리뷰 반영 뒤(2026-10-10)**: 0033(E1+E2, 가드·빈 patch 규칙 포함) + `_edit-sql.ts` 사례를 같은 방식으로 꺼내 PGlite **30/30**, 가드 블록을 지우면 가드 사례만, 빈 patch 조건을 옛 것으로 되돌리면 확인 코드 사례만 실패(사례가 그 규칙을 잰다). E4에 더한 사례 둘(`edit ok, date only as EDIT_RULE asks …`·`same values with an am/pm marker …`)과 Swift 변경(P1 `editPid`·`headerText`·P2 `applied`·P3 `okProposalID`·P5·P6a·P6b·P8)은 손으로 추적만 했다 — 실행 pane이 각 태스크 테스트로 확인한다.
 
 **실행 방식:** 태스크 사이 인터페이스(SQL 반환 모양 → chat 해석 → 앱 판정 → 앱 실행 경로 → 화면)가 촘촘하고 잘못 나가면 사용자 캘린더에 일정이 둘이 될 수 있어, AGENTS.md §2·memory "계획 리뷰: Codex → Fable → SDD" 그대로 **Subagent-driven**(태스크마다 새 서브 에이전트 + 리뷰, 끝에 전체 브랜치 리뷰)을 권한다.
 
@@ -5694,7 +5734,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 | # | 출처·심각도 | 지적 | 판정 | 반영 위치·이유 |
 |---|---|---|---|---|
-| C1 | Codex HIGH → Fable MED(부분) | 동시 수정으로 끝 < 시작 저장(E1 Step 3·E4 Step 5) | **부분 반영(대안)** | E1 `chat_edit_apply` 결과 일관성 가드(끝이 새 시작과 종류가 다르거나 시작 이전이면 최고 버전 길이로 — `revalidate`와 같은 규칙) + 사례 1(PGlite 29/29, 가드를 빼면 실패), P6a·P6b 전송 중(`busy`) 버튼 끔(K30). **미반영: 예상 버전 검사·`changed` 재검증** — 모델이 옛 `<registered>` 기준으로 낸 절대값이라 재검증해도 날짜 손실을 못 막고 새 상태·앱 문구·스펙 수정이 따른다. 1인·1기기에서 실제 경합은 전송 중 C 버튼뿐이고 그 경로는 버튼을 끄는 것으로 닫힌다. 호스팅 동시 사례(잠금)는 그대로 |
+| C1 | Codex HIGH → Fable MED(부분) | 동시 수정으로 끝 < 시작 저장(E1 Step 3·E4 Step 5) | **부분 반영(대안)** | E1 `chat_edit_apply` 결과 일관성 가드(끝이 새 시작과 종류가 다르거나 시작 이전이면 최고 버전 길이로 — `revalidate`와 같은 규칙) + 사례 1(PGlite 30/30, 가드를 빼면 실패), P6a·P6b 전송 중(`busy`) 버튼 끔(K30). **미반영: 예상 버전 검사·`changed` 재검증** — 모델이 옛 `<registered>` 기준으로 낸 절대값이라 재검증해도 날짜 손실을 못 막고 새 상태·앱 문구·스펙 수정이 따른다. 1인·1기기에서 실제 경합은 전송 중 C 버튼뿐이고 그 경로는 버튼을 끄는 것으로 닫힌다. 호스팅 동시 사례(잠금)는 그대로 |
 | C2 | Codex HIGH · Fable #1 HIGH | 고치기 카드가 되묻기 뒤 새 버전을 따라가지 않음(P6 Step 4·6, G1 c9h) | **반영** | P1 `Record.editPid`·`ChatHistory.editSubject`(+ 테스트 2), P3 `AskBack.okProposalID`(+ 테스트), P6a 응답 때 `editPid` 저장·`loadEditCard`·`readCalendar`가 `editSubject`로, P6b `resolveAsk` 성공 때 `editPid` 갱신(K31). G1 c9h 기대값 그대로(이제 통과해야 한다). E0 Step 2-4가 스펙 B 앱 표 아래에 "같은 카드의 버튼이 만든 버전은 따라간다"를 적는다 |
 | C3 | Codex MED · Fable #2 | 답 카드 `update_event`를 `version: 0`으로 실행·보고 → `changed` 알림 | **반영** | P6a `loadAnswerEdits`(답 카드 `update_event`마다 `ChatEdit.query` — 최대 3) → 실제 버전·`eventkit_id`로 `EditFlow.state`, 못 읽으면 줄 없음(K33). 0033 반환형 변경(drop + create·디코더)보다 작다. E0 Step 2-13 스펙 문장. P5 Step 1 U1 확인에 같은 조회 모양 추가(N4) |
 | C4 | Codex MED · Fable #3 | 삭제 뒤 [캘린더에 추가]가 `confirmed:false` 고정 → 겹침이면 영원히 추가 못 함 | **반영** | P6a `ConfirmAdd.checkLineage`·`readd` + `pressEdit .add` → `runAdd` 확인창 경로(확인창 "추가"도 같은 인자), P5 `CalendarLookup.confirmPrompt`(runAdd 안 계산을 옮김), P8 `editConfirm` 확인창(K34). Fable 안("항목 상세는 `ProposalActionsView` 확인 흐름 재사용")은 코드 확인 결과 그 뷰의 `add`가 `checkLineage`·`readd`를 넘기지 못해 `update_event` v2를 계보 확인이 막으므로 같은 모양의 확인창을 항목 상세에 둔다. G1 ④'(지운 뒤 새 구간에 겹치는 일정 → 확인창 → 1건) + UI 테스트 `testTapConfirm` |
@@ -5711,6 +5751,6 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 | N6 | Fable LOW(신규) | 전송 중에도 되묻기·바꾸기 버튼이 눌림 | **반영** | P6a `EditCardView(running: busy || …)`, P6b `AskBackRow(running: busy || …)`(C1과 함께 K30) |
 | N7 | Fable LOW(신규) | 컴파일 위험 ①~④ | **부분 반영** | ② 반영 — `private extension Optional<AddState>`의 `private` 제거(P7 `BriefingView.swift`가 `isFinished`를 쓴다, 코드 확인) + `failure` ③ 반영 — `CalendarLookup.lookup` 처음부터 `MainActor.assumeIsolated`. **① 미반영** — `ChatView.Turn`은 `Equatable`이 아니라(코드 확인) `CardEntry: Equatable`이 필요 없다(주석으로 남김) ④ 변경 없음(Fable도 문제 없음) |
 | N8 | Fable LOW(신규) | P6가 한 서브 에이전트 몫으로 큼 | **반영** | P6a(고치기 턴·답 카드·버튼·`runAdd`)·P6b(되묻기·`proposalIDs`·맥락 줄) 순차. `runAdd`·`priors(for:)`는 `pressEdit`이 써서 P6a로(Fable 안은 P6b). 태스크 표·순서·자체 점검 갱신 |
-| N9 | Fable LOW(스펙) | "오후 6시 맞아"(값 같고 표지 있음) → `no_change`인데 카드는 계속 오전·오후를 물음 | **미반영(사용자 결정 후보)** | 스펙 B 서버 4 승인 문장("네 칸이 같으면 `no_change`")을 바꾸는 일이라 계획은 그대로 두고 스펙 §16 "남는 것"에 한 줄 적었다(K6 행 메모). 바꾸면 chat이 `confirmedCodes`가 비지 않을 때 RPC를 부르면 된다(`chat_edit_apply`는 코드만 지우는 새 버전을 이미 지원) |
+| N9 | Fable LOW(스펙) | "오후 6시 맞아"(값 같고 표지 있음) → `no_change`인데 카드는 계속 오전·오후를 물음 | **반영(2026-10-10 메인 판정 (B))** | 사용자 결정 "H3 후속"(표지가 있으면 서버 규칙으로 `ampm` 확정)의 적용. 스펙 B 서버 4·B 앱 머리 문장을 이 판정 커밋이 고쳤다(§16 "남는 것" 메모는 지움). E4 `runEdit` — 바뀐 칸이 없어도 확인 코드가 있으면 빈 patch + 코드로 RPC(사례 1 추가), E1 `chat_edit_proposal` 빈 patch는 `p_clear`가 있을 때만(사례 1 추가 — 이미 풀린 코드는 `no_change`), P1 `ChatEdit.headerText`·`ChatEditText.confirmedOnly`("확인했어요", 테스트 1), P6a `EditHeaderView(header:diff:)`, G1 ⑨ c9m(표지만 말함 → 되묻기 없이 [캘린더에 추가] → 1건). K6 행·E0 Step 2-2·§16 ⑥ 갱신 |
 
-HIGH(C1·C2) 모두 해결 — C2는 그대로, C1은 Fable 판정(MED)대로 대안으로. 합계: 18건 중 반영 13 · 부분 반영 4(C1·C6·C7·N7) · 미반영 1(N9 — 사용자 결정 후보). 선택 제안(Fable)인 `p_expected_version`·`runEdit` `changed` 재호출은 C1 이유로 두지 않았다. 새 K행: K30~K34(E0이 스펙 §16에 올린다).
+HIGH(C1·C2) 모두 해결 — C2는 그대로, C1은 Fable 판정(MED)대로 대안으로. 합계: 18건 중 반영 14 · 부분 반영 4(C1·C6·C7·N7) · 미반영 0(N9는 사용자 결정 후보로 남겼다가 2026-10-10 메인 판정 (B)로 반영). 선택 제안(Fable)인 `p_expected_version`·`runEdit` `changed` 재호출은 C1 이유로 두지 않았다. 새 K행: K30~K34(E0이 스펙 §16에 올린다).
