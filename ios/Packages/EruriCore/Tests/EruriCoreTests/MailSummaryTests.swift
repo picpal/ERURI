@@ -198,13 +198,13 @@ final class MailSummaryTests: XCTestCase {
     XCTAssertTrue(MailSummaryTurn(phase: .choosing).candidatesExpired(now: t0))
   }
 
-  func testChoosingTicks_Every30sUntilExpiry_ThenTheExpiryInstant() {
+  func testCandidatesLive_OnlyChoosingCardsBeforeExpiry() {                     // 열린 카드가 만료 순간 바뀌려면 그때까지 1초마다 다시 그린다(유한 .explicit 일정은 tick 이 오지 않았다 — G1 A4③)
     var c = MailSummaryTurn(phase: .choosing); c.issuedAt = t0
-    XCTAssertEqual(c.choosingTicks(from: t0.addingTimeInterval(500)),
-                   [500, 530, 560, 590, 600].map { t0.addingTimeInterval($0) })
-    XCTAssertEqual(c.choosingTicks(from: t0.addingTimeInterval(570)), [570, 600].map { t0.addingTimeInterval($0) })
-    XCTAssertEqual(c.choosingTicks(from: t0.addingTimeInterval(600)), [t0.addingTimeInterval(600)])
-    XCTAssertEqual(MailSummaryTurn(phase: .choosing).choosingTicks(from: t0), [t0])
+    XCTAssertTrue(c.candidatesLive(now: t0.addingTimeInterval(599)))
+    XCTAssertFalse(c.candidatesLive(now: t0.addingTimeInterval(600)))
+    XCTAssertFalse(MailSummaryTurn(phase: .choosing).candidatesLive(now: t0))      // 발급 시각 없음 = 지난 것
+    var r = c; r.phase = .reading
+    XCTAssertFalse(r.candidatesLive(now: t0))
   }
 
   func testReadFailed_CardPick410ShowsTheExpiredCard_RetryRestoresWithin10Minutes() {
