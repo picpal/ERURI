@@ -19,10 +19,10 @@ try {
   const old = await ask({ question: REG });                                          // 0.12.x 앱: 필드 없음 → 질문
   const add = await ask({ question: REG, intents: ["add_event"] });                  // 0.13.0 앱 → add_event, 빈 목록
   const mailNotListed = await ask({ question: MAIL, intents: ["add_event"] });       // 목록에 없는 행동 → 질문
-  const mailFlagOff = await ask({ question: MAIL, intents: ["add_event", "mail_action"] });   // MAIL_ACTIONS 꺼짐 → 질문
+  const mailFlagOn = await ask({ question: MAIL, intents: ["add_event", "mail_action"] });    // MAIL_ACTIONS=on(0.14.0 MAIL-deploy 2026-10-08 부터) → mail_action
   const ok = old.intent === "question" && add.intent === "add_event" && add.empty === true && add.mail_null === true &&
-    mailNotListed.intent === "question" && mailFlagOff.intent === "question";
-  console.log(JSON.stringify({ gate: ok ? "pass" : "fail", old, add, mailNotListed, mailFlagOff }));
+    mailNotListed.intent === "question" && mailFlagOn.intent === "mail_action";
+  console.log(JSON.stringify({ gate: ok ? "pass" : "fail", old, add, mailNotListed, mailFlagOn }));
 } finally {
   await sb.from("usage_counters").delete().eq("user_id", u.id);
   await sb.from("llm_slots").delete().eq("user_id", u.id);
