@@ -489,6 +489,7 @@ Deno.test("filterRequest with intents: intent (four values) and nullable mail ad
 
 Deno.test("INTENT_RULE and mail schema carry the spec rules (explicit request only, current message only, quoted/previous/negated → question)", () => {
   for (const s of ["명시적으로", "애매하면 question", "지금 보낸 질문에서만", "따옴표", "하지 마", "이전 대화", "mail_action 일 때만"]) assert(INTENT_RULE.includes(s), s);
+  assert(INTENT_RULE.includes("지금 보낸 글이 발신자를 직접 말하면 이전 대화의 발신자보다 지금 글의 발신자를 sender 에 채운다"));   // G1 S8 — 맥락이 있으면 sender 를 비우던 변동
   assertEquals(MAIL_SCHEMA.required, ["action", "sender", "subject_words", "received_from", "received_to", "promotions", "unread_only"]);
   assertEquals(MAIL_SCHEMA.additionalProperties, false);
   assertEquals([...MAIL_SCHEMA.properties.action.enum], ["trash", "read"]);

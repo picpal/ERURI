@@ -7,13 +7,13 @@ export type CaseFile = { today: string; cases: Case[] };
 export type Got = { intent: Intent; mail: MailFields | null; mail_read: MailReadFields | null };
 export type Row = { id: string; group: string; expected: Intent; got: Intent; mail_ok: boolean | null; read_ok: boolean | null; target_ok: boolean | null };
 
-// 스펙 §15 구성(0.15.0: 112 = question 50 · add_event 18 · mail_action 21 · mail_summary 23). 사례를 더하면 이 수도 같이 고친다
-const WANT = { question: 50, add_event: 18, mail_action: 21, mail_summary: 23 } as const;
+// 스펙 §15 구성(0.15.0: 114 = question 50 · add_event 18 · mail_action 21 · mail_summary 25 — G1 지금 글의 발신자 우선 s23·s24). 사례를 더하면 이 수도 같이 고친다
+const WANT = { question: 50, add_event: 18, mail_action: 21, mail_summary: 25 } as const;
 const GROUP_MIN: Record<string, number> = { confusable_ctx: 6, quoted: 4, prev_command: 4, negation: 4, ability: 3, add_ctx: 3, add_polite: 3, mail_ctx: 2, mail_polite: 2,
-  summary: 8, summary_translate: 3, summary_latest: 2, summary_ctx: 2, summary_follow: 2, summary_polite: 2, summary_both: 1, summary_gate: 3 };
-// 3회 모두 기대값이어야 하는 문장: 0.13.0 ADD-sim(a01·a12·a13·q04), 0.14.0 메일 정리 게이트(m01·m18~m20), 0.15.0 요약 게이트(s20~s22)·직전 요약 뒤 후속(s15 target·translate 만·s16)
+  summary: 8, summary_translate: 3, summary_latest: 2, summary_ctx: 2, summary_follow: 3, summary_override: 1, summary_polite: 2, summary_both: 1, summary_gate: 3 };
+// 3회 모두 기대값이어야 하는 문장: 0.13.0 ADD-sim(a01·a12·a13·q04), 0.14.0 메일 정리 게이트(m01·m18~m20), 0.15.0 요약 게이트(s20~s22)·직전 요약 뒤 후속(s15 target·translate 만·s16)·지금 글의 발신자 우선(s23 맥락 없음·s24 다른 맥락 — G1 S8)
 // — 재현율 0.9 합격선은 특정 문장의 실패를 허용하므로 게이트 문장을 고정한다(Fable F2, 메일 정리 계획 리뷰 N-M11)
-export const GATE = ["a01", "a12", "a13", "q04", "m01", "m18", "m19", "m20", "s15", "s16", "s20", "s21", "s22"] as const;
+export const GATE = ["a01", "a12", "a13", "q04", "m01", "m18", "m19", "m20", "s15", "s16", "s20", "s21", "s22", "s23", "s24"] as const;
 
 // --runs N: 1 이상 정수만(없으면 1). NaN 이면 0행이 되어 gate_cases 가 빈 every 로 참이 된다(최종 리뷰 Minor 2)
 export function parseRuns(args: string[]): number | null {

@@ -123,7 +123,7 @@ Deno.test("summarize: recall per action, any action↔action confusion fails, re
   assertEquals(summarize(weakTarget, 1, true, false).gate, "pass");                 // 칸 판정만 0.14.0 기준
 });
 Deno.test("gateCases: 0.15.0 gate ids (s20~s22) and follow-ups (s15 target and translate only, s16) must hold in every run", () => {
-  assert(GATE.includes("s15") && GATE.includes("s22"));
+  assert(GATE.includes("s15") && GATE.includes("s22") && GATE.includes("s23") && GATE.includes("s24"));
   const rows = GATE.map((id) => ({ id, group: "g", expected: "mail_summary" as Intent, got: "mail_summary" as Intent, mail_ok: null, read_ok: true, target_ok: true }));
   assertEquals(gateCases(rows), true);
   assertEquals(gateCases(rows.map((r) => r.id === "s15" ? { ...r, target_ok: false } : r)), false);
