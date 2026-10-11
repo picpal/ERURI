@@ -19,6 +19,7 @@ struct ChatView: View {
     var facts: [FactVersions]?                  // 0.16.0: 등록·고치기 턴 = 그 fact 버전, 질문 턴 = 답 카드 update_event 의 fact 버전(계보·update_event 상태 — 저장하지 않는다)
     var entries: [CardEntry] = []               // 등록·고치기 턴의 카드 순서(fact 순)·답 카드의 고친 일정: 일정 답 카드 행 또는 고친 일정 상태
     var asks: [String: AskBack.Question] = [:]  // 되묻기(채팅 등록·고치기 카드만, C — 그리기는 P6b) — 키 = 제안 id
+    var briefing: Briefing.Model?   // 여러 날 일정 질문의 기간 브리핑(§9, 0.16.0) — 저장하지 않는다
     init(record: ChatHistory.Record) { self.record = record; answer = record.reply.flatMap(ChatReply.decode) }
   }
   /// 등록·고치기 턴·답 카드의 카드 하나(K27): add 상태는 기존 일정 답 카드 행, 나머지는 EditCardView. itemID = 출처 줄(답 카드는 그 항목의 인용)
@@ -273,10 +274,16 @@ struct ChatView: View {
     }
     // 일정 답 카드(§9, 0.8.2): 찾은 곳 → 그날 내 캘린더 → 상태·버튼. 일정 기간이 카드 하루보다 넓을 때만 아래 "기기 캘린더" 절도 그린다.
     // 전체 접근이 없으면 카드가 안내를 대신 들고, 절의 안내는 카드가 없을 때만
-    ForEach(Array(t.cards.enumerated()), id: \.element.pid) { pair in cardRows(t, pair.element, first: pair.offset == 0) }
-    entryRows(t)                                                                  // 답 카드의 update_event(0.16.0 — 그 턴의 entries 는 .edit 만)
-    if t.cardsMore > 0 { Text(ScheduleCard.moreText(t.cardsMore)).font(.caption2).foregroundStyle(.secondary) }
-    if a.schedule != nil, t.cards.isEmpty || t.calendar != nil { calendarRows(t, a) }
+    if let b = t.briefing {                                                       // 여러 날 질문: 기간 브리핑(§9, 0.16.0) — 버튼은 답 카드와 같은 runAdd 경로
+      BriefingView(model: b, adds: adds,
+                   onAdd: { m in runAdd(ConfirmAdd(id: m.model.pid, fields: addFields(for: m.model)), confirmed: m.action.map(ScheduleCard.confirms) ?? false, priors: priors(for: m.model.pid)) },
+                   onOpen: { openItem = $0 }, onAllow: { recheck(t.id) })
+    } else {
+      ForEach(Array(t.cards.enumerated()), id: \.element.pid) { pair in cardRows(t, pair.element, first: pair.offset == 0) }
+      entryRows(t)                                                                // 답 카드의 update_event(0.16.0 — 그 턴의 entries 는 .edit 만)
+      if t.cardsMore > 0 { Text(ScheduleCard.moreText(t.cardsMore)).font(.caption2).foregroundStyle(.secondary) }
+      if a.schedule != nil, t.cards.isEmpty || t.calendar != nil { calendarRows(t, a) }
+    }
     feedbackBar(a)
   }
 
@@ -418,6 +425,13 @@ struct ChatView: View {
     if let a = turns[idx].answer { ps = a.proposals; range = a.schedule?.interval }
     else if let p = turns[idx].addProposals { ps = p; range = nil }
     else { return }
+    // 여러 날 질문(§9 브리핑): 카드·"기기 캘린더" 절 대신 기간 브리핑(앱만, 서버 그대로)
+    if let a = turns[idx].answer, Briefing.isPeriod(a.schedule), let interval = a.schedule?.interval {
+      let b = Briefing.build(proposals: a.proposals, citations: a.citations, interval: interval, lookup: CalendarLookup.lookup(ex))
+      turns[idx].briefing = b; turns[idx].cards = []; turns[idx].cardsMore = 0; turns[idx].calendar = nil; turns[idx].entries = []; turns[idx].cardsRead = true
+      DiagLog.append("BRIEF lines=\(b.days.reduce(0) { $0 + $1.lines.count }) missing=\(b.missing.count) notfound=\(b.notFound.count) access=\(b.access ? 1 : 0)")
+      return
+    }
     let picked = ScheduleCard.pick(ps, schedule: range)
     turns[idx].cards = picked.cards.map { ScheduleCard.model($0, events: CalendarLookup.cardEvents(day: $0.day), executed: executed(ex, $0.proposal.id)) }
     turns[idx].cardsMore = picked.more
