@@ -21,7 +21,7 @@ Deno.test({ name: "hosted: 0033 cases in one rolled-back transaction (test user 
       const applied = (await q("select to_regprocedure('public.chat_edit_state(uuid,uuid,boolean,boolean)') is not null as a"))[0].a === true;
       if (!applied) await tx.unsafe(await Deno.readTextFile(MIGRATION_0033));
       console.log("0033", applied ? "already applied" : "applied in the rolled-back transaction");
-      for (const c of EDIT_CASES) {
+      for (const c of EDIT_CASES.filter((c) => !c.localOnly)) {
         await tx.unsafe("savepoint each_case");
         try { await c.run(ctx); console.log("ok", c.name); }
         finally { await tx.unsafe("rollback to savepoint each_case"); }

@@ -149,7 +149,9 @@ begin
      or exists (select 1 from jsonb_each(p_patch) e
                 where e.key not in ('title', 'start', 'end', 'location')
                    or jsonb_typeof(e.value) not in ('string', 'null')
-                   or (e.key in ('title', 'start') and jsonb_typeof(e.value) <> 'string')) then
+                   or (e.key in ('title', 'start') and jsonb_typeof(e.value) <> 'string')
+                   -- start 는 시각(오프셋 포함)·날짜로 읽혀야 한다(chat/edit.ts revalidate 의 방어선 — 최종 리뷰 E1 ②)
+                   or (e.key = 'start' and chat_edit_ts(e.value #>> '{}') is null and chat_edit_day(e.value #>> '{}') is null)) then
     raise exception 'bad_patch';
   end if;
   if exists (select 1 from unnest(coalesce(p_clear, '{}'::text[])) c where c not in ('year', 'ampm', 'end', 'tz', 'date', 'location')) then
@@ -227,6 +229,7 @@ begin
   end if;
   v_clear := case when p_code = 'date' then array['date', 'year'] else array[p_code] end;
   r := public.chat_edit_apply(v_user, s.fact_id, v_patch, v_clear);
+  if r->>'status' is distinct from 'ok' then return r; end if;          -- apply 가 새 버전을 만들지 않았으면 ok(옛 id)로 바꾸지 않는다(최종 리뷰 E2 ③)
   return jsonb_build_object('status', 'ok', 'proposal_id', r->'proposal_id', 'version', r->'version');
 end $$;
 revoke execute on function resolve_uncertain(uuid, text, text) from public, anon;

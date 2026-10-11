@@ -6,7 +6,8 @@ import { assert, assertEquals } from "jsr:@std/assert";
 export type Row = Record<string, any>;
 export type Q = (sql: string, params?: unknown[]) => Promise<Row[]>;
 export type ECtx = { q: Q; user: string; other: string; run: string };
-export type EditCase = { name: string; privileges?: true; run(c: ECtx): Promise<void> };
+// localOnly: 함수를 트랜잭션 안에서 바꿔 끼우는 사례 — PGlite 에서만(호스팅 edit-db 는 건너뛴다: 배포 함수에 DDL 잠금을 걸지 않는다)
+export type EditCase = { name: string; privileges?: true; localOnly?: true; run(c: ECtx): Promise<void> };
 export const MIGRATION_0033 = new URL("../migrations-pending/0033_chat_edit.sql", import.meta.url);   // D1 단계가 ../migrations/ 로 바꾼다
 export const EDIT_FUNCTIONS = ["chat_edit_day", "chat_edit_ts", "chat_edit_iso", "chat_edit_values", "chat_edit_moved", "chat_edit_state",
   "chat_edit_apply", "chat_edit_target", "chat_edit_proposal"];
@@ -216,6 +217,10 @@ export const EDIT_CASES: EditCase[] = [
     await fails(c, call, [c.user, s.props[0], JSON.stringify({}), pgArr([])], "bad_patch");
     await fails(c, call, [c.user, s.props[0], JSON.stringify({ title: null }), pgArr([])], "bad_patch");
     await fails(c, call, [c.user, s.props[0], JSON.stringify({ start: 3 }), pgArr([])], "bad_patch");
+    // 최종 리뷰 E1 ②: 시각(오프셋 포함)·날짜로 읽히지 않는 start 는 저장하지 않는다(chat/edit.ts revalidate 의 방어선)
+    for (const start of ["", "abc", "2026-13-45", "2026-10-10T11:00:00", "내일 11시"]) {
+      await fails(c, call, [c.user, s.props[0], JSON.stringify({ start }), pgArr([])], "bad_patch");
+    }
     await fails(c, call, [c.user, s.props[0], JSON.stringify({ title: "합성 회의" }), pgArr(["recurrence"])], "bad_clear");
     assertEquals((await versions(c, s.facts[0])).length, 1);
   } },
@@ -332,6 +337,13 @@ export const EDIT_CASES: EditCase[] = [
     assertEquals((await resolve(c, old.props[0], "location", "")).status, "not_found");                      // v1 은 이제 최고 버전이 아니다
     const multi = await seed(c, "rm", [{ title: "합성 둘1", start: await at(c, 3, "06:00"), uncertain: ["ampm"] }, { title: "합성 둘2", start: await at(c, 3, "09:00") }]);
     assertEquals((await resolve(c, multi.props[0], "ampm", await at(c, 3, "18:00"))).status, "ok");            // 다건 등록도 버튼은 된다
+  } },
+  { name: "resolve passes a non-ok apply result through instead of ok with the old id (final review E2 ③ — apply swapped in this transaction)", localOnly: true, run: async (c) => {
+    const s = await seed(c, "rk", [{ title: "합성 미팅", start: await at(c, 3, "06:00"), uncertain: ["ampm"] }]);
+    await c.q(`create or replace function chat_edit_apply(p_user uuid, p_fact uuid, p_patch jsonb, p_clear text[]) returns jsonb language sql set search_path = public as
+      $$ select jsonb_build_object('status', 'no_change', 'proposal_id', (select id from proposals where fact_id = p_fact order by version desc limit 1), 'version', 1) $$`);
+    const r = await resolve(c, s.props[0], "ampm", await at(c, 3, "18:00"));
+    assertEquals([r.status, r.proposal_id, r.version], ["no_change", s.props[0], 1]);
   } },
   { name: "resolve privileges: anon cannot execute; authenticated can; without a JWT it raises not authenticated (28000)", privileges: true, run: async (c) => {
     const g = await c.q(`select has_function_privilege('anon', 'public.resolve_uncertain(uuid, text, text)', 'execute') as anon,
