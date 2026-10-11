@@ -95,6 +95,15 @@ final class BriefingTests: XCTestCase {
     let m = Briefing.build(proposals: [sms, mail], citations: cites, interval: period, lookup: nil, now: now, deviceZone: seoul)
     XCTAssertEqual(m.days.flatMap(\.lines).map { "\($0.title) · \($0.source)" }, ["합성 치과 · 메일"])
   }
+  func testSameCalendarEventMatchedByTwoProposalsIsOneLine() {                                       // 리뷰 I1: 종일 재안내(twin) — 정규화 제목만 같음
+    let mail = prop("w1", "2026-10-16", title: "합성 워크숍", item: "mail", status: "succeeded")
+    let sms = prop("w2", "2026-10-16", title: "합성워크숍", item: "sms")
+    let e = ev("ew", "2026-10-15T15:00:00Z", "2026-10-15T15:00:00Z", "합성 워크숍", pid: "w1", allDay: true)
+    let m = Briefing.build(proposals: [mail, sms], citations: cites, interval: period, lookup: lookup([e]), now: now, deviceZone: seoul)
+    XCTAssertEqual(m.days.flatMap(\.lines).map { "\($0.time) · \($0.title) · \($0.source)" }, ["종일 · 합성 워크숍 · 메일"])
+    XCTAssertEqual(m.header, "10/12(월)–10/18(일) 일정 1건")
+    XCTAssertTrue(m.missing.isEmpty)
+  }
   func testCapsAtThirtyLines() {
     let many = (0..<35).map { i in ev("c\(i)", "2026-10-13T0\(i % 9):00:00Z", "2026-10-13T0\(i % 9):30:00Z", "합성 \(i)") }
     let m = Briefing.build(proposals: [], citations: [], interval: period, lookup: lookup(many), now: now, deviceZone: seoul)

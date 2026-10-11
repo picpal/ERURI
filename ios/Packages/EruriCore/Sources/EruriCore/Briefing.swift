@@ -48,8 +48,9 @@ public enum Briefing {
       let t = ProposalTiming.parse(start: c.proposal.payload["start"]?.string ?? "", end: c.proposal.payload["end"]?.string)
       let reg = ScheduleCard.registration(pid: c.proposal.id, title: c.title, start: c.start, allDay: !c.timed, timing: t, serverStatus: c.proposal.status,
                                           executed: l.executed(c.proposal.id), events: events, deviceZone: deviceZone)
-      if let e = reg.matched {                                         // 상태 1~3: 캘린더 값으로 한 줄. 기간 밖으로 옮겼으면 찾지 못한 줄
-        if inPeriod(seoulStart(e)) { lines.append(eventLine(e, source: src, itemID: c.proposal.item_id, tail: nil, deviceZone: deviceZone)); consumed.append(e) }
+      // 상태 1~3: 캘린더 값으로 한 줄. 기간 밖으로 옮겼으면 찾지 못한 줄. 이미 다른 제안이 합친 일정(종일 재안내 twin·create+update)이면 줄을 더하지 않는다(P4 리뷰 I1 — 출처는 먼저 온 쪽, succeeded 우선 정렬)
+      if let e = reg.matched {
+        if inPeriod(seoulStart(e)) { if !consumed.contains(e) { lines.append(eventLine(e, source: src, itemID: c.proposal.item_id, tail: nil, deviceZone: deviceZone)) }; consumed.append(e) }
         else { notFound.append(proposalLine(c, source: src)) }
         continue
       }
@@ -65,7 +66,7 @@ public enum Briefing {
       let src = source(cite(p.item_id))
       guard let l = lookup else { if inPeriod(t.anchor) { lines.append(versionLine(v, t, source: src, itemID: p.item_id)) }; continue }
       if let e = l.events(EditFlow.window(t)).first(where: { !$0.canceled && $0.url == ProposalFlow.marker(p.id) }) {
-        if inPeriod(seoulStart(e)) { lines.append(eventLine(e, source: src, itemID: p.item_id, tail: nil, deviceZone: deviceZone)); consumed.append(e) }
+        if inPeriod(seoulStart(e)) { if !consumed.contains(e) { lines.append(eventLine(e, source: src, itemID: p.item_id, tail: nil, deviceZone: deviceZone)) }; consumed.append(e) }
         else if inPeriod(t.anchor) { notFound.append(versionLine(v, t, source: src, itemID: p.item_id)) }
         continue
       }
@@ -73,7 +74,7 @@ public enum Briefing {
       guard let before = v.before, let base = v.basePID, let bs = before.start, let bt = ProposalTiming.parse(start: bs, end: before.end) else { continue }
       let id: EditFlow.IdentifierLookup = { guard let eid = l.executedEventID(base) else { return .noIdentifier }; return l.byIdentifier(eid).map { .found($0) } ?? .notFound }()
       if case .found(let e) = EditFlow.findBase(basePid: base, newPid: p.id, near: l.events(EditFlow.window(bt)), identifier: id, wide: { [] }) {
-        if inPeriod(seoulStart(e)) { lines.append(eventLine(e, source: src, itemID: p.item_id, tail: unappliedTail, deviceZone: deviceZone)); consumed.append(e) }
+        if inPeriod(seoulStart(e)) { if !consumed.contains(e) { lines.append(eventLine(e, source: src, itemID: p.item_id, tail: unappliedTail, deviceZone: deviceZone)) }; consumed.append(e) }
       } else if inPeriod(t.anchor) {
         notFound.append(versionLine(v, t, source: src, itemID: p.item_id))
       }
