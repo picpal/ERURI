@@ -226,3 +226,15 @@ TestFlight 0.14.0 (`202610082030`, ASC VALID 2026-10-08 20:33:59 KST). Step 0(10
 - 배포 chat(v10, 대시보드 13) 실호출(테스트 사용자 19, `intents` add_event·mail_action): 읽음 문장 13/13 `subject_words ["ERURI","테스트"]`·`unread_only true`, 휴지통 문장 3/3 `["ERURI","테스트"]`. 변형(붙여쓰기 `ERURI테스트`·대괄호·소문자·띄어쓰기) 2회씩·직전 휴지통 턴 맥락 3회도 '테스트' 누락 0.
 - 실사용자 Gmail 읽기 list(검색만, 개수·포함 여부만): 서버 조립 읽음 검색어 3통·대조 없음, 휴지통·휴지통+안 읽음 3통, 변형(`"ERURI테스트"`·`"ERURI 테스트"`·`"eruri"`) 모두 3통. **`subject:"ERURI"` 단독 + `is:unread` 만 4통(합성 3 + 대조)** — ⑤ 실측과 같은 집합.
 - 결론: 검색어 조립·정제·Gmail 검색·앱 전달은 결함 없음(재현 0/21). ⑤ 회차는 '테스트'가 빠진 칸(`["ERURI"]` 추정)으로 미리보기됐다 — 그 회차의 모델 칸 출력 변동이나 입력 차이 중 하나로, 기록이 없어 가를 수 없다(서버는 조건을 저장·로그하지 않는다 §12). 미리보기 카드가 4건과 표본을 보여 줬으므로 확인 단계는 동작했다. 앱 대화 기록(기기, 30일)의 그 카드 조건 줄로 확정할 수 있다. INTENT-eval 은 이 문장(`m20`)과 휴지통 문장(`m19`)을 0.14.0 M7 부터 이미 갖고 있다.
+
+## EDIT-eval (0.16.0, 로컬 러너 — 계획 2026-10-08-chat-schedule-edit.md E5)
+
+r1(2026-10-11 18:31 KST, HEAD `45b2e5e`): 의도 24·24·24, 칸 14·14·14, 오분류 0 — 추출 모호 4·4·**3**(3:x03 ampm_missing) → `extract_gate` 실패 → Step 6 ② 추출 지시문 보강 `ae6b55b`(SHARE 요청만 — 비SHARE 요청 바이트 동일 가드 유지). 아래는 r2(18:35 KST, HEAD `ae6b55b`).
+
+| 실행 | 의도 일치(/24) | 칸 일치(/14) | 다른 의도 → edit_event | 추출 모호 ampm(/4) | 추출 명확 ampm 없음(/4) | 측정만(m01·m02 의도 일치) |
+|---|---|---|---|---|---|---|
+| 1 | 24 | 14 | 0 | 4 | 4 | 없음(m01 question·m02 add_event) |
+| 2 | 23 | 13 | 0 | 4 | 4 | m01(m02 add_event) |
+| 3 | 24 | 14 | 0 | 4 | 4 | 없음(m01 question·m02 add_event) |
+
+판정: **통과** (`"gate":"pass"`·`"extract_gate":"pass"`). 실패 코드: 2:e11 intent(question). INTENT-eval 119 회귀(18:38~18:49 KST, `--runs 3 --mail-judged --read-judged`): pass — 오탐 0·재현율 add 1·mail 1·summary 1·혼동 0·mail 1·read 1·target 1·게이트 사례 통과. 지시문 수정: 추출 `ae6b55b`(EDIT-eval r1), EDIT_RULE·EDIT_SCHEMA 수정 0. 측정만: m01(만료 대상 "앗 내일이야")은 r1·r2 6회 중 1회만 edit_event(나머지 question), m02(고치기+재등록 섞임)는 6회 중 add_event 5·question 1 — 게이트 밖.
