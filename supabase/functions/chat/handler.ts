@@ -1,5 +1,6 @@
 import { type Bill, type BudgetDeps, type BudgetLevel, costKrw, Deferred, guarded } from "../_shared/budget.ts";
-import { type ActionIntent, ACTION_INTENTS, type ContextTurn, escTags, type FilterOutput, type Filters, formatContext, type Intent, type MailFields,
+import { ampmMarked, confirmedCodes, type EditApplied, type EditRaw, type EditResult, type EditTargetRead, type EventValues, parseEditTarget, revalidate } from "./edit.ts";
+import { type ActionIntent, ACTION_INTENTS, type ContextTurn, type EditMode, escTags, type FilterOutput, type Filters, formatContext, type Intent, type MailFields,
   type MailReadFields, type Schedule, scheduleOf } from "./filters.ts";
 export type { ActionIntent, ContextTurn, Filters, Intent, MailFields, MailReadFields, Schedule } from "./filters.ts";
 
@@ -18,7 +19,7 @@ export type ScoredRow = { item_id: string; sem_sim: number | null; kw_score: num
 export type AnswerInput = { question: string; today: string; documents: ChatHit[]; context?: ContextTurn[]; query?: string };
 export type ChatDeps = {
   authUser(token: string): Promise<string | null>;
-  filters(question: string, today: string, context: ContextTurn[], withIntent?: boolean, bill?: Bill): Promise<FilterOutput>;   // withIntent 없음 = false(기존 테스트의 3인자 호출 그대로)
+  filters(question: string, today: string, context: ContextTurn[], withIntent?: boolean, bill?: Bill, edit?: EditMode | null): Promise<FilterOutput>;   // withIntent 없음 = false(기존 테스트의 3인자 호출 그대로), edit 없음 = 0.15.0 요청
   facts(userId: string, f: Filters): Promise<ChatHit[]>;
   search(userId: string, q: { question: string; from: string | null; to: string | null; sources: string[] }, bill?: Bill): Promise<SearchResult>;
   answer(input: AnswerInput, level: BudgetLevel, bill?: Bill): Promise<RawAnswer & { usage?: Usage; model: string }>;
@@ -33,11 +34,15 @@ export type ChatDeps = {
   mailActions(): boolean;
   /** 메일 요약 플래그(스펙 §7 "켜기" — Edge secret MAIL_READ=on). 꺼져 있으면 mail_summary → question */
   mailRead(): boolean;
+  /** B 서버 1: 대상 읽기(0033 chat_edit_target — ok 면 SQL 이 감사 한 행) */
+  editTarget(userId: string, proposalId: string): Promise<EditTargetRead>;
+  /** B 서버 5: 새 버전(0033 chat_edit_proposal — 잠근 뒤 1의 검사를 다시) */
+  editApply(userId: string, proposalId: string, patch: Partial<EventValues>, clear: string[]): Promise<EditApplied>;
 };
 export type ChatResult = RawAnswer & { forced_refusal: boolean; dropped_ids: number; hits: string[]; candidates: string[]; citations: Meta[];
   proposals: ProposalCard[]; model: string | null; schedule: Schedule | null; intent: Intent; mail: MailFields | null;
-  mail_read: MailReadFields | null };
-export type ChatOutcome = ChatResult & { rewritten: boolean; raw_intent?: Intent };
+  mail_read: MailReadFields | null; edit: EditResult | null };
+export type ChatOutcome = ChatResult & { rewritten: boolean; raw_intent?: Intent; edit_log?: { fields: string[]; marker: boolean } };
 
 export const REFUSAL = "저장된 정보에서 확인되지 않음";
 
@@ -90,7 +95,7 @@ export function answerUserMessage(input: AnswerInput): string {
   return `오늘: ${input.today}\n이전 대화(질문 이해용, 근거 아님):\n${formatContext(input.context)}\n질문: ${input.question}${q}\n\n${docs}`;
 }
 
-export function validateAnswer(raw: RawAnswer, hits: ChatHit[]): Omit<ChatResult, "hits" | "candidates" | "citations" | "proposals" | "model" | "schedule" | "intent" | "mail" | "mail_read"> {
+export function validateAnswer(raw: RawAnswer, hits: ChatHit[]): Omit<ChatResult, "hits" | "candidates" | "citations" | "proposals" | "model" | "schedule" | "intent" | "mail" | "mail_read" | "edit"> {
   const allowed = new Set(hits.map((h) => h.item_id));
   const ids = [...new Set(raw.source_item_ids)].filter((id) => allowed.has(id));
   const dropped = new Set(raw.source_item_ids).size - ids.length;
@@ -152,25 +157,57 @@ export function parseIntents(v: unknown): Set<ActionIntent> | null {
   const s = new Set((v as string[]).filter((x): x is ActionIntent => (ACTION_INTENTS as readonly string[]).includes(x)));
   return s.size ? s : null;
 }
-// 모델 의도(네 값) → 이 요청의 의도: 앱 목록에 없거나 그 기능의 플래그가 꺼져 있으면 question(D2). readOn 은 0.15.0(없으면 꺼짐 — 0.14.0 호출 그대로)
-export function resolveIntent(raw: Intent, allowed: Set<ActionIntent>, mailOn: boolean, readOn = false): Intent {
+// 모델 의도 → 이 요청의 의도: 앱 목록에 없거나 그 기능의 플래그가 꺼져 있으면 question(D2). readOn 은 0.15.0(없으면 꺼짐 — 0.14.0 호출 그대로).
+// edit_event 는 edit_target 을 받았을 때만(editOn, 0.16.0)
+export function resolveIntent(raw: Intent, allowed: Set<ActionIntent>, mailOn: boolean, readOn = false, editOn = false): Intent {
   if (raw === "question" || !allowed.has(raw)) return "question";
   if (raw === "mail_action" && !mailOn) return "question";
   if (raw === "mail_summary" && !readOn) return "question";
+  if (raw === "edit_event" && !editOn) return "question";
   return raw;
 }
-// 행동 의도 응답(스펙 §9 "응답"): 검색·답변 없이 빈 목록. mail·mail_read 는 그 의도일 때만 모델 출력 그대로
+// 행동 의도 응답(스펙 §9 "응답"): 검색·답변 없이 빈 목록. mail·mail_read 는 그 의도일 때만 모델 출력 그대로, edit 는 runEdit 이 채운다
 export function actionResult(intent: ActionIntent, mail: MailFields | null, mailRead: MailReadFields | null = null): ChatResult {
   return { answer: "", source_item_ids: [], refused: false, forced_refusal: false, dropped_ids: 0, hits: [], candidates: [], citations: [], proposals: [],
-    model: null, schedule: null, intent, mail: intent === "mail_action" ? mail : null, mail_read: intent === "mail_summary" ? mailRead : null };
+    model: null, schedule: null, intent, mail: intent === "mail_action" ? mail : null, mail_read: intent === "mail_summary" ? mailRead : null, edit: null };
 }
 
-async function answerOnce(userId: string, question: string, deps: ChatDeps, context: ContextTurn[], allowed: Set<ActionIntent> | null): Promise<ChatOutcome> {
+// 방금 등록한 일정 고치기(스펙 §9 B 서버 3~6): 대상이 ok 가 아니면 그 상태로(쓰기 없음). 재검증 뒤 바뀐 칸도 이번 글이 확인한 코드도 없으면
+// no_change(RPC 없음). 바뀐 칸이 없어도 확인 코드가 있으면 빈 patch 로 RPC — 코드만 지우는 새 버전("오후 6시 맞아", 계획 K6 — 메인 판정 (B)).
+// 지울 uncertain 코드는 이번 글 기준(H3 후속). before·after 는 RPC 가 잠근 뒤 읽은 값. fields·marker 는 로그용(값 없음)
+export async function runEdit(userId: string, message: string, deps: ChatDeps, target: EditTargetRead, raw: EditRaw | null):
+  Promise<{ edit: EditResult; fields: string[]; marker: boolean }> {
+  const marker = ampmMarked(message);
+  const empty = (status: EditResult["status"], fields: string[] = []) =>
+    ({ edit: { status, before: null, after: null, proposal_id: null, action: null }, fields, marker });
+  if (target.status !== "ok") return empty(target.status);
+  const r = revalidate(target.values, raw);
+  const fields = Object.keys(r.patch);
+  const clear = confirmedCodes(target.values, r, message);
+  if (fields.length === 0 && clear.length === 0) {
+    return { edit: { status: "no_change", before: target.values, after: target.values, proposal_id: target.proposal_id, action: target.action }, fields, marker };
+  }
+  const a = await deps.editApply(userId, target.proposal_id, r.patch, clear);       // 그 코드가 이미 풀렸으면 RPC 가 no_change
+  if (a.status === "ok" || a.status === "no_change") {
+    return { edit: { status: a.status, before: a.before, after: a.after, proposal_id: a.proposal_id, action: a.action }, fields, marker };
+  }
+  return empty(a.status, fields);
+}
+
+async function answerOnce(userId: string, question: string, deps: ChatDeps, context: ContextTurn[], allowed: Set<ActionIntent> | null,
+  editTarget: string | null): Promise<ChatOutcome> {
   const today = deps.today();
   // 금액은 응답마다 bill 로 쌓인 원소의 합(스펙 §13 "기능별 기록") — 필터·질의 임베딩·답변 모두 예약 chat·집계 chat
   const { value } = await guarded(deps.budget, userId, "chat", CHAT_EST_KRW, crypto.randomUUID(), async (level, bill): Promise<ChatOutcome> => {
-    const { filters, query, intent: raw, mail, mail_read } = await deps.filters(question, today, context, allowed !== null, bill);
-    const intent = allowed ? resolveIntent(raw ?? "question", allowed, deps.mailActions(), deps.mailRead()) : "question";
+    // B 서버 1: edit_target 이 있으면 대상부터 — ok 면 필터에 <registered> 블록, 아니면 블록 없이 의도만(그 상태는 edit_event 일 때만 응답)
+    const target = editTarget ? await deps.editTarget(userId, editTarget) : null;
+    const edit: EditMode | null = target ? { registered: target.status === "ok" ? target.values : null } : null;
+    const { filters, query, intent: raw, mail, mail_read, edit: rawEdit } = await deps.filters(question, today, context, allowed !== null, bill, edit);
+    const intent = allowed ? resolveIntent(raw ?? "question", allowed, deps.mailActions(), deps.mailRead(), target !== null) : "question";
+    if (intent === "edit_event" && target) {
+      const e = await runEdit(userId, question, deps, target, rawEdit ?? null);
+      return { ...actionResult(intent, null, null), edit: e.edit, rewritten: false, raw_intent: raw, edit_log: { fields: e.fields, marker: e.marker } } as ChatOutcome;
+    }
     // 행동 의도: 검색·facts·답변 모델을 부르지 않는다 — 문서를 읽지 않으므로 감사 read 도 없다. 예약은 같고 정산은 필터 원소만(스펙 §9 "응답")
     if (intent !== "question") return { ...actionResult(intent, mail ?? null, mail_read ?? null), rewritten: false, raw_intent: raw } as ChatOutcome;
     // 맥락이 있으면 검색은 독립 질문으로(스펙 §9) — "거기 주소" 만으로는 키워드·임베딩이 대상을 못 고른다. 비었으면 원 질문
@@ -184,7 +221,7 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps, cont
     if (s.docs.length === 0 && (q.from !== null || q.to !== null)) s = await deps.search(userId, { ...q, from: null, to: null }, bill);
     const read = dedupe([...mergeFactDocs(factDocs), ...s.docs]);
     const docs = read.slice(0, 12);
-    const asked = { intent: "question" as const, mail: null, mail_read: null, raw_intent: raw };
+    const asked = { intent: "question" as const, mail: null, mail_read: null, edit: null, raw_intent: raw };
     if (docs.length === 0) {
       return { answer: REFUSAL, source_item_ids: [], refused: true, forced_refusal: false, dropped_ids: 0, hits: [], candidates: [],
         citations: [], proposals: [], model: null, schedule, rewritten, ...asked } as ChatOutcome;
@@ -204,11 +241,11 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps, cont
 }
 
 export async function answerQuestion(userId: string, question: string, deps: ChatDeps, context: ContextTurn[] = [],
-  intents: Set<ActionIntent> | null = null): Promise<ChatOutcome> {
+  intents: Set<ActionIntent> | null = null, editTarget: string | null = null): Promise<ChatOutcome> {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   for (let attempt = 0; ; attempt++) {
     try {
-      return await answerOnce(userId, question, deps, context, intents);
+      return await answerOnce(userId, question, deps, context, intents, editTarget);
     } catch (e) {
       if (!(e instanceof Deferred && e.message === "llm_busy" && attempt < BUSY_RETRY_MS.length)) throw e;
       await sleep(BUSY_RETRY_MS[attempt]);
@@ -220,7 +257,7 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
   const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
   const user = token ? await deps.authUser(token) : null;
   if (!user) return new Response(null, { status: 401 });
-  let b: { question?: unknown; item_id?: unknown; context?: unknown; intents?: unknown };
+  let b: { question?: unknown; item_id?: unknown; context?: unknown; intents?: unknown; edit_target?: unknown };
   try { b = await req.json(); } catch { return Response.json({ error: "bad_json" }, { status: 400 }); }
   if (/\/chat\/item\/?$/.test(new URL(req.url).pathname)) {
     if (typeof b.item_id !== "string") return Response.json({ error: "bad_item" }, { status: 400 });
@@ -233,9 +270,14 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
   const context = parseContext(b.context);
   if (context === null) return Response.json({ error: "bad_context" }, { status: 400 });
   const intents = parseIntents(b.intents);
+  const editTarget = intents?.has("edit_event") ? parseEditTarget(b.edit_target) : null;   // 그 밖은 무시 — 0.15.0 과 같은 요청(스펙 §9 B 서버)
   try {
-    const r = await answerQuestion(user, b.question, deps, context, intents);
-    if (r.intent !== "question") {
+    const r = await answerQuestion(user, b.question, deps, context, intents, editTarget);
+    if (r.intent === "edit_event") {
+      // 의도·상태·고친 칸 이름·표지 유무·맥락 턴 수만(스펙 §9 B 서버 6) — 글·값 없음
+      console.log(JSON.stringify({ chat: "intent", intent: r.intent, context: context.length, edit: r.edit?.status ?? null,
+        fields: r.edit_log?.fields ?? [], ampm_marker: r.edit_log?.marker ?? false }));
+    } else if (r.intent !== "question") {
       console.log(JSON.stringify({ chat: "intent", intent: r.intent, context: context.length }));   // 의도 값·맥락 턴 수만(스펙 §9) — 글·칸 값 없음
     } else {
       console.log(JSON.stringify({ chat: r.refused ? "refused" : "answered", forced: r.forced_refusal, cited: r.source_item_ids.length,
@@ -244,7 +286,7 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
     }
     return Response.json({ answer_id: crypto.randomUUID(), answer: r.answer, refused: r.refused, source_item_ids: r.source_item_ids,
       citations: r.citations, proposals: r.proposals, hits: r.hits, candidates: r.candidates, schedule: r.schedule, intent: r.intent, mail: r.mail,
-      mail_read: r.mail_read });
+      mail_read: r.mail_read, edit: r.edit });
   } catch (e) {
     if (e instanceof Deferred) {
       console.log(JSON.stringify({ chat: e.message }));

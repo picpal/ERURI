@@ -74,6 +74,8 @@ function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; searches?: ChatHit[][]; 
     sleep: async (ms) => { seen.sleeps.push(ms); },
     mailActions: () => o.mailOn ?? false,
     mailRead: () => o.readOn ?? false,
+    editTarget: async () => ({ status: "not_found" }),
+    editApply: async () => { throw new Error("editApply is not expected in chat.test.ts"); },
   };
   return { d, seen };
 }
@@ -561,7 +563,7 @@ Deno.test("handleChat: intents in the body; action response keeps the answer sha
   const j = await r.json();
   assertEquals(r.status, 200);
   assertEquals({ ...j, answer_id: "x" }, { answer_id: "x", answer: "", refused: false, source_item_ids: [], citations: [], proposals: [], hits: [],
-    candidates: [], schedule: null, intent: "add_event", mail: null, mail_read: null });
+    candidates: [], schedule: null, intent: "add_event", mail: null, mail_read: null, edit: null });
   const q = deps({ intent: "add_event" });
   const k = await (await handleChat(req("chat", { question: "에어팟 어디서 샀어?" }), q.d)).json();
   assertEquals([k.intent, k.mail, k.refused, q.seen.withIntent], ["question", null, false, [false]]);
