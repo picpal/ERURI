@@ -8,7 +8,7 @@ export type Q = (sql: string, params?: unknown[]) => Promise<Row[]>;
 export type ECtx = { q: Q; user: string; other: string; run: string };
 // localOnly: 함수를 트랜잭션 안에서 바꿔 끼우는 사례 — PGlite 에서만(호스팅 edit-db 는 건너뛴다: 배포 함수에 DDL 잠금을 걸지 않는다)
 export type EditCase = { name: string; privileges?: true; localOnly?: true; run(c: ECtx): Promise<void> };
-export const MIGRATION_0033 = new URL("../migrations-pending/0033_chat_edit.sql", import.meta.url);   // D1 단계가 ../migrations/ 로 바꾼다
+export const MIGRATION_0033 = new URL("../migrations/0033_chat_edit.sql", import.meta.url);   // D1 단계가 ../migrations/ 로 바꾼다
 export const EDIT_FUNCTIONS = ["chat_edit_day", "chat_edit_ts", "chat_edit_iso", "chat_edit_values", "chat_edit_moved", "chat_edit_state",
   "chat_edit_apply", "chat_edit_target", "chat_edit_proposal"];
 
@@ -31,10 +31,10 @@ export async function seed(c: ECtx, tag: string, events: Ev[], o: { user?: strin
   for (const [i, e] of events.entries()) {
     const payload = { title: e.title, start: e.start, end: e.end ?? null, location: e.location ?? null, uncertain: e.uncertain ?? [],
       ...(e.notes ? { notes: e.notes } : {}) };
-    const f = (await one(c, "insert into facts (user_id, item_id, kind, ordinal, payload) values ($1::uuid, $2::uuid, 'event', $3, $4::jsonb) returning id",
+    const f = (await one(c, "insert into facts (user_id, item_id, kind, ordinal, payload) values ($1::uuid, $2::uuid, 'event', $3, $4::text::jsonb) returning id",
       [user, item, i, JSON.stringify(payload)])).id as string;
     const p = (await one(c, `insert into proposals (user_id, fact_id, action, payload, idempotency_key)
-      values ($1::uuid, $2::uuid, 'create_event', $3::jsonb, $4) returning id`, [user, f, JSON.stringify(payload), `${c.run}:edit:${tag}:p${i}`])).id as string;
+      values ($1::uuid, $2::uuid, 'create_event', $3::text::jsonb, $4) returning id`, [user, f, JSON.stringify(payload), `${c.run}:edit:${tag}:p${i}`])).id as string;
     facts.push(f); props.push(p);
   }
   return { item, facts, props };
@@ -45,9 +45,10 @@ export async function versions(c: ECtx, fact: string) {
 export const target = async (c: ECtx, pid: string, user = c.user) =>
   (await one(c, "select chat_edit_target($1::uuid, $2::uuid) as r", [user, pid])).r as Row;
 // 배열 인자는 PG 배열 리터럴 문자열로 넘긴다(PGlite·postgres.js unsafe 모두 같은 직렬화)
+// jsonb 인수는 $n::text::jsonb — postgres.js(prepare:false)는 $n::jsonb 에 묶인 문자열을 JSON 문자열 스칼라로 보낸다(_usage-sql 과 같은 이유, D1 호스팅 실행)
 export const pgArr = (xs: string[]) => `{${xs.join(",")}}`;
 export const edit = async (c: ECtx, pid: string, patch: Row, clear: string[] = [], user = c.user) =>
-  (await one(c, "select chat_edit_proposal($1::uuid, $2::uuid, $3::jsonb, $4::text[]) as r", [user, pid, JSON.stringify(patch), pgArr(clear)])).r as Row;
+  (await one(c, "select chat_edit_proposal($1::uuid, $2::uuid, $3::text::jsonb, $4::text[]) as r", [user, pid, JSON.stringify(patch), pgArr(clear)])).r as Row;
 // 사용자 JWT 로(authenticated + claims sub) — report_execution·resolve_uncertain. 끝나면 역할을 되돌린다
 export async function asUser<T>(c: ECtx, user: string, fn: () => Promise<T>): Promise<T> {
   await c.q("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: user, role: "authenticated" })]);
@@ -212,7 +213,7 @@ export const EDIT_CASES: EditCase[] = [
   } },
   { name: "bad_patch and bad_clear raise and change nothing", run: async (c) => {
     const s = await seed(c, "bad", [{ title: "합성 미팅", start: await at(c, 2, "11:00") }]);
-    const call = "select chat_edit_proposal($1::uuid, $2::uuid, $3::jsonb, $4::text[])";
+    const call = "select chat_edit_proposal($1::uuid, $2::uuid, $3::text::jsonb, $4::text[])";
     await fails(c, call, [c.user, s.props[0], JSON.stringify({ notes: "x" }), pgArr([])], "bad_patch");
     await fails(c, call, [c.user, s.props[0], JSON.stringify({}), pgArr([])], "bad_patch");
     await fails(c, call, [c.user, s.props[0], JSON.stringify({ title: null }), pgArr([])], "bad_patch");

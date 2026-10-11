@@ -48,10 +48,10 @@ Deno.test({ name: "hosted: two concurrent edits — the second waits on the row 
     item = seeded.item;
     let bErr = "";
     await a.begin(async (ta) => {
-      await ta.unsafe("select chat_edit_proposal($1::uuid, $2::uuid, $3::jsonb, $4::text[])", [user, seeded.props[0], JSON.stringify({ title: "합성 동시 A" }), "{}"] as never[]);
+      await ta.unsafe("select chat_edit_proposal($1::uuid, $2::uuid, $3::text::jsonb, $4::text[])", [user, seeded.props[0], JSON.stringify({ title: "합성 동시 A" }), "{}"] as never[]);
       await b.begin(async (tb) => {
         await tb.unsafe("set local lock_timeout = '1s'");
-        try { await tb.unsafe("select chat_edit_proposal($1::uuid, $2::uuid, $3::jsonb, $4::text[])", [user, seeded.props[0], JSON.stringify({ title: "합성 동시 B" }), "{}"] as never[]); }
+        try { await tb.unsafe("select chat_edit_proposal($1::uuid, $2::uuid, $3::text::jsonb, $4::text[])", [user, seeded.props[0], JSON.stringify({ title: "합성 동시 B" }), "{}"] as never[]); }
         catch (e) { bErr = e instanceof Error ? e.message : String(e); }
       }).catch(() => {});
     });
