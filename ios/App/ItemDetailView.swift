@@ -14,6 +14,11 @@ struct ItemDetailView: View {
   @State private var eventStates: [String: ItemEvents.State] = [:]
   @State private var actions: [String: ProposalReview.ActionState] = [:]
   @State private var calendarOK = CalendarLookup.fullAccess
+  @State private var factVersions: [FactVersions] = []                    // 0.16.0: fact 별 버전(계보·update_event 상태)
+  @State private var editStates: [String: EditFlow.CardState] = [:]        // add 가 아닌 상태 — 키 = 최고 버전 id
+  @State private var editing: [String: ChatView.EditState] = [:]
+  @State private var editConfirm: EditConfirm?                              // 고친 일정 [캘린더에 추가]의 겹침·비슷한 일정 확인창(K34 — 채팅 runAdd 와 같은 문구)
+  struct EditConfirm: Identifiable { let top: ProposalVersion; let state: EditFlow.CardState; let prompt: String; var id: String { top.id } }
   // private 저장 프로퍼티가 있으면 memberwise init 이 private 이 되므로 명시한다
   init(itemID: String, footer: AnyView? = nil) { self.itemID = itemID; self.footer = footer }
 
@@ -47,29 +52,44 @@ struct ItemDetailView: View {
       }
       if let footer { footer }
     }
+    .confirmationDialog(editConfirm?.prompt ?? "", isPresented: Binding(get: { editConfirm != nil }, set: { if !$0 { editConfirm = nil } }),
+                        titleVisibility: .visible, presenting: editConfirm) { c in
+      Button("추가") { press(c.top, c.state, .add, confirmed: true) }
+      Button("취소", role: .cancel) {}
+    }
     .navigationTitle("항목")
     .task { await load() }
     .task { await loadEvents() }                                         // 다시 보일 때마다 — 캘린더 앱에서 지우거나 넣고 돌아온 경우
     .onChange(of: scenePhase) { _, p in if p == .active { judge() } }
   }
 
-  /// 일정 한 건: 대기·다시 추가·무시함은 제안 탭 행(미리 판정·확인창 그대로), 나머지는 상태 줄만
+  /// 일정 한 건: 고친 일정(update_event·계보)은 고치기 카드와 같은 상태·버튼, 대기·다시 추가·무시함은 제안 탭 행(미리 판정·확인창 그대로), 나머지는 상태 줄만
   @ViewBuilder private func eventRow(_ r: ItemEvents.Row) -> some View {
-    let st = eventStates[r.pid] ?? .noAccess(added: false)
-    switch st {
-    case .pending, .readd, .dismissed, .noAccess(added: false):
-      ProposalActionsView(title: r.title, when: r.whenLabel, location: ProposalReview.place(r.location), addFields: calendarOK ? r.addFields : nil,
-                          proposalId: r.pid, state: binding(r.pid),
-                          mode: st == .readd ? .readd : st == .dismissed ? .addOnly : .pending, note: ItemEvents.statusText(st))
-    default:
+    if let st = editStates[r.pid], let top = factVersions.compactMap(\.top).first(where: { $0.id == r.pid }) {
       VStack(alignment: .leading, spacing: 6) {
-        Text(r.title).font(.headline)
-        Text(r.whenLabel).font(.subheadline).foregroundStyle(.secondary)
-        if let l = ProposalReview.place(r.location) { Label(l, systemImage: "mappin.and.ellipse").font(.caption).foregroundStyle(.secondary) }
-        if let t = ItemEvents.statusText(st) { Text(t).font(.caption).foregroundStyle(.secondary) }
-        if case .finished(let t)? = actions[r.pid] { Text(t).font(.caption).foregroundStyle(.secondary) }   // 방금 추가한 결과
+        Text(top.displayTitle).font(.headline)
+        Text(ChatEdit.whenText(start: top.start, end: top.end)).font(.subheadline).foregroundStyle(.secondary)
       }
-      .padding(.vertical, 4)
+      .accessibilityIdentifier("item-edit-row")
+      EditCardView(status: EditFlow.status(st), dayHeader: nil, dayLines: [], access: calendarOK, running: editing[top.id].isRunning,
+                   failure: editing[top.id].failure, onButton: { b in press(top, st, b) }, onAllow: { judge() })
+    } else {
+      let st = eventStates[r.pid] ?? .noAccess(added: false)
+      switch st {
+      case .pending, .readd, .dismissed, .noAccess(added: false):
+        ProposalActionsView(title: r.title, when: r.whenLabel, location: ProposalReview.place(r.location), addFields: calendarOK ? r.addFields : nil,
+                            proposalId: r.pid, state: binding(r.pid),
+                            mode: st == .readd ? .readd : st == .dismissed ? .addOnly : .pending, note: ItemEvents.statusText(st))
+      default:
+        VStack(alignment: .leading, spacing: 6) {
+          Text(r.title).font(.headline)
+          Text(r.whenLabel).font(.subheadline).foregroundStyle(.secondary)
+          if let l = ProposalReview.place(r.location) { Label(l, systemImage: "mappin.and.ellipse").font(.caption).foregroundStyle(.secondary) }
+          if let t = ItemEvents.statusText(st) { Text(t).font(.caption).foregroundStyle(.secondary) }
+          if case .finished(let t)? = actions[r.pid] { Text(t).font(.caption).foregroundStyle(.secondary) }   // 방금 추가한 결과
+        }
+        .padding(.vertical, 4)
+      }
     }
   }
 
@@ -99,8 +119,34 @@ struct ItemDetailView: View {
 
   /// 일정 절: 제안 목록(본인 facts ⨝ proposals) → 캘린더 대조. 못 읽으면 앞 목록을 둔다
   private func loadEvents() async {
-    if let r = await API.send(ItemEvents.query(itemID: itemID)), r.status == 200, let v = ItemEvents.decode(r.data) { events = v }
+    if let r = await API.send(ItemEvents.query(itemID: itemID)), r.status == 200 {
+      if let v = ItemEvents.decode(r.data) { events = v }
+      if let f = ChatAddEvent.facts(itemID: itemID, data: r.data) { factVersions = f }
+    }
     judge()
+  }
+
+  /// 고친 일정 버튼(§10): 바꾸기 = handleChange, 삭제 확인된 일정의 추가 = 새 값으로 새 일정(계보 확인 없음, 바꾼 뒤 지운 일정은 다시 추가 — K11).
+  /// 추가가 겹침·비슷한 일정으로 멈추면 확인창 뒤 confirmed 로 다시(K34, Codex 플랜 리뷰 M4). 끝나면 절을 다시 읽고 제안 탭을 새로 고친다
+  private func press(_ top: ProposalVersion, _ st: EditFlow.CardState, _ b: EditFlow.Button, confirmed: Bool = false) {
+    editing[top.id] = .running
+    Task {
+      let outcome: String
+      if b == .add, let f = EditFlow.addFields(top) {
+        outcome = await NotificationActions.handleAdd(fields: f, confirmed: confirmed, readd: top.status == "succeeded", checkLineage: false)
+        if ProposalFlow.needsConfirm(confirmed: confirmed, outcome: outcome) {
+          editing[top.id] = nil
+          editConfirm = EditConfirm(top: top, state: st, prompt: CalendarLookup.confirmPrompt(pid: top.id, fields: f, outcome: outcome))
+          return
+        }
+      } else if let i = EditFlow.changeInput(subject: top, state: st), let t = ProposalTiming.parse(start: i.startText, end: i.endText) {
+        outcome = await NotificationActions.handleChange(ChangeRequest(input: i, timing: t, confirmed: b == .changeAnyway))
+      } else { outcome = "fail:input" }
+      let fb = b == .add ? ChatReply.addFeedback(outcome) : ChatEdit.changeFeedback(outcome)
+      editing[top.id] = fb.retry ? .failed(fb.text) : nil
+      ProposalRouter.shared.revision += 1
+      await loadEvents()
+    }
   }
 
   /// 캘린더 대조(채팅 카드 등록 판정): 제안마다 AddEventGate 와 같은 조회 창, 이 기기 실행 기록. 읽은 일정은 화면에만(§12 통제 2)
@@ -112,6 +158,15 @@ struct ItemDetailView: View {
         ? r.timing.map { let (a, b) = $0.searchWindow; return CalendarLookup.events(CalendarLookup.store, from: a, to: b) } ?? []
         : nil
       out[r.pid] = ItemEvents.state(r, executed: (try? ex?.existing(proposalId: r.pid)) != nil, events: evs)
+    }
+    // 고친 일정(§9 B 앱 — 0.16.0): 최고 버전이 update_event, 또는 version > 1 create_event 의 계보 상태면 EditFlow 상태로 그린다(같은 판정 함수, K27)
+    let lookup = CalendarLookup.lookup(ex)
+    editStates = factVersions.reduce(into: [:]) { out, f in
+      guard let top = f.top, top.action == "update_event" || (top.action == "create_event" && top.version > 1) else { return }
+      let st = EditFlow.state(subject: top, versions: f.versions, itemID: itemID, lookup: lookup)
+      // create_event 는 계보 상태만 — 계보 없음(add)·무시함·못 읽음은 지금 행(제안 탭 행 — 무시함이면 추가만)이 그린다
+      if top.action == "create_event" { guard case .lineage = st else { return } }
+      out[top.id] = st
     }
   }
 }
