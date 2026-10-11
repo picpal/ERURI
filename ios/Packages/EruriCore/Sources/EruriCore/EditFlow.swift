@@ -21,7 +21,7 @@ public enum EditFlow {
   public enum Change: Equatable, Sendable { case done, ready(base: Event, conflicts: [Event]), userModified, deleted, unknown }
   public enum CardState: Equatable, Sendable {
     case add(ScheduleCard.Model)                          // create_event — 일정 답 카드 상태 1~6(확인 필요면 C 되묻기)
-    case lineage(prior: ProposalVersion, change: Change)  // 고쳐서 생긴 create_event 인데 앞 버전이 캘린더에 있음
+    case lineage(prior: ProposalVersion, change: Change)  // 고쳐서 생긴 create_event 인데 앞 버전이 캘린더에 있음, 또는 update_event 인데 기준 뒤 중간 버전이 캘린더에 있음(I1)
     case update(Change)                                   // update_event 최고 버전
     case movedAfterChange(ScheduleCard.Status)            // 바꾼 뒤 사용자가 그 일정을 옮김(K11) — .addedMoved·.addedMovedDay(캘린더 위치)
     case superseded, dismissed, past, noAccess, unreadable
@@ -69,6 +69,7 @@ public enum EditFlow {
     case .deleted: return .deleted
     case .unknown: return .unknown
     case .found(let e):
+      if !e.canceled, e.url == ProposalFlow.marker(newPid) { return .done }     // 식별자·넓은 조회가 찾은 일정이 이미 새 표식(P2 ①·P5 ③) — 손댄 일정이 아니다
       if userModified(e, before: before, deviceZone: deviceZone) { return .userModified }
       return .ready(base: e, conflicts: moveConflicts(newPid: newPid, timing: newTiming, events: nearNew, excluding: e))
     }
@@ -107,7 +108,18 @@ public enum EditFlow {
     let near = l.events(window(t))
     if near.contains(where: { !$0.canceled && $0.url == ProposalFlow.marker(s.id) }) { return .update(.done) }
     if s.status == "succeeded" { return applied(s, timing: t, lookup: l, near: near, deviceZone: deviceZone) }
+    // 보고 지연 중 다시 고침(최종 리뷰 I1): 서버 기준과 이 버전 사이 버전이 캘린더에 들어갔으면 그 버전이 기준 — create_event 계보와 같은 규칙·같은 상태
+    if let p = updateLineage(s, versions: versions, lookup: l) {
+      return .lineage(prior: p, change: resolve(newPid: s.id, timing: t, before: p.values, basePid: p.id, baseEventID: p.eventkitID, lookup: l, near: near,
+                                                deviceZone: deviceZone))
+    }
     return .update(resolve(newPid: s.id, timing: t, before: before, basePid: base, baseEventID: s.eventkitID, lookup: l, near: near, deviceZone: deviceZone))
+  }
+  /// update_event 의 기준(base_proposal_id)보다 뒤·이 버전보다 앞 버전 중 캘린더에 들어간 것(lineage 와 같은 판정). 서버는 이 기기 보고가 닿은 버전만
+  /// 기준으로 삼으므로, 보고 전 [캘린더도 바꾸기]로 일정 표식이 중간 버전으로 옮겨 갔을 수 있다. 기준 버전을 모르면(versions 에 없음) nil
+  static func updateLineage(_ s: ProposalVersion, versions: [ProposalVersion], lookup l: Lookup) -> ProposalVersion? {
+    guard let base = s.basePID, let bv = versions.first(where: { $0.id == base })?.version else { return nil }
+    return lineage(version: s.version, priors: versions.filter { $0.version > bv }, executed: l.executed, markerFound: { markerIn(l, $0) })
   }
   /// 바꾼 뒤(succeeded update_event) 새 표식 일정이 그 창에 없음(K11, Codex 플랜 리뷰 M5): §10 바꾸기 3을 그 버전 자신으로 다시(기준·새 표식 = 그 pid,
   /// 식별자 = 이 기기 실행 기록 또는 제안 eventkit_id, 넓은 표식 조회). 찾으면 사용자가 옮긴 것 — 버튼 없이 캘린더 위치. 삭제 확인이면 [캘린더에 추가]
@@ -178,7 +190,7 @@ public enum EditFlow {
     }
   }
 
-  /// [캘린더도 바꾸기] 입력(앱이 AddEventGate.change 요청으로 옮긴다). lineage = 그 앞 버전이 기준, update = payload before·base_proposal_id
+  /// [캘린더도 바꾸기] 입력(앱이 AddEventGate.change 요청으로 옮긴다). lineage = 그 앞 버전이 기준(create_event·update_event 모두), update = payload before·base_proposal_id
   public struct ChangeInput: Equatable, Sendable {
     public let newPid: String; public let version: Int; public let title: String; public let startText: String; public let endText: String?
     public let location: String?; public let basePid: String; public let before: ChatEdit.Values; public let baseEventID: String?

@@ -141,6 +141,37 @@ final class EditFlowTests: XCTestCase {
     let appliedNoId = ver("p2", 2, action: "update_event", status: "succeeded", start: "2026-10-10T14:00:00+09:00", before: B1, base: "p1", ek: nil)
     XCTAssertEqual(EditFlow.state(subject: appliedNoId, versions: [v1, appliedNoId], itemID: "i1", lookup: lookup([]), now: now), .update(.unknown))   // 식별자 없음 → 확인 불가
   }
+  /// 최종 리뷰 I1 재현: v1 추가(보고됨) → v2 update_event 를 [캘린더도 바꾸기](일정 url = v2 표식, 이 기기 기록 v2) → v2 보고가 서버에 닿기 전 다시 고침 →
+  /// 서버 기준 = v1 이라 v3 update_event(before = v1 값, base = v1), v2 stale. v3 카드는 "지운 일정"([캘린더에 추가] → 중복)이 아니라 v2 일정을 기준으로 바꾼다
+  func testStateUpdateUsesAnIntermediateVersionInCalendarAsTheBase() {
+    let v1 = ver("p1", 1, status: "succeeded", start: "2026-10-10T11:00:00+09:00", end: "2026-10-10T15:00:00+09:00", ek: "EK-1")
+    let v2 = ver("p2", 2, action: "update_event", status: "stale", start: "2026-10-10T14:00:00+09:00", end: "2026-10-10T18:00:00+09:00", before: B1, base: "p1", ek: "EK-1")
+    let v3 = ver("p3", 3, action: "update_event", start: "2026-10-10T15:00:00+09:00", end: "2026-10-10T19:00:00+09:00", before: B1, base: "p1", ek: "EK-1")
+    let moved = ev("EK-1", "2026-10-10T05:00:00Z", "2026-10-10T09:00:00Z", pid: "p2")
+    let st = { (l: EditFlow.Lookup) in EditFlow.state(subject: v3, versions: [v1, v2, v3], itemID: "i1", lookup: l, now: self.now) }
+    let s = st(lookup([moved], ids: ["EK-1": moved], executed: ["p1": "EK-1", "p2": "EK-1"]))
+    XCTAssertEqual(s, .lineage(prior: v2, change: .ready(base: moved, conflicts: [])))
+    XCTAssertEqual(EditFlow.status(s)?.button, .change)
+    let ci = try? XCTUnwrap(EditFlow.changeInput(subject: v3, state: s))
+    XCTAssertEqual(ci?.basePid, "p2"); XCTAssertEqual(ci?.before, v2.values); XCTAssertEqual(ci?.baseEventID, "EK-1"); XCTAssertEqual(ci?.newPid, "p3")
+    // 이 기기 기록이 없어도(재설치 등) v2 표식 일정이 v2 조회 창에 있으면 같은 판정
+    XCTAssertEqual(st(lookup([moved], ids: ["EK-1": moved])), .lineage(prior: v2, change: .ready(base: moved, conflicts: [])))
+    // 중간 버전이 캘린더에 들어간 적 없으면 지금처럼 서버 기준(v1)
+    let atV1 = ev("EK-1", "2026-10-10T02:00:00Z", "2026-10-10T06:00:00Z", pid: "p1")
+    XCTAssertEqual(st(lookup([atV1], ids: ["EK-1": atV1], executed: ["p1": "EK-1"])), .update(.ready(base: atV1, conflicts: [])))
+    // 기준 버전을 모르면(버전 목록 = [subject]) 계보를 보지 않는다 — 지금 판정 그대로
+    XCTAssertEqual(EditFlow.state(subject: v3, versions: [v3], itemID: "i1", lookup: lookup([moved], ids: ["EK-1": moved], executed: ["p2": "EK-1"]), now: now),
+                   .update(.deleted))
+  }
+  /// P2 ①·P5 ③: 식별자·넓은 조회로 찾은 기준 일정이 이미 새 표식이면(저장 뒤 기록 전 종료 + 사용자가 옮김) 손댄 일정이 아니라 끝난 바꾸기
+  func testChangeDoneWhenTheFoundBaseCarriesTheNewMarker() {
+    let t = ProposalTiming.parse(start: "2026-10-10T14:00:00+09:00", end: "2026-10-10T18:00:00+09:00")!
+    let movedAway = ev("EK-1", "2026-10-17T05:00:00Z", "2026-10-17T09:00:00Z", pid: "p2")
+    XCTAssertEqual(EditFlow.findBase(basePid: "p1", newPid: "p2", near: [], identifier: .found(movedAway), wide: { [] }), .found(movedAway))
+    XCTAssertEqual(EditFlow.change(newPid: "p2", newTiming: t, before: B1, base: .found(movedAway), nearNew: []), .done)
+    let v2 = ver("p2", 2, action: "update_event", start: "2026-10-10T14:00:00+09:00", end: "2026-10-10T18:00:00+09:00", before: B1, base: "p1", ek: "EK-1")
+    XCTAssertEqual(EditFlow.state(subject: v2, versions: [v2], itemID: "i1", lookup: lookup([movedAway], ids: ["EK-1": movedAway]), now: now), .update(.done))
+  }
   func testStateSupersededDismissedAndPast() {
     let v1 = ver("p1", 1, status: "stale", start: "2026-10-10T11:00:00+09:00"), v2 = ver("p2", 2, start: "2026-10-09T11:00:00+09:00")
     XCTAssertEqual(EditFlow.state(subject: v1, versions: [v1, v2], itemID: "i1", lookup: lookup([]), now: now), .superseded)

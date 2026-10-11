@@ -251,7 +251,9 @@ actor AddEventGate {
       let base = EditFlow.findBase(basePid: i.basePid, newPid: i.newPid, near: CalendarLookup.events(store, from: bf, to: bto), identifier: identifier,
                                    wide: { CalendarLookup.events(store, from: bt.anchor.addingTimeInterval(-EditFlow.wideSpan), to: bt.anchor.addingTimeInterval(EditFlow.wideSpan)) })
       switch EditFlow.change(newPid: i.newPid, newTiming: r.timing, before: i.before, base: base, nearNew: near) {
-      case .done: return "recovered"
+      case .done:                                       // 찾은 기준 일정이 이미 새 표식(저장 뒤 기록 전 종료 + 옮김, P2 ①·P5 ③) — 그 일정으로 기록
+        if case .found(let e) = base { try ex.record(proposalId: i.newPid, eventkitId: e.id, version: i.version) }
+        return "recovered"
       case .deleted: return "base_deleted"
       case .unknown: return "base_unknown"
       case .userModified: return "user_modified"

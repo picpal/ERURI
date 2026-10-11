@@ -5532,6 +5532,8 @@ $S reg c10 "{\"facts\":[[{\"status\":\"stale\",\"payload\":{\"title\":\"합성 �
 P1=$(python3 -c "import json;print(json.load(open('$G/ids.json'))['c10']['props'][0][0])")
 CAL "{\"op\":\"make\",\"title\":\"합성 경합\",\"start\":\"$(D 4)T02:00:00Z\",\"end\":\"$(D 4)T03:00:00Z\",\"pid\":\"$P1\"}"; CAL "{\"op\":\"exec-record\",\"title\":\"합성 경합\",\"pid\":\"$P1\"}"
 $G/inject.sh reg:c10; $G/drive.sh $T/testLook; GATE_TEXT="합성 경합" $G/drive.sh $T/testProposalsTabAdd; CAL '{"op":"count","title":"합성 경합"}'
+# ⑩'' 바꾸기 보고 지연 중 다시 고침(최종 리뷰 I1): 훅 끔 → 등록·추가 → 고치기(v2 update_event) → 훅 켬 → [캘린더도 바꾸기](표식 v2, 보고 안 감) → 다시 고치기(서버 기준 v1 → v3) → v3 카드 "고치기 전 일정"("지운 일정"·[캘린더에 추가] 아님) → 바꾸기 → 1건
+$G/inject.sh none; CAL '{"op":"hook","on":false}'; reg "합성 면담 모레 11:00–12:00 등록해줘"; say "2시로 바꿔줘"; CAL '{"op":"hook","on":true}'; tap edit-change; say "3시로 바꿔줘"; tap edit-change; CAL '{"op":"count","title":"합성 면담"}'; CAL '{"op":"hook","on":false}'; xcrun simctl launch "$(cat $G/udid)" com.picpal.eruri >/dev/null; sleep 15; $S status-item
 # ⑪ 표식 미발견 ≠ 삭제(H2): ⓐ 다음 주 ⓑ 다른 캘린더 + 2주 ⓒ 지움 ⓓ 실행 기록·eventkit_id 지우고 표식 지운 뒤 다음 주(K29)
 for v in a b c d; do
   $G/inject.sh none; reg "합성 미팅$v 모레 11:00–12:00 등록해줘"
@@ -5570,6 +5572,7 @@ c9h: SAY am>=1 change=0 → TAP ask-pm=true → TAP scheduleCard.add=true → co
 c9m: SAY am=0 / SAYH confirmedOnly=true diff=0 → TAP scheduleCard.add=true → count=1 start 18:00 / status c9m 1:create_event:stale,2:create_event:succeeded
 ⑩ SAY lineage=true change=1 → TAP edit-change=true → count=1 start 내일 marker≠v1 / status-item 1:create_event:stale,2:create_event:succeeded (알림 없음 — DiagLog "report stale")
 ⑩ 경합 LOOK lineage=true change=1 / TAB found=true lineageText=true / cal count=1 (합성 경합)
+⑩'' SAY change=1 → TAP edit-change=true → SAY lineage=true change=1 deleted=false add=0 → TAP edit-change=true → cal count=1 start 15:00 (합성 면담) / status-item 1:create_event:succeeded,2:update_event:stale,3:update_event:succeeded
 ⑪ a: SAY modified=true count=1 / b: SAY modified=true count=1 / c: SAY deleted=true add=1 count=0 / d: LOOK unknown=true change=0 add=0 count=1
 ⑫ TAP scheduleCard.add=true → SAY change=1 modified=false → TAP edit-change=true → count=1 allDay=true
 ⑫' TAP scheduleCard.add=true → SAY change=1 modified=false → TAP edit-change=true → count=1 allDay=true (2일)
