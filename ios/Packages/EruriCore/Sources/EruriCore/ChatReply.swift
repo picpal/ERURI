@@ -26,6 +26,8 @@ public enum ChatReply {
     public let mail: JSONValue?
     /// 메일 요약 칸(스펙 §9, 0.15.0): intent = mail_summary 일 때 모델 출력 그대로. 앱은 translate·target_in_message 만 읽고(MailSummary.fields) 나머지는 그대로 mail-read/search 에 보낸다
     public let mail_read: JSONValue?
+    /// 일정 고치기(스펙 §9 B 서버 6, 0.16.0): intent = edit_event 일 때 status·before·after·proposal_id·action. 0.15.x 서버·다른 의도면 nil
+    public let edit: ChatEdit.Response?
   }
   public struct Schedule: Decodable, Sendable, Equatable {
     public let from: String; public let to: String
@@ -50,6 +52,8 @@ public enum ChatReply {
     case "fail:no_full_access": ("캘린더 전체 접근을 허용해야 추가할 수 있습니다", true)
     case let o where ProposalFlow.conflictCount(o) != nil: ("같은 시간에 일정이 있습니다", true)
     case let o where ProposalFlow.similarCount(o) != nil: ("캘린더에 비슷한 일정이 있습니다", true)
+    case let o where o.hasPrefix("lineage:"): ("고치기 전 일정이 캘린더에 있어 추가하지 않았어요 — 채팅이나 항목 상세에서 바꿔 주세요", false)   // §10 계보 확인
+    case "fail:lineage_unknown": ("확인하지 못했어요. 다시 눌러 주세요.", true)
     default: ("추가하지 못했습니다. 다시 눌러 주세요", true)
     }
   }

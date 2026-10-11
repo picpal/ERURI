@@ -6,8 +6,8 @@ import CryptoKit
 /// EventKit·네트워크 없이 판단·문구만 — 업로드·결과 조회는 앱(ChatView·LinkCapture)
 public enum ChatAddEvent {
   public static let appName = "채팅"
-  /// 이 앱이 처리하는 행동 의도(스펙 §9 "하위 호환"): add_event(0.13.0)·mail_action(0.14.0 메일 정리)·mail_summary(0.15.0 메일 요약)
-  public static let intents = ["add_event", "mail_action", "mail_summary"]   // 이 앱이 처리하는 행동(§9 하위 호환) — 0.15.0 메일 요약
+  /// 이 앱이 처리하는 행동 의도(스펙 §9 "하위 호환"): add_event(0.13.0)·mail_action(0.14.0)·mail_summary(0.15.0)·edit_event(0.16.0 — edit_target 과 함께)
+  public static let intents = ["add_event", "mail_action", "mail_summary", "edit_event"]
   public static func isAddEvent(_ intent: String?) -> Bool { intent == "add_event" }
 
   /// 같은 글 판정용(키에만): 줄바꿈을 포함한 공백 연속을 공백 하나로, 앞뒤 제거
@@ -83,6 +83,20 @@ public enum ChatAddEvent {
       guard let p = (f.proposals ?? []).max(by: { ($0.version ?? 0) < ($1.version ?? 0) }), ["proposed", "succeeded"].contains(p.status) else { return nil }
       return ChatReply.Proposal(id: p.id, item_id: itemID, action: p.action, status: p.status, payload: p.payload ?? [:])
     }
+  }
+
+  /// 그 항목의 fact 별 모든 버전(ItemEvents.query 응답 — 0.16.0 부터 eventkit_id 포함), 순번 순. 계보 확인·update_event 상태가 앞 버전을 본다. 형식이 틀리면 nil
+  public static func facts(itemID: String, data: Data) -> [FactVersions]? {
+    struct F: Decodable { let ordinal: Int?; let proposals: [ChatEdit.VersionRow]? }
+    guard let fs = try? JSONDecoder().decode([F].self, from: data) else { return nil }
+    return fs.map { FactVersions(itemID: itemID, ordinal: $0.ordinal ?? 0, versions: ($0.proposals ?? []).map(ChatEdit.version).sorted { $0.version < $1.version }) }
+      .sorted { $0.ordinal < $1.ordinal }
+  }
+  /// 등록 턴의 proposalIDs·맥락 줄(스펙 A): 최고 버전이 proposed·succeeded 인 fact 만(카드와 같은 기준), 최대 3, 순번 순. 없으면 nil
+  public static func registeredLines(_ facts: [FactVersions]) -> (ids: [String], line: String)? {
+    let tops = facts.compactMap(\.top).filter { ["proposed", "succeeded"].contains($0.status) }.prefix(3)
+    guard !tops.isEmpty else { return nil }
+    return (tops.map(\.id), tops.map { ChatEdit.registeredPrefix + ChatEdit.lineBody(title: $0.title, start: $0.start, end: $0.end) }.joined(separator: "\n"))
   }
 
   /// 카드 ① 출처(D8): /chat 응답이 없으므로 항목의 출처를 그대로 만든다 — "채팅에서 등록한 일정" · "M/D 등록"(보낸 시각, 서울)

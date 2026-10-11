@@ -340,4 +340,67 @@ final class ChatHistoryTests: XCTestCase {
     try st.save([q("x", at: 0), a])
     XCTAssertEqual(try st.load().map(\.mailRead), [nil, t])
   }
+
+  // ── 0.16.0 채팅 일정 개선(스펙 §9 A·B 앱 → 서버) ──
+  func addTurn(at: TimeInterval, ids: [String]? = ["p1"], line: String? = "등록함: 합성 미팅 · 10/10(토) 11:00–15:00") -> R {
+    R(at: t0.addingTimeInterval(at), kind: .addEvent, question: "모레 11-15시 합성 미팅 등록해줘", link: "일정 1건을 찾았어요", linkDone: true,
+      itemID: "i1", proposalIDs: ids, contextLine: line)
+  }
+  func editTurn(at: TimeInterval, status: String = "ok", pid: String = "p2", line: String? = "고침: 합성 미팅 · 10/9(금) 11:00–15:00",
+                editPid: String? = nil) -> R {
+    let json = #"{"answer_id":"e","answer":"","refused":false,"citations":[],"proposals":[],"intent":"edit_event","edit":{"status":"\#(status)","proposal_id":"\#(pid)","action":"create_event","before":null,"after":null}}"#
+    return R(at: t0.addingTimeInterval(at), kind: .editEvent, question: "앗 내일이야", reply: Data(json.utf8), contextLine: line, editPid: editPid)
+  }
+  func testEditKindAndNewFieldsRoundTripAndOldFilesStillLoad() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("chat-history.json")
+    let s = ChatHistoryStore(url: url)
+    try s.save([addTurn(at: 0), editTurn(at: 60, editPid: "p3")])
+    let back = try s.load()
+    XCTAssertEqual(back.map(\.kind), [.addEvent, .editEvent])
+    XCTAssertEqual(back[0].proposalIDs, ["p1"]); XCTAssertEqual(back[1].contextLine, "고침: 합성 미팅 · 10/9(금) 11:00–15:00")
+    XCTAssertEqual(back[1].editPid, "p3"); XCTAssertNil(back[0].editPid)
+    // 0.15.x 가 쓴 레코드(새 칸 없음)도 그대로 읽는다
+    let old = Data(#"{"version":1,"records":[{"id":"\#(UUID().uuidString)","at":1790000000,"kind":"addEvent","question":"q","linkDone":true,"linkSaved":false,"judged":{}}]}"#.utf8)
+    try old.write(to: url)
+    XCTAssertEqual(try s.load().first?.proposalIDs, nil)
+  }
+  func testContextIncludesRegistrationAndOkEditTurns() {
+    let r = [q("앞 질문", at: 0), addTurn(at: 60), editTurn(at: 120), editTurn(at: 180, status: "expired", line: nil),
+             addTurn(at: 240, ids: nil, line: nil)]
+    let c = ChatHistory.context(r, now: t0.addingTimeInterval(300))
+    XCTAssertEqual(c.map(\.answer), ["답", "등록함: 합성 미팅 · 10/10(토) 11:00–15:00", "고침: 합성 미팅 · 10/9(금) 11:00–15:00"])
+    XCTAssertEqual(c[1].question, "모레 11-15시 합성 미팅 등록해줘")
+  }
+  func testContextKeepsTheLatestThree() {
+    let r = [q("q1", at: 0), addTurn(at: 60), q("q2", at: 120), editTurn(at: 180)]
+    XCTAssertEqual(ChatHistory.context(r, now: t0.addingTimeInterval(200)).map(\.question), ["모레 11-15시 합성 미팅 등록해줘", "q2", "앗 내일이야"])
+  }
+  func testEditTargetIsTheLatestRegistrationWithin30Minutes() {
+    XCTAssertEqual(ChatHistory.editTarget([addTurn(at: 0)], now: t0.addingTimeInterval(1800)), "p1")          // 정확히 30분은 된다
+    XCTAssertNil(ChatHistory.editTarget([addTurn(at: 0)], now: t0.addingTimeInterval(1801)))
+    XCTAssertEqual(ChatHistory.editTarget([addTurn(at: 0), editTurn(at: 600), q("q", at: 900)], now: t0.addingTimeInterval(1000)), "p1")   // 고친 뒤에도 등록 턴의 첫 id
+    XCTAssertNil(ChatHistory.editTarget([addTurn(at: 0), addTurn(at: 60, ids: nil, line: nil)], now: t0.addingTimeInterval(120)))           // 가장 최근 등록 턴만(앞 턴은 대상 아님)
+    XCTAssertEqual(ChatHistory.editTarget([addTurn(at: 0, ids: ["m1", "m2"])], now: t0.addingTimeInterval(60)), "m1")                       // 다건도 보낸다(서버가 multi)
+    XCTAssertNil(ChatHistory.editTarget([q("q", at: 0)], now: t0.addingTimeInterval(60)))
+  }
+  func testRewriteContextChangesTheLatestTurnOfThatFact() throws {
+    let multi = addTurn(at: 0, ids: ["m1", "p1"], line: "등록함: 합성 저녁 · 10/10(토) 종일\n등록함: 합성 미팅 · 10/14(수) 06:00")
+    let a = try XCTUnwrap(ChatHistory.rewriteContext([multi], factVersions: ["p1", "p3"], line: "합성 미팅 · 10/14(수) 18:00"))
+    XCTAssertEqual(a[0].contextLine, "등록함: 합성 저녁 · 10/10(토) 종일\n등록함: 합성 미팅 · 10/14(수) 18:00")
+    let b = try XCTUnwrap(ChatHistory.rewriteContext([addTurn(at: 0), editTurn(at: 60, pid: "p2")], factVersions: ["p1", "p2", "p3"], line: "합성 미팅 · 10/9(금) 18:00"))
+    XCTAssertEqual(b.map(\.contextLine), ["등록함: 합성 미팅 · 10/10(토) 11:00–15:00", "고침: 합성 미팅 · 10/9(금) 18:00"])
+    XCTAssertNil(ChatHistory.rewriteContext([addTurn(at: 0)], factVersions: ["zz"], line: "x"))
+  }
+  func testRestoredLeavesAnsweredEditTurns() {
+    XCTAssertNil(ChatHistory.restored([editTurn(at: 0)])[0].error)
+  }
+  /// 고치기 카드가 따라가는 제안(Codex 플랜 리뷰 H2·Fable #1): 같은 카드의 되묻기 성공이 만든 새 버전(editPid)이 응답의 proposal_id 보다 먼저
+  func testEditSubjectFollowsTheAskBackVersion() throws {
+    XCTAssertEqual(ChatHistory.editSubject(editTurn(at: 0, pid: "p2")), "p2")                    // 옛 기록(editPid 없음) — 응답 그대로
+    XCTAssertEqual(ChatHistory.editSubject(editTurn(at: 0, pid: "p2", editPid: "p3")), "p3")
+    XCTAssertNil(ChatHistory.editSubject(addTurn(at: 0)))
+    let b = try XCTUnwrap(ChatHistory.rewriteContext([addTurn(at: 0), editTurn(at: 60, pid: "p2", editPid: "p3")], factVersions: ["p1", "p3"],
+                                                     line: "합성 미팅 · 10/9(금) 18:00"))
+    XCTAssertEqual(b[1].contextLine, "고침: 합성 미팅 · 10/9(금) 18:00")
+  }
 }

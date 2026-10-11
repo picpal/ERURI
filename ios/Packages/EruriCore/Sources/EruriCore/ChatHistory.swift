@@ -3,7 +3,7 @@ import Foundation
 /// 채팅 대화 기록·짧은 맥락(스펙 §9 "대화 기록·짧은 맥락", 2026-10-04 사용자 결정 B): 대화 하나가 이어지고, 기록은 기기에만 30일.
 /// 질문 턴의 서버 응답은 받은 그대로(JSON) 둔다 — 다시 열 때 같은 해석(ChatReply.decode)·카드 계산(기기 캘린더는 다시 읽음)을 거친다
 public enum ChatHistory {
-  public enum Kind: String, Codable, Sendable { case question, link, image, addEvent, mailAction, mailSummary }   // addEvent = 채팅 일정 등록(0.13.0) · mailAction = 채팅 메일 정리(0.14.0) · mailSummary = 채팅 메일 요약(0.15.0)
+  public enum Kind: String, Codable, Sendable { case question, link, image, addEvent, mailAction, mailSummary, editEvent }   // addEvent = 채팅 일정 등록(0.13.0) · mailAction = 채팅 메일 정리(0.14.0) · mailSummary = 채팅 메일 요약(0.15.0) · editEvent = 방금 등록한 일정 고치기(0.16.0)
 
   public struct Record: Codable, Sendable, Equatable, Identifiable {
     public let id: UUID
@@ -19,14 +19,17 @@ public enum ChatHistory {
     public var itemID: String?               // 채팅 일정 등록: 일정을 찾은 항목(카드가 그 항목의 제안을 다시 읽는다, 0.13.0)
     public var mail: MailTurn?                 // 메일 정리 턴(0.14.0): 조건·미리보기 글·토큰·마지막 상태 — 이 기기에만
     public var mailRead: MailSummaryTurn?                 // 메일 요약 턴(0.15.0): 조건·후보·읽기 결과·토큰 — 이 기기에만
+    public var proposalIDs: [String]?            // 일정 등록 턴(0.16.0): 카드가 처음 제안을 읽을 때 fact 마다 최고 버전 id(순번 순) — 첫 id 가 edit_target
+    public var contextLine: String?              // 등록 턴 "등록함: …"(일정마다 한 줄, proposalIDs 순서)·ok 고치기 턴 "고침: …" — 맥락으로 보내는 줄(스펙 A)
+    public var editPid: String?                  // 고치기 턴(0.16.0): 카드가 따라가는 제안 id — 응답의 edit.proposal_id, 같은 카드의 되묻기 성공 때 그 새 버전(Fable 플랜 리뷰 #1)
     public var judged: [String: Bool]      // 인용 item_id → 관련 있음(맞아요·틀렸어요 — 서버 eval_judgments 와 같은 값)
 
     public init(id: UUID = UUID(), at: Date, kind: Kind, question: String, reply: Data? = nil, error: String? = nil, link: String? = nil,
                 linkDone: Bool = false, linkSaved: Bool = false, seenItemID: String? = nil, itemID: String? = nil, judged: [String: Bool] = [:],
-                mail: MailTurn? = nil, mailRead: MailSummaryTurn? = nil) {
+                mail: MailTurn? = nil, mailRead: MailSummaryTurn? = nil, proposalIDs: [String]? = nil, contextLine: String? = nil, editPid: String? = nil) {
       self.id = id; self.at = at; self.kind = kind; self.question = question; self.reply = reply; self.error = error; self.link = link
       self.linkDone = linkDone; self.linkSaved = linkSaved; self.seenItemID = seenItemID; self.itemID = itemID; self.judged = judged
-      self.mail = mail; self.mailRead = mailRead
+      self.mail = mail; self.mailRead = mailRead; self.proposalIDs = proposalIDs; self.contextLine = contextLine; self.editPid = editPid
     }
   }
 
@@ -66,6 +69,9 @@ public enum ChatHistory {
         // 검색·읽기 결과를 받기 전에 닫혔으면 끝난 문구로(읽기는 비용이 들어 다시 보내지 않는다). 후보 카드(choosing)는 10분 안이면 그대로 누를 수 있다
         if x.mailRead == nil { x.mailRead = MailSummaryTurn(phase: .ended, note: MailSummaryText.interrupted) }
         else if x.mailRead?.phase == .finding || x.mailRead?.phase == .reading { x.mailRead?.phase = .ended; x.mailRead?.note = MailSummaryText.interrupted }
+      case .editEvent:
+        // 고치기 턴은 응답을 받은 뒤에만 이 종류가 된다(K16). 응답이 없으면 질문 턴과 같은 문구
+        if x.reply == nil && x.error == nil { x.error = ChatHistoryText.interruptedAnswer }
       }
       return x
     }
@@ -85,16 +91,57 @@ public enum ChatHistory {
     return i
   }
 
-  /// 다음 질문과 보낼 직전 대화(최대 3, 오래된 것부터): 구간 안에서 답을 받은 질문 턴만. 링크·사진·오류 턴은 구간을 잇지만 넣지 않는다
+  /// 다음 질문과 보낼 직전 대화(최대 3, 오래된 것부터, 스펙 A): 구간 안에서 답을 받은 질문 턴 + 일정을 찾은 등록 턴(proposalIDs·contextLine) + ok 고치기 턴(contextLine).
+  /// 링크·사진·오류·메일 턴은 구간을 잇지만 넣지 않는다
   public static func context(_ r: [Record], now: Date) -> [ContextTurn] {
     guard let s = segmentStart(r, now: now) else { return [] }
     var out: [ContextTurn] = []                        // 뒤에서부터 3개를 모으면 멈춘다(긴 구간에서 응답을 전부 decode 하지 않게)
     for rec in r[s...].reversed() {
-      guard rec.kind == .question, let d = rec.reply, let a = ChatReply.decode(d) else { continue }
-      out.append(ContextTurn(question: rec.question, answer: summary(a)))
+      switch rec.kind {
+      case .question:
+        guard let d = rec.reply, let a = ChatReply.decode(d) else { continue }
+        out.append(ContextTurn(question: rec.question, answer: summary(a)))
+      case .addEvent where rec.proposalIDs?.isEmpty == false, .editEvent:
+        guard let line = rec.contextLine, !line.isEmpty else { continue }
+        out.append(ContextTurn(question: rec.question, answer: clip16(line, max: contextAnswerMax)))
+      default: continue
+      }
       if out.count == contextTurns { break }
     }
     return out.reversed()
+  }
+
+  /// 고칠 대상(스펙 B 앱 → 서버): 맥락 구간 안 가장 최근 일정 등록 턴 하나가 보낸 지 30분 이하(기기 시계)이고 proposalIDs 가 있으면 그 첫 id.
+  /// 그보다 앞 등록 턴은 대상이 아니다. 다건 등록 턴도 보낸다(서버가 multi). 고친 뒤 다시 고칠 때도 같은 등록 턴의 첫 id(서버가 fact 의 최신 버전을 찾는다)
+  public static func editTarget(_ r: [Record], now: Date) -> String? {
+    guard let s = segmentStart(r, now: now), let reg = r[s...].last(where: { $0.kind == .addEvent }) else { return nil }
+    guard now.timeIntervalSince(reg.at) <= contextWindow else { return nil }
+    return reg.proposalIDs?.first
+  }
+
+  /// C 되묻기 성공(스펙 A 예외, Codex M6): 그 fact 를 가리키는 가장 최근 맥락 턴의 줄을 새 값으로. 등록 턴은 그 일정 줄만(proposalIDs 색인, K15),
+  /// ok 고치기 턴은 "고침: " 줄 전체. factVersions = 그 fact 의 모든 버전 id. 바꿀 턴이 없으면 nil
+  public static func rewriteContext(_ r: [Record], factVersions: Set<String>, line: String) -> [Record]? {
+    for i in r.indices.reversed() {
+      let rec = r[i]
+      if rec.kind == .addEvent, let ids = rec.proposalIDs, let k = ids.firstIndex(where: { factVersions.contains($0) }) {
+        var lines = (rec.contextLine ?? "").components(separatedBy: "\n")
+        guard k < lines.count else { return nil }
+        lines[k] = ChatEdit.registeredPrefix + line
+        var out = r; out[i].contextLine = lines.joined(separator: "\n"); return out
+      }
+      if rec.kind == .editEvent, rec.contextLine != nil, let pid = editSubject(rec), factVersions.contains(pid) {
+        var out = r; out[i].contextLine = ChatEdit.editedPrefix + line; return out
+      }
+    }
+    return nil
+  }
+
+  /// 고치기 턴 카드가 따라가는 제안 id(계획 P6a readCalendar·P6b resolveAsk): editPid(응답 때 edit.proposal_id, 같은 카드의 되묻기 성공 때 새 버전),
+  /// editPid 가 없는 기록이면 응답의 proposal_id. 스펙 표 "stale — 뒤 턴에서 다시 고침"은 다른 턴이 고친 경우다 — 같은 카드의 버튼이 만든 버전은 따라간다
+  public static func editSubject(_ rec: Record) -> String? {
+    guard rec.kind == .editEvent else { return nil }
+    return rec.editPid ?? rec.reply.flatMap { ChatReply.decode($0)?.edit?.proposal_id }
   }
 
   /// 답 요약(D5): 답 문장 + 일정 제안(최대 3) "일정: 제목 · 시작 · 장소", UTF-16 400자
