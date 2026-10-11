@@ -684,6 +684,16 @@ Deno.test("guardContextSender: a context sender the current message does not nam
     assertEquals(g(q), mr(), q);
   }
   assertEquals(g("그 메일 중 보안 거 요약해줘", { subject_words: ["보안"] }), mr({ subject_words: ["보안"] }));
+  // G1 r3(재리뷰1 Important): 맥락 후속의 위치말·관형형(~한·~은)·지시어 뒤 일반 명사·메일함류는 이름이 아니다 — 맥락 발신자·target_in_message 거짓 그대로
+  for (const q of ["위에 거 요약해줘", "위에 거 번역해줘", "위에거 번역해줘", "앞에 거 요약해줘", "밑에 거 요약해줘", "방금 말한 거 요약해줘", "요약한 거 번역해줘",
+    "말한 거 번역해줘", "앞에서 말한 거 번역해줘", "중요한 거 요약해줘", "아까 보여준 거 번역해줘", "그 안내 메일 요약해줘", "그 보안 메일 요약해줘",
+    "이 안내 메일 번역해줘", "메일함에서 그거 요약해줘", "Gmail에서 그거 요약해줘", "받은편지함에서 그거 요약해줘", "방금 거 다시 요약해줘",
+    "첫 번째 거 요약해줘", "두번째 거 요약해줘", "그 메일 자세히 요약해줘"]) {
+    assertEquals(g(q, { translate: q.includes("번역") }), mr({ translate: q.includes("번역") }), q);
+  }
+  // '이메일' 표지가 이름 안의 "이메일"을 끊지 않는다 — 이름 전체가 sender
+  assertEquals(g("합성이메일 거 요약해줘"), mr({ sender: "합성이메일", target_in_message: true }));
+  assertEquals(g("합성상점 이메일 요약해줘"), mr({ sender: "합성상점", target_in_message: true }));
   // 지금 글이 맥락 발신자를 말함 / 맥락에 없는 발신자 / sender null / 맥락 없음 → 손대지 않는다
   assertEquals(g("합성은행 거 요약해줘"), mr());
   assertEquals(g("합성 은행 거 요약해줘"), mr());
