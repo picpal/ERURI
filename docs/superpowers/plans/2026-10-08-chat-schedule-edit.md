@@ -3867,7 +3867,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 PostgREST 중첩 embed가 되는지 본다 — 테스트 사용자의 제안이 하나라도 있는 호스팅 DB에서(행이 없으면 빈 배열이어도 400이 아니면 문법은 통과):
 
-Run: `set -a; . supabase/.env; set +a; U=$(deno run --allow-net --allow-env --allow-read --env-file=supabase/.env -e 'import { userClient } from "./supabase/tests/_testenv.ts"; const { c } = await userClient(23); const s = (await c.auth.getSession()).data.session; console.log(s?.access_token ?? "")' 2>/dev/null); curl -s -o /dev/null -w '%{http_code}\n' "$SUPABASE_URL/rest/v1/proposals?select=status,version,facts(proposals(id,version,status,start:payload->>start,end_at:payload->>end))&limit=1" -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $U"; curl -s -o /dev/null -w '%{http_code}\n' "$SUPABASE_URL/rest/v1/proposals?select=id,facts(item_id,ordinal,proposals(id,action,status,version,payload,eventkit_id))&limit=1" -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $U"`
+Run: `set -a; . supabase/.env; set +a; U=$(deno eval --env-file=supabase/.env 'import { userClient } from "./supabase/tests/_testenv.ts"; const { c } = await userClient(23); const s = (await c.auth.getSession()).data.session; console.log(s?.access_token ?? "")' 2>/dev/null); [ -n "$U" ] || echo token_empty; curl -s -o /dev/null -w '%{http_code}\n' "$SUPABASE_URL/rest/v1/proposals?select=status,version,facts(proposals(id,version,status,start:payload->>start,end_at:payload->>end))&limit=1" -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $U"; curl -s -o /dev/null -w '%{http_code}\n' "$SUPABASE_URL/rest/v1/proposals?select=id,facts(item_id,ordinal,proposals(id,action,status,version,payload,eventkit_id))&limit=1" -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $U"`
 Expected: `200` 두 줄(둘째 = P1 `ChatEdit.query` 모양 — 고치기 카드·답 카드 `update_event`가 같은 중첩 embed를 쓴다, Fable 플랜 리뷰 N4). 400(관계 해석 실패)이면 U1 대안으로 간다 — Step 4의 `serverProposal`을 두 요청(`proposals?id=eq.<pid>&select=…,fact_id` → `proposals?fact_id=eq.<f>&select=id,version,status,start:payload->>start,end_at:payload->>end`)으로 같은 `Deadline.run(seconds: 5)` 안에서 하고, 메인에게 알린다(스펙 K13 문구 수정). 토큰 값은 출력하지 않는다.
 
 - [ ] **Step 2: `CalendarLookup`**
@@ -5064,7 +5064,7 @@ try {
 }
 ```
 
-Run: `deno check supabase/scripts/smoke-edit.ts && deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/smoke-edit.ts; deno run --allow-net --allow-env --allow-read --env-file=supabase/.env -e 'import { service as sb, testUserId } from "./supabase/tests/_testenv.ts"; const u = await testUserId(22); const { count } = await sb.from("items").select("id", { count: "exact", head: true }).eq("user_id", u).like("idempotency_key", "test:%smokeedit"); console.log("left", count)'`
+Run: `deno check supabase/scripts/smoke-edit.ts && deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/smoke-edit.ts; deno eval --env-file=supabase/.env 'import { service as sb, testUserId } from "./supabase/tests/_testenv.ts"; const u = await testUserId(22); const { count } = await sb.from("items").select("id", { count: "exact", head: true }).eq("user_id", u).like("idempotency_key", "test:%smokeedit"); console.log("left", count)'`
 Expected: 단계 6줄 모두 `"ok":true`, 마지막 `"gate":"pass"`, `left 0`. ②·③이 모델 판단으로 실패하면(`intent` ≠ `edit_event`) 한 번 더 돌리고, 또 실패하면 E5 기록과 대조해 메인에게(EDIT-eval이 통과한 문장이다).
 
 - [ ] **Step 7: 기록·커밋**
@@ -5098,6 +5098,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 Run: `grep -n 'EDIT-deploy\|SUMMARY-sim' docs/superpowers/phase1/gates.md; grep -n 'MARKETING_VERSION' ios/project.yml; pgrep -x deno || echo none; vm_stat | grep -E 'free|compressor'; ls -d .context/gate0150 .context/gate0140 2>/dev/null`
 Expected: `EDIT-deploy`·`SUMMARY-sim` 통과, `MARKETING_VERSION: 0.15.0`, `none`. 실호출 창 밖인지, 테스트 사용자 23을 쓰는 다른 실행이 없는지 메인이 확인한다(정리가 사용자 23의 "이 게이트 시작 뒤" 감사·진단 행을 지운다 — K19).
+
+U1 재확인(P5 Step 1과 같은 조회 — `deno eval`로 정정, 최종 리뷰 P5 ⑥·⑦). 응답 모양까지 본다(토큰·값은 출력하지 않는다):
+
+Run: `set -a; . supabase/.env; set +a; U=$(deno eval --env-file=supabase/.env 'import { userClient } from "./supabase/tests/_testenv.ts"; const { c } = await userClient(23); const s = (await c.auth.getSession()).data.session; console.log(s?.access_token ?? "")'); [ -n "$U" ] || echo token_empty; curl -s "$SUPABASE_URL/rest/v1/proposals?select=status,version,facts(proposals(id,version,status,start:payload->>start,end_at:payload->>end))&limit=1" -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $U" | python3 -c 'import json,sys; r=json.load(sys.stdin); print("rows", len(r) if isinstance(r, list) else r.get("code")); [print(type(x.get("facts")).__name__, type((x.get("facts") or {}).get("proposals")).__name__) for x in (r[:1] if isinstance(r, list) else [])]'`
+Expected: `token_empty` 없음, `rows 1` 다음 줄 `dict list`(facts 객체·proposals 배열 — `EditFlow.priors(row:)`가 읽는 모양). `rows 0`이면 Step 3 ⑩ 뒤(사용자 23 행이 생긴 뒤) 같은 명령을 다시 돌려 `gates.md` `EDIT-sim` 근거 칸에 모양을 적는다(P5 ⑦ — 계보 확인이 `fail:lineage_unknown`으로만 도는지 가르는 실측, 필수). 400·`dict list`가 아니면 멈추고 메인에게(U1 대안 — P5 Step 1).
 
 하네스 원본은 파일 유무로 고른다(0.15.0 G1과 같은 규칙 — `gate0150`에 `GateHost.swift.txt`·`project.gate0150.yml.txt`가 있으면 그것, 없으면 `gate0140`):
 
@@ -5597,7 +5602,7 @@ $S reg b3 "{\"facts\":[[{\"payload\":{\"title\":\"합성 워크숍\",\"start\":\
 $S reg b4 "{\"facts\":[[{\"status\":\"succeeded\",\"payload\":{\"title\":\"합성 미팅\",\"start\":\"$(d 3)T10:00:00+09:00\",\"end\":\"$(d 3)T11:00:00+09:00\",\"uncertain\":[]}},{\"action\":\"update_event\",\"payload\":{\"title\":\"합성 미팅\",\"start\":\"$(d 3)T14:00:00+09:00\",\"end\":\"$(d 3)T15:00:00+09:00\",\"uncertain\":[],\"before\":{\"title\":\"합성 미팅\",\"start\":\"$(d 3)T10:00:00+09:00\",\"end\":\"$(d 3)T11:00:00+09:00\",\"location\":null}}}]]}"
 $S reg b5 "{\"facts\":[[{\"status\":\"succeeded\",\"payload\":{\"title\":\"합성 송별\",\"start\":\"$(d 6)T20:00:00+09:00\",\"uncertain\":[]}}]]}"
 B4V1=$(python3 -c "import json;print(json.load(open('$G/ids.json'))['b4']['props'][0][0])"); B4V2=$(python3 -c "import json;print(json.load(open('$G/ids.json'))['b4']['props'][0][1])")
-deno run --allow-net --allow-env --allow-read --env-file=supabase/.env -e "import { service as sb } from './supabase/tests/_testenv.ts'; const { data } = await sb.from('proposals').select('payload').eq('id', '$B4V2').single(); await sb.from('proposals').update({ payload: { ...data!.payload, base_proposal_id: '$B4V1' } }).eq('id', '$B4V2'); console.log('base set')"
+deno eval --env-file=supabase/.env "import { service as sb } from './supabase/tests/_testenv.ts'; const { data } = await sb.from('proposals').select('payload').eq('id', '$B4V2').single(); await sb.from('proposals').update({ payload: { ...data!.payload, base_proposal_id: '$B4V1' } }).eq('id', '$B4V2'); console.log('base set')"
 P=$(python3 -c "import json;i=json.load(open('$G/ids.json'));print(' '.join(i[t]['props'][0][-1] for t in ['b1','b5']))")
 read B1 B5 <<< "$P"
 CAL "{\"op\":\"make\",\"title\":\"합성 치과\",\"start\":\"$(d 1)T01:00:00Z\",\"end\":\"$(d 1)T02:00:00Z\",\"pid\":\"$B1\"}"
@@ -5606,7 +5611,7 @@ CAL "{\"op\":\"make\",\"title\":\"합성 송별\",\"start\":\"$(d 7)T12:00:00Z\"
 CAL "{\"op\":\"make\",\"title\":\"합성 회식\",\"start\":\"$(d 2)T06:30:00Z\",\"end\":\"$(d 2)T07:30:00Z\"}"                           # b2 와 겹침
 CAL "{\"op\":\"make\",\"title\":\"합성 요가\",\"start\":\"$(d 3)T00:00:00Z\",\"end\":\"$(d 3)T00:30:00Z\"}"
 # 주입할 답: 제안 다섯(최고 버전), 기간 월~일
-deno run --allow-net --allow-env --allow-read --allow-write --env-file=supabase/.env -e "
+deno eval --env-file=supabase/.env "
 import { service as sb } from './supabase/tests/_testenv.ts';
 const ids = JSON.parse(Deno.readTextFileSync('$G/ids.json'));
 const props = [];
