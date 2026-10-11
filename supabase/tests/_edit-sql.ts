@@ -247,5 +247,102 @@ export const EDIT_CASES: EditCase[] = [
     const src = (await one(c, "select prosrc from pg_proc where proname = 'chat_edit_state'")).prosrc as string;
     assert(/order by p\.version for update/i.test(src), "for update on the fact's proposals");
   } },
+  { name: "resolve ampm: 06:00 → 18:00 moves the end by the same 12 h, removes only ampm, old version stale", run: async (c) => {
+    const s = await seed(c, "r1", [{ title: "합성 미팅", start: await at(c, 3, "06:00"), end: await at(c, 3, "08:00"), uncertain: ["ampm", "tz"] }]);
+    const r = await resolve(c, s.props[0], "ampm", await at(c, 3, "18:00"));
+    assertEquals([r.status, r.version], ["ok", 2]);
+    const v = await versions(c, s.facts[0]);
+    assertEquals([v[0].status, v[1].action, v[1].payload.start, v[1].payload.end, v[1].payload.uncertain],
+      ["stale", "create_event", await at(c, 3, "18:00"), await at(c, 3, "20:00"), ["tz"]]);
+  } },
+  { name: "resolve ampm boundary: 00:00 ↔ 12:00 ok; 'as is' ok and clears the code; +6 h or the next day's value → bad_value", run: async (c) => {
+    const a = await seed(c, "r2", [{ title: "합성 자정", start: await at(c, 3, "00:00"), uncertain: ["ampm"] }]);
+    assertEquals((await resolve(c, a.props[0], "ampm", await at(c, 3, "12:00"))).status, "ok");
+    const b = await seed(c, "r3", [{ title: "합성 그대로", start: await at(c, 3, "07:00"), uncertain: ["ampm"] }]);
+    assertEquals((await resolve(c, b.props[0], "ampm", await at(c, 3, "07:00"))).status, "ok");
+    assertEquals((await versions(c, b.facts[0]))[1].payload.uncertain, []);
+    const d = await seed(c, "r4", [{ title: "합성 저녁", start: await at(c, 3, "18:00"), uncertain: ["ampm"] }]);
+    assertEquals((await resolve(c, d.props[0], "ampm", await at(c, 3, "12:00"))).status, "bad_value");
+    assertEquals((await resolve(c, d.props[0], "ampm", await at(c, 4, "06:00"))).status, "bad_value");   // +12h 지만 날짜가 바뀐다
+  } },
+  { name: "resolve year: this or next Seoul year with the same month/day/time; other years or a changed day → bad_value", run: async (c) => {
+    const y = Number((await day(c, 0)).slice(0, 4));
+    const md = (await day(c, 5)).slice(4);
+    const s = await seed(c, "r5", [{ title: "합성 행사", start: `${y}${md}T10:00:00+09:00`, uncertain: ["year"] }]);
+    assertEquals((await resolve(c, s.props[0], "year", `${y + 2}${md}T10:00:00+09:00`)).status, "bad_value");
+    assertEquals((await resolve(c, s.props[0], "year", `${y + 1}${md}T11:00:00+09:00`)).status, "bad_value");
+    assertEquals((await resolve(c, s.props[0], "year", `${y + 1}${md}T10:00:00+09:00`)).status, "ok");
+    const d = await seed(c, "r6", [{ title: "합성 종일", start: `${y}${md}`, uncertain: ["year"] }]);
+    assertEquals((await resolve(c, d.props[0], "year", `${y}${md}`)).status, "ok");
+  } },
+  { name: "resolve date: keeps the time; start-less → all-day with end null; also clears year; outside −1y..+2y → bad_value", run: async (c) => {
+    const s = await seed(c, "r7", [{ title: "합성 음력", start: await at(c, 3, "15:00"), end: await at(c, 3, "16:00"), uncertain: ["date", "year", "ampm"] }]);
+    const r = await resolve(c, s.props[0], "date", await day(c, 10));
+    assertEquals(r.status, "ok");
+    const v = await versions(c, s.facts[0]);
+    assertEquals([v[1].payload.start, v[1].payload.end, v[1].payload.uncertain], [await at(c, 10, "15:00"), await at(c, 10, "16:00"), ["ampm"]]);
+    const n = await seed(c, "r8", [{ title: "합성 미정", start: null, end: await at(c, 3, "16:00"), uncertain: ["date"] }]);
+    assertEquals((await resolve(c, n.props[0], "date", await day(c, 4))).status, "ok");
+    const nv = await versions(c, n.facts[0]);
+    assertEquals([nv[1].payload.start, nv[1].payload.end], [await day(c, 4), null]);
+    const o = await seed(c, "r9", [{ title: "합성 범위", start: await at(c, 3, "15:00"), uncertain: ["date"] }]);
+    const far = (await one(c, "select to_char((now() at time zone 'Asia/Seoul')::date + interval '2 years' + interval '1 day', 'YYYY-MM-DD') as d")).d;
+    const old = (await one(c, "select to_char((now() at time zone 'Asia/Seoul')::date - interval '1 year' - interval '1 day', 'YYYY-MM-DD') as d")).d;
+    assertEquals([(await resolve(c, o.props[0], "date", far)).status, (await resolve(c, o.props[0], "date", old)).status], ["bad_value", "bad_value"]);
+    assertEquals((await resolve(c, o.props[0], "date", "2026-02-30")).status, "bad_value");
+  } },
+  { name: "resolve date leap day: 02-29 only in a leap year (2028 ok, 2027 bad_value)", run: async (c) => {
+    const s = await seed(c, "rl", [{ title: "합성 윤일", start: await at(c, 3, "09:00"), uncertain: ["date"] }]);
+    assertEquals((await resolve(c, s.props[0], "date", "2027-02-29")).status, "bad_value");
+    assertEquals((await resolve(c, s.props[0], "date", "2028-02-29")).status, "ok");      // 2026-10 기준 +2년 안
+  } },
+  { name: "resolve keeps the length of an event that crosses the year (12/31 23:00–1/1 01:00) under ampm and date", run: async (c) => {
+    const y = Number((await day(c, 0)).slice(0, 4));
+    const s = await seed(c, "ry", [{ title: "합성 송년", start: `${y}-12-31T23:00:00+09:00`, end: `${y + 1}-01-01T01:00:00+09:00`, uncertain: ["ampm"] }]);
+    await resolve(c, s.props[0], "ampm", `${y}-12-31T11:00:00+09:00`);
+    assertEquals((await versions(c, s.facts[0]))[1].payload.end, `${y}-12-31T13:00:00+09:00`);
+    const d = await seed(c, "rz", [{ title: "합성 송년2", start: `${y}-12-31T23:00:00+09:00`, end: `${y + 1}-01-01T01:00:00+09:00`, uncertain: ["date"] }]);
+    await resolve(c, d.props[0], "date", `${y}-12-30`);
+    assertEquals((await versions(c, d.facts[0]))[1].payload.end, `${y}-12-31T01:00:00+09:00`);
+  } },
+  { name: "resolve location: '' clears the place (null) even when it was already null; any other value → bad_value", run: async (c) => {
+    const s = await seed(c, "rp", [{ title: "합성 미팅", start: await at(c, 3, "10:00"), location: null, uncertain: ["location"] }]);
+    assertEquals((await resolve(c, s.props[0], "location", "합성카페")).status, "bad_value");
+    assertEquals((await resolve(c, s.props[0], "location", "")).status, "ok");
+    const v = await versions(c, s.facts[0]);
+    assertEquals([v.length, v[1].payload.location, v[1].payload.uncertain], [2, null, []]);
+  } },
+  { name: "resolve: a code not in uncertain → not_uncertain; end, tz or an unknown code → bad_value", run: async (c) => {
+    const s = await seed(c, "rc", [{ title: "합성 미팅", start: await at(c, 3, "10:00"), uncertain: ["end", "tz"] }]);
+    assertEquals((await resolve(c, s.props[0], "ampm", await at(c, 3, "22:00"))).status, "not_uncertain");
+    for (const code of ["end", "tz", "recurrence"]) assertEquals((await resolve(c, s.props[0], code, "")).status, "bad_value");
+  } },
+  { name: "resolve not_found: another user, a non-chat item, a succeeded top, an update_event top, an older version id; no multi or 30-minute check", run: async (c) => {
+    const s = await seed(c, "rn", [{ title: "합성 미팅", start: await at(c, 3, "06:00"), uncertain: ["ampm"] }]);
+    assertEquals((await resolve(c, s.props[0], "ampm", await at(c, 3, "18:00"), c.other)).status, "not_found");
+    const sms = await seed(c, "rs", [{ title: "합성 문자", start: await at(c, 3, "06:00"), uncertain: ["ampm"] }], { source: "MESSAGES", app: null });
+    assertEquals((await resolve(c, sms.props[0], "ampm", await at(c, 3, "18:00"))).status, "not_found");
+    const won = await seed(c, "rw", [{ title: "합성 완료", start: await at(c, 3, "06:00"), uncertain: ["ampm"] }]);
+    await report(c, won.props[0], 1);
+    assertEquals((await resolve(c, won.props[0], "ampm", await at(c, 3, "18:00"))).status, "not_found");
+    const up = await edit(c, won.props[0], { title: "합성 완료2" });
+    assertEquals((await resolve(c, up.proposal_id, "ampm", await at(c, 3, "18:00"))).status, "not_found");
+    const old = await seed(c, "ro", [{ title: "합성 옛", start: await at(c, 3, "06:00"), uncertain: ["ampm", "location"] }], { ago: 7200 });
+    assertEquals((await resolve(c, old.props[0], "ampm", await at(c, 3, "18:00"))).status, "ok");            // 2시간 전 등록 — 30분 제한 없음
+    assertEquals((await resolve(c, old.props[0], "location", "")).status, "not_found");                      // v1 은 이제 최고 버전이 아니다
+    const multi = await seed(c, "rm", [{ title: "합성 둘1", start: await at(c, 3, "06:00"), uncertain: ["ampm"] }, { title: "합성 둘2", start: await at(c, 3, "09:00") }]);
+    assertEquals((await resolve(c, multi.props[0], "ampm", await at(c, 3, "18:00"))).status, "ok");            // 다건 등록도 버튼은 된다
+  } },
+  { name: "resolve privileges: anon cannot execute; authenticated can; without a JWT it raises not authenticated (28000)", privileges: true, run: async (c) => {
+    const g = await c.q(`select has_function_privilege('anon', 'public.resolve_uncertain(uuid, text, text)', 'execute') as anon,
+      has_function_privilege('authenticated', 'public.resolve_uncertain(uuid, text, text)', 'execute') as auth, p.prosecdef, p.proconfig
+      from pg_proc p where p.oid = 'public.resolve_uncertain(uuid, text, text)'::regprocedure`);
+    assertEquals([g[0].anon, g[0].auth, g[0].prosecdef, g[0].proconfig], [false, true, true, ['search_path=""']]);
+    const s = await seed(c, "rj", [{ title: "합성 미팅", start: await at(c, 3, "06:00"), uncertain: ["ampm"] }]);
+    await fails(c, "select resolve_uncertain($1::uuid, 'ampm', $2)", [s.props[0], await at(c, 3, "18:00")], "not authenticated");
+  } },
 ];
+// resolve_uncertain 은 사용자 JWT 로만(auth.uid())
+export const resolve = (c: ECtx, pid: string, code: string, value: string, user = c.user) => asUser(c, user, async () =>
+  (await one(c, "select resolve_uncertain($1::uuid, $2, $3) as r", [pid, code, value])).r as Row);
 export { vals };

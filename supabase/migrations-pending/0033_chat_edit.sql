@@ -174,3 +174,60 @@ $$;
 revoke execute on function chat_edit_day(text), chat_edit_ts(text), chat_edit_iso(timestamptz), chat_edit_values(jsonb),
   chat_edit_moved(text, text, text), chat_edit_state(uuid, uuid, boolean, boolean), chat_edit_apply(uuid, uuid, jsonb, text[]),
   chat_edit_target(uuid, uuid), chat_edit_proposal(uuid, uuid, jsonb, text[]), chat_proposals(uuid, uuid[]) from public, anon, authenticated;
+
+-- ── C 서버: 되묻기 버튼(사용자 JWT — auth.uid() 로만 사용자를 정한다). 대상 = 본인 채팅 등록 항목 fact 의 최고 버전·proposed·create_event 인
+--    p_proposal 그 자체(30분·다건 검사 없음 — 버튼은 카드가 보이는 동안). 값은 코드별로 그 칸만 바꿀 수 있게 서버가 검사하고 끝은 서버가 옮긴다(계획 K8).
+--    성공하면 그 코드를 uncertain 에서 뺀다(date 는 year 도 — 날짜 선택이 연도를 정한다, Codex M5). 새 버전 규칙은 B 와 같은 chat_edit_apply ──
+create function resolve_uncertain(p_proposal uuid, p_code text, p_value text) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare v_user uuid := auth.uid(); s record; v_start text; v_end text; os timestamptz; ns timestamptz; od date; nd date;
+        v_today date := (now() at time zone 'Asia/Seoul')::date; v_y int; v_patch jsonb; v_clear text[]; r jsonb;
+        bad constant jsonb := '{"status": "bad_value"}';
+begin
+  if v_user is null then raise exception 'not authenticated' using errcode = '28000'; end if;
+  select * into s from public.chat_edit_state(v_user, p_proposal, true, false);
+  if s.status <> 'ok' or s.top_id <> p_proposal or s.top_status <> 'proposed' or s.top_action <> 'create_event' then
+    return jsonb_build_object('status', 'not_found');
+  end if;
+  if p_code is null or p_code not in ('date', 'year', 'ampm', 'location') then return bad; end if;
+  if not (coalesce(s.top_payload->'uncertain', '[]'::jsonb) ? p_code) then return jsonb_build_object('status', 'not_uncertain'); end if;
+  v_start := s.top_payload->>'start'; v_end := s.top_payload->>'end';
+  os := public.chat_edit_ts(v_start); od := public.chat_edit_day(v_start);
+  if p_code = 'location' then
+    if p_value is distinct from '' then return bad; end if;
+    v_patch := jsonb_build_object('location', null);
+  elsif p_code = 'ampm' then
+    ns := public.chat_edit_ts(p_value);
+    if os is null or ns is null or (ns - os) not in (interval '0', interval '12 hours', interval '-12 hours')
+       or (ns at time zone 'Asia/Seoul')::date <> (os at time zone 'Asia/Seoul')::date then return bad; end if;
+    v_patch := public.chat_edit_moved(v_start, v_end, public.chat_edit_iso(ns));
+  elsif p_code = 'year' then
+    v_y := extract(year from v_today)::int;
+    if os is not null then
+      ns := public.chat_edit_ts(p_value);
+      if ns is null or to_char(ns at time zone 'Asia/Seoul', 'MM-DD HH24:MI:SS') <> to_char(os at time zone 'Asia/Seoul', 'MM-DD HH24:MI:SS')
+         or extract(year from ns at time zone 'Asia/Seoul')::int not in (v_y, v_y + 1) then return bad; end if;
+      v_patch := public.chat_edit_moved(v_start, v_end, public.chat_edit_iso(ns));
+    elsif od is not null then
+      nd := public.chat_edit_day(p_value);
+      if nd is null or to_char(nd, 'MM-DD') <> to_char(od, 'MM-DD') or extract(year from nd)::int not in (v_y, v_y + 1) then return bad; end if;
+      v_patch := public.chat_edit_moved(v_start, v_end, to_char(nd, 'YYYY-MM-DD'));
+    else return bad;
+    end if;
+  else  -- date
+    nd := public.chat_edit_day(p_value);
+    if nd is null or nd < (v_today - interval '1 year')::date or nd > (v_today + interval '2 years')::date then return bad; end if;
+    if os is not null then
+      v_patch := public.chat_edit_moved(v_start, v_end, public.chat_edit_iso((nd + (os at time zone 'Asia/Seoul')::time) at time zone 'Asia/Seoul'));
+    elsif od is not null then
+      v_patch := public.chat_edit_moved(v_start, v_end, to_char(nd, 'YYYY-MM-DD'));
+    else
+      v_patch := jsonb_build_object('start', to_char(nd, 'YYYY-MM-DD'), 'end', null);    -- 시작이 없던 제안: 그 날 종일, 끝 null(K8)
+    end if;
+  end if;
+  v_clear := case when p_code = 'date' then array['date', 'year'] else array[p_code] end;
+  r := public.chat_edit_apply(v_user, s.fact_id, v_patch, v_clear);
+  return jsonb_build_object('status', 'ok', 'proposal_id', r->'proposal_id', 'version', r->'version');
+end $$;
+revoke execute on function resolve_uncertain(uuid, text, text) from public, anon;
+grant execute on function resolve_uncertain(uuid, text, text) to authenticated;
