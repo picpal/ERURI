@@ -5,18 +5,22 @@ import { type EditRaw, type EventValues, revalidate, when } from "../functions/c
 import type { Intent } from "../functions/chat/filters.ts";
 
 export type EditCase = { id: string; group: string; text: string; registered: string | null; mode?: "none" | "edit"; intent: Intent;
-  changes?: Partial<EventValues>; measure?: boolean };
+  changes?: Partial<EventValues>; measure?: boolean; confirm?: boolean; confirmStart?: string };
 export type ExtractCase = { id: string; text: string; ampm: boolean };
 export type EditCaseFile = { today: string; registered: Record<string, EventValues>; cases: EditCase[]; extract: ExtractCase[] };
-export type EditRow = { id: string; group: string; measure: boolean; expected: Intent; got: Intent; intent_ok: boolean; fields_ok: boolean | null;
+export type EditRow = { id: string; group: string; measure: boolean; confirm?: boolean; expected: Intent; got: Intent; intent_ok: boolean; fields_ok: boolean | null;
   false_edit: boolean; codes: string[] };
 
 export function validateEditCases(f: EditCaseFile): string[] {
   const p: string[] = [];
-  const gating = f.cases.filter((c) => !c.measure);
+  const gating = f.cases.filter((c) => !c.measure && !c.confirm);
   const edits = gating.filter((c) => c.intent === "edit_event").length, others = gating.length - edits;
   if (edits !== 14) p.push(`edit_event ${edits} != 14`);
   if (others !== 10) p.push(`others ${others} != 10`);
+  // 확인·정정 묶음(Ruling G1-c9m): 셋, 모두 edit_event·빈 changes·confirmStart
+  const conf = f.cases.filter((c) => c.confirm);
+  if (conf.length !== 3) p.push(`confirm ${conf.length} != 3`);
+  for (const c of conf) if (c.intent !== "edit_event" || !c.confirmStart || c.measure) p.push(`${c.id} confirm needs edit_event + confirmStart`);
   const ids = new Set<string>();
   for (const c of f.cases) {
     if (ids.has(c.id)) p.push(`${c.id} duplicate`);
@@ -31,11 +35,13 @@ export function validateEditCases(f: EditCaseFile): string[] {
 
 // 칸 판정 = 서버가 실제로 쓸 patch(재검증 뒤)와 기대 changes 의 키·값이 같다. 코드: extra:<칸>·missing:<칸>·wrong:<칸>·start_no_offset(Review Focus 2)
 export function judgeEdit(f: EditCaseFile, c: EditCase, got: { intent: Intent; edit: EditRaw | null }): EditRow {
-  const base = { id: c.id, group: c.group, measure: c.measure === true, expected: c.intent, got: got.intent, intent_ok: got.intent === c.intent,
+  const base = { id: c.id, group: c.group, measure: c.measure === true, confirm: c.confirm === true, expected: c.intent, got: got.intent, intent_ok: got.intent === c.intent,
     false_edit: c.intent !== "edit_event" && got.intent === "edit_event" };
   if (c.intent !== "edit_event" || !c.changes || c.registered === null) return { ...base, fields_ok: null, codes: [] };
   if (got.intent !== "edit_event") return { ...base, fields_ok: false, codes: ["intent"] };
   const codes: string[] = [];
+  // 확인 사례: 값이 같아 patch 는 비지만, 받은 start 가 그 시각이어야 서버가 ampm 확인 코드를 지운다(edit.ts confirmedCodes — accepted.start)
+  if (c.confirmStart && when(typeof got.edit?.start === "string" ? got.edit.start : null)?.value !== c.confirmStart) codes.push("confirm_start");
   if (typeof got.edit?.start === "string" && when(got.edit.start) === null && when(got.edit.start, false) !== null) codes.push("start_no_offset");
   const patch = revalidate(f.registered[c.registered], got.edit).patch as Record<string, unknown>;
   const want = c.changes as Record<string, unknown>;
@@ -47,14 +53,15 @@ export function judgeEdit(f: EditCaseFile, c: EditCase, got: { intent: Intent; e
   return { ...base, fields_ok: codes.length === 0, codes };
 }
 
-// 합격(스펙 §15): 실행마다 의도 일치 ≥ 22/24, edit_event 칸 일치 ≥ 13/14, 다른 의도 → edit_event 0(모든 실행). measure 사례는 집계에서 뺀다
+// 합격(스펙 §15): 실행마다 의도 일치 ≥ 22/24, edit_event 칸 일치 ≥ 13/14, 다른 의도 → edit_event 0(모든 실행). measure 사례는 집계에서 뺀다.
+// 확인 묶음(confirm, Ruling G1-c9m)은 24 에 넣지 않고 따로 — 모든 실행에서 셋 다 의도·start 일치
 export function summarizeEdit(runs: { run: number; rows: EditRow[] }[]) {
   const per = runs.map(({ run, rows }) => {
-    const g = rows.filter((r) => !r.measure);
+    const g = rows.filter((r) => !r.measure && !r.confirm), conf = rows.filter((r) => r.confirm);
     return { run, intent: g.filter((r) => r.intent_ok).length, fields: g.filter((r) => r.fields_ok === true).length,
-      false_edit: g.filter((r) => r.false_edit).length, measure_ok: rows.filter((r) => r.measure && r.intent_ok).map((r) => r.id) };
+      false_edit: g.filter((r) => r.false_edit).length, confirm: conf.filter((r) => r.intent_ok && r.fields_ok === true).length, confirm_total: conf.length, measure_ok: rows.filter((r) => r.measure && r.intent_ok).map((r) => r.id) };
   });
-  const pass = per.length > 0 && per.every((p) => p.intent >= 22 && p.fields >= 13 && p.false_edit === 0);
+  const pass = per.length > 0 && per.every((p) => p.intent >= 22 && p.fields >= 13 && p.false_edit === 0 && p.confirm === p.confirm_total);
   return { gate: pass ? "pass" : "fail", per };
 }
 

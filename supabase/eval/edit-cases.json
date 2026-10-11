@@ -5,7 +5,9 @@
     "r2": { "title": "합성 워크숍", "start": "2026-10-12", "end": null, "location": null },
     "r3": { "title": "합성 미팅", "start": "2026-10-10T11:00:00+09:00", "end": "2026-10-10T15:00:00+09:00", "location": "합성카페" },
     "r4": { "title": "합성 미팅", "start": "2026-10-09T11:00:00+09:00", "end": "2026-10-09T15:00:00+09:00", "location": null },
-    "r6": { "title": "합성 저녁 약속", "start": "2026-10-14T06:00:00+09:00", "end": null, "location": null }
+    "r6": { "title": "합성 저녁 약속", "start": "2026-10-14T06:00:00+09:00", "end": null, "location": null },
+    "r7": { "title": "합성 저녁", "start": "2026-10-14T18:00:00+09:00", "end": null, "location": null },
+    "r8": { "title": "합성 회의", "start": "2026-10-14T10:00:00+09:00", "end": null, "location": null }
   },
   "cases": [
     { "id": "e01", "group": "date_only", "text": "앗 내가 잘못 말햇어 내일이야", "registered": "r1", "intent": "edit_event",
@@ -41,7 +43,10 @@
     { "id": "o09", "group": "mail", "text": "합성상점 광고 메일 지워줘", "registered": "r1", "intent": "mail_action" },
     { "id": "o10", "group": "cancel", "text": "그 일정 취소해줘", "registered": "r1", "intent": "question" },
     { "id": "m01", "group": "measure", "measure": true, "text": "앗 내일이야", "registered": null, "mode": "edit", "intent": "edit_event" },
-    { "id": "m02", "group": "measure", "measure": true, "text": "아 내일로 다시 등록해줘", "registered": "r1", "intent": "edit_event" }
+    { "id": "m02", "group": "measure", "measure": true, "text": "아 내일로 다시 등록해줘", "registered": "r1", "intent": "edit_event" },
+    { "id": "c01", "group": "confirm", "confirm": true, "text": "오후 6시 맞아", "registered": "r7", "intent": "edit_event", "changes": {}, "confirmStart": "2026-10-14T18:00:00+09:00" },
+    { "id": "c02", "group": "confirm", "confirm": true, "text": "오전이야", "registered": "r8", "intent": "edit_event", "changes": {}, "confirmStart": "2026-10-14T10:00:00+09:00" },
+    { "id": "c03", "group": "confirm", "confirm": true, "text": "저녁 6시 맞아요", "registered": "r7", "intent": "edit_event", "changes": {}, "confirmStart": "2026-10-14T18:00:00+09:00" }
   ],
   "extract": [
     { "id": "x01", "text": "합성 미팅 14일 6시 등록해줘", "ampm": true },

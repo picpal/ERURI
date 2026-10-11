@@ -35,3 +35,22 @@ Deno.test("extractVerdict: ambiguous needs ampm on every event, clear needs none
   assertEquals(extractVerdict({ id: "x05", text: "", ampm: false }, { kind: "event", uncertain: [["ampm"]] }), { id: "x05", ok: false, code: "ampm_extra" });
   assertEquals(extractVerdict({ id: "x03", text: "", ampm: true }, { kind: "none", uncertain: [] }), { id: "x03", ok: false, code: "no_event" });
 });
+// 확인·정정 묶음(G1 EDIT-sim ⑨ c9m, Ruling G1-c9m): 값이 같아도 edit_event + 받은 start = 그 시각이어야 ampm 확인 코드가 풀린다(edit.ts confirmedCodes).
+// 스펙 합격(24 = 14 + 10)과 따로 — 모든 실행에서 셋 다 맞아야 통과
+Deno.test("confirm cases: three gate separately (every run), need edit_event and the returned start, never count toward 14 + 10", () => {
+  const cs = file.cases.filter((c) => c.confirm === true);
+  assertEquals(cs.map((c) => c.id), ["c01", "c02", "c03"]);
+  const c1 = cs[0];
+  const ok = judgeEdit(file, c1, { intent: "edit_event", edit: { start: "2026-10-14T18:00:00+09:00", end: null, title: null, location: null } });
+  assertEquals([ok.intent_ok, ok.fields_ok, ok.codes, ok.confirm], [true, true, [], true]);
+  const noStart = judgeEdit(file, c1, { intent: "edit_event", edit: { start: null, end: null, title: null, location: null } });
+  assertEquals([noStart.fields_ok, noStart.codes], [false, ["confirm_start"]]);
+  const q = judgeEdit(file, c1, { intent: "question", edit: null });
+  assertEquals([q.intent_ok, q.fields_ok], [false, false]);
+  const rows = file.cases.map((c) => ({ id: c.id, group: c.group, measure: c.measure === true, confirm: c.confirm === true, expected: c.intent, got: c.intent,
+    intent_ok: true, fields_ok: c.intent === "edit_event" ? true : null, false_edit: false, codes: [] as string[] }));
+  assertEquals(summarizeEdit([{ run: 1, rows }]).gate, "pass");
+  const miss = rows.map((r) => (r.id === "c02" ? { ...r, got: "question" as const, intent_ok: false, fields_ok: false } : r));
+  const s = summarizeEdit([{ run: 1, rows: miss }]);
+  assertEquals([s.gate, s.per[0].intent, s.per[0].confirm], ["fail", 24, 2]);   // 24 판정은 그대로, 확인 묶음만 실패
+});
