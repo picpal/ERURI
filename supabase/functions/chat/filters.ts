@@ -163,13 +163,41 @@ export function filterRequest(question: string, today: string, context: ContextT
       schema: ctx ? INTENT_CONTEXT_FILTER_SCHEMA : INTENT_FILTER_SCHEMA, strict: true } } };
 }
 
+// 맥락 발신자 가드(스펙 §7 "지목", 2026-10-11 G1 r2): 맥락 합성은행 + "합성레터 거 요약해줘" 에 필터가 맥락 발신자를 30회 중 21회 채웠다.
+// sender 가 맥락에는 있고 지금 글에는 없는데 지금 글이 다른 이름('X 거·X 것·X 쪽·X에서 온·X 메일')을 말하면 — 이름 하나면 그 이름, 둘 이상이면 대상 칸을 모두 비워
+// mail-read 의 needs_target 되묻기로 보낸다(틀린 메일을 읽느니 되묻기). 두 경우 모두 지금 글이 대상을 말했으므로 target_in_message 참(앞 요약 토큰을 재사용하지 않게)
+const NAME_BEFORE_MARK = /(?<![가-힣A-Za-z0-9._@+-])([가-힣A-Za-z0-9][가-힣A-Za-z0-9._@+-]*?)(?:\s*(?:거|것|꺼|걸)(?:로|를|을|는|은|도|만|랑|이랑|하고)?(?=$|[\s,.!?])|\s*쪽(?=$|[\s,.!?]|으로|에서)|(?:에서|한테서|에게서|한테|에게)(?=$|[\s,.!?])|\s*이?메일)/g;
+const NOT_NAME = new Set(["그거", "이거", "저거", "그것", "이것", "저것", "거기", "여기", "저기", "그쪽", "이쪽", "저쪽", "아까", "방금", "최근", "가장", "제일", "마지막",
+  "마지막으로", "처음", "어제", "오늘", "그제", "그저께", "엊그제", "지난주", "이번주", "지난달", "이번달", "이번", "지난", "저번", "다음", "다른", "새로", "같은", "해당",
+  "아래", "나머지", "받은", "보낸", "들어간", "들어온", "광고", "프로모션", "안읽은", "읽은", "영어", "영문", "한글", "한국어", "우리말", "전체", "모든", "전부", "그런",
+  "이런", "저런", "무슨", "어떤", "어느", "누구", "메일", "이메일", "편지", "아니", "말고", "하나"]);
+const TIME_WORD = /^(\d+|[일이삼사오육칠팔구십]+)?(년|월|일|주|시|분|통|개|번째)$|요일$|(전|후|째)$/;
+const squash = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+export function guardContextSender(mr: MailReadFields, question: string, context: ContextTurn[]): MailReadFields {
+  if (mr.sender === null || context.length === 0) return mr;
+  const s = squash(mr.sender);
+  if (s === "" || squash(question).includes(s) || !squash(context.map((t) => `${t.question}\n${t.answer}`).join("\n")).includes(s)) return mr;
+  const words = new Set(mr.subject_words.map(squash));
+  const names = new Map<string, string>();
+  for (const m of question.matchAll(NAME_BEFORE_MARK)) {
+    const n = m[1], k = squash(n);
+    if (n.length < 2 || NOT_NAME.has(n) || TIME_WORD.test(n) || words.has(k) || s.includes(k) || k.includes(s)) continue;
+    names.set(k, n);
+  }
+  if (names.size === 0) return mr;
+  if (names.size === 1) return { ...mr, sender: [...names.values()][0], target_in_message: true };
+  return { ...mr, sender: null, subject_words: [], received_from: null, received_to: null, latest: false, target_in_message: true };
+}
+
 export type FilterOutput = { filters: Filters; query?: string; intent?: Intent; mail?: MailFields | null; mail_read?: MailReadFields | null;
   usage?: { input_tokens: number; output_tokens: number } };
 // 모델 출력 → 필터(7칸만 — query·intent·mail·mail_read 가 필터 객체에 섞이지 않게) + 독립 질문 + 의도. intent·mail·mail_read 키는 withIntent 일 때만 있다
 // 출처 칸 후처리(스펙 §9 "출처 칸 후처리", 2026-10-10 D1 회귀): intents 경로에서 GMAIL 은 지금 질문·맥락 query 가 메일을 말할 때만 남긴다.
 // INTENT_RULE 의 메일 예시("언제까지래?")가 "~언제야?" 질문에 GMAIL 을 붙여 공유 항목을 못 찾았다(16회 중 10회, 0.14.0 필터 0/8)
 const NAMES_MAIL = /메일|편지함|gmail|mail/i;
-export function parseFilterOutput(outputText: string, hasContext: boolean, withIntent: boolean, question?: string): Omit<FilterOutput, "usage"> {
+// context 를 넘기면 mail_summary 의 mail_read 에 guardContextSender 를 건다(extractFilters 가 넘긴다)
+export function parseFilterOutput(outputText: string, hasContext: boolean, withIntent: boolean, question?: string,
+  context: ContextTurn[] = []): Omit<FilterOutput, "usage"> {
   const { query, intent, mail, mail_read, ...f } = JSON.parse(outputText) as Filters & { query?: string; intent?: unknown; mail?: MailFields | null;
     mail_read?: MailReadFields | null };
   const out: Omit<FilterOutput, "usage"> = { filters: normalizeFilters(f), query: hasContext ? query : undefined };
@@ -178,6 +206,7 @@ export function parseFilterOutput(outputText: string, hasContext: boolean, withI
     if (question !== undefined && !NAMES_MAIL.test(`${question}\n${hasContext ? query ?? "" : ""}`)) {
       out.filters = { ...out.filters, sources: out.filters.sources.filter((x) => x !== "GMAIL") };
     }
+    if (out.intent === "mail_summary" && out.mail_read && question !== undefined) out.mail_read = guardContextSender(out.mail_read, question, context);
   }
   return out;
 }
@@ -188,6 +217,6 @@ export async function extractFilters(question: string, today: string, context: C
   const r = await openai.responses.create(filterRequest(question, today, context, withIntent) as any);
   onUsage?.(responseUsage(r));                                      // 상태 검사·파싱보다 먼저(스펙 §13 — 응답이 온 실패도 청구된 토큰)
   if (r.status === "incomplete") throw new Error("filters incomplete");
-  return { ...parseFilterOutput(r.output_text, context.length > 0, withIntent, question),
+  return { ...parseFilterOutput(r.output_text, context.length > 0, withIntent, question, context),
     usage: r.usage ? { input_tokens: r.usage.input_tokens, output_tokens: r.usage.output_tokens } : undefined };
 }

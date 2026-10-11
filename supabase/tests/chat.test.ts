@@ -3,7 +3,8 @@ import type { BudgetDeps } from "../functions/_shared/budget.ts";
 import { actionResult, answerQuestion, answerUserMessage, type ChatDeps, type ChatHit, CONTEXT_RULE, type Filters, factsDistinct, formatDocuments, handleChat,
   mergeFactDocs, parseContext, parseIntents, REFUSAL, relevantItems, resolveIntent, SYSTEM_PROMPT, systemPrompt, validateAnswer } from "../functions/chat/handler.ts";
 import { CONTEXT_FILTER_RULE, CONTEXT_FILTER_SCHEMA, extractFilters, FILTER_SCHEMA, FILTER_SYSTEM, filterRequest, formatContext, INTENT_CONTEXT_FILTER_SCHEMA,
-  INTENT_FILTER_SCHEMA, INTENT_RULE, type MailFields, MAIL_READ_SCHEMA, MAIL_SCHEMA, type MailReadFields, normalizeFilters, parseFilterOutput, scheduleOf } from "../functions/chat/filters.ts";
+  guardContextSender, INTENT_FILTER_SCHEMA, INTENT_RULE, type MailFields, MAIL_READ_SCHEMA, MAIL_SCHEMA, type MailReadFields, normalizeFilters, parseFilterOutput,
+  scheduleOf } from "../functions/chat/filters.ts";
 
 const hits: ChatHit[] = [
   { item_id: "i1", occurred_at: "2026-07-03T12:14:00Z", text: "[쿠팡] 에어팟 프로 2세대 주문 329,000원" },
@@ -659,6 +660,47 @@ Deno.test("parseFilterOutput with intents: GMAIL source only when the question (
   assertEquals(src(out(["GMAIL"], { query: "합성상사 분기 회의 몇 시에 시작해?" }), true, true, "몇 시에 시작해?"), []);
   // intents 없는 요청(0.12.x)은 출력도 그대로
   assertEquals(src(out(["GMAIL"]), false, false, "합성상사 분기 회의 언제야?"), ["GMAIL"]);
+});
+// G1 r2(2026-10-11, 스펙 §7 "지목"): 맥락 합성은행 + "합성레터 거 요약해줘" 에 필터가 맥락 발신자를 30회 중 21회 채웠다 — 되묻지 않고 다른 메일을 읽는 방향
+Deno.test("guardContextSender: a context sender the current message does not name yields to the one name the message gives; two names → every target field empty; context fills stay", () => {
+  const ctx = [{ question: "합성은행에서 온 메일 뭐 있어?", answer: "합성은행에서 보안 안내 메일이 왔어요." }];
+  const mr = (o: Partial<MailReadFields> = {}): MailReadFields =>
+    ({ sender: "합성은행", subject_words: [], received_from: null, received_to: null, latest: false, translate: false, target_in_message: false, ...o });
+  const g = (q: string, o: Partial<MailReadFields> = {}, c = ctx) => guardContextSender(mr(o), q, c);
+  // 지금 글의 이름 하나 → sender 를 그 이름으로, 지금 글이 대상을 말했으니 target_in_message 참
+  for (const [q, name] of [["합성레터 거 요약해줘", "합성레터"], ["합성레터거 요약해줘", "합성레터"], ["아니, 합성학원에서 온 걸로 요약해줘", "합성학원"],
+    ["그 메일 말고 합성상점 메일 요약해줘", "합성상점"], ["합성카드 쪽 번역해줘", "합성카드"], ["합성항공한테서 온 것 읽어줘", "합성항공"],
+    ["promo@example.com 거 요약해줘", "promo@example.com"]] as const) {
+    assertEquals(g(q, { translate: q.includes("번역") }), mr({ sender: name, translate: q.includes("번역"), target_in_message: true }), q);
+  }
+  assertEquals(g("어제 온 합성레터 거 요약해줘", { received_from: "2026-10-06", received_to: "2026-10-06" }),
+    mr({ sender: "합성레터", received_from: "2026-10-06", received_to: "2026-10-06", target_in_message: true }));
+  // 이름이 둘 → 어느 쪽인지 모른다: 대상 칸을 모두 비워 서버 needs_target 되묻기(틀린 메일을 읽지 않는다)
+  assertEquals(g("합성레터 거랑 합성학원 거 요약해줘", { received_from: "2026-10-06", received_to: "2026-10-06", latest: true, subject_words: ["안내"] }),
+    mr({ sender: null, target_in_message: true }));
+  // 맥락으로 채운 정상 사례·지시어·시간 말·부분 이름·제목 단어는 그대로
+  for (const q of ["그 메일 요약해줘", "거기서 온 메일 요약해 줘", "번역해줘", "그거 요약해줘", "아까 그 거 요약해줘", "어제 온 거 요약해줘", "가장 최근 거 읽어줘",
+    "마지막 거 요약해줘", "10월 거 요약해줘", "광고 메일 요약해줘", "안 읽은 메일 요약해줘", "그 은행 거 요약해줘", "다른 거 말고 그 메일 요약해줘", "영어 메일 번역해줘"]) {
+    assertEquals(g(q), mr(), q);
+  }
+  assertEquals(g("그 메일 중 보안 거 요약해줘", { subject_words: ["보안"] }), mr({ subject_words: ["보안"] }));
+  // 지금 글이 맥락 발신자를 말함 / 맥락에 없는 발신자 / sender null / 맥락 없음 → 손대지 않는다
+  assertEquals(g("합성은행 거 요약해줘"), mr());
+  assertEquals(g("합성 은행 거 요약해줘"), mr());
+  assertEquals(g("합성레터 거 요약해줘", { sender: "합성카드" }), mr({ sender: "합성카드" }));
+  assertEquals(g("합성레터 거 요약해줘", { sender: null }), mr({ sender: null }));
+  assertEquals(g("합성레터 거 요약해줘", {}, []), mr());
+});
+Deno.test("parseFilterOutput: mail_summary runs guardContextSender with the context; other intents and requests without context are untouched", () => {
+  const ctx = [{ question: "합성은행에서 온 메일 뭐 있어?", answer: "합성은행에서 보안 안내 메일이 왔어요." }];
+  const read = { ...READ, sender: "합성은행", target_in_message: false };
+  const raw = (intent: string, mail_read: unknown, mail: unknown = null) => JSON.stringify({ date_from: null, date_to: null, event_from: null, event_to: null,
+    sources: [], kinds: [], merchant: null, query: "합성레터 메일 요약해줘", intent, mail, mail_read });
+  assertEquals(parseFilterOutput(raw("mail_summary", read), true, true, "합성레터 거 요약해줘", ctx).mail_read, { ...read, sender: "합성레터", target_in_message: true });
+  assertEquals(parseFilterOutput(raw("mail_summary", read), true, true, "그 메일 요약해줘", ctx).mail_read, read);
+  assertEquals(parseFilterOutput(raw("mail_summary", read), true, true, "합성레터 거 요약해줘").mail_read, read);      // 맥락을 안 넘기면 그대로
+  const mail: MailFields = { action: "trash", sender: "합성은행", subject_words: [], received_from: null, received_to: null, promotions: false, unread_only: false };
+  assertEquals(parseFilterOutput(raw("mail_action", null, mail), true, true, "합성레터 거 지워줘", ctx).mail, mail);
 });
 Deno.test("resolveIntent: mail_summary only when the app lists it and MAIL_READ is on; parseIntents knows mail_summary", () => {
   const all = new Set(["add_event", "mail_action", "mail_summary"] as const);
