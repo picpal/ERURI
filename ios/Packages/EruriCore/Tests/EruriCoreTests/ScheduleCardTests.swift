@@ -346,4 +346,24 @@ final class ScheduleCardTests: XCTestCase {
     // 끝을 다음 날 0시로 줘도 하루 질문이다 — 23:59:59 표기에 묶이지 않는다(T1 리뷰 M3)
     XCTAssertFalse(ScheduleCard.showsRangeSection(schedule: DateInterval(start: d("2026-10-03T15:00:00Z"), duration: 86_400), cardDays: [d4]))
   }
+  // ── 0.16.0: 날짜 미정 카드(C, K28)·일치 일정(브리핑, K22)·반복 여부 ──
+  func testUndatedCardOnlyWithAskBackAndDateCode() throws {
+    let undated = prop("u", start: nil, uncertain: ["date"])
+    XCTAssertNil(ScheduleCard.card(undated, now: now))                                              // 일정 답 카드·브리핑·항목 상세는 지금처럼 없음
+    let c = try XCTUnwrap(ScheduleCard.card(undated, now: now, askBack: true))
+    XCTAssertEqual([c.kind == .needsReview, c.undated, c.timed], [true, true, false])
+    XCTAssertNil(ScheduleCard.card(prop("u", start: nil, uncertain: ["ampm"]), now: now, askBack: true))   // date 코드가 없으면 카드 없음
+    let m = ScheduleCard.model(c, events: [], executed: false, deviceZone: seoulZone)
+    XCTAssertEqual(ScheduleCard.whenLine(m), "날짜 미정 합성의원 진료 예약")
+    XCTAssertNil(m.lines)                                                                           // "내 캘린더 · 그날" 줄 없음
+  }
+  func testRegistrationReturnsTheMatchedEvent() {
+    let mine = ev("m", "2026-10-04T06:30:00Z", "2026-10-04T07:30:00Z", url: ProposalFlow.marker("p"))
+    let r = ScheduleCard.registration(pid: "p", title: "합성의원 진료 예약", start: d("2026-10-04T06:30:00Z"), serverStatus: "proposed", executed: false, events: [mine], deviceZone: seoulZone)
+    XCTAssertEqual(r.status, .added); XCTAssertEqual(r.matched, mine)
+    let same = ev("s", "2026-10-04T06:30:00Z", "2026-10-04T07:30:00Z", title: "합성의원 진료 예약")
+    XCTAssertEqual(ScheduleCard.registration(pid: "p", title: "합성의원 진료 예약", start: d("2026-10-04T06:30:00Z"), serverStatus: "proposed", executed: false, events: [same], deviceZone: seoulZone).matched, same)
+    XCTAssertNil(ScheduleCard.registration(pid: "p", title: "합성의원 진료 예약", start: d("2026-10-04T06:30:00Z"), serverStatus: "succeeded", executed: false, events: [], deviceZone: seoulZone).matched)
+    XCTAssertFalse(ev("x", "2026-10-04T06:30:00Z", "2026-10-04T07:30:00Z").recurring)
+  }
 }

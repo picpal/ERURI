@@ -6,7 +6,7 @@ import Foundation
 public enum ItemEvents {
   /// 본인 facts(event, active) ⨝ proposals(RLS). 본문·근거 열 없음
   public static func query(itemID: String) -> String {
-    "rest/v1/facts?item_id=eq.\(itemID)&kind=eq.event&status=eq.active&select=ordinal,proposals(id,action,status,version,payload)&order=ordinal.asc"
+    "rest/v1/facts?item_id=eq.\(itemID)&kind=eq.event&status=eq.active&select=ordinal,proposals(id,action,status,version,payload,eventkit_id)&order=ordinal.asc"
   }
 
   public struct Row: Identifiable, Equatable, Sendable {

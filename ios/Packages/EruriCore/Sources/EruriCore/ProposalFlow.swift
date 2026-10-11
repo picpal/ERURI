@@ -37,10 +37,12 @@ public enum ProposalFlow {
     public let allDay: Bool; public let canceled: Bool; public let url: URL?
     /// 채팅 일정 답 카드의 줄로 보일 캘린더인가(생일·구독 캘린더 = false). 겹침 판정에는 쓰지 않는다 — 겹친 일정은 어느 캘린더든 보인다(§9)
     public let listed: Bool
+    /// 반복 규칙이 붙은 일정(EKEvent.hasRecurrenceRules) — ERURI 는 반복을 만들지 않으므로 붙어 있으면 사용자가 손댄 것(§10 바꾸기 4, 0.16.0)
+    public let recurring: Bool
     public init(id: String, title: String, start: Date, end: Date, allDay: Bool = false, canceled: Bool = false, url: URL? = nil,
-                listed: Bool = true) {
+                listed: Bool = true, recurring: Bool = false) {
       self.id = id; self.title = title; self.start = start; self.end = end; self.allDay = allDay; self.canceled = canceled; self.url = url
-      self.listed = listed
+      self.listed = listed; self.recurring = recurring
     }
   }
   /// 끝을 모르는 시각 일정의 저장 길이(§10 "일정 종료" — 제안 end 가 시작보다 뒤인 시각이면 그 끝, 0.11.3)

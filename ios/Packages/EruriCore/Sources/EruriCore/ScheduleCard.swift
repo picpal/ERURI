@@ -9,6 +9,7 @@ public enum ScheduleCard {
   /// 카드로 고른 제안. start = 시각, 날짜만(종일)이면 그날 서울 0시
   public struct Pick: Sendable {
     public let proposal: ChatReply.Proposal; public let kind: Kind; public let start: Date; public let timed: Bool
+    public var undated = false   // 시작 없는 확인 필요 제안(C 날짜 선택, K28) — start 는 오늘 서울 0시 자리값
     public var title: String { ScheduleCard.title(proposal) }
     public var day: DateInterval { ScheduleCard.seoulDay(start) }
   }
@@ -17,11 +18,17 @@ public enum ScheduleCard {
 
   /// 카드로 보일 제안이면 Pick: create_event 이고 start 가 오프셋 있는 시각(handleAdd 와 같은 파서)이거나 달력에 있는 날짜만(YYYY-MM-DD, ProposalTiming).
   /// 지남(시각 < now, 날짜만은 그날이 끝남) → past, uncertain → needsReview, 나머지 addable(날짜만 = 종일). 서버 상태는 보지 않는다(상태는 캘린더 대조가 정한다)
-  public static func card(_ p: ChatReply.Proposal, now: Date = Date()) -> Pick? {
-    guard p.action == "create_event", let s = p.payload["start"]?.string, let t = ProposalTiming.parse(start: s) else { return nil }
-    let uncertain: Bool = { if case .array(let u)? = p.payload["uncertain"] { return !u.isEmpty }; return false }()
+  /// askBack = 채팅 등록·고치기 카드(0.16.0 C) — 시작 없는 uncertain date 제안도 "날짜 미정" 카드(K28). 일정 답 카드·브리핑·항목 상세는 false
+  public static func card(_ p: ChatReply.Proposal, now: Date = Date(), askBack: Bool = false) -> Pick? {
+    let uncertainCodes: [String] = { if case .array(let u)? = p.payload["uncertain"] { return u.compactMap(\.string) }; return [] }()
+    guard p.action == "create_event" else { return nil }
+    guard let s = p.payload["start"]?.string, let t = ProposalTiming.parse(start: s) else {
+      // 채팅 등록·고치기 카드만(askBack): 시작을 못 읽었고 uncertain 에 date 가 있으면 "날짜 미정" 카드(스펙 C 시작이 없는 제안)
+      guard askBack, uncertainCodes.contains("date") else { return nil }
+      return Pick(proposal: p, kind: .needsReview, start: seoulDay(now).start, timed: false, undated: true)
+    }
     let start = t.anchor, past = t.isAllDay ? seoulDay(start).end <= now : start < now
-    return Pick(proposal: p, kind: past ? .past : uncertain ? .needsReview : .addable, start: start, timed: !t.isAllDay)
+    return Pick(proposal: p, kind: past ? .past : !uncertainCodes.isEmpty ? .needsReview : .addable, start: start, timed: !t.isAllDay)
   }
 
   /// 한 답의 카드: 일정 기간이 있으면 그 안에서 시작하는 것만(인용 항목의 무관한 일정 제외), 다가올 일정을 시작 순으로 먼저,
@@ -52,7 +59,7 @@ public enum ScheduleCard {
     guard let c, let received = origin(c).received, let at = iso.date(from: c.occurred_at.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)) else { return nil }
     return "\(md.string(from: at)) \(received)"
   }
-  private static func origin(_ c: ChatReply.Citation?) -> (found: String, received: String?) {
+  static func origin(_ c: ChatReply.Citation?) -> (found: String, received: String?) {
     guard let c else { return ("저장된 정보", nil) }
     switch c.source {
     case "MESSAGES": return ("문자", "받은 문자")
@@ -121,27 +128,33 @@ public enum ScheduleCard {
   /// timing = 제안 일시(여러 날 종일의 기간 — 비슷한 일정을 그 기간과 겹치는 날에서 찾는다). nil 이면 start·allDay 로 하루
   public static func status(pid: String, title: String, start: Date, allDay: Bool = false, timing: ProposalTiming? = nil, serverStatus: String,
                             executed: Bool, events: [ProposalFlow.CalendarEvent], deviceZone: TimeZone = .current) -> Status {
+    registration(pid: pid, title: title, start: start, allDay: allDay, timing: timing, serverStatus: serverStatus, executed: executed,
+                 events: events, deviceZone: deviceZone).status
+  }
+  /// 등록 판정(§9 상태 1~6)과 그 판정이 짚은 캘린더 일정(상태 1~3 — 표식·같은 일정을 다른 제안으로 넣음·같은 시작·제목). 기간 브리핑이 한 줄로 합칠 일정을 고른다(K22)
+  public static func registration(pid: String, title: String, start: Date, allDay: Bool = false, timing: ProposalTiming? = nil, serverStatus: String,
+                                  executed: Bool, events: [ProposalFlow.CalendarEvent], deviceZone: TimeZone = .current) -> (status: Status, matched: ProposalFlow.CalendarEvent?) {
     let live = events.filter { !$0.canceled }, m = ProposalFlow.marker(pid), name = trimmed(title)
     let seoulStart = { (e: ProposalFlow.CalendarEvent) in seoulSpan(e, deviceZone: deviceZone).0 }
     let sameDay = { (e: ProposalFlow.CalendarEvent) in e.allDay && seoulDay(seoulStart(e)) == seoulDay(start) }
     if let mine = live.filter({ $0.url == m }).min(by: { abs(seoulStart($0).timeIntervalSince(start)) < abs(seoulStart($1).timeIntervalSince(start)) }) {
-      guard allDay else { return minute(mine.start) == minute(start) ? .added : .addedMoved(mine.start) }
-      if sameDay(mine) { return .added }
-      return mine.allDay ? .addedMovedDay(seoulDay(seoulStart(mine)).start) : .addedMoved(mine.start)
+      guard allDay else { return (minute(mine.start) == minute(start) ? .added : .addedMoved(mine.start), mine) }
+      if sameDay(mine) { return (.added, mine) }
+      return (mine.allDay ? .addedMovedDay(seoulDay(seoulStart(mine)).start) : .addedMoved(mine.start), mine)
     }
     let one = ProposalTiming.Day.seoulDay(of: start)
     let timing = timing ?? (allDay ? .allDay(first: one, last: one) : .timed(start))
     let similar = ProposalFlow.similar(pid: pid, title: title, timing: timing, events: events, deviceZone: deviceZone)
-    if ProposalFlow.registeredTwin(title: title, timing: timing, among: similar, deviceZone: deviceZone) != nil { return .added }
-    if live.contains(where: { allDay ? sameDay($0) && trimmed($0.title) == name : minute($0.start) == minute(start) && trimmed($0.title) == name }) {
-      return .sameEvent
+    if let twin = ProposalFlow.registeredTwin(title: title, timing: timing, among: similar, deviceZone: deviceZone) { return (.added, twin) }
+    if let same = live.first(where: { allDay ? sameDay($0) && trimmed($0.title) == name : minute($0.start) == minute(start) && trimmed($0.title) == name }) {
+      return (.sameEvent, same)
     }
-    if executed || serverStatus == "succeeded" { return .addedMissing }
+    if executed || serverStatus == "succeeded" { return (.addedMissing, nil) }
     let c = allDay ? [] : ProposalFlow.conflicts(pid: pid, timing: timing, events: events)   // 시각은 [start, 끝)(§10 "일정 종료")
-    if c.isEmpty { return similar.isEmpty ? .clear : .similar(similar) }
+    if c.isEmpty { return (similar.isEmpty ? .clear : .similar(similar), nil) }
     // 같은 예약의 재안내 → 다른 제안이 이미 넣은 일정(Fable #10). 자동 차단은 하지 않는다 — 오판이면 추가할 길이 없어진다
     let same = c.contains { $0.url?.absoluteString.hasPrefix(markerPrefix) == true && minute($0.start) == minute(start) }
-    return .conflict(c, maybeSame: same)
+    return (.conflict(c, maybeSame: same), nil)
   }
 
   public static func statusText(_ s: Status) -> String {
@@ -177,6 +190,8 @@ public enum ScheduleCard {
     public var location: String? = nil
     /// 제안 payload 의 notes(일정 메모, 스펙 §10 0.11.2) — addFields 로 EventKit 메모에
     public var notes: String? = nil
+    /// 날짜 미정 카드(C 날짜 선택, K28) — 상태·그날 줄 없음, whenLine "날짜 미정 제목"
+    public var undated = false
     public var day: DateInterval { ScheduleCard.seoulDay(start) }
   }
 
@@ -190,9 +205,12 @@ public enum ScheduleCard {
     var conflicts: [ProposalFlow.CalendarEvent] = []
     if case .conflict(let cs, _)? = st { conflicts = cs }
     let l = events.map { dayLines(day: c.day, events: $0, conflicts: conflicts, deviceZone: deviceZone) }
-    return Model(pid: c.proposal.id, itemID: c.proposal.item_id, title: c.title, startText: c.proposal.payload["start"]?.string ?? "",
-                 endText: c.proposal.payload["end"]?.string, kind: c.kind, start: c.start, timed: c.timed, status: st, lines: l?.lines, moreLines: l?.more ?? 0,
-                 location: ProposalReview.place(c.proposal.payload["location"]?.string), notes: ProposalReview.memo(c.proposal.payload["notes"]?.string))
+    var m = Model(pid: c.proposal.id, itemID: c.proposal.item_id, title: c.title, startText: c.proposal.payload["start"]?.string ?? "",
+                  endText: c.proposal.payload["end"]?.string, kind: c.kind, start: c.start, timed: c.timed, status: c.undated ? nil : st,
+                  lines: c.undated ? nil : l?.lines, moreLines: c.undated ? 0 : l?.more ?? 0,
+                  location: ProposalReview.place(c.proposal.payload["location"]?.string), notes: ProposalReview.memo(c.proposal.payload["notes"]?.string))
+    m.undated = c.undated
+    return m
   }
 
   public enum Action: Equatable, Sendable { case add, addAnyway, addSimilar }
@@ -232,6 +250,7 @@ public enum ScheduleCard {
   public static func isWarning(_ m: Model) -> Bool { if case .conflict? = m.status { return true }; return false }
   /// "10/4(일) 15:30 제목"(끝이 있으면 "10/4(일) 15:30–17:00 제목", 0.12.0 ProposalTiming.timeLabel), 날짜만(종일)이면 "10/4(일) 종일 제목"·여러 날 "10/4(일)–10/6(화) 종일 제목"
   public static func whenLine(_ m: Model) -> String {
+    if m.undated { return "날짜 미정 \(m.title)" }
     let t = ProposalTiming.parse(start: m.startText, end: m.endText)
     if !m.timed, let days = t?.dayLabel { return "\(days) 종일 \(m.title)" }
     if m.timed, let when = t?.timeLabel { return "\(when) \(m.title)" }

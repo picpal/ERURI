@@ -27,7 +27,7 @@ final class ItemEventsTests: XCTestCase {
   func testQuery() {
     let q = ItemEvents.query(itemID: "aaaaaaaa-0000-0000-0000-000000000001")
     XCTAssertEqual(q, "rest/v1/facts?item_id=eq.aaaaaaaa-0000-0000-0000-000000000001&kind=eq.event&status=eq.active"
-                   + "&select=ordinal,proposals(id,action,status,version,payload)&order=ordinal.asc")
+                   + "&select=ordinal,proposals(id,action,status,version,payload,eventkit_id)&order=ordinal.asc")
     XCTAssertFalse(q.contains("content") || q.contains("evidence"))
   }
 
@@ -154,5 +154,8 @@ final class ItemEventsTests: XCTestCase {
     try e.rerecord(proposalId: "p2", eventkitId: "ek-2", version: 1)
     XCTAssertEqual(try e.existing(proposalId: "p2"), "ek-2")
     XCTAssertFalse(try e.unreported().contains { $0.proposalId == "p2" })   // 새로 넣은 기록은 보고하지 않는다
+  }
+  func testQueryReadsEventkitIDForEditStates() {
+    XCTAssertTrue(ItemEvents.query(itemID: "i1").contains("proposals(id,action,status,version,payload,eventkit_id)"))
   }
 }
