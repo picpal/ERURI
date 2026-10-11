@@ -136,3 +136,9 @@ Deno.test("revalidate: patch times are always the normalized Seoul form (Z, +090
     for (const v of [p.start, p.end]) if (typeof v === "string") assert(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}\+09:00)?$/.test(v), v);
   }
 });
+
+// 리뷰 I1(메인 판정 E3-I1): 시각 값도 달력·시 검사 — Date.parse 굴림(4/31 → 5/1, 24시 → 다음 날)으로 사용자가 말하지 않은 날짜가 date 코드까지 풀지 않게
+Deno.test("when: times on calendar-invalid dates or hour 24 are dropped (no Date.parse rollover); revalidate keeps nothing", () => {
+  assertEquals([when("2026-02-30T11:00:00+09:00"), when("2026-04-31T09:00:00Z"), when("2026-10-09T24:00:00+09:00")], [null, null, null]);
+  assertEquals(revalidate(R1, raw({ start: "2026-04-31T09:00:00+09:00" })).patch, {});
+});

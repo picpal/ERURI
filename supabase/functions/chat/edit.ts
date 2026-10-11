@@ -29,6 +29,9 @@ export function when(s: string | null, needOffset = true): When | null {
   const t = s.trim();
   if (DAY.test(t)) { const n = normalizeDateTime(t); return n.value !== null && n.ms !== null ? { kind: "day", value: n.value, ms: n.ms } : null; }
   if (needOffset && !OFFSET.test(t)) return null;
+  // Date.parse 는 4/31·24시를 다음 날로 굴린다 — 앞 10자가 달력에 있는 날짜이고 시가 00~23 일 때만(리뷰 I1)
+  const h = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):/.exec(t);
+  if (!h || normalizeDateTime(h[1]).value === null || Number(h[2]) > 23) return null;
   const n = normalizeDateTime(t);
   return n.value !== null && n.ms !== null && !DAY.test(n.value) ? { kind: "time", value: n.value, ms: n.ms } : null;
 }
