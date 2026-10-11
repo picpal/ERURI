@@ -29,10 +29,12 @@ enum NotificationActions {
   /// 순서 1 조회 5초 + 순서 4 보고 5초, 둘 다 토큰 갱신 포함. 겹침이면 보고를 건너뛰고 로컬 알림 등록 2초뿐(Codex #5)
   /// readd: 항목 상세 "캘린더에 다시 추가"(§10 "일정 다시 추가", 0.11.4) — 순서 1은 stale 에서만 멈추고, 게이트는 로컬 기록이 있어도 dup 으로
   /// 멈추지 않고 표식 조회부터 한다. 기록은 새 일정으로 덮고 서버에 새로 보고하지 않는다(보고 전 기록이면 다음 보고가 새 id 로)
-  /// 반환: AddEventGate 결과(ok·recovered·dup·conflict:<n>·similar:<n>·fail:<코드>) · "skip_<why>" · "invalid_payload".
+  /// priors: 카드·항목 상세가 읽은 fact 버전(없으면 순서 1 조회), checkLineage false = 삭제 확인된 update_event 의 추가(§10 계보 확인, 0.16.0)
+  /// 반환: AddEventGate 결과(ok·recovered·dup·conflict:<n>·similar:<n>·lineage:<pid>·fail:<코드>) · "skip_<why>" · "invalid_payload".
   /// 채팅 카드·시트는 conflict·similar 면 확인창을 띄운다
   @discardableResult
-  static func handleAdd(fields f: [String: String], confirmed: Bool = false, lockScreen: Bool = false, readd: Bool = false) async -> String {
+  static func handleAdd(fields f: [String: String], confirmed: Bool = false, lockScreen: Bool = false, readd: Bool = false,
+                        priors: [ProposalVersion]? = nil, checkLineage: Bool = true) async -> String {
     let started = Date()
     guard let pid = f["proposal_id"], UUID(uuidString: pid) != nil, let title = f["title"], let shown = ProposalReview.timing(fields: f, serverEnd: nil) else {
       Trace.log("action.handled", ["result": "invalid_payload"]); return "invalid_payload"
@@ -45,13 +47,19 @@ enum NotificationActions {
     }
     // 기록·보고 version 은 실제로 넣은 내용(푸시 페이로드)의 것. 서버가 더 새 version 이면 보고 결과 changed 로 알린다(순서 5)
     let version = Int(f["version"] ?? "") ?? server?.version ?? 1
+    // 계보 확인 버전 목록(§10, K13): 화면이 읽은 것 → 순서 1 조회의 같은 fact 버전. version > 1 인데 둘 다 없으면 저장하지 않는다
+    let lineage = checkLineage && !readd ? (priors ?? server?.versions) : nil
+    if checkLineage, !readd, version > 1, lineage == nil {
+      trace("fail:lineage_unknown", pid: pid, started: started); return "fail:lineage_unknown"
+    }
     // 끝(스펙 §10 "일정 종료", 0.11.3): 화면 값 → 시각 일정에 끝이 없으면 순서 1 조회 end. 조회를 못 했으면 1시간
     let timing = ProposalReview.timing(fields: f, serverEnd: server?.end) ?? shown
     // 2~3. 확인 → 표식 조회 → 겹침 → 저장 → 기록(한 actor 구간, await 없음)
     // 메모(스펙 §10, 0.11.2): 화면 값 → 없으면 순서 1 조회 값. 조회를 못 했으면 메모 없이 저장한다
     let outcome = await AddEventGate.shared.add(AddEventRequest(pid: pid, title: title, timing: timing, version: version, confirmed: confirmed,
                                                                 location: ProposalReview.place(f["location"]),
-                                                                notes: ProposalReview.memo(fields: f, server: server?.notes), readd: readd))
+                                                                notes: ProposalReview.memo(fields: f, server: server?.notes), readd: readd, priors: lineage))
+    if outcome.hasPrefix("lineage:") { trace(outcome, pid: pid, started: started); return outcome }   // 보고 없음 — 카드가 "고치기 전 일정" 상태로
     let held = ProposalFlow.heldCount(outcome)                          // 겹침·비슷한 일정(0.9.2) — 저장하지 않았다
     // 잠금화면이 겹침·비슷한 일정으로 멈추면 앱 확인을 유도하는 로컬 알림(§10). 결과를 action.handled 에 같이 남기려고 trace 앞에서
     var notice: String? = nil
@@ -63,6 +71,18 @@ enum NotificationActions {
     }
     // 4. 이 제안 1건만 보고(5초). 실패·겹침·비슷한 일정(저장 안 함)은 보고하지 않는다. 나머지 미보고분은 앱 활성화 flush 가 보낸다
     if !outcome.hasPrefix("fail"), held == nil { await ExecutionReporter.shared.report(proposalId: pid, within: 5) }
+    return outcome
+  }
+
+  /// [캘린더도 바꾸기]·[겹쳐도 바꾸기](§10 "채팅 일정 고치기 실행" 1~8): 순서 1 서버 조회(5초) — stale 이면 중단(카드가 다시 읽는다), 오프라인이면 받은 값으로.
+  /// 바꾼(또는 복구한) 그 1건만 보고(5초, report_execution 변경 없음 — 새 버전 succeeded, 기준 버전은 그대로). 나머지는 앱 활성화 flush
+  static func handleChange(_ r: ChangeRequest) async -> String {
+    let started = Date(), pid = r.input.newPid
+    let server = await Deadline.run(seconds: 5) { await serverProposal(pid) }
+    if server?.status == "stale" { trace("skip_stale", pid: pid, started: started, edit: true); return "skip_stale" }
+    let outcome = await AddEventGate.shared.change(r)
+    trace(outcome, pid: pid, started: started, edit: true)
+    if ["changed", "recovered", "dup"].contains(outcome) { await ExecutionReporter.shared.report(proposalId: pid, within: 5) }
     return outcome
   }
 
@@ -120,23 +140,24 @@ enum NotificationActions {
     return rows.reduce(into: [String: String]()) { d, row in if let id = row["id"] as? String, let st = row["status"] as? String { d[id.lowercased()] = st } }
   }
 
-  private struct ServerProposal: Sendable { let status: String?; let version: Int?; let notes: String?; let end: String? }
+  private struct ServerProposal: Sendable { let status: String?; let version: Int?; let notes: String?; let end: String?; let versions: [ProposalVersion]? }
   private static func serverProposal(_ pid: String) async -> ServerProposal? {
-    guard let r = await API.send("rest/v1/proposals?id=eq.\(pid)&select=\(ProposalReview.serverSelect)", timeout: 5), r.status == 200,
+    guard let r = await API.send("rest/v1/proposals?id=eq.\(pid)&select=\(ProposalReview.serverSelect),\(EditFlow.lineageSelect)", timeout: 5), r.status == 200,
           let row = (try? JSONSerialization.jsonObject(with: r.data) as? [[String: Any]])?.first else { return nil }
     return ServerProposal(status: row["status"] as? String, version: row["version"] as? Int, notes: row["notes"] as? String,
-                          end: row["end_at"] as? String)
+                          end: row["end_at"] as? String, versions: EditFlow.priors(row: row))
   }
 
-  private static func trace(_ result: String, pid: String, started: Date, notice: String? = nil, readd: Bool = false) {
+  private static func trace(_ result: String, pid: String, started: Date, notice: String? = nil, readd: Bool = false, edit: Bool = false) {
     Task {
       let st = await AppState.snapshot()
       let auth = EKEventStore.authorizationStatus(for: .event).rawValue
-      DiagLog.append("ADD \(readd ? "readd " : "")\(result) \(pid) bg=\(st.bg) auth=\(auth)")
+      DiagLog.append("ADD \(edit ? "edit " : "")\(readd ? "readd " : "")\(result) \(pid) bg=\(st.bg) auth=\(auth)")
       var base: [String: Any] = ["result": result, "dup": result == "dup", "proposal_id": pid, "auth": auth,
                                  "elapsed_ms": Int(Date().timeIntervalSince(started) * 1000)]
       if let notice { base["notice"] = notice }
       if readd { base["readd"] = true }
+      if edit { base["edit"] = true }
       Trace.log("action.handled", base.merging(st.traceFields) { _, new in new })
     }
   }
@@ -145,7 +166,12 @@ enum NotificationActions {
 struct AddEventRequest: Sendable { let pid: String; let title: String; let timing: ProposalTiming; let version: Int; var confirmed = false; var location: String? = nil
                               var notes: String? = nil
                               /// 다시 추가(§10 0.11.4): 로컬 기록이 있어도 dup 으로 멈추지 않고, 기록을 새 일정으로 덮는다(rerecord)
-                              var readd = false }
+                              var readd = false
+                              /// 계보 확인(§10, 0.16.0): 같은 fact 의 버전들. nil = 확인하지 않는다(version 1·삭제 확인된 update 의 추가·다시 추가)
+                              var priors: [ProposalVersion]? = nil }
+
+/// [캘린더도 바꾸기]·[겹쳐도 바꾸기](§10 "채팅 일정 고치기 실행", 0.16.0). input = EditFlow.changeInput(카드·항목 상세와 같은 판정), timing = 새 값
+struct ChangeRequest: Sendable { let input: EditFlow.ChangeInput; let timing: ProposalTiming; var confirmed = false }
 
 /// 확인 → 표식 조회 → 겹침·비슷한 일정 판정 → 저장 → 기록을 await 없이 한 actor 안에서 처리한다(스펙 §10 순서 2~3, PoC-5 실측: 동시 두 번 탭 +1).
 /// 반환: "ok" · "recovered"(저장 후 기록 전 종료 복구) · "dup" · "conflict:<n>"(겹침, 저장 안 함) · "similar:<n>"(비슷한 일정, 저장 안 함) · "fail:<코드>"
@@ -161,6 +187,16 @@ actor AddEventGate {
       let store = EKEventStore()
       let (from, to) = r.timing.searchWindow                // 시각 ±1일, 종일은 첫날 서울 0시 −1일 ~ 마지막 날 다음 날 0시 +1일(기간 전체, 0.9.2)
       let events = CalendarLookup.events(store, from: from, to: to)
+      // 계보 확인(§10, Codex H1): 고쳐서 생긴 create_event(version > 1)를 넣기 전에 같은 fact 의 앞 버전이 캘린더에 들어갔는지 —
+      // 이 기기 실행 기록(보고 여부와 무관) 또는 그 버전 표식 일정(그 버전 조회 창). 있으면 새 일정을 만들지 않는다(실패 아님, 보고 없음)
+      if !r.readd, r.version > 1, let priors = r.priors,
+         let hit = EditFlow.lineage(version: r.version, priors: priors, executed: { (try? ex.existing(proposalId: $0)) != nil }, markerFound: { p in
+           guard let s = p.start, let t = ProposalTiming.parse(start: s, end: p.end) else { return false }
+           let (a, b) = t.searchWindow
+           return CalendarLookup.events(store, from: a, to: b).contains { !$0.canceled && $0.url == ProposalFlow.marker(p.id) }
+         }) {
+        return "lineage:\(hit.id)"
+      }
       // 다시 추가도 표식부터 — 캘린더에 이미 그 일정이 있으면 새로 만들지 않는다(두 번 탭해도 1건). 기록만 그 일정으로
       if let found = ProposalFlow.matchMarker(pid: r.pid, events: events.map { (id: $0.id, url: $0.url) }) {
         if r.readd { try ex.rerecord(proposalId: r.pid, eventkitId: found, version: r.version) }
@@ -189,6 +225,52 @@ actor AddEventGate {
       if r.readd { try ex.rerecord(proposalId: r.pid, eventkitId: eid, version: r.version) }
       else { try ex.record(proposalId: r.pid, eventkitId: eid, version: r.version) }
       return "ok"
+    } catch { return "fail:\(type(of: error))" }
+  }
+
+  /// §10 바꾸기 2~6(K25): 새 버전 기록(dup) → 새 표식(recovered — 저장 뒤 기록 전 종료) → 기준 일정(표식 → 식별자 → 넓은 표식) → 값 비교 → 겹침 →
+  /// 그 EKEvent 의 고친 칸만 + 표식을 새 pid 로 → save(.thisEvent, commit) → 기록. 판단은 EditFlow(카드와 같은 함수), 한 actor 구간에 await 없음
+  func change(_ r: ChangeRequest) -> String {
+    let i = r.input
+    do {
+      let ex = try Executions.shared()
+      if try ex.existing(proposalId: i.newPid) != nil { return "dup" }
+      guard CalendarLookup.fullAccess else { return "fail:no_full_access" }
+      guard let bs = i.before.start, let bt = ProposalTiming.parse(start: bs, end: i.before.end) else { return "fail:bad_before" }
+      let store = EKEventStore()
+      let (nf, nt) = r.timing.searchWindow
+      let near = CalendarLookup.events(store, from: nf, to: nt)
+      if let found = ProposalFlow.matchMarker(pid: i.newPid, events: near.map { (id: $0.id, url: $0.url) }) {
+        try ex.record(proposalId: i.newPid, eventkitId: found, version: i.version); return "recovered"
+      }
+      let (bf, bto) = bt.searchWindow
+      let identifier: EditFlow.IdentifierLookup = {
+        guard let eid = (try? ex.existing(proposalId: i.basePid)) ?? i.baseEventID else { return .noIdentifier }
+        return store.event(withIdentifier: eid).flatMap(CalendarLookup.value).map { .found($0) } ?? .notFound
+      }()
+      let base = EditFlow.findBase(basePid: i.basePid, newPid: i.newPid, near: CalendarLookup.events(store, from: bf, to: bto), identifier: identifier,
+                                   wide: { CalendarLookup.events(store, from: bt.anchor.addingTimeInterval(-EditFlow.wideSpan), to: bt.anchor.addingTimeInterval(EditFlow.wideSpan)) })
+      switch EditFlow.change(newPid: i.newPid, newTiming: r.timing, before: i.before, base: base, nearNew: near) {
+      case .done: return "recovered"
+      case .deleted: return "base_deleted"
+      case .unknown: return "base_unknown"
+      case .userModified: return "user_modified"
+      case .ready(let e, let conflicts):
+        if !r.confirmed, !conflicts.isEmpty { return ProposalFlow.conflictOutcome(conflicts.count) }
+        guard let ev = store.event(withIdentifier: e.id), let cal = ev.calendar, cal.allowsContentModifications else { return "fail:not_writable" }
+        // 고친 칸만(§10 바꾸기 6): before 와 새 값이 다른 제목·시작/끝/종일·장소. 메모·알림·캘린더는 손대지 않는다(사용자가 바꾼 장소는 고치지 않는 한 보존)
+        if (i.before.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines) != i.title { ev.title = i.title }
+        if bt != r.timing {
+          let span = r.timing.eventSpan(deviceZone: .current)
+          ev.isAllDay = r.timing.isAllDay; ev.startDate = span.start; ev.endDate = span.end
+        }
+        if ProposalReview.place(i.before.location) != i.location { ev.location = i.location }
+        ev.url = ProposalFlow.marker(i.newPid)
+        try store.save(ev, span: .thisEvent, commit: true)
+        let eid: String = ev.eventIdentifier ?? ev.calendarItemIdentifier
+        try ex.record(proposalId: i.newPid, eventkitId: eid, version: i.version)
+        return "changed"
+      }
     } catch { return "fail:\(type(of: error))" }
   }
 }

@@ -15,7 +15,8 @@ enum CalendarLookup {
     // 생일·구독(공휴일) 캘린더는 채팅 카드 줄에서 뺀다(겹침 판정에는 쓴다, §9 일정 답 카드). calendar 는 SDK 상 EKCalendar! — 옵셔널로 읽는다
     let listed = e.calendar.map { $0.type != .birthday && $0.type != .subscription } ?? true
     return ProposalFlow.CalendarEvent(id: e.eventIdentifier ?? e.calendarItemIdentifier, title: e.title ?? "", start: s, end: t,
-                                      allDay: e.isAllDay, canceled: e.status == .canceled, url: e.url, listed: listed)
+                                      allDay: e.isAllDay, canceled: e.status == .canceled, url: e.url, listed: listed,
+                                      recurring: e.hasRecurrenceRules)
   }
 
   /// 화면 조회(시트·제안 탭 행·채팅) 공유 store — 행마다·앱 활성화마다 새로 만들지 않는다(Fable N4). 읽기 전용.
@@ -60,5 +61,24 @@ enum CalendarLookup {
   @MainActor static func cardEvents(day: DateInterval) -> [ProposalFlow.CalendarEvent]? {
     guard fullAccess else { return nil }
     return events(store, from: day.start.addingTimeInterval(-86_400), to: day.end.addingTimeInterval(86_400))
+  }
+
+  /// 고친 일정 판정(EditFlow — 카드·항목 상세·브리핑, 0.16.0): 창 일정·식별자 조회·이 기기 실행 기록. 전체 접근이 없으면 nil(카드는 허용 안내).
+  /// 공유 store(메인 스레드 동기 조회). 읽은 일정은 화면·판정에만(§12 통제 2)
+  /// EditFlow.Lookup 의 클로저는 격리가 없는 타입이다 — 메인 액터 store 를 잡으므로 처음부터 본문을 MainActor.assumeIsolated 로 감싼다
+  /// (부르는 곳은 늘 메인 액터 — EditFlow.Lookup 주석, Fable 플랜 리뷰 N7③)
+  @MainActor static func lookup(_ ex: Executions?) -> EditFlow.Lookup? {
+    guard fullAccess else { return nil }
+    return EditFlow.Lookup(events: { w in MainActor.assumeIsolated { events(store, from: w.start, to: w.end) } },
+                           byIdentifier: { id in MainActor.assumeIsolated { store.event(withIdentifier: id).flatMap(value) } },
+                           executedEventID: { pid in guard let ex else { return nil }; return try? ex.existing(proposalId: pid) })
+  }
+  /// 겹침·비슷한 일정으로 저장하지 않고 돌아온 추가의 확인창 문구(채팅 runAdd·항목 상세 고친 일정 [캘린더에 추가] — 같은 문구, Codex 플랜 리뷰 M4).
+  /// 지금 ChatView.runAdd 안에 있던 계산을 그대로 옮긴 것
+  @MainActor static func confirmPrompt(pid: String, fields f: [String: String], outcome: String) -> String {
+    guard let timing = f["start"].flatMap({ ProposalTiming.parse(start: $0, end: f["end"]) }) else { return ProposalFlow.confirmTitle([]) }
+    return ProposalFlow.similarCount(outcome) != nil
+      ? ProposalFlow.similarConfirmTitle(similar(pid: pid, title: f["title"] ?? "", timing: timing))
+      : ProposalFlow.confirmTitle(conflicts(pid: pid, timing: timing))
   }
 }

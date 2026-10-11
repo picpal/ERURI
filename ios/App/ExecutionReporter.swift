@@ -20,11 +20,18 @@ actor ExecutionReporter {
     await send(proposalId: r.proposalId, eventkitId: r.eventkitId, version: r.version, ex: ex, within: seconds)
   }
 
+  /// 보내기 전 재전송 여부(스펙 §9 B 앱 → 서버, K26): 미보고 실행 기록이 있나
+  func hasUnreported() -> Bool { !(((try? Executions.shared().unreported()) ?? []).isEmpty) }
+
   private struct Reply: Sendable { let status: Int; let result: String? }
 
   private func send(proposalId pid: String, eventkitId: String, version: Int, ex: Executions, within seconds: TimeInterval?) async {
     guard sending.insert(pid).inserted else { return }
     defer { sending.remove(pid) }
+    #if DEBUG
+    // EDIT-sim ⑩ 보고 지연 재현(계획 K21): 게이트가 켠 동안 보내지 않는다 — 기록은 미보고로 남아 다음 활성화 flush 가 보낸다. Release 빌드에는 이 코드가 없다
+    if UserDefaults.standard.bool(forKey: "gate.failReport") { DiagLog.append("report gate-hold \(pid)"); return }
+    #endif
     let at = ISO8601DateFormatter().string(from: (try? ex.executedAt(proposalId: pid)) ?? Date())
     let device = Trace.deviceID
     let post: @Sendable () async -> Reply? = {
@@ -41,7 +48,10 @@ actor ExecutionReporter {
     case .done: try? ex.markReported(proposalId: pid)
     case .doneNotifyChanged:
       try? ex.markReported(proposalId: pid)
-      await Self.notice(title: "변경된 제안", body: "캘린더에 추가한 뒤 제안이 바뀌었습니다. 앱에서 확인하세요.")
+      // 늦은 stale 보고(0.16.0 고치기 뒤 옛 버전) = 같은 fact 에 새 버전이 있다(0.16.0 전에는 stale 을 쓰는 서버 경로가 없다 — K12). 카드가 처리하므로 알림 없음.
+      // changed(version 불일치)는 지금처럼 알림
+      if reply?.result == "stale" { DiagLog.append("report stale \(pid)") }
+      else { await Self.notice(title: "변경된 제안", body: "캘린더에 추가한 뒤 제안이 바뀌었습니다. 앱에서 확인하세요.") }
     }
   }
 
