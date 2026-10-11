@@ -282,3 +282,8 @@ Deno.test("multi-event eval judge: split / missing / time / end / kind codes; da
   assertEquals(judge({ ...c, starts: ["2026-10-15"], ends: ["2026-10-18"] }, { kind: "event", starts: ["2026-10-15"], ends: [null] }), "end");
   assertEquals(judge(c, { kind: "task", starts: [], ends: [] }), "kind");
 });
+
+Deno.test("TEXT_INSTRUCTION: am/pm rule names the markers and the clear forms (EDIT-eval M8)", () => {
+  const s = buildTextExtractRequest("합성 미팅 14일 6시 등록해줘", { source: "SHARE", appName: "채팅", title: null }, "2026-10-08").input[0].content[1].text;
+  for (const k of ["오전·오후·아침·저녁·밤·새벽", "1~12시로만", "13~23시", "'자정'(00:00)", "'정오'(12:00)"]) assert(s.includes(k), k);
+});
