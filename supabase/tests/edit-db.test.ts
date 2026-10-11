@@ -11,7 +11,7 @@ const opts = { password: Deno.env.get("SUPABASE_DB_PASSWORD"), max: 1, prepare: 
 
 Deno.test({ name: "hosted: 0033 cases in one rolled-back transaction (test user 21)", ignore: !ON, sanitizeResources: false, sanitizeOps: false, fn: async () => {
   const sql = postgres(url, opts);
-  const user = (await testUser(21)).id, other = (await testUser(1)).id;
+  const user = (await testUser(21)).id, other = (await testUser(22)).id;   // 다른 사용자도 0.16.0 테스트 사용자(22) — 1번 등 다른 사용자를 만들거나 바꾸지 않는다
   try {
     await sql.begin(async (tx) => {
       await tx.unsafe("set local lock_timeout = '3s'");
