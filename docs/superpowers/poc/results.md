@@ -238,3 +238,5 @@ r1(2026-10-11 18:31 KST, HEAD `45b2e5e`): 의도 24·24·24, 칸 14·14·14, 오
 | 3 | 24 | 14 | 0 | 4 | 4 | 없음(m01 question·m02 add_event) |
 
 판정: **통과** (`"gate":"pass"`·`"extract_gate":"pass"`). 실패 코드: 2:e11 intent(question). INTENT-eval 119 회귀(18:38~18:49 KST, `--runs 3 --mail-judged --read-judged`): pass — 오탐 0·재현율 add 1·mail 1·summary 1·혼동 0·mail 1·read 1·target 1·게이트 사례 통과. 지시문 수정: 추출 `ae6b55b`(EDIT-eval r1), EDIT_RULE·EDIT_SCHEMA 수정 0. 측정만: m01(만료 대상 "앗 내일이야")은 r1·r2 6회 중 1회만 edit_event(나머지 question), m02(고치기+재등록 섞임)는 6회 중 add_event 5·question 1 — 게이트 밖.
+
+최종 리뷰 I2(2026-10-11 20:50 KST): 오전·오후 보강을 채팅 등록(SHARE·앱 "채팅")에만 좁힘 — 공유 링크·포스터 등 그 밖 SHARE 는 보강 전(`ae6b55b^`) 요청 바이트 그대로(해시 사례). 추출 8사례 재측정 `eval-edit.ts --runs 3 --extract-only`: 24/24, extract_gate pass.

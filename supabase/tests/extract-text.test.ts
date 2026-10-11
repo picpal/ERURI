@@ -287,3 +287,14 @@ Deno.test("TEXT_INSTRUCTION: am/pm rule names the markers and the clear forms (E
   const s = buildTextExtractRequest("합성 미팅 14일 6시 등록해줘", { source: "SHARE", appName: "채팅", title: null }, "2026-10-08").input[0].content[1].text;
   for (const k of ["오전·오후·아침·저녁·밤·새벽", "1~12시로만", "13~23시", "'자정'(00:00)", "'정오'(12:00)"]) assert(s.includes(k), k);
 });
+
+// 최종 리뷰 I2: 오전·오후 보강은 채팅 등록(SHARE·앱 "채팅")에만 — 되묻기 버튼이 없는 공유 링크·포스터 글은 보강 전(ae6b55b^) 요청 바이트 그대로
+Deno.test("TEXT_INSTRUCTION: am/pm rule only for chat registration; other SHARE requests are byte-identical to before it (hash)", async () => {
+  for (const appName of ["웹 링크", null, "합성 메모", "채팅 "]) {
+    const r = buildTextExtractRequest("합성", { source: "SHARE", appName, title: null }, "2026-10-01");
+    assertEquals(await sha(JSON.stringify({ ins: textOf(r, 1), schema: r.text.format.schema })),
+      "c231233a0b43383fa0abc70fcd9e1725993169d8f0075e9f67a6a501c773d7a4", String(appName));
+    assert(!textOf(r, 1).includes("1~12시로만"), String(appName));
+  }
+  assert(textOf(buildTextExtractRequest("합성", { source: "SHARE", appName: "채팅", title: null }, "2026-10-01"), 1).includes("1~12시로만"));
+});
