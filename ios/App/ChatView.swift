@@ -16,8 +16,17 @@ struct ChatView: View {
     var cardsRead = false                         // 카드·절을 읽었다 — 복원한 턴은 화면에 나올 때 읽는다(F8)
     var addProposals: [ChatReply.Proposal]?     // 일정 등록 턴: 항목의 제안(서버에서 다시 읽음 — 저장하지 않는다, D8)
     var cardsLoading = false                    // 일정 등록 턴의 제안 읽는 중(같은 턴을 두 번 읽지 않게)
+    var facts: [FactVersions]?                  // 0.16.0: 등록·고치기 턴 = 그 fact 버전, 질문 턴 = 답 카드 update_event 의 fact 버전(계보·update_event 상태 — 저장하지 않는다)
+    var entries: [CardEntry] = []               // 등록·고치기 턴의 카드 순서(fact 순)·답 카드의 고친 일정: 일정 답 카드 행 또는 고친 일정 상태
+    var asks: [String: AskBack.Question] = [:]  // 되묻기(채팅 등록·고치기 카드만, C — 그리기는 P6b) — 키 = 제안 id
     init(record: ChatHistory.Record) { self.record = record; answer = record.reply.flatMap(ChatReply.decode) }
   }
+  /// 등록·고치기 턴·답 카드의 카드 하나(K27): add 상태는 기존 일정 답 카드 행, 나머지는 EditCardView. itemID = 출처 줄(답 카드는 그 항목의 인용)
+  enum CardEntry {
+    case card(ScheduleCard.Model, ProposalVersion)
+    case edit(ProposalVersion, EditFlow.CardState, itemID: String, header: String?, lines: [ScheduleCard.DayLine])
+  }
+  enum EditState { case running, failed(String) }
 
   @State private var input = ""
   @FocusState private var inputFocused: Bool           // 키보드가 탭 막대를 가리므로 스크롤·빈 곳 탭으로 내린다(키보드 툴바 "완료"는 가려져 0.7.1 에서 뺐다)
@@ -36,11 +45,14 @@ struct ChatView: View {
   struct ScrollRequest: Equatable { let id: UUID; let seq: Int }
   @State private var scrollRequest: ScrollRequest?     // 보낼 때·답이 올 때 그 질문이 보이게(턴이 화면보다 길면 맨 위, 0.8.2 — 카드가 입력 패널·키보드 뒤에 깔리지 않게)
   @State private var confirm: ConfirmAdd?              // 겹침·비슷한 일정 확인창(§10): 저장 직전에 새로 나온 경우만(C2-5). 제안 id·handleAdd 필드·다시 읽은 일정으로 만든 문구
-  struct ConfirmAdd: Identifiable { let id: String; let fields: [String: String]; var prompt = "" }
+  struct ConfirmAdd: Identifiable { let id: String; let fields: [String: String]; var prompt = ""
+    var checkLineage = true                     // false = 삭제 확인된 update_event 의 [캘린더에 추가](§10 — 계보 확인 없음, 0.16.0)
+    var readd = false }                         // 바꾼 뒤 지운 일정(succeeded update_event)의 [캘린더에 추가](K11 — 로컬 실행 기록이 있어도 새 일정)
   @State private var openItem: String?                  // "일정 보기"(이미 읽은 링크, 0.11.4) → 항목 상세
   @State private var mailPolling: Set<UUID> = []       // 상태를 읽는 중인 메일 정리 턴(같은 턴을 두 Task 가 읽지 않게, 0.14.0)
   @State private var mailRequesting: Set<UUID> = []    // 실행·되돌리기·다시 미리보기 요청 중인 턴 — 재개(onAppear·활성화)가 끼어들지 않게(D22)
   @State private var mailNexted: Set<UUID> = []        // [다음 1,000건 보기]를 이미 누른 턴 — 연타로 새 턴이 둘 생기지 않게(저장하지 않는다)
+  @State private var edits: [String: EditState] = [:]  // 제안 id → [캘린더도 바꾸기]·되묻기 진행·실패(0.16.0)
   @State private var dictation = SpeechDictation()     // 기기 안 받아쓰기(§9·§12)
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.colorScheme) private var scheme
@@ -61,13 +73,16 @@ struct ChatView: View {
             Section {
               Text(t.record.question).font(.subheadline).foregroundStyle(.secondary).id(t.id).accessibilityIdentifier("chat-question")
                 .onAppear {                                                  // 복원한 턴의 카드는 화면에 나올 때(F8). Section 이 아니라 행에 단다
-                  if !t.cardsRead, t.answer != nil { readCalendar(t.id) }
+                  if !t.cardsRead, t.record.kind == .editEvent { if t.facts != nil { readCalendar(t.id) } else { loadEditCard(t.id) } }
+                  else if !t.cardsRead, t.answer != nil { readCalendar(t.id) }
                   else if !t.cardsRead, t.record.kind == .addEvent, t.record.itemID != nil {
                     if t.addProposals != nil { readCalendar(t.id) } else { loadAddEventCards(t.id) }
                   }
                 }
               if let e = t.record.error { Text(e).foregroundStyle(.red) }
-              if t.record.kind == .mailSummary {                   // 메일 요약 턴(§9, 0.15.0): 카드 하나. 다시 보내지 않는다(읽기는 비용) — 복원은 ChatHistory.restored
+              if t.record.kind == .editEvent, let a = t.answer {           // 일정 고치기 턴(§9 B 앱, 0.16.0) — 답이 아니라 막대·보관함 버튼 없음
+                editRows(t, a)
+              } else if t.record.kind == .mailSummary {                   // 메일 요약 턴(§9, 0.15.0): 카드 하나. 다시 보내지 않는다(읽기는 비용) — 복원은 ChatHistory.restored
                 MailSummaryCard(turn: t.record.mailRead ?? MailSummaryTurn(phase: .ended, note: MailSummaryText.failed),
                                 onPick: { pickSummary(t.id, $0) }, onResearch: { researchSummary(t.id) }, onSettings: { SettingsRouter.shared.open() })
               } else if t.record.kind == .mailAction {             // 메일 정리 턴(§9, 0.14.0): 카드 하나. 상태를 다시 읽어야 하는 턴은 나올 때 서버를 먼저 읽는다
@@ -109,7 +124,7 @@ struct ChatView: View {
         .confirmationDialog(confirm?.prompt ?? "",
                             isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
                             titleVisibility: .visible, presenting: confirm) { c in
-          Button("추가") { runAdd(c, confirmed: true) }
+          Button("추가") { runAdd(c, confirmed: true, priors: priors(for: c.id)) }
           Button("취소", role: .cancel) {}
         }
         .navigationTitle("채팅")
@@ -144,7 +159,7 @@ struct ChatView: View {
     guard let seen = seenClear else { seenClear = now; return }
     guard seen != now else { return }
     seenClear = now
-    turns = []; judged = [:]; judging = []; adds = [:]; copied = nil; judgeSheet = nil; confirm = nil; openItem = nil; mailPolling = []; mailRequesting = []; mailNexted = []; loaded = true
+    turns = []; judged = [:]; judging = []; adds = [:]; copied = nil; judgeSheet = nil; confirm = nil; openItem = nil; mailPolling = []; mailRequesting = []; mailNexted = []; loaded = true; edits = [:]
   }
 
   /// 새 턴을 맨 뒤에 두고 저장한다. 500개 상한은 더할 때도(D1)
@@ -259,15 +274,45 @@ struct ChatView: View {
     // 일정 답 카드(§9, 0.8.2): 찾은 곳 → 그날 내 캘린더 → 상태·버튼. 일정 기간이 카드 하루보다 넓을 때만 아래 "기기 캘린더" 절도 그린다.
     // 전체 접근이 없으면 카드가 안내를 대신 들고, 절의 안내는 카드가 없을 때만
     ForEach(Array(t.cards.enumerated()), id: \.element.pid) { pair in cardRows(t, pair.element, first: pair.offset == 0) }
+    entryRows(t)                                                                  // 답 카드의 update_event(0.16.0 — 그 턴의 entries 는 .edit 만)
     if t.cardsMore > 0 { Text(ScheduleCard.moreText(t.cardsMore)).font(.caption2).foregroundStyle(.secondary) }
     if a.schedule != nil, t.cards.isEmpty || t.calendar != nil { calendarRows(t, a) }
     feedbackBar(a)
   }
 
-  /// 채팅 일정 카드(스펙 §9 "채팅 일정 카드", 0.13.0): 일정 답 카드와 같은 행(①②③·버튼·저장 경로). 출처는 항목(채팅에서 등록)
+  /// 채팅 일정 카드(스펙 §9 "채팅 일정 카드", 0.13.0 → 0.16.0): fact 순서대로 일정 답 카드 행 또는 고친 일정 상태(update_event·계보)
   @ViewBuilder private func addEventRows(_ t: Turn) -> some View {
-    ForEach(Array(t.cards.enumerated()), id: \.element.pid) { pair in cardRows(t, pair.element, first: pair.offset == 0) }
+    entryRows(t)
     if t.cardsMore > 0 { Text(ScheduleCard.moreText(t.cardsMore)).font(.caption2).foregroundStyle(.secondary) }
+  }
+  /// 고치기 턴(스펙 §9 B 앱 표): expired·multi·not_found·no_change 는 한 줄, ok 는 머리 + 전 → 후 + 카드
+  @ViewBuilder private func editRows(_ t: Turn, _ a: ChatReply.Answer) -> some View {
+    if let e = a.edit, let one = ChatEdit.oneLine(e.status) {
+      Text(one).font(.subheadline).accessibilityIdentifier("edit-oneline")
+    } else if let e = a.edit {
+      EditHeaderView(header: ChatEdit.headerText(e), diff: ChatEdit.diffLines(e))
+      entryRows(t)
+    } else {
+      Text(ChatHistoryText.unreadableReply).foregroundStyle(.red)
+    }
+  }
+  @ViewBuilder private func entryRows(_ t: Turn) -> some View {
+    ForEach(Array(t.entries.enumerated()), id: \.offset) { pair in
+      switch pair.element {
+      case .card(let m, _): cardRows(t, m, first: pair.offset == 0)
+      case .edit(let s, let st, let item, let header, let lines):
+        if t.record.kind != .editEvent {                                       // 등록·답 카드는 출처·일정 줄을 둔다(고치기 턴은 머리가 대신)
+          // 출처: 답 카드 = 그 항목의 인용(메일·문자일 수 있다 — Fable 플랜 리뷰 N5), 등록 턴 = "채팅에서 등록한 일정"
+          let cite = t.record.kind == .question ? t.answer?.citations.first(where: { $0.item_id == item }) : ChatAddEvent.citation(itemID: item, at: t.record.at)
+          Text("\(ScheduleCard.sourceLine(cite)) · \(ChatEdit.whenText(start: s.start, end: s.end)) \(s.displayTitle)")
+            .font(.subheadline)
+        }
+        // 전송 중(busy)에는 버튼을 끈다 — 고치기 RPC 와 버튼 쓰기가 같은 fact 에 겹치는 유일한 경로(Fable 플랜 리뷰 N6·#5)
+        EditCardView(status: EditFlow.status(st), dayHeader: header, dayLines: lines, access: st != .noAccess,   // 전체 접근이 없으면 update 는 noAccess(허용 안내), 나머지 줄은 권한과 무관
+                     running: busy || edits[s.id].isRunning || adds[s.id].isRunning, failure: edits[s.id].failure ?? adds[s.id].failure,
+                     onButton: { b in pressEdit(t.id, subject: s, state: st, button: b) }, onAllow: { recheck(t.id) })
+      }
+    }
   }
 
   /// 답 맨 아래 텍스트 버튼 막대(§9, 0.9.0 — 0.8.3 아이콘 막대를 대신한다): 맞아요 · 틀렸어요 · 복사. 거절(인용 없음)이면 복사만.
@@ -334,6 +379,40 @@ struct ChatView: View {
   /// ex: 실행 기록 SQLite — 카드마다·턴마다 새로 열지 않는다(refreshCalendars 는 한 번 열어 넘긴다)
   private func readCalendar(_ id: UUID, ex: Executions?) {
     guard let idx = turns.firstIndex(where: { $0.id == id }) else { return }
+    // 일정 등록·고치기 턴(0.16.0): fact 별 상태를 한 함수로(EditFlow.state — K27). add 상태만 일정 답 카드 행, 나머지는 EditCardView.
+    // 등록 턴 = fact 최고 버전(proposed·succeeded), 고치기 턴 = 카드가 따라가는 제안(editSubject — stale·무시도 한 줄로). 되묻기는 이 두 턴만(askBack, K28)
+    if let facts = turns[idx].facts, turns[idx].record.kind == .addEvent || turns[idx].record.kind == .editEvent {
+      let lookup = CalendarLookup.lookup(ex)
+      let editPid = turns[idx].record.kind == .editEvent ? ChatHistory.editSubject(turns[idx].record) : nil
+      let subjects: [(FactVersions, ProposalVersion)] = facts.compactMap { f in
+        if let editPid { return f.versions.first { $0.id == editPid }.map { (f, $0) } }
+        return f.top.flatMap { ["proposed", "succeeded"].contains($0.status) ? (f, $0) : nil }
+      }
+      var entries: [CardEntry] = [], cards: [ScheduleCard.Model] = [], asks: [String: AskBack.Question] = [:]
+      for (f, s) in subjects.prefix(ScheduleCard.maxCards) {
+        let st = EditFlow.state(subject: s, versions: f.versions, itemID: f.itemID, lookup: lookup, askBack: true)
+        if case .add(let m) = st {
+          entries.append(.card(m, s)); cards.append(m)
+          if m.kind == .needsReview, let q = AskBack.question(payload: s.payload) { asks[m.pid] = q }
+        } else {
+          var header: String? = nil, lines: [ScheduleCard.DayLine] = []
+          if let l = lookup, let st0 = s.start, let t = ProposalTiming.parse(start: st0, end: s.end) {
+            let day = ScheduleCard.seoulDay(t.anchor)
+            var conflicts: [ProposalFlow.CalendarEvent] = []
+            if case .update(.ready(_, let c)) = st { conflicts = c } else if case .lineage(_, .ready(_, let c)) = st { conflicts = c }
+            header = ScheduleCard.dayHeader(day)
+            lines = ScheduleCard.dayLines(day: day, events: l.events(EditFlow.cardWindow(day)), conflicts: conflicts).lines
+          }
+          entries.append(.edit(s, st, itemID: f.itemID, header: header, lines: lines))
+        }
+      }
+      turns[idx].entries = entries; turns[idx].cards = cards; turns[idx].asks = asks
+      turns[idx].cardsMore = max(0, subjects.count - ScheduleCard.maxCards); turns[idx].cardsRead = true
+      DiagLog.append("CAL edit entries=\(entries.count) asks=\(asks.count) access=\(lookup != nil ? 1 : 0)")
+      return
+    }
+    // 고치기 턴은 loadEditCard 가 fact 를 읽은 뒤에(답 경로로 내려가 빈 카드를 그리지 않게). ok 가 아닌 한 줄 턴은 읽을 것이 없다 — 다시 읽지 않게 표시
+    if turns[idx].record.kind == .editEvent { turns[idx].cardsRead = turns[idx].answer?.edit?.status != "ok"; return }
     // 질문 턴 = 답의 제안·일정 기간, 일정 등록 턴 = 항목의 제안(기간 없음 — 카드 날짜 하루만)
     let ps: [ChatReply.Proposal], range: DateInterval?
     if let a = turns[idx].answer { ps = a.proposals; range = a.schedule?.interval }
@@ -342,6 +421,17 @@ struct ChatView: View {
     let picked = ScheduleCard.pick(ps, schedule: range)
     turns[idx].cards = picked.cards.map { ScheduleCard.model($0, events: CalendarLookup.cardEvents(day: $0.day), executed: executed(ex, $0.proposal.id)) }
     turns[idx].cardsMore = picked.more
+    // 채팅 답 카드의 update_event(0033 — fact 최고 버전만 온다): loadAnswerEdits 가 읽은 그 fact 버전으로 같은 상태 규칙(스펙 B 앱 "원래 등록 카드" 문단).
+    // 아직 안 읽었으면 읽기를 건다(읽은 뒤 이 함수가 다시 돈다). 못 읽은 제안은 줄이 없다
+    if let a = turns[idx].answer {
+      let ups = a.proposals.filter { $0.action == "update_event" }.prefix(ScheduleCard.maxCards)
+      if !ups.isEmpty, turns[idx].facts == nil { loadAnswerEdits(turns[idx].id) }
+      let lookup = ups.isEmpty ? nil : CalendarLookup.lookup(ex)
+      turns[idx].entries = ups.compactMap { p -> CardEntry? in
+        guard let f = turns[idx].facts?.first(where: { $0.contains(p.id) }), let top = f.top else { return nil }
+        return .edit(top, EditFlow.state(subject: top, versions: f.versions, itemID: f.itemID, lookup: lookup), itemID: f.itemID, header: nil, lines: [])
+      }
+    }
     turns[idx].cardsRead = true
     // 기간 종류는 진단 로그에도 남긴다(T3 G5 가 분기를 가른다) — 일정 내용은 아니다
     let sched = range == nil ? "none" : ScheduleCard.showsRangeSection(schedule: range, cardDays: picked.cards.map(\.day)) ? "wide" : "day"
@@ -360,11 +450,47 @@ struct ChatView: View {
     settle(id, epoch, save: false) { $0.cardsLoading = true }
     Task {
       let r = await API.send(ItemEvents.query(itemID: item))
-      let ps = r.flatMap { $0.status == 200 ? ChatAddEvent.proposals(itemID: item, data: $0.data) : nil }
-      settle(id, epoch, save: false) { if let ps { $0.addProposals = ps }; $0.cardsLoading = false }   // 재조회 실패가 읽어 둔 제안을 지우지 않게
+      let facts = r.flatMap { $0.status == 200 ? ChatAddEvent.facts(itemID: item, data: $0.data) : nil }
+      let ps = facts.map { fs in fs.compactMap { f in f.top.flatMap { ["proposed", "succeeded"].contains($0.status) ? $0.proposal(itemID: item) : nil } } }
+      settle(id, epoch, save: false) { if let facts { $0.facts = facts }; if let ps { $0.addProposals = ps }; $0.cardsLoading = false }   // 재조회 실패가 읽어 둔 제안을 지우지 않게
       guard ps != nil, log.clearCount == epoch else { return }                                         // 지운 뒤 도착하면 카드도 계산하지 않는다
       readCalendar(id)
       if scrollAfter { scroll(to: id) }
+    }
+  }
+
+  /// 고치기 턴(스펙 §9 B 앱, K16·K27): 카드가 따라가는 제안(ChatHistory.editSubject — 응답의 edit.proposal_id, 같은 카드의 되묻기 성공 뒤엔 그 새 버전)의
+  /// fact 버전 전부를 다시 읽어 상태를 정한다(저장하지 않는다 — 화면에 나올 때·활성화·버튼 뒤). ok 가 아니면 읽지 않는다(한 줄). 못 읽으면 읽어 둔 것을 둔다
+  private func loadEditCard(_ id: UUID) {
+    guard let t = turns.first(where: { $0.id == id }), t.record.kind == .editEvent, !t.cardsLoading,
+          t.answer?.edit?.status == "ok", let pid = ChatHistory.editSubject(t.record) else { return }
+    let epoch = log.clearCount
+    settle(id, epoch, save: false) { $0.cardsLoading = true }
+    Task {
+      let r = await API.send(ChatEdit.query(proposalID: pid))
+      let fact = r.flatMap { $0.status == 200 ? ChatEdit.decodeFact($0.data) : nil }
+      settle(id, epoch, save: false) { if let fact { $0.facts = [fact] }; $0.cardsLoading = false }
+      guard fact != nil, log.clearCount == epoch else { return }
+      readCalendar(id)
+    }
+  }
+  /// 채팅 답 카드의 update_event(0033 chat_proposals — fact 최고 버전만, version·eventkit_id 는 오지 않는다): 그 제안의 fact 버전을 고치기 카드와 같은
+  /// ChatEdit.query 로 읽어(최대 3) 실제 버전·식별자로 상태를 정한다(Codex 플랜 리뷰 M3 — 버전 0 으로 실행·보고하면 report_execution 이 changed →
+  /// "변경된 제안" 알림, eventkit_id 가 없으면 "확인 불가"가 잦다). 못 읽은 제안은 줄을 두지 않는다(버전을 모르는 제안은 바꾸지 않는다)
+  private func loadAnswerEdits(_ id: UUID) {
+    guard let t = turns.first(where: { $0.id == id }), t.record.kind == .question, !t.cardsLoading, let a = t.answer else { return }
+    let pids = a.proposals.filter { $0.action == "update_event" }.prefix(ScheduleCard.maxCards).map(\.id)
+    guard !pids.isEmpty else { return }
+    let epoch = log.clearCount
+    settle(id, epoch, save: false) { $0.cardsLoading = true }
+    Task {
+      var facts: [FactVersions] = []
+      for pid in pids {
+        if let r = await API.send(ChatEdit.query(proposalID: pid)), r.status == 200, let f = ChatEdit.decodeFact(r.data) { facts.append(f) }
+      }
+      settle(id, epoch, save: false) { $0.facts = facts; $0.cardsLoading = false }
+      guard log.clearCount == epoch else { return }
+      readCalendar(id)
     }
   }
 
@@ -372,19 +498,22 @@ struct ChatView: View {
   /// 그 밖의 턴(복원 턴 최대 500)은 절을 걷고 화면에 다시 나올 때 읽도록 표시만 지운다 — 권한이 없어도 같다(카드의 캘린더 줄·상태는 그릴 때 권한을 다시 본다).
   /// EventKit 변경 알림은 구독하지 않는다
   private func refreshCalendars() {
-    let ids = Set(turns.suffix(5).filter { $0.answer != nil || $0.addProposals != nil }.map(\.id))
+    let ids = Set(turns.suffix(5).filter { $0.answer != nil || $0.addProposals != nil || $0.facts != nil }.map(\.id))
     // 5개 밖은 화면에 다시 나올 때 onAppear 가 읽는다. 권한이 있으면 보이는 턴의 캘린더 절은 (낡아도) 남긴다
     let access = CalendarLookup.fullAccess
     for i in turns.indices where !ids.contains(turns[i].id) {
       turns[i].cardsRead = false
       if !access { turns[i].calendar = nil }
       if turns[i].record.kind == .addEvent { turns[i].addProposals = nil }   // 다음에 화면에 나올 때 제안도 다시(§9 대화 기록). 보이던 카드는 다시 읽을 때까지 그대로
+      if turns[i].record.kind == .editEvent || turns[i].record.kind == .question { turns[i].facts = nil }   // 고치기 카드·답 카드의 고친 일정도 다시(0.16.0)
     }
     if !ids.isEmpty {
       let ex = try? Executions.shared()
       for t in turns.suffix(5) where ids.contains(t.id) { readCalendar(t.id, ex: ex) }
     }
     for t in turns.suffix(5) where t.record.kind == .addEvent && t.record.itemID != nil { loadAddEventCards(t.id) }   // 제안 재조회(무시·바뀐 제안·처음 조회 실패)
+    for t in turns.suffix(5) where t.record.kind == .editEvent { loadEditCard(t.id) }                 // 고치기 카드: 그 fact 버전 재조회
+    for t in turns.suffix(5) where t.record.kind == .question && t.facts != nil { loadAnswerEdits(t.id) }   // 답 카드의 고친 일정
   }
 
   /// 권한 안내에서 허용·거부한 뒤 다시 읽는다(권한 상태는 관찰되지 않는다 — 다시 그려 "설정에서 허용하기"로 바뀌게).
@@ -404,7 +533,7 @@ struct ChatView: View {
   /// ③ 버튼은 스타일을 명시해 행 탭이 아니라 자기 제스처로 눌린다(0.8.1 실기기: 스타일 없는 카드 버튼이 텍스트처럼 보이고 눌리지 않았다)
   @ViewBuilder private func cardRows(_ t: Turn, _ c: ScheduleCard.Model, first: Bool) -> some View {
     let cite = t.answer?.citations.first(where: { $0.item_id == c.itemID })
-      ?? (t.record.kind == .addEvent ? ChatAddEvent.citation(itemID: c.itemID, at: t.record.at) : nil)   // 일정 등록 턴: "채팅에서 등록한 일정" · "M/D 등록"
+      ?? (t.record.kind == .addEvent || t.record.kind == .editEvent ? ChatAddEvent.citation(itemID: c.itemID, at: t.record.at) : nil)   // 일정 등록 턴: "채팅에서 등록한 일정" · "M/D 등록"
     // 권한은 그릴 때 다시 본다 — 턴에 남은 캘린더 줄·상태가 권한 철회 뒤에도 보이지 않게, 허용 뒤 낡은 안내가 남지 않게(권한 상태는 관찰되지 않는다)
     let access = CalendarLookup.fullAccess
     NavigationLink {
@@ -459,7 +588,7 @@ struct ChatView: View {
 
   private func addButton(_ c: ScheduleCard.Model, _ action: ScheduleCard.Action, _ state: AddState?) -> some View {
     Button(state.isRunning ? "추가하는 중…" : ScheduleCard.buttonTitle(action, allDay: !c.timed)) {   // 날짜만 = "종일 일정으로 추가"(0.9.1)
-      runAdd(ConfirmAdd(id: c.pid, fields: ScheduleCard.addFields(c)), confirmed: ScheduleCard.confirms(action))
+      runAdd(ConfirmAdd(id: c.pid, fields: addFields(for: c)), confirmed: ScheduleCard.confirms(action), priors: priors(for: c.pid))
     }
     .font(.subheadline)
     .disabled(state.isRunning || state.isFinished)
@@ -467,27 +596,64 @@ struct ChatView: View {
   }
 
   /// 알림 액션과 같은 §10 경로(서버 상태 확인 → 표식 조회 → 겹침·비슷한 일정 → 저장 → 보고). 미리 판정 없이 불렀는데 겹침·비슷한 일정이면
-  /// 저장하지 않고 돌아오므로 그 일정을 다시 읽어 확인창을 띄우고, "추가"면 confirmed 로 다시 부른다. 결과를 카드에 쓰고, 실패면 버튼을 다시 켠다
-  private func runAdd(_ c: ConfirmAdd, confirmed: Bool) {
+  /// 저장하지 않고 돌아오므로 그 일정을 다시 읽어 확인창을 띄우고, "추가"면 confirmed 로 다시 부른다. 결과를 카드에 쓰고, 실패면 버튼을 다시 켠다.
+  /// priors = 등록·고치기 턴 카드의 fact 버전(계보 확인, 0.16.0), c.checkLineage·readd = 고친 일정의 [캘린더에 추가](§10·K11)
+  private func runAdd(_ c: ConfirmAdd, confirmed: Bool, priors: [ProposalVersion]? = nil) {
     adds[c.id] = .running
     Task {
-      let outcome = await NotificationActions.handleAdd(fields: c.fields, confirmed: confirmed)
+      let outcome = await NotificationActions.handleAdd(fields: c.fields, confirmed: confirmed, readd: c.readd, priors: priors, checkLineage: c.checkLineage)
       if ProposalFlow.needsConfirm(confirmed: confirmed, outcome: outcome) {
         adds[c.id] = nil
-        let timing = c.fields["start"].flatMap { ProposalTiming.parse(start: $0, end: c.fields["end"]) }
-        var prompt = ProposalFlow.confirmTitle([])
-        if let timing {
-          prompt = ProposalFlow.similarCount(outcome) != nil
-            ? ProposalFlow.similarConfirmTitle(CalendarLookup.similar(pid: c.id, title: c.fields["title"] ?? "", timing: timing))
-            : ProposalFlow.confirmTitle(CalendarLookup.conflicts(pid: c.id, timing: timing))
-        }
-        confirm = ConfirmAdd(id: c.id, fields: c.fields, prompt: prompt)
+        var next = c; next.prompt = CalendarLookup.confirmPrompt(pid: c.id, fields: c.fields, outcome: outcome)
+        confirm = next
         refreshCalendars()
         return
       }
       let fb = ChatReply.addFeedback(outcome)
       adds[c.id] = fb.retry ? .failed(fb.text) : .finished(fb.text)
       if !fb.retry { refreshCalendars() }                       // 추가 뒤 카드 상태가 "✅ 캘린더에 등록됨"으로·절이 바로 바뀐다(Codex #6)
+    }
+  }
+
+  /// 등록·고치기 턴의 카드면 그 fact 버전(계보 확인 — 서버 조회 없이)과 version 필드를 더한다. 그 밖(답 카드)은 nil — handleAdd 가 순서 1 조회로
+  private func priors(for pid: String) -> [ProposalVersion]? { turns.lazy.compactMap { $0.facts?.first { $0.contains(pid) } }.first?.versions }
+  private func addFields(for c: ScheduleCard.Model) -> [String: String] {
+    var f = ScheduleCard.addFields(c)
+    if let v = priors(for: c.pid)?.first(where: { $0.id == c.pid })?.version { f["version"] = String(v) }
+    return f
+  }
+
+  /// 고친 일정 카드 버튼(§10 "채팅 일정 고치기 실행"): [캘린더도 바꾸기]·[겹쳐도 바꾸기] = handleChange. [캘린더에 추가](삭제 확인) = payload 새 값으로 새 일정 —
+  /// 계보 확인 없음, 일정 답 카드와 같은 runAdd 확인창 경로(겹침·비슷한 일정이면 확인 뒤 confirmed — Codex 플랜 리뷰 M4). 바꾼 뒤 지운 일정(succeeded)은 다시 추가(K11)
+  private func pressEdit(_ turn: UUID, subject s: ProposalVersion, state: EditFlow.CardState, button: EditFlow.Button) {
+    if button == .add {
+      guard let f = EditFlow.addFields(s) else { edits[s.id] = .failed(ChatEditText.changeFailed); return }
+      edits[s.id] = nil
+      runAdd(ConfirmAdd(id: s.id, fields: f, checkLineage: false, readd: s.status == "succeeded"), confirmed: false)
+      return
+    }
+    guard let i = EditFlow.changeInput(subject: s, state: state), let t = ProposalTiming.parse(start: i.startText, end: i.endText) else {
+      edits[s.id] = .failed(ChatEditText.changeFailed); return
+    }
+    edits[s.id] = .running
+    Task {
+      let outcome = await NotificationActions.handleChange(ChangeRequest(input: i, timing: t, confirmed: button == .changeAnyway))
+      DiagLog.append("EDIT change \(outcome)")
+      let fb = ChatEdit.changeFeedback(outcome)
+      edits[s.id] = fb.retry ? .failed(fb.text) : nil                  // 성공·안내는 다시 읽은 상태 줄이 말한다(같은 말을 두 번 하지 않는다)
+      reloadCards(turn)
+    }
+  }
+  /// 버튼·되묻기·고치기 응답 뒤 다시 읽는다: 마지막 5턴(같은 fact 를 보이는 등록·고치기·답 카드가 함께 바뀌게 — Fable 플랜 리뷰 N2) + 그 턴(5개 밖이어도).
+  /// 같은 턴을 두 번 읽지 않는다(cardsLoading)
+  private func reloadCards(_ id: UUID) {
+    refreshCalendars()
+    guard let t = turns.first(where: { $0.id == id }) else { return }
+    switch t.record.kind {
+    case .editEvent: loadEditCard(id)
+    case .addEvent: loadAddEventCards(id)
+    case .question: loadAnswerEdits(id)
+    default: break
     }
   }
 
@@ -532,17 +698,27 @@ struct ChatView: View {
     // 짧은 맥락(§9): 이 턴을 넣기 전의 기록에서 — 직전 3턴·30분 구간. 기록을 불러오지 못했으면 보내지 않는다(화면 턴이 기록의 일부뿐). 진단에는 개수만
     let ctx = loaded ? ChatHistory.context(turns.map(\.record), now: Date()) : []
     DiagLog.append("CHAT ctx n=\(ctx.count)")
+    // 방금 등록한 일정 고치기(스펙 §9 B 앱 → 서버): 맥락 구간 안 가장 최근 등록 턴이 30분 안이면 그 첫 제안 id(기록을 못 불러왔으면 보내지 않는다)
+    let editTarget = loaded ? ChatHistory.editTarget(turns.map(\.record), now: Date()) : nil
     let sentAt = Date()                                     // 일정 등록이면 이 시각이 occurred_at·같은 글 키의 날짜(§9)
     let id = append(ChatHistory.Record(at: sentAt, kind: .question, question: q))
     let epoch = log.clearCount                              // 답이 오기 전에 지우면 이 턴을 고치지 않는다(settle)
     busy = true
     Task {
       defer { busy = false }
+      // 보내기 전 보고 재전송(K26, Codex H1): 카드에서 추가한 뒤 보고가 밀린 채 고치면 서버가 "추가 전"으로 본다 — 한 번 5초. 실패해도 보낸다(계보 확인이 막는다)
+      var flushed = false
+      if editTarget != nil, await ExecutionReporter.shared.hasUnreported() {
+        flushed = true
+        _ = await Deadline.run(seconds: 5) { await ExecutionReporter.shared.flush(); return true }
+      }
+      DiagLog.append("CHAT edit_target n=\(editTarget == nil ? 0 : 1) flush=\(flushed ? 1 : 0)")
       var attempt = 0
       var withContext = !ctx.isEmpty
       while true {
         var body: [String: Any] = ["question": q, "intents": ChatAddEvent.intents]   // 이 앱이 처리하는 행동(§9 하위 호환). 배포 전 서버는 무시하고 답한다
         if withContext { body["context"] = ctx.map(\.json) }     // 맥락이 없으면 키를 넣지 않는다(0.11.x 와 같은 요청)
+        if let editTarget { body["edit_target"] = editTarget }   // 고칠 대상(0.16.0) — 없으면 키를 넣지 않는다(0.15.x 와 같은 요청)
         guard let r = await API.send("functions/v1/chat", method: "POST", json: body, timeout: 60) else {
           settle(id, epoch) { $0.record.error = "연결 실패" }; return
         }
@@ -558,6 +734,18 @@ struct ChatView: View {
         }
         if r.status == 200, let a = ChatReply.decode(r.data) {
           guard log.clearCount == epoch else { return }         // 지운 뒤 도착한 답 — 카드·스크롤도 하지 않는다
+          if ChatEdit.isEdit(a.intent) {
+            // 일정 고치기(§9 B 앱): 답이 아니다 — 응답 그대로 기록(K16), ok 면 "고침:" 맥락 줄과 카드가 따라갈 제안(editPid — 같은 카드의 되묻기가 새 버전으로 옮긴다, P6b).
+            // reloadCards = 이 카드 + 마지막 5턴 — 위 등록 카드도 새 버전으로 다시 읽어 옛 버전 [캘린더에 추가]가 남지 않게(Fable 플랜 리뷰 N2)
+            DiagLog.append("CHAT intent edit_event status=\(a.edit?.status ?? "none") action=\(a.edit?.action ?? "none")")
+            settle(id, epoch) {
+              $0.record.kind = .editEvent; $0.record.reply = r.data; $0.answer = a; $0.record.contextLine = ChatEdit.contextLine(a.edit)
+              $0.record.editPid = a.edit?.status == "ok" ? a.edit?.proposal_id : nil
+            }
+            reloadCards(id)
+            scroll(to: id)
+            return
+          }
           if ChatAddEvent.isAddEvent(a.intent) {
             // 채팅 일정 등록(§9): 답이 아니다 — reply 를 저장하지 않고 턴을 "일정 등록"으로 바꿔 사용자 글 그대로를 접수한다
             DiagLog.append("CHAT intent add_event ctx=\(withContext ? 1 : 0)")
@@ -1036,7 +1224,12 @@ struct JudgeSheet: View {
   }
 }
 
-private extension Optional where Wrapped == ChatView.AddState {
+extension Optional where Wrapped == ChatView.AddState {
   var isRunning: Bool { if case .running? = self { return true }; return false }
   var isFinished: Bool { if case .finished? = self { return true }; return false }
+  var failure: String? { if case .failed(let m)? = self { return m }; return nil }
+}
+extension Optional where Wrapped == ChatView.EditState {
+  var isRunning: Bool { if case .running? = self { return true }; return false }
+  var failure: String? { if case .failed(let m)? = self { return m }; return nil }
 }
