@@ -15,7 +15,7 @@ Deno.test({ name: "hosted: 0034 cases in one rolled-back transaction (test user 
     await sql.begin(async (tx) => {
       await tx.unsafe("set local lock_timeout = '3s'");
       const q = async (s: string, p: unknown[] = []) => await tx.unsafe(s, p as never[]) as unknown as Record<string, unknown>[];
-      const applied = (await q("select to_regprocedure('public.item_job_dead()') is not null as a"))[0].a === true;
+      const applied = (await q("select to_regprocedure('public.retry_item(uuid)') is not null as a"))[0].a === true;
       if (!applied) await tx.unsafe(await Deno.readTextFile(MIGRATION_0034));
       console.log("0034", applied ? "already applied" : "applied in the rolled-back transaction");
       for (const c of FAILED_CASES) {

@@ -2,9 +2,13 @@ import { PGlite } from "npm:@electric-sql/pglite@0.3";
 import { FAILED_CASES, MIGRATION_0034, type Q } from "./_failed-sql.ts";
 import { PGLITE_STUBS } from "./_pglite-stubs.ts";
 
-// 0034(0.16.1 처리 실패 항목)를 로컬 PGlite 에서: 스텁 + items(0001·0010 열) + 0034. 호스팅 DB 는 건드리지 않는다(호스팅은 failed-db.test.ts)
+// 0034(0.16.1 처리 실패 항목·retry_item)를 로컬 PGlite 에서: 스텁 + auth.uid() + items(0001·0010 열) + 0034. 호스팅 DB 는 건드리지 않는다(호스팅은 failed-db.test.ts)
 const MIGRATION_0013 = new URL("../migrations/0013_source_delete_lock.sql", import.meta.url);
 const STUBS = `
+-- Supabase auth.uid() 처럼 claim.sub, 없으면 claims.sub
+create function auth.uid() returns uuid language sql stable as $$
+  select coalesce(nullif(current_setting('request.jwt.claim.sub', true), ''),
+                  nullif(current_setting('request.jwt.claims', true), '')::jsonb->>'sub')::uuid $$;
 create table items (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users on delete cascade,

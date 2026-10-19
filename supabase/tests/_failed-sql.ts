@@ -23,6 +23,13 @@ const addJob = async (c: FCtx, kind: string, payload: Record<string, unknown>) =
   (await one(c.q, "insert into jobs (kind, user_id, lease_key, payload) values ($1, $2::uuid, $3, $4::text::jsonb) returning id",
     [kind, c.user, `${c.tag}:${kind}`, JSON.stringify(payload)])).id as string;
 
+// retry_item 은 auth.uid() 로만 사용자를 정한다 — Supabase auth.uid() 는 claim.sub·claims.sub 둘 다 읽는다(PGlite 스텁은 claim.sub). 트랜잭션 안에서만
+const as = async (c: FCtx, user: string | null) => {
+  await c.q("select set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)", [user ?? "", user ? JSON.stringify({ sub: user }) : ""]);
+};
+const retry = async (c: FCtx, id: string, user: string | null = c.user) => { await as(c, user); return (await one(c.q, "select retry_item($1::uuid) as r", [id])).r as string; };
+const job = (c: FCtx, id: string) => one(c.q, "select status, attempts, not_before, last_error, leased_until from jobs where id = $1::uuid", [id]);
+
 export const FAILED_CASES: { name: string; run(c: FCtx): Promise<void> }[] = [
   { name: "process job dead (fail_job attempts 5) on a queued item → item failed; earlier failures keep it queued", run: async (c) => {
     const id = (await insert(c, "a"))!;
@@ -80,5 +87,68 @@ export const FAILED_CASES: { name: string; run(c: FCtx): Promise<void> }[] = [
     const id = (await insert(c, "i", { source: "GMAIL" }))!;
     await dead(c, (await jobsOf(c, id))[0].id);
     assertEquals([await insert(c, "i", { source: "GMAIL" }), (await item(c, id)).status, (await jobsOf(c, id)).length], [null, "failed", 1]);
+  } },
+
+  // ── retry_item(0.16.1 추가 1): 저장된 글로 다시 처리 ──
+  { name: "retry_item: failed item → queued; its dead job back to queued with attempts 0 and no not_before/last_error/lease (same job, no new one); audit retry", run: async (c) => {
+    const id = (await insert(c, "r1"))!;
+    const [j] = await jobsOf(c, id);
+    await dead(c, j.id);
+    assertEquals(await retry(c, id), "queued");
+    assertEquals((await item(c, id)).status, "queued");
+    const js = await jobsOf(c, id);
+    assertEquals(js.length, 1);
+    const r = await job(c, j.id);
+    assertEquals([r.status, r.attempts, r.not_before, r.last_error, r.leased_until], ["queued", 0, null, null, null]);
+    const a = await c.q("select actor, action, target from audit_log where user_id = $1::uuid and action = 'retry'", [c.user]);
+    assertEquals(a.map((x) => [x.actor, x.action, x.target]), [["user", "retry", id]]);
+  } },
+  { name: "retry_item: queued item whose job is dead (before 0034) or missing → queued; a missing job gets a new process job", run: async (c) => {
+    const a = (await insert(c, "r2"))!, b = (await insert(c, "r3"))!;
+    await dead(c, (await jobsOf(c, a))[0].id);
+    await c.q("update items set status = 'queued' where id = $1::uuid", [a]);              // 0034 전에 dead 가 된 항목
+    await c.q("delete from jobs where user_id = $1::uuid and payload->>'item_id' = $2", [c.user, b]);
+    assertEquals([await retry(c, a), await retry(c, b)], ["queued", "queued"]);
+    assertEquals((await jobsOf(c, a)).map((j) => j.status), ["queued"]);
+    const nb = await jobsOf(c, b);
+    assertEquals(nb.map((j) => [j.kind, j.status, j.lease_key, j.payload.item_id]), [["process", "queued", `item:${b}`, b]]);
+  } },
+  { name: "retry_item: job queued or running (deferred included) → processing, nothing changes", run: async (c) => {
+    const a = (await insert(c, "r4"))!;
+    const [j] = await jobsOf(c, a);
+    await c.q("update jobs set not_before = now() + interval '30 minutes', last_error = 'llm_unavailable' where id = $1::uuid", [j.id]);
+    assertEquals(await retry(c, a), "processing");
+    await c.q("update jobs set status = 'running' where id = $1::uuid", [j.id]);
+    assertEquals(await retry(c, a), "processing");
+    assertEquals([(await job(c, j.id)).last_error, (await item(c, a)).status], ["llm_unavailable", "queued"]);
+  } },
+  { name: "retry_item: extracted or discarded item → not_failed (no job change); another user's item or unknown id → not_found; no session → error", run: async (c) => {
+    const a = (await insert(c, "r5"))!, b = (await insert(c, "r6"))!;
+    await c.q("update items set status = 'extracted' where id = $1::uuid", [a]);
+    await c.q("update items set status = 'discarded:server:empty' where id = $1::uuid", [b]);
+    for (const id of [a, b]) await c.q("update jobs set status = 'done' where user_id = $1::uuid and payload->>'item_id' = $2", [c.user, id]);
+    assertEquals([await retry(c, a), await retry(c, b)], ["not_failed", "not_failed"]);
+    assertEquals((await jobsOf(c, a)).map((j) => j.status), ["done"]);
+    const f = (await insert(c, "r7"))!;
+    await dead(c, (await jobsOf(c, f))[0].id);
+    assertEquals(await retry(c, f, crypto.randomUUID()), "not_found");                // 남의 항목 — 상태 그대로
+    assertEquals(await retry(c, crypto.randomUUID()), "not_found");
+    assertEquals((await item(c, f)).status, "failed");
+    await c.q("savepoint no_session");
+    let code = "";
+    try { await retry(c, f, null); } catch (e) { code = String((e as { code?: string }).code ?? e); }
+    await c.q("rollback to savepoint no_session");
+    assertEquals(code, "28000");
+  } },
+  { name: "retry_item: failed item without body, OCR or stored object → expired", run: async (c) => {
+    const id = (await insert(c, "r8"))!;
+    await dead(c, (await jobsOf(c, id))[0].id);
+    await c.q("update items set content_enc = null, ocr_text_enc = null, storage_key = null where id = $1::uuid", [id]);
+    assertEquals([await retry(c, id), (await item(c, id)).status], ["expired", "failed"]);
+  } },
+  { name: "retry_item privileges: authenticated may execute, anon and public may not", run: async (c) => {
+    const r = await one(c.q, `select has_function_privilege('authenticated', 'public.retry_item(uuid)', 'execute') as auth,
+      has_function_privilege('anon', 'public.retry_item(uuid)', 'execute') as anon`);
+    assertEquals([r.auth, r.anon], [true, false]);
   } },
 ];
