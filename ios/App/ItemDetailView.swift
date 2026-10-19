@@ -157,7 +157,7 @@ struct ItemDetailView: View {
         retryNote = RecentDiscards.restoreLine(s)
         retryButton = s == .failed
         await loadEvents()
-      case .hide: retryButton = false; retryNote = nil
+      case .hide: retryButton = false; retryNote = nil; await loadEvents()   // not_failed — 그사이 처리됐으면 새 일정 절(0.16.1 리뷰 Minor 8)
       case .text(let t, let keep): retryNote = t; retryButton = keep
       }
     }
