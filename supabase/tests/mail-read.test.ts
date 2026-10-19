@@ -1,4 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert";
+import OpenAI from "npm:openai@7";
 import type { BudgetDeps, LedgerLine } from "../functions/_shared/budget.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { GmailHttpError, type GmailMessage, type MessagePart, ReauthRequired } from "../functions/_shared/gmail.ts";
@@ -328,6 +329,24 @@ Deno.test("read: model refusal/incomplete/network/timeout → 502 summary_failed
     assertEquals([r.status, r.j.error], [502, "summary_failed"], e.name);
     assertEquals(seen.settled[0].length, responded ? 1 : 0);
   }
+});
+// 0.16.1 LLM 사용 불가(스펙 §7 메일 요약 오류 코드): summary_failed 로 감싸기 전에 가른다 → 503 llm_unavailable(retry-after 없음, 재시도 없음).
+// 일반 429 rate limit 은 그대로 summary_failed. 로그는 사유만(OpenAI 메시지 없음)
+Deno.test("read: OpenAI 401/403/insufficient_quota → 503 llm_unavailable without retry-after or sleeps, reservation settled; plain 429 rate limit stays 502 summary_failed", async () => {
+  const h = new Headers();
+  for (const [e, reason] of [[new OpenAI.AuthenticationError(401, { code: "invalid_api_key" }, "Incorrect API key provided: sk-inv***test", h), "llm_auth"],
+    [new OpenAI.PermissionDeniedError(403, { code: null }, "denied sk-abc", h), "llm_permission"],
+    [new OpenAI.RateLimitError(429, { code: "insufficient_quota" }, "quota sk-abc", h), "llm_quota"]] as const) {
+    const { d, seen } = fake({ msgs: [mail("m1", "본문")], summary: e, usage: false });
+    const r = await call(d, req("read", await R("m1")));
+    assertEquals([r.status, r.j, r.headers.get("retry-after"), seen.sleeps, seen.settled.length], [503, { error: "llm_unavailable" }, null, [], 1], reason);
+    const last = JSON.parse(r.logs.at(-1)!);
+    assertEquals([last.result, last.reason], ["llm_unavailable", reason]);
+    assert(!r.logs.join("").includes("sk-"));
+  }
+  const { d } = fake({ msgs: [mail("m1", "본문")], summary: new OpenAI.RateLimitError(429, { code: "rate_limit_exceeded" }, "slow", h), usage: false });
+  const r = await call(d, req("read", await R("m1")));
+  assertEquals([r.status, r.j.error], [502, "summary_failed"]);
 });
 Deno.test("read: budget exhausted → 429 budget_exhausted without a model call; no slot after 1 s and 2 s → 503 llm_busy (retry-after 30)", async () => {
   const a = fake({ msgs: [mail("m1", "본문")], level: "refused" });

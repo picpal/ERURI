@@ -1,5 +1,6 @@
 import { Deferred } from "../_shared/budget.ts";
 import { classifyGmailError, GmailHttpError } from "../_shared/gmail.ts";
+import { llmUnavailable } from "../_shared/llm-errors.ts";
 import { type Ctx, err, log, type MailReadDeps, RateLimited, RpcError, SearchTimeout, SummaryFailed } from "./common.ts";
 import { read } from "./read.ts";
 import { search } from "./search.ts";
@@ -30,8 +31,10 @@ export async function handleMailRead(req: Request, d: MailReadDeps): Promise<Res
 export function failure(e: unknown, stage: string, ctx: Ctx, elapsed: number): Response {
   const done = (status: number, code: string, extra: Record<string, unknown> = {}) => {
     log({ stage, request_id: ctx.request_id, result: code, elapsed_ms: Math.round(elapsed), ...extra });
-    return status === 503 ? Response.json({ error: code }, { status, headers: { "retry-after": "30" } }) : err(status, code);
+    return status === 503 && code !== "llm_unavailable" ? Response.json({ error: code }, { status, headers: { "retry-after": "30" } }) : err(status, code);
   };
+  const unavailable = llmUnavailable(e);                                  // 키 무효·권한·쿼터(0.16.1): 다시 해도 같다 — retry-after 없음, 사유만 로그
+  if (unavailable) return done(503, "llm_unavailable", { reason: unavailable });
   if (e instanceof RateLimited) return done(429, "gmail_rate_limited", { why: "units" });
   if (e instanceof SearchTimeout) return done(502, "gmail_upstream", { why: "search_budget" });
   if (e instanceof SummaryFailed) return done(502, "summary_failed", { why: e.why });

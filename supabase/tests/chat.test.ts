@@ -1,4 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert";
+import OpenAI from "npm:openai@7";
 import type { BudgetDeps } from "../functions/_shared/budget.ts";
 import { actionResult, answerQuestion, answerUserMessage, type ChatDeps, type ChatHit, CONTEXT_RULE, type Filters, factsDistinct, formatDocuments, handleChat,
   mergeFactDocs, parseContext, parseIntents, REFUSAL, relevantItems, resolveIntent, SYSTEM_PROMPT, systemPrompt, validateAnswer } from "../functions/chat/handler.ts";
@@ -745,4 +746,51 @@ Deno.test("handleChat: the response carries mail_read (null for questions and ot
   assertEquals([j.intent, j.mail_read, j.mail], ["mail_summary", READ, null]);
   const a = await handleChat(req("chat", { question: "등록해줘", intents: ["add_event", "mail_summary"] }), deps({ intent: "add_event", mailRead: READ, readOn: true }).d);
   assertEquals((await a.json()).mail_read, null);
+});
+
+// 0.16.1 LLM 사용 불가(스펙 §9 구현): 필터·답변 어디서든 401·403·429 insufficient_quota → 즉시 503 {error: llm_unavailable}(retry-after 없음, 서버 재시도 없음).
+// 예약 정산·슬롯 반납은 다른 예외와 같은 guarded 경로. 로그는 {chat: "llm_unavailable", reason}만(메시지에 키 조각이 있다)
+async function chatCall(d: ChatDeps) {
+  const logs: string[] = [], orig = console.log;
+  console.log = (...a: unknown[]) => { logs.push(a.map(String).join(" ")); };
+  try {
+    const res = await handleChat(req("chat", { question: "에어팟 어디서 샀지", intents: ["add_event"] }), d);
+    return { status: res.status, j: await res.json(), retryAfter: res.headers.get("retry-after"), logs };
+  } finally { console.log = orig; }
+}
+Deno.test("handleChat: OpenAI 401/403/insufficient_quota in filters or answer → 503 llm_unavailable at once (no retry-after, no sleeps); reservation settled and slot released", async () => {
+  const h = new Headers();
+  const cases: [string, unknown, string][] = [
+    ["filters", new OpenAI.AuthenticationError(401, { code: "invalid_api_key" }, "Incorrect API key provided: sk-inv*********test", h), "llm_auth"],
+    ["filters", new OpenAI.PermissionDeniedError(403, { code: null }, "denied sk-abc", h), "llm_permission"],
+    ["answer", new OpenAI.RateLimitError(429, { code: "insufficient_quota" }, "quota sk-abc", h), "llm_quota"],
+  ];
+  for (const [where, err, reason] of cases) {
+    const { d, seen } = deps();
+    let released = 0;
+    d.budget = { ...d.budget, release: async () => { released++; } };
+    if (where === "filters") d.filters = async () => { throw err; };
+    else d.answer = async () => { throw err; };
+    const r = await chatCall(d);
+    assertEquals([r.status, r.j, r.retryAfter, seen.sleeps, seen.settled.length, released], [503, { error: "llm_unavailable" }, null, [], 1, 1], reason);
+    assertEquals(r.logs.map((l) => JSON.parse(l)), [{ chat: "llm_unavailable", reason }]);
+  }
+});
+
+Deno.test("handleChat: other OpenAI errors (plain 429 rate limit, 500) → 500 internal with a code-only log; non-OpenAI errors still throw", async () => {
+  const h = new Headers();
+  for (const [err, status] of [[new OpenAI.RateLimitError(429, { code: "rate_limit_exceeded" }, "slow sk-abc", h), 429],
+    [new OpenAI.InternalServerError(500, undefined, "boom sk-abc", h), 500]] as const) {
+    const { d } = deps();
+    d.filters = async () => { throw err; };
+    const r = await chatCall(d);
+    assertEquals([r.status, r.j], [500, { error: "internal" }]);
+    assertEquals(r.logs.map((l) => JSON.parse(l)), [{ chat: "error", openai: status }]);
+    assert(!r.logs.join("").includes("sk-"));
+  }
+  const { d } = deps();
+  d.filters = async () => { throw new Error("db 42P01"); };
+  let thrown = false;
+  try { await handleChat(req("chat", { question: "x" }), d); } catch { thrown = true; }
+  assert(thrown);
 });

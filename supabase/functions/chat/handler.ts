@@ -1,4 +1,5 @@
 import { type Bill, type BudgetDeps, type BudgetLevel, costKrw, Deferred, guarded } from "../_shared/budget.ts";
+import { isOpenAiError, llmUnavailable } from "../_shared/llm-errors.ts";
 import { ampmMarked, confirmedCodes, type EditApplied, type EditRaw, type EditResult, type EditTargetRead, type EventValues, parseEditTarget, revalidate } from "./edit.ts";
 import { type ActionIntent, ACTION_INTENTS, type ContextTurn, type EditMode, escTags, type FilterOutput, type Filters, formatContext, type Intent, type MailFields,
   type MailReadFields, type Schedule, scheduleOf } from "./filters.ts";
@@ -292,6 +293,17 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
       console.log(JSON.stringify({ chat: e.message }));
       return e.message === "budget_exhausted" ? Response.json({ error: "budget_exhausted" }, { status: 429 })
         : Response.json({ error: "llm_busy" }, { status: 503, headers: { "retry-after": "30" } });
+    }
+    // 키 무효·권한·쿼터 소진(0.16.1, 스펙 §9 구현): 다시 해도 같다 — retry-after 없이 503. 정산·슬롯 반납은 guarded finally 가 이미 했다.
+    // OpenAI 오류는 메시지(키 조각)를 로그에 남기지 않는다 — 그 밖 OpenAI 오류도 상태만 남기고 500
+    const unavailable = llmUnavailable(e);
+    if (unavailable) {
+      console.log(JSON.stringify({ chat: "llm_unavailable", reason: unavailable }));
+      return Response.json({ error: "llm_unavailable" }, { status: 503 });
+    }
+    if (isOpenAiError(e)) {
+      console.log(JSON.stringify({ chat: "error", openai: e.status ?? "conn" }));
+      return Response.json({ error: "internal" }, { status: 500 });
     }
     throw e;
   }

@@ -3,6 +3,7 @@ import { type GmailMessage, GmailHttpError, header } from "../_shared/gmail.ts";
 import { clipText, extractBody, SUMMARY_BODY_MAX, TRANSLATE_SOURCE_MAX } from "../_shared/mail-body.ts";
 import { candidateMeta, clip16 } from "../_shared/mail-meta.ts";
 import { signToken, TOKEN_TTL_S, verifyToken } from "../_shared/mail-token.ts";
+import { llmUnavailable } from "../_shared/llm-errors.ts";
 import { maskMail } from "../_shared/rules.ts";
 import { accessFor, connectionFor, type Ctx, err, log, type MailReadDeps, RateLimited, SummaryFailed } from "./common.ts";
 import { finishSummary, SUMMARY_MODEL, type SummaryInput, type SummaryOutput, summaryEstKrw } from "./summary.ts";
@@ -22,13 +23,14 @@ function seoulIso(internalDate: string | undefined): string {
   return Number.isFinite(t) ? new Date(t + 9 * 3600_000).toISOString().slice(0, 19) + "+09:00" : "";
 }
 
-// 예약 chat · 집계 mail_summary(스펙 §13 표). 모델 쪽 오류는 무엇이든 SummaryFailed(502) — Gmail 오류 분기로 새지 않게(D9)
+// 예약 chat · 집계 mail_summary(스펙 §13 표). 모델 쪽 오류는 무엇이든 SummaryFailed(502) — Gmail 오류 분기로 새지 않게(D9).
+// 단 키 무효·권한·쿼터 소진(0.16.1)은 감싸기 전에 그대로 올려 failure 가 503 llm_unavailable 로 답한다
 async function summarizeGuarded(user: string, input: SummaryInput, translate: boolean, d: MailReadDeps): Promise<SummaryOutput> {
   for (let attempt = 0; ; attempt++) {
     try {
       const { value } = await guarded(d.budget, user, "chat", summaryEstKrw(translate), crypto.randomUUID(), async (_lv, bill) => {
         try { return await d.summarize(input, (u) => bill("mail_summary", SUMMARY_MODEL, u)); }
-        catch (e) { throw e instanceof SummaryFailed ? e : new SummaryFailed(e instanceof Error ? e.name : "unknown"); }
+        catch (e) { throw e instanceof SummaryFailed || llmUnavailable(e) ? e : new SummaryFailed(e instanceof Error ? e.name : "unknown"); }
       });
       return value;
     } catch (e) {
