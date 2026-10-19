@@ -22,4 +22,9 @@ if [ -f Packages/EruriCore/Sources/EruriCore/ChatEdit.swift ] && [ "$NUM" -lt 16
   echo "일정 고치기 코드가 있는데 MARKETING_VERSION=$VER (< 0.16.0) — EDIT-sim 통과 전 업로드 금지(0.16.0 계획 K17). B15 worktree 에서 올리거나 TF_ALLOW_PRE_EDIT=1"
   exit 1
 fi
+# 0.16.1: LLM 사용 불가 분기(ChatReply.llmUnavailable)가 있는데 0.16.1 전 이름이면 멈춘다 — 0.16.0 이름으로 다른 오류 동작이 나가지 않게
+if grep -q "llm_unavailable" Packages/EruriCore/Sources/EruriCore/ChatReply.swift && [ "$NUM" -lt 16001 ] && [ "${TF_ALLOW_PRE_LLM:-0}" != 1 ]; then
+  echo "LLM 사용 불가 코드가 있는데 MARKETING_VERSION=$VER (< 0.16.1) — 0.16.0 업로드는 이 코드 전 커밋 worktree 에서 하거나 TF_ALLOW_PRE_LLM=1"
+  exit 1
+fi
 echo "version-guard ok ($VER)"
