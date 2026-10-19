@@ -1,7 +1,7 @@
 import Foundation
 
 /// 채팅 응답 해석(스펙 §9, M2-⑧b 계약): POST /chat → {answer_id, answer, refused, source_item_ids, citations, proposals, hits, candidates, schedule}.
-/// 오류 401·400 bad_question·429 budget_exhausted·503 llm_busy(retry-after 30)
+/// 오류 401·400 bad_question·429 budget_exhausted·503 llm_busy(retry-after 30)·503 llm_unavailable(키 무효·권한·쿼터 — 0.16.1)
 public enum ChatReply {
   public struct Citation: Decodable, Identifiable, Sendable {
     public let item_id: String; public let source: String; public let app_name: String?; public let title: String?
@@ -58,17 +58,31 @@ public enum ChatReply {
     }
   }
 
-  public static func errorMessage(status: Int) -> String {
+  /// LLM 사용 불가(스펙 §9 구현, 0.16.1): 서버 OpenAI 키 무효·권한·쿼터 소진 — 사용자가 다시 해도 같다. 메일 요약도 같은 문구
+  public static let llmUnavailable = "지금 AI 서비스를 쓸 수 없어요 — 관리자에게 문의해 주세요"
+
+  /// 상태 + 오류 코드(503 은 뜻이 둘 — llm_busy·llm_unavailable, 0.16.1)
+  public static func errorMessage(status: Int, error: String? = nil) -> String {
     switch status {
     case 429: "이번 달 예산을 다 써서 답할 수 없습니다(수집은 계속됩니다)"
+    case 503 where error == "llm_unavailable": llmUnavailable
     case 503: "잠시 뒤 다시 물어보세요"
     case 400: "질문을 500자 이내로 적어 주세요"
     default: "오류 \(status)"
     }
   }
 
-  /// llm_busy(503): 첫 시도에서만 5초 뒤 한 번 더(M2-⑦ LLM 동시 2). 서버 retry-after 30초는 대화 대기로 너무 길다
-  public static func retryDelay(status: Int, attempt: Int) -> TimeInterval? { status == 503 && attempt == 0 ? 5 : nil }
+  /// 오류 본문 {"error": 코드}의 코드. JSON 이 아니면(Deno 기본 500 텍스트 등) nil
+  public static func errorCode(_ data: Data?) -> String? {
+    guard let data, let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+    return o["error"] as? String
+  }
+
+  /// llm_busy(503)만: 첫 시도에서만 5초 뒤 한 번 더(M2-⑦ LLM 동시 2). 서버 retry-after 30초는 대화 대기로 너무 길다.
+  /// 상태만 보지 않는다 — llm_unavailable(503)은 다시 해도 같다(0.16.1)
+  public static func retryDelay(status: Int, error: String?, attempt: Int) -> TimeInterval? {
+    status == 503 && error == "llm_busy" && attempt == 0 ? 5 : nil
+  }
 
   /// timestamptz 문자열 → 서울 "yyyy-MM-dd HH:mm". 해석 못 하면 그대로
   public static func seoulLabel(_ iso: String) -> String {

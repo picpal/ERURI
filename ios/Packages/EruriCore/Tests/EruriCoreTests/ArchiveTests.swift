@@ -34,6 +34,7 @@ final class ArchiveTests: XCTestCase {
     XCTAssertEqual(["extracted", "queued", "discarded:server:empty", "discarded:server:promo", "discarded:device:rule"].map(Archive.statusKo),
                    ["추출됨", "처리 중", "일정 없음(보관)", "폐기", "폐기"])
     XCTAssertEqual(Archive.statusKo("new_status"), "new_status")
+    XCTAssertEqual(Archive.statusKo("failed"), "처리하지 못했어요")                        // 0.16.1 처리 잡 dead(0034)
   }
 
   // 게이트 통과 = 라벨이 있고 상태가 그 라벨의 게이트 폐기가 아닌 것(gate-report.ts 와 같은 기준). 추출됨·보관·처리 중 모두

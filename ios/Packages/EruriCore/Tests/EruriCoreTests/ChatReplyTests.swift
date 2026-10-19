@@ -57,12 +57,31 @@ final class ChatReplyTests: XCTestCase {
     XCTAssertEqual(ChatReply.errorMessage(status: 500), "오류 500")
   }
 
-  /// llm_busy(503)는 첫 시도에서만 짧게 기다렸다 한 번 더. 서버 retry-after(30초)는 대화에 너무 길어 상한을 둔다
+  /// llm_busy(503)는 첫 시도에서만 짧게 기다렸다 한 번 더. 서버 retry-after(30초)는 대화에 너무 길어 상한을 둔다.
+  /// 0.16.1: 상태만이 아니라 error 코드로 — llm_unavailable(503)·코드 없는 503 은 다시 보내지 않는다
   func testRetryOnlyOnceForBusy() {
-    XCTAssertEqual(ChatReply.retryDelay(status: 503, attempt: 0), 5)
-    XCTAssertNil(ChatReply.retryDelay(status: 503, attempt: 1))
-    XCTAssertNil(ChatReply.retryDelay(status: 429, attempt: 0))
-    XCTAssertNil(ChatReply.retryDelay(status: 200, attempt: 0))
+    XCTAssertEqual(ChatReply.retryDelay(status: 503, error: "llm_busy", attempt: 0), 5)
+    XCTAssertNil(ChatReply.retryDelay(status: 503, error: "llm_busy", attempt: 1))
+    XCTAssertNil(ChatReply.retryDelay(status: 503, error: "llm_unavailable", attempt: 0))
+    XCTAssertNil(ChatReply.retryDelay(status: 503, error: nil, attempt: 0))
+    XCTAssertNil(ChatReply.retryDelay(status: 429, error: "budget_exhausted", attempt: 0))
+    XCTAssertNil(ChatReply.retryDelay(status: 200, error: nil, attempt: 0))
+  }
+
+  /// 0.16.1 LLM 사용 불가(스펙 §9 구현): 503 + llm_unavailable → 관리자 문의 문구. 같은 503 이라도 llm_busy·코드 없음은 그대로
+  func testLlmUnavailableMessage() {
+    XCTAssertEqual(ChatReply.errorMessage(status: 503, error: "llm_unavailable"), "지금 AI 서비스를 쓸 수 없어요 — 관리자에게 문의해 주세요")
+    XCTAssertEqual(ChatReply.errorMessage(status: 503, error: "llm_busy"), "잠시 뒤 다시 물어보세요")
+    XCTAssertEqual(ChatReply.errorMessage(status: 503, error: nil), "잠시 뒤 다시 물어보세요")
+    XCTAssertEqual(ChatReply.errorMessage(status: 500, error: "internal"), "오류 500")
+  }
+
+  /// 오류 본문 {"error": 코드} → 코드. JSON 이 아니거나(0.16.0 이전 서버의 500 텍스트) 키가 없으면 nil
+  func testErrorCode() {
+    XCTAssertEqual(ChatReply.errorCode(Data(#"{"error":"llm_unavailable"}"#.utf8)), "llm_unavailable")
+    XCTAssertNil(ChatReply.errorCode(Data("Internal Server Error".utf8)))
+    XCTAssertNil(ChatReply.errorCode(Data(#"{"answer":"x"}"#.utf8)))
+    XCTAssertNil(ChatReply.errorCode(nil))
   }
 
   /// timestamptz(UTC, 소수 초) → 서울 벽시계

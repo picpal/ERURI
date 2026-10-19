@@ -95,6 +95,7 @@ public enum MailSummary {
     case (429, "budget_exhausted"?): return Note(MailSummaryText.budget)
     case (429, _): return Note(MailSummaryText.busy)
     case (503, "disabled"?): return Note(MailSummaryText.disabled)
+    case (503, "llm_unavailable"?): return Note(ChatReply.llmUnavailable)          // 0.16.1 — 다시 시도·후보 되살리기 없음
     case (503, _): return Note(MailSummaryText.llmBusy)
     default: return nil
     }

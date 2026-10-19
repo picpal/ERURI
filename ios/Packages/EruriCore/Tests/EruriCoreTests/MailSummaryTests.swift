@@ -121,6 +121,11 @@ final class MailSummaryTests: XCTestCase {
     XCTAssertEqual(MailSummary.readError(status: 429, code: "budget_exhausted").text, "이번 달 예산을 다 써서 요약할 수 없습니다(수집은 계속됩니다)")
     XCTAssertEqual(MailSummary.readError(status: 429, code: "gmail_rate_limited").text, MailSummaryText.busy)
     XCTAssertEqual(MailSummary.readError(status: 503, code: "llm_busy").text, "잠시 뒤 다시 물어보세요")
+    // 0.16.1: 키 무효·권한·쿼터 — 관리자 문의, 다시 보내지 않고 후보도 되살리지 않는다(검색·읽기 같은 분기)
+    for n in [MailSummary.readError(status: 503, code: "llm_unavailable"), MailSummary.searchError(status: 503, code: "llm_unavailable")] {
+      XCTAssertEqual([n.text, "\(n.retry)", "\(n.settings)"], ["지금 AI 서비스를 쓸 수 없어요 — 관리자에게 문의해 주세요", "false", "false"])
+    }
+    XCTAssertNil(MailSummary.retryDelay(status: 503, code: "llm_unavailable", attempt: 0))
     XCTAssertEqual(MailSummary.readError(status: 502, code: "summary_failed"), .init("메일을 요약하지 못했어요 — 잠시 뒤 다시 해 주세요", retry: true))
     XCTAssertEqual(MailSummary.readError(status: -1, code: nil).retry, true)                                 // 네트워크
     XCTAssertEqual(MailSummary.retryDelay(status: 503, code: "llm_busy", attempt: 0), 5)

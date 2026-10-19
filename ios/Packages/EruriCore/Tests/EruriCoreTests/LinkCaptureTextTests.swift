@@ -54,6 +54,9 @@ final class LinkCaptureTextTests: XCTestCase {
   func testChatResult() {
     XCTAssertNil(LinkCaptureText.chatResult(status: nil, gateLabel: nil, kinds: []))
     XCTAssertNil(LinkCaptureText.chatResult(status: "queued", gateLabel: nil, kinds: []))
+    // 0.16.1 처리 실패(처리 잡 dead → items.status failed): 60초를 기다리지 않고 바로 — 링크·사진 같은 문구
+    XCTAssertEqual(LinkCaptureText.chatResult(status: "failed", gateLabel: nil, kinds: []), "처리하지 못했어요 — 다시 보내 주세요")
+    XCTAssertEqual(LinkCaptureText.chatResult(status: "failed", gateLabel: "actionable", kinds: [], subject: .image), "처리하지 못했어요 — 다시 보내 주세요")
     XCTAssertEqual(LinkCaptureText.chatResult(status: "extracted", gateLabel: "actionable", kinds: ["event", "event"]),
                    "일정 2건을 찾았어요 — '제안' 탭과 알림에서 추가할 수 있어요.")
     XCTAssertEqual(LinkCaptureText.chatResult(status: "extracted", gateLabel: "actionable", kinds: ["task"]), "할 일을 찾았어요 — 알림에서 확인하세요.")

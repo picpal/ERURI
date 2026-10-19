@@ -88,6 +88,7 @@ final class RecentDiscardsTests: XCTestCase {
     XCTAssertNil(RecentDiscards.restoreState(itemStatus: nil, jobStatus: nil, kinds: []))                       // 행을 못 읽음 → 아직
     XCTAssertNil(RecentDiscards.restoreState(itemStatus: "queued", jobStatus: nil, kinds: []))
     XCTAssertNil(RecentDiscards.restoreState(itemStatus: "queued", jobStatus: "running", kinds: []))
+    XCTAssertEqual(RecentDiscards.restoreState(itemStatus: "failed", jobStatus: nil, kinds: []), .failed)   // 0.16.1 항목 상태로도 실패(0034)
     XCTAssertEqual(RecentDiscards.restoreState(itemStatus: "queued", jobStatus: "dead", kinds: []), S.failed)       // 5회 실패 — items 는 queued 로 남는다
     XCTAssertEqual(RecentDiscards.restoreState(itemStatus: "extracted", jobStatus: nil, kinds: ["event", "place", "event"]), S.proposed(2))
     XCTAssertEqual(RecentDiscards.restoreState(itemStatus: "extracted", jobStatus: nil, kinds: ["task"]), S.task)

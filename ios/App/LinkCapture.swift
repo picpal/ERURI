@@ -127,11 +127,20 @@ import EruriCore
     return LinkCaptureText.pending
   }
 
-  /// 이미 읽은 링크의 항목 id(§9 "일정 보기", 0.11.4): 서버 멱등 키로 본인 items 의 id 만(RLS). 못 찾으면(업로드 전·서버 폐기·오류) nil
-  func itemID(captureID: String) async -> String? {
-    guard let r = await API.send(LinkFlow.itemQuery(captureID: captureID, select: "id")), r.status == 200,
-          let rows = (try? JSONSerialization.jsonObject(with: r.data)) as? [[String: Any]] else { return nil }
-    return rows.first?["id"] as? String
+  /// 이미 읽은 링크·같은 글의 항목(§9 "일정 보기", 0.11.4): 서버 멱등 키로 본인 items 의 id·status 만(RLS).
+  /// found = 그 항목 id, failed = 처리 실패(0.16.1 — 기기 기록을 지워 다음 보내기가 다시 읽는다/접수한다), nil = 못 찾음(업로드 전·서버 폐기·오류)
+  enum SeenItem: Equatable { case found(String), failed }
+  func seenItem(captureID: String) async -> SeenItem? {
+    guard let r = await API.send(LinkFlow.itemQuery(captureID: captureID, select: "id,status")), r.status == 200,
+          let rows = (try? JSONSerialization.jsonObject(with: r.data)) as? [[String: Any]], let id = rows.first?["id"] as? String else { return nil }
+    if rows.first?["status"] as? String == "failed" { forgetSeen(captureID); return .failed }
+    return .found(id)
+  }
+
+  /// 처리 실패 항목(§9, 0.16.1): 같은 링크·같은 글 기록을 지운다 — 서버는 같은 멱등 키의 실패 항목을 되살린다(0034)
+  private func forgetSeen(_ captureID: String) {
+    try? CaptureQueue.shared().forgetLinkSeen(captureID: captureID)
+    DiagLog.append("link seen forgotten failed")
   }
 
   /// 본인 items 행(서버 멱등 키, RLS): id·status·gate_label + extracted 면 facts 종류. 행이 없으면 nil.
@@ -141,6 +150,7 @@ import EruriCore
     guard let r = await API.send(LinkFlow.itemQuery(captureID: captureID, select: "id,status,gate_label")), r.status == 200,
           let rows = (try? JSONSerialization.jsonObject(with: r.data)) as? [[String: Any]], let row = rows.first,
           let itemID = row["id"] as? String, let status = row["status"] as? String else { return nil }
+    if status == "failed" { forgetSeen(captureID) }                       // 결과 문구 "다시 보내 주세요"가 막히지 않게(0.16.1)
     var kinds: [String]? = []
     if status == "extracted" {
       if let f = await API.send("rest/v1/facts?select=kind&status=eq.active&item_id=eq.\(itemID)"), f.status == 200,

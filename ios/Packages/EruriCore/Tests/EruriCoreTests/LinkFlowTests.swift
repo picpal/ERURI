@@ -67,6 +67,20 @@ final class LinkFlowTests: XCTestCase {
     XCTAssertFalse(try q.isLinkSeen(captureID: id, now: Date().addingTimeInterval(CaptureQueue.linkSeenFor + 60)))
   }
 
+  /// 0.16.1 처리 실패 항목 다시 보내기(스펙 §7·§9): 그 캡처 id 의 기록만 지우면 같은 링크가 관문을 다시 통과한다(다른 링크 기록은 그대로)
+  @MainActor func testForgetLinkSeenLetsTheSameLinkThrough() async throws {
+    let q = try makeQueue(), r = FakeRenderer(.page(page, elapsedMs: 1))
+    _ = await LinkFlow.share(PendingLink(url: url, note: nil, origin: "share"), renderer: r, queue: q)
+    let other = "00000000-0000-5000-8000-000000000001"
+    try q.markLinkSeen(captureID: other)
+    try q.forgetLinkSeen(captureID: LinkText.captureID(for: url))
+    XCTAssertFalse(try q.isLinkSeen(captureID: LinkText.captureID(for: url)))
+    XCTAssertTrue(try q.isLinkSeen(captureID: other))
+    for i in try q.claim(limit: 10) { try q.markSent(id: i.id) }                         // 앞 큐 항목은 올라갔다고 본다
+    guard case .queued = await LinkFlow.share(PendingLink(url: url, note: nil, origin: "chat"), renderer: r, queue: q) else { return XCTFail("not read again") }
+    XCTAssertEqual(r.calls.count, 2)
+  }
+
   /// 주소 쿼리의 code=482913 이 본문에 들어가면 OTP 규칙이 항목 전체를 폐기한다(F9) — 호스트만 들어가므로 통과한다
   @MainActor func testQueryDigitsDoNotDiscard() async throws {
     let q = try makeQueue()

@@ -61,7 +61,7 @@ public enum RecentDiscards {
 
   /// 본인 행만(RLS). 상태·종류 열만 읽고 본문 열은 요청하지 않는다
   public static func itemStatusQuery(itemID: String) -> String { "rest/v1/items?select=status&id=eq.\(itemID)" }
-  /// 가장 최근 process 잡 = 복구가 넣은 잡. dead(5회 실패)여도 items 는 queued 로 남으므로 이것이 유일한 실패 신호다
+  /// 가장 최근 process 잡 = 복구가 넣은 잡. 0034(0.16.1) 전 서버는 dead(5회 실패)여도 items 가 queued 로 남으므로 이것이 실패 신호다
   public static func jobStatusQuery(itemID: String) -> String {
     "rest/v1/jobs?select=status&kind=eq.process&payload-%3E%3Eitem_id=eq.\(itemID)&order=created_at.desc&limit=1"
   }
@@ -73,6 +73,7 @@ public enum RecentDiscards {
     guard let itemStatus else { return nil }
     switch itemStatus {
     case "queued": return jobStatus == "dead" ? .failed : nil
+    case "failed": return .failed                                                     // 0.16.1: 잡 dead 면 항목도 failed(0034)
     case "extracted":
       let events = kinds.filter { $0 == "event" }.count
       return events > 0 ? .proposed(events) : kinds.contains("task") ? .task : .noSchedule

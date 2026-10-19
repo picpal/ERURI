@@ -93,6 +93,7 @@ public enum Archive {
     switch s {
     case "extracted": return "추출됨"
     case "queued": return "처리 중"
+    case "failed": return "처리하지 못했어요"                                    // 처리 잡 dead(0.16.1, 0034)
     case "discarded:server:empty": return "일정 없음(보관)"                  // 게이트는 통과(또는 복구), 추출할 것이 없어 원문만 보관
     default: return s.hasPrefix("discarded:") ? "폐기" : s
     }

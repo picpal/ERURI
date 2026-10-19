@@ -62,6 +62,7 @@ public enum ChatAddEvent {
   /// 일정 → events(N), 할 일만 → 안내, 일정·할 일 없음(날짜 없음 포함) → "찾지 못했어요"(+ 맥락을 실었으면 앞 답 안내 줄, D11), 규칙 폐기 → 보안 숫자
   public static func result(status: String?, kinds: [String], withContext: Bool) -> Verdict? {
     guard let status, status != "queued" else { return nil }
+    if status == "failed" { return .text(ChatAddEventText.processFailed) }               // 처리 잡 dead(0.16.1, 0034)
     let none = withContext ? "\(ChatAddEventText.noEvent)\n\(ChatAddEventText.contextHint)" : ChatAddEventText.noEvent
     if status == "extracted" {
       let n = kinds.filter { $0 == "event" }.count
@@ -122,6 +123,7 @@ public enum ChatAddEventText {
   public static let contextHint = "앞 답의 일정은 그 답 카드의 [캘린더에 추가]로 넣을 수 있어요"
   public static let discarded = LinkCaptureText.discarded
   public static let pending = LinkCaptureText.pending
+  public static let processFailed = LinkCaptureText.processFailed
   public static let offline = "연결되면 등록해요 — 일정을 찾으면 알림으로 알려 드려요"
   public static let duplicateFound = "이미 등록한 글이에요."
   public static let duplicate = "이미 등록한 글이에요. 보관함에서 그 항목을 열면 일정을 다시 볼 수 있어요"

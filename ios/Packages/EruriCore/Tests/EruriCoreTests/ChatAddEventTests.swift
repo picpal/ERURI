@@ -79,6 +79,8 @@ final class ChatAddEventTests: XCTestCase {
   func testResultTexts() {
     XCTAssertNil(ChatAddEvent.result(status: nil, kinds: [], withContext: false))
     XCTAssertNil(ChatAddEvent.result(status: "queued", kinds: [], withContext: false))
+    XCTAssertEqual(ChatAddEvent.result(status: "failed", kinds: [], withContext: true), .text("처리하지 못했어요 — 다시 보내 주세요"))   // 0.16.1
+    XCTAssertEqual(ChatAddEventText.processFailed, LinkCaptureText.processFailed)
     XCTAssertEqual(ChatAddEvent.result(status: "extracted", kinds: ["event", "event", "task"], withContext: false), .events(2))
     XCTAssertEqual(ChatAddEvent.result(status: "extracted", kinds: ["task"], withContext: true), .text("할 일을 찾았어요 — 알림에서 확인하세요"))
     XCTAssertEqual(ChatAddEvent.result(status: "extracted", kinds: [], withContext: false), .text("일정을 찾지 못했어요. 날짜와 시간을 함께 써 주세요."))

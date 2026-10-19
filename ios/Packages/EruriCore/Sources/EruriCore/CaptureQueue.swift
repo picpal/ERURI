@@ -203,6 +203,10 @@ public final class CaptureQueue {
       sqlite3_bind_text(s, 1, captureID, -1, Self.transient); sqlite3_bind_double(s, 2, now.timeIntervalSince1970 + Self.linkSeenFor)
     }
   }
+  /// 처리 실패 항목 다시 보내기(스펙 §9, 0.16.1): 그 캡처 id 의 기록만 지운다 — 같은 링크·같은 글이 다음에 관문을 통과한다
+  public func forgetLinkSeen(captureID: String) throws {
+    try run("DELETE FROM link_seen WHERE id = ?") { sqlite3_bind_text($0, 1, captureID, -1, Self.transient) }
+  }
   public func isLinkSeen(captureID: String, now: Date = Date()) throws -> Bool {
     var s: OpaquePointer?
     guard sqlite3_prepare_v2(db, "SELECT 1 FROM link_seen WHERE id = ? AND until > ?", -1, &s, nil) == SQLITE_OK, let st = s else { throw Error.sqlite(msg) }

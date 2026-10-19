@@ -708,13 +708,14 @@ struct ChatView: View {
           settle(id, epoch) { $0.record.error = "연결 실패" }; return
         }
         // llm_busy(503): 한 번만 짧게 기다렸다 다시(M2-⑦ LLM 동시 2)
-        if let wait = ChatReply.retryDelay(status: r.status, attempt: attempt) {
+        let code = ChatReply.errorCode(r.data)                     // 503 은 뜻이 둘 — llm_busy 만 다시, llm_unavailable 은 관리자 문의(0.16.1)
+        if let wait = ChatReply.retryDelay(status: r.status, error: code, attempt: attempt) {
           attempt += 1
           try? await Task.sleep(for: .seconds(wait))
           continue
         }
         // 맥락 형식을 서버가 거절(400 bad_context)했을 때만 맥락 없이 한 번 더 — 다른 400(bad_question 등)은 다시 보내지 않는다
-        if r.status == 400, withContext, ((try? JSONSerialization.jsonObject(with: r.data)) as? [String: Any])?["error"] as? String == "bad_context" {
+        if r.status == 400, withContext, code == "bad_context" {
           withContext = false; DiagLog.append("CHAT ctx rejected"); continue
         }
         if r.status == 200, let a = ChatReply.decode(r.data) {
@@ -775,7 +776,7 @@ struct ChatView: View {
           readCalendar(id)
           scroll(to: id)
         } else {
-          settle(id, epoch) { $0.record.error = r.status == 200 ? ChatHistoryText.unreadableReply : ChatReply.errorMessage(status: r.status) }
+          settle(id, epoch) { $0.record.error = r.status == 200 ? ChatHistoryText.unreadableReply : ChatReply.errorMessage(status: r.status, error: code) }
         }
         return
       }
@@ -795,9 +796,13 @@ struct ChatView: View {
       settle(id, epoch) { $0.record.link = ChatAddEventText.failed; $0.record.linkDone = true }
     case .duplicate(let cid):
       Task {
-        let item = await LinkCapture.shared.itemID(captureID: cid)   // 서버 멱등 키로 본인 items.id(RLS) — 업로드 전·폐기면 nil
+        let seen = await LinkCapture.shared.seenItem(captureID: cid)   // 서버 멱등 키로 본인 items(RLS) — 업로드 전·폐기면 nil, 처리 실패면 기록을 지운다
         settle(id, epoch) {
-          if let item { $0.record.seenItemID = item; $0.record.link = ChatAddEventText.duplicateFound } else { $0.record.link = ChatAddEventText.duplicate }
+          switch seen {
+          case .found(let item): $0.record.seenItemID = item; $0.record.link = ChatAddEventText.duplicateFound
+          case .failed: $0.record.link = ChatAddEventText.processFailed
+          case nil: $0.record.link = ChatAddEventText.duplicate
+          }
           $0.record.linkDone = true
         }
       }
@@ -1116,9 +1121,10 @@ struct ChatView: View {
       busy = false
       // 이미 읽은 링크: 그 항목을 찾으면 문구를 줄이고 "일정 보기"(다시 추가는 항목 상세, §10 0.11.4). 못 찾으면 보관함 안내 문구 그대로
       if let seen = read.seenCaptureID {
-        let item = await LinkCapture.shared.itemID(captureID: seen)
+        let item = await LinkCapture.shared.seenItem(captureID: seen)
         settle(id, epoch) {
-          if let item { $0.record.seenItemID = item; $0.record.link = LinkCaptureText.duplicateFound }
+          if case .found(let i) = item { $0.record.seenItemID = i; $0.record.link = LinkCaptureText.duplicateFound }
+          if item == .failed { $0.record.link = LinkCaptureText.processFailed }   // 처리 실패 — 기록을 지웠다, 다시 붙여넣으면 다시 읽는다(0.16.1)
           $0.record.linkDone = true
         }
         return
