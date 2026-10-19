@@ -796,12 +796,19 @@ struct ChatView: View {
       settle(id, epoch) { $0.record.link = ChatAddEventText.failed; $0.record.linkDone = true }
     case .duplicate(let cid):
       Task {
-        let seen = await LinkCapture.shared.seenItem(captureID: cid)   // 서버 멱등 키로 본인 items(RLS) — 업로드 전·폐기면 nil, 처리 실패면 기록을 지운다
+        let seen = await LinkCapture.shared.seenItem(captureID: cid)   // 서버 멱등 키로 본인 items(RLS) — 업로드 전·폐기면 nil, 실패·멈춤이면 저장된 글로 다시 처리
+        if seen == .retrying {                                           // 0.16.1 추가 1: 등록 턴처럼 결과(최대 90초) → 일정이면 카드
+          settle(id, epoch) { $0.record.link = ItemRetry.retryingEvent }
+          let r = await LinkCapture.shared.addEventResult(captureID: cid, withContext: withContext, seconds: 3 * ItemRetry.pollTries)
+          settle(id, epoch) { $0.record.link = r.text; $0.record.itemID = r.itemID; $0.record.linkDone = true }
+          if r.itemID != nil { loadAddEventCards(id, scroll: true) }
+          return
+        }
         settle(id, epoch) {
           switch seen {
           case .found(let item): $0.record.seenItemID = item; $0.record.link = ChatAddEventText.duplicateFound
-          case .failed: $0.record.link = ChatAddEventText.processFailed
-          case nil: $0.record.link = ChatAddEventText.duplicate
+          case .text(let t): $0.record.link = t
+          case .retrying, nil: $0.record.link = ChatAddEventText.duplicate
           }
           $0.record.linkDone = true
         }
@@ -1122,9 +1129,15 @@ struct ChatView: View {
       // 이미 읽은 링크: 그 항목을 찾으면 문구를 줄이고 "일정 보기"(다시 추가는 항목 상세, §10 0.11.4). 못 찾으면 보관함 안내 문구 그대로
       if let seen = read.seenCaptureID {
         let item = await LinkCapture.shared.seenItem(captureID: seen)
+        if item == .retrying {                                           // 실패·멈춘 항목 — 저장된 글로 다시 처리하고 링크 턴처럼 결과를 기다린다(0.16.1 추가 1)
+          settle(id, epoch) { $0.record.link = ItemRetry.retryingLink }
+          let result = await LinkCapture.shared.chatResult(captureID: seen, subject: .page, tries: ItemRetry.pollTries)
+          settle(id, epoch) { $0.record.link = result; $0.record.linkDone = true }
+          return
+        }
         settle(id, epoch) {
           if case .found(let i) = item { $0.record.seenItemID = i; $0.record.link = LinkCaptureText.duplicateFound }
-          if item == .failed { $0.record.link = LinkCaptureText.processFailed }   // 처리 실패 — 기록을 지웠다, 다시 붙여넣으면 다시 읽는다(0.16.1)
+          if case .text(let t) = item { $0.record.link = t }
           $0.record.linkDone = true
         }
         return

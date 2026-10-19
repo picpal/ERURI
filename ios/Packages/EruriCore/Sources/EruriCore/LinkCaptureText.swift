@@ -13,7 +13,7 @@ public enum LinkCaptureText {
   public static let duplicateFound = "이미 읽은 링크예요."
   public static let showEvents = "일정 보기"
   public static let pending = "아직 처리 중이에요 — 끝나면 알림으로 알려 드려요."
-  /// 처리 실패(스펙 §7·§9, 0.16.1): 처리 잡이 dead → items.status failed. 같은 링크·같은 글을 다시 보내면 서버가 그 항목을 되살린다(0034)
+  /// 처리 실패(스펙 §7·§9, 0.16.1): 처리 잡이 dead → items.status failed. 같은 링크·같은 글을 다시 보내면 저장된 글로 다시 처리한다(ItemRetry, 추가 1)
   public static let processFailed = "처리하지 못했어요 — 다시 보내 주세요"
   /// 저장 범위(메인 판정 MR1 — 스펙 §6·§12): 확장 상태 화면·채팅 링크·사진 턴에 한 줄로
   public static let storageNote = "읽은 글은 공유한 내용처럼 암호화해 보관해요. 짧은 페이지는 보이는 글 전체가 저장돼요."

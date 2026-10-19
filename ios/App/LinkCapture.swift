@@ -118,29 +118,30 @@ import EruriCore
     return ChatRead(text: LinkCaptureText.image(o, chat: true), captureID: id)
   }
 
-  /// 2단계: 서버 처리 결과를 3초마다 최대 60초 확인(본인 items.status·gate_label·facts 종류만 — RLS, F19)
-  func chatResult(captureID: String, subject: LinkCaptureText.Subject) async -> String {
-    for _ in 0..<20 {
+  /// 2단계: 서버 처리 결과를 3초마다 최대 60초 확인(본인 items.status·gate_label·facts 종류만 — RLS, F19). 다시 처리(retry_item)는 cron 대기가 있어 90초(tries 30)
+  func chatResult(captureID: String, subject: LinkCaptureText.Subject, tries: Int = 20) async -> String {
+    for _ in 0..<tries {
       try? await Task.sleep(for: .seconds(3))
       if let text = await result(captureID: captureID, subject: subject) { return text }
     }
     return LinkCaptureText.pending
   }
 
-  /// 이미 읽은 링크·같은 글의 항목(§9 "일정 보기", 0.11.4): 서버 멱등 키로 본인 items 의 id·status 만(RLS).
-  /// found = 그 항목 id, failed = 처리 실패(0.16.1 — 기기 기록을 지워 다음 보내기가 다시 읽는다/접수한다), nil = 못 찾음(업로드 전·서버 폐기·오류)
-  enum SeenItem: Equatable { case found(String), failed }
+  /// 이미 읽은 링크·같은 글의 항목(§9 "일정 보기", 0.11.4): 서버 멱등 키로 본인 items 의 id·status 만(RLS). nil = 못 찾음(업로드 전·서버 폐기·오류).
+  /// 처리 실패·멈춘 항목(failed·queued)은 막지 않고 저장된 글로 다시 처리한다(retry_item, 0.16.1 추가 1): retrying = 결과 확인으로 이어간다, text = 끝 문구
+  enum SeenItem: Equatable { case found(String), retrying, text(String) }
   func seenItem(captureID: String) async -> SeenItem? {
     guard let r = await API.send(LinkFlow.itemQuery(captureID: captureID, select: "id,status")), r.status == 200,
           let rows = (try? JSONSerialization.jsonObject(with: r.data)) as? [[String: Any]], let id = rows.first?["id"] as? String else { return nil }
-    if rows.first?["status"] as? String == "failed" { forgetSeen(captureID); return .failed }
-    return .found(id)
-  }
-
-  /// 처리 실패 항목(§9, 0.16.1): 같은 링크·같은 글 기록을 지운다 — 서버는 같은 멱등 키의 실패 항목을 되살린다(0034)
-  private func forgetSeen(_ captureID: String) {
-    try? CaptureQueue.shared().forgetLinkSeen(captureID: captureID)
-    DiagLog.append("link seen forgotten failed")
+    guard ItemRetry.shouldTry(status: rows.first?["status"] as? String ?? "") else { return .found(id) }
+    let rr = await API.send(ItemRetry.rpcPath, method: "POST", json: ["p_item": id])
+    let result = ItemRetry.result(status: rr?.status, data: rr?.data)
+    DiagLog.append("link seen retry \(result)")
+    switch ItemRetry.chatStep(result) {
+    case .poll: return .retrying
+    case .found: return .found(id)
+    case .text(let t): return .text(t)
+    }
   }
 
   /// 본인 items 행(서버 멱등 키, RLS): id·status·gate_label + extracted 면 facts 종류. 행이 없으면 nil.
@@ -150,7 +151,6 @@ import EruriCore
     guard let r = await API.send(LinkFlow.itemQuery(captureID: captureID, select: "id,status,gate_label")), r.status == 200,
           let rows = (try? JSONSerialization.jsonObject(with: r.data)) as? [[String: Any]], let row = rows.first,
           let itemID = row["id"] as? String, let status = row["status"] as? String else { return nil }
-    if status == "failed" { forgetSeen(captureID) }                       // 결과 문구 "다시 보내 주세요"가 막히지 않게(0.16.1)
     var kinds: [String]? = []
     if status == "extracted" {
       if let f = await API.send("rest/v1/facts?select=kind&status=eq.active&item_id=eq.\(itemID)"), f.status == 200,
@@ -167,8 +167,8 @@ import EruriCore
 
   /// 채팅 일정 등록 결과(스펙 §9 "턴 표시"): 3초마다, 시작부터 60초까지. 일정이면 그 항목 id(카드가 제안을 읽는다), 60초 넘으면 "아직 처리 중이에요".
   /// 반복 횟수가 아니라 종료 시각으로 끝낸다 — 조회가 매번 타임아웃(8초)이어도 60초 + 진행 중 요청 하나(Codex C4)
-  func addEventResult(captureID: String, withContext: Bool) async -> (text: String, itemID: String?) {
-    let end = ContinuousClock.now + .seconds(60)
+  func addEventResult(captureID: String, withContext: Bool, seconds: Int = 60) async -> (text: String, itemID: String?) {
+    let end = ContinuousClock.now + .seconds(seconds)                   // 다시 처리(retry_item)는 cron 대기가 있어 90초
     while ContinuousClock.now < end {
       try? await Task.sleep(for: .seconds(3))
       guard let row = await itemRow(captureID: captureID), let kinds = row.kinds else { continue }   // 행 없음·facts 조회 실패는 다시(실패를 "일정 없음"으로 확정하지 않는다, Codex C2)

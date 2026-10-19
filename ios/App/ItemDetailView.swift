@@ -17,6 +17,9 @@ struct ItemDetailView: View {
   @State private var factVersions: [FactVersions] = []                    // 0.16.0: fact 별 버전(계보·update_event 상태)
   @State private var editStates: [String: EditFlow.CardState] = [:]        // add 가 아닌 상태 — 키 = 최고 버전 id
   @State private var editing: [String: ChatView.EditState] = [:]
+  @State private var retryButton = false                                    // 처리 실패·멈춘 항목 [다시 처리](§10, 0.16.1 추가 1)
+  @State private var retryNote: String?
+  @State private var retrying = false
   @State private var editConfirm: EditConfirm?                              // 고친 일정 [캘린더에 추가]의 겹침·비슷한 일정 확인창(K34 — 채팅 runAdd 와 같은 문구)
   struct EditConfirm: Identifiable { let top: ProposalVersion; let state: EditFlow.CardState; let prompt: String; var id: String { top.id } }
   // private 저장 프로퍼티가 있으면 memberwise init 이 private 이 되므로 명시한다
@@ -29,6 +32,15 @@ struct ItemDetailView: View {
         Text([SourceLabel.label(source: meta["source"] as? String ?? "", appName: meta["app_name"] as? String),
               meta["sender"] as? String ?? "", (meta["occurred_at"] as? String).map(ChatReply.seoulLabel) ?? ""]
           .filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+      }
+      if retryButton || retryNote != nil {
+        Section {
+          HStack(spacing: 8) {
+            if retrying { ProgressView() }
+            Text(retryNote ?? ItemRetry.failedLine).accessibilityIdentifier("item-retry-status")
+          }
+          if retryButton { Button(ItemRetry.buttonTitle) { retry() }.disabled(retrying).accessibilityIdentifier("item-retry") }
+        }
       }
       if !events.isEmpty {
         Section("일정") {
@@ -59,6 +71,7 @@ struct ItemDetailView: View {
     }
     .navigationTitle("항목")
     .task { await load() }
+    .task { await loadRetry() }
     .task { await loadEvents() }                                         // 다시 보일 때마다 — 캘린더 앱에서 지우거나 넣고 돌아온 경우
     .onChange(of: scenePhase) { _, p in if p == .active { judge() } }
   }
@@ -115,6 +128,39 @@ struct ItemDetailView: View {
     else { loadError = r?.status == 404 ? "항목을 찾을 수 없습니다" : "원문을 불러오지 못했습니다" }
     if let r = await API.send("rest/v1/facts?item_id=eq.\(itemID)&select=kind,payload,status"), r.status == 200,
        let rows = try? JSONSerialization.jsonObject(with: r.data) as? [[String: Any]] { facts = rows }
+  }
+
+  /// [다시 처리] 표시(§10): 본인 items.status 와 가장 최근 process 잡(복구 행과 같은 조회, RLS) — failed, 또는 queued 인데 잡이 dead. 처리 중이면 건드리지 않는다
+  private func loadRetry() async {
+    guard !retrying else { return }
+    let item = ItemRetry.firstString(await API.send(RecentDiscards.itemStatusQuery(itemID: itemID)).flatMap { $0.status == 200 ? $0.data : nil }, "status")
+    let job = item == "queued"
+      ? ItemRetry.firstString(await API.send(RecentDiscards.jobStatusQuery(itemID: itemID)).flatMap { $0.status == 200 ? $0.data : nil }, "status") : nil
+    retryButton = ItemRetry.canRetry(itemStatus: item, jobStatus: job)
+  }
+
+  /// 저장된 글로 다시 처리(retry_item) → 3초마다 최대 90초 결과(복구 행 문구) → 일정 절 다시 읽기
+  private func retry() {
+    retrying = true; retryNote = ItemRetry.retrying
+    Task {
+      defer { retrying = false }
+      let r = await API.send(ItemRetry.rpcPath, method: "POST", json: ["p_item": itemID])
+      let result = ItemRetry.result(status: r?.status, data: r?.data)
+      DiagLog.append("item retry \(result)")
+      switch ItemRetry.detailStep(result) {
+      case .poll:
+        retryButton = false
+        let s = await RecentDiscards.pollRestore(itemID: itemID, wait: { try? await Task.sleep(for: RecentDiscards.pollEvery) }) { path in
+          guard let r = await API.send(path), r.status == 200 else { return nil }
+          return r.data
+        }
+        retryNote = RecentDiscards.restoreLine(s)
+        retryButton = s == .failed
+        await loadEvents()
+      case .hide: retryButton = false; retryNote = nil
+      case .text(let t, let keep): retryNote = t; retryButton = keep
+      }
+    }
   }
 
   /// 일정 절: 제안 목록(본인 facts ⨝ proposals) → 캘린더 대조. 못 읽으면 앞 목록을 둔다
