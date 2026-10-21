@@ -5,9 +5,10 @@ import type { TextExtraction, TextMeta } from "../_shared/extract-text.ts";
 import { type FactsInput, type SavedFact, textFacts } from "../_shared/facts.ts";
 import type { Job } from "../_shared/job.ts";
 import { applyRules } from "../_shared/rules.ts";
+import { matchSaveRules, type SaveRule } from "../_shared/save-rules.ts";
 import { receivedDay } from "../_shared/time.ts";
 
-// process 잡(스펙 §7 "0단계 예외" 0b): 규칙 재적용 → 분류 게이트(Jev, SHARE 제외) → 텍스트 추출 → save_facts → embed 잡(1b).
+// process 잡(스펙 §7 "0단계 예외" 0b): 규칙 재적용 → 저장 규칙(0.17.0) → 분류 게이트(Jev, SHARE·저장 규칙 일치 제외) → 텍스트 추출 → save_facts → embed 잡(1b).
 // 로그에는 id·코드·개수만(본문·추출값 금지)
 export type TextItem = { contentEnc: string | null; source: string; appName: string | null; sender: string | null; title: string | null;
   occurredAt: string; capturedAt: string; status: string };
@@ -23,9 +24,10 @@ export type TextDeps = {
   enqueueNotify(userId: string, proposalId: string): Promise<void>;
   unpushedProposals(userId: string, itemId: string): Promise<string[]>;
   setStatus(userId: string, itemId: string, status: string, wipe: boolean): Promise<void>;
-  recordGate(userId: string, itemId: string, label: string, confidence: number): Promise<void>;
+  recordGate(userId: string, itemId: string, label: string, confidence: number | null): Promise<void>;
   quarantine(userId: string, itemId: string, status: string): Promise<void>;
   enqueueEmbed(userId: string, itemId: string, backfill: boolean): Promise<void>;
+  saveRules(userId: string): Promise<SaveRule[]>;
   budget: BudgetDeps;
 };
 
@@ -39,7 +41,7 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
     const again = item.status === "extracted" ? await deps.unpushedProposals(user, itemId) : [];
     for (const p of again) await deps.enqueueNotify(user, p);
     // embed 잡 적재 전에 끊겼을 수도 있다. 검색 대상이면 다시 넣는다(embed 잡은 청크가 이미 있으면 건너뛴다)
-    const embed = item.contentEnc !== null && (item.status === "extracted" || item.status === "discarded:server:empty");
+    const embed = item.contentEnc !== null && (item.status === "extracted" || item.status === "discarded:server:empty" || item.status === "kept");
     if (embed) await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);
     return log(job, item.status, { reason: "already_processed", renotify: again.length, reembed: embed });
   }
@@ -60,10 +62,16 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   if (v.kind === "discard") return discard(deps, job, user, itemId, v.reason, true);
   const meta: TextMeta = { source: item.source, appName: item.appName, title: item.title };
 
+  // 1b) 저장 규칙(0.17.0): 서버 규칙 폐기(OTP·(광고)) 뒤, 마스킹된 글로 판정(K6). SHARE 는 이미 게이트를 건너뛰므로 조회하지 않는다(K7).
+  //     맞으면 게이트를 건너뛰고 라벨 'rule'·confidence null 로 남긴다(복구 항목 skip_gate 는 원래 라벨 유지). 추출 요청은 규칙과 무관하게 같다
+  const ruled = item.source !== "SHARE" && matchSaveRules(await deps.saveRules(user),
+    { title: v.maskedTitle ?? item.title, text: v.masked, sender: item.sender, source: item.source, appName: item.appName });
+  if (ruled && job.payload.skip_gate !== true) await deps.recordGate(user, itemId, "rule", null);
+
   // 2) 분류 게이트: 비행동 라벨 + confidence ≥ 임계만 폐기(7일 격리). 임계 미만·오류·타임아웃은 추출로(fail-open).
   //    사용자가 "최근 폐기"에서 복구한 항목(skip_gate)과 사용자가 직접 공유·채팅 첨부한 SHARE 항목은 게이트를 건너뛴다(스펙 §7, 2026-10-03)
   let verdict: ClassifyResult | null = null;
-  if (job.payload.skip_gate !== true && item.source !== "SHARE") {
+  if (job.payload.skip_gate !== true && item.source !== "SHARE" && !ruled) {
     try {
       verdict = await deps.classifier.classify(v.masked, classifierMeta(meta));   // 메신저 제목(발신자 이름)은 빼고 보낸다
     } catch (e) {
@@ -89,6 +97,11 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   if (facts === null) {                                              // 남길 것 없음: 원문 유지(1b 검색 대상, §7)
     // R1(2026-10-03): 0건 사유 코드·모델이 낸 원래 일정 후보 수만 로그에(본문·값 없음) — model_none 과 no_start 를 가른다
     const why = result.kind === "none" ? { why: result.why ?? null, raw_events: result.raw_events ?? null } : {};
+    if (ruled) {                                                     // 저장 규칙에 맞으면 폐기가 아니라 kept(원문 유지·검색·집계 대상, §7)
+      await deps.setStatus(user, itemId, "kept", false);
+      await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);
+      return log(job, "kept", { rule: true, ...why });
+    }
     const st = await discard(deps, job, user, itemId, "empty", false, why);
     await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);
     return st;
@@ -100,7 +113,7 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   if (lead) await deps.enqueueNotify(user, lead);
   await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);   // 청크·임베딩(백필 항목은 백필 레인)
   return log(job, lead ? "proposed" : "extracted", { kind: facts.kind, facts: saved.length, created: saved.some((s) => s.created),
-    label: verdict?.label ?? null, confidence: verdict?.confidence ?? null, tokens: usage.input_tokens + usage.output_tokens });
+    label: verdict?.label ?? null, confidence: verdict?.confidence ?? null, rule: ruled, tokens: usage.input_tokens + usage.output_tokens });
 }
 
 async function discard(deps: TextDeps, job: Job, user: string, itemId: string, reason: string, wipe: boolean,

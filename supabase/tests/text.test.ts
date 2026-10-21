@@ -3,6 +3,7 @@ import type { ClassifyMeta, ClassifyResult } from "../functions/_shared/classify
 import type { TextExtraction, TextMeta } from "../functions/_shared/extract-text.ts";
 import type { FactsInput } from "../functions/_shared/facts.ts";
 import type { Job } from "../functions/_shared/job.ts";
+import type { SaveRule } from "../functions/_shared/save-rules.ts";
 import { processText, type TextDeps, type TextItem } from "../functions/worker/text.ts";
 
 // 문구는 합성. 모델·DB 없이 파이프라인 분기만 본다
@@ -11,10 +12,10 @@ const EVENT_X: TextExtraction = { kind: "event", events: [{ evidence: "합성 �
 const BUY_X: TextExtraction = { kind: "purchase", evidence: null,
   purchase: { merchant: "합성커피", products: [], ordered_at: null, amount: 32000, currency: "KRW", order_no: null, status: "paid" } };
 function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: ClassifyResult | null | Error; result?: TextExtraction;
-  failEnqueue?: number; pushed?: boolean; budget?: "ok" | "degraded" | "refused"; extractThrows?: boolean } = {}) {
+  failEnqueue?: number; pushed?: boolean; budget?: "ok" | "degraded" | "refused"; extractThrows?: boolean; rules?: SaveRule[] } = {}) {
   const calls = { decrypt: 0, classify: [] as string[], extract: [] as { text: string; today: string }[], saved: [] as FactsInput[],
     status: [] as [string, boolean][], tokens: 0, notify: [] as string[], classifyMeta: [] as ClassifyMeta[], extractMeta: [] as TextMeta[],
-    backfill: [] as boolean[], gate: [] as [string, number][], quarantine: [] as string[], embed: [] as [string, boolean][],
+    backfill: [] as boolean[], gate: [] as [string, number | null][], ruleCalls: 0, quarantine: [] as string[], embed: [] as [string, boolean][],
     reserved: [] as string[], settled: [] as { k: string; m: string; lines: unknown[][] }[] };
   const base: TextItem = { contentEnc: "enc", source: "NOTIFICATION", appName: "Slack", sender: null, title: null,
     occurredAt: "2026-09-28T15:30:00Z", capturedAt: "2026-09-28T15:30:05Z", status: "queued" };
@@ -40,6 +41,7 @@ function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: Cla
     enqueueNotify: async (_u, p) => { if (state.failEnqueue > 0) { state.failEnqueue--; throw new Error("enqueue_job XX000"); } calls.notify.push(p); },
     unpushedProposals: async () => (o.pushed ? [] : state.proposals.slice(0, 1)),
     enqueueEmbed: async (_u, i, bf) => { calls.embed.push([i, bf]); },
+    saveRules: async () => { calls.ruleCalls++; return o.rules ?? []; },
     budget: { reserve: async (_u, k) => { calls.reserved.push(k); return { level: o.budget ?? "ok", month: "2026-10-01" }; },
       settle: async (_u, k, _e, m, lines) => { calls.settled.push({ k, m, lines: lines.map((l) => [l.kind, l.model, l.input, l.output]) }); },
       acquire: async () => 1, release: async () => {}, now: () => new Date("2026-10-15T00:00:00Z") },
@@ -292,4 +294,106 @@ Deno.test("text billing: the extraction response arrives but parsing fails → t
   try { await processText(d, job()); } catch (e) { thrown = (e as Error).message; }
   assertEquals(thrown, "openai incomplete max_output_tokens");
   assertEquals(calls.settled[0].lines, [["extract", "gpt-6-luna", 900, 60]]);
+});
+
+// 저장 규칙(스펙 §7 "저장 규칙", 0.17.0): 서버 규칙 폐기(OTP·(광고)) 뒤, 맞으면 Jev 를 건너뛰고 일정이 없으면 kept(원문 유지·청크). 문구·규칙 값은 합성
+const rule = (kind: "keyword" | "sender", value: string): SaveRule => ({ id: `r-${value}`, kind, value, created_at: "2026-10-21T00:00:00Z" });
+const PAY = rule("keyword", "합성PAY");
+const PAY_TEXT = "[합성PAY] 결제 실패 — 타임아웃으로 승인되지 않았어요";
+
+Deno.test("save rule: OTP and (광고) still discard first even when a rule matches (no Jev, no rules lookup needed)", async () => {
+  const otp = fake({ rules: [rule("keyword", "합성은행")], text: "[합성은행] 인증번호 [482913]를 입력하세요" });
+  assertEquals(await processText(otp.d, job()), "discarded:server:otp");
+  const ad = fake({ rules: [rule("keyword", "합성마트")], text: "(광고) 합성마트 가을 세일 30% 할인 쿠폰" });
+  assertEquals(await processText(ad.d, job()), "discarded:server:promotion");
+  for (const [f, st] of [[otp, "discarded:server:otp"], [ad, "discarded:server:promotion"]] as const) {
+    assertEquals([f.calls.status, f.calls.classify.length, f.calls.extract.length, f.calls.gate, f.calls.embed], [[[st, true]], 0, 0, [], []]);
+  }
+});
+
+Deno.test("save rule: matching item skips Jev, records gate 'rule' with null confidence, 0 facts → kept (no wipe) + embed", async () => {
+  // 키워드(본문)·발신자(값·발신자 공백 무시) 둘 다 같은 경로
+  for (const [rules, item] of [[[PAY], {}], [[rule("sender", "합성 PAY")], { sender: "합성PAY" }]] as [SaveRule[], Partial<TextItem>][]) {
+    const { d, calls } = fake({ rules, item, text: PAY_TEXT, verdict: { label: "notice", confidence: 0.99 }, result: { kind: "none" } });
+    assertEquals(await processText(d, job()), "kept");
+    assertEquals([calls.classify.length, calls.gate, calls.quarantine, calls.status, calls.embed, calls.extract.length, calls.ruleCalls],
+      [0, [["rule", null]], [], [["kept", false]], [["i1", false]], 1, 1]);
+  }
+});
+
+Deno.test("save rule: matching item with facts → extracted, proposal pushed, gate 'rule'", async () => {
+  const { d, calls } = fake({ rules: [PAY], text: PAY_TEXT + " 내일 오후 3시 재시도", verdict: { label: "notice", confidence: 0.99 } });
+  assertEquals(await processText(d, job()), "proposed");
+  assertEquals([calls.classify.length, calls.gate, calls.saved.length, calls.notify, calls.status, calls.embed],
+    [0, [["rule", null]], 1, ["p1"], [], [["i1", false]]]);
+});
+
+Deno.test("save rule: card/account numbers are masked, kept item text and extract input have no original digits", async () => {
+  const text = "[합성은행] 합성카드 4111111111111111 결제 32,000원 — 합성은행 계좌 110-123-456789 로 환급 예정";
+  const { d, calls } = fake({ rules: [rule("keyword", "합성은행")], text, result: { kind: "none" } });
+  assertEquals(await processText(d, job()), "kept");
+  assertEquals([calls.status, calls.classify.length], [[["kept", false]], 0]);              // 폐기·wipe 아님 — 원문(암호문)은 그대로 남는다
+  const sent = calls.extract[0].text;
+  for (const raw of ["4111111111111111", "411111111111", "110-123-456789", "123-456"]) assertEquals(sent.includes(raw), false, raw);
+  assertEquals([sent.includes("************1111"), sent.includes("***-***-**6789")], [true, true]);
+});
+
+Deno.test("save rule: non-matching item 0 facts → discarded:server:empty as before", async () => {
+  const { d, calls } = fake({ rules: [PAY, rule("sender", "합성택배")], text: "합성 페스티벌 얼리버드 예매 안내", result: { kind: "none" },
+    verdict: { label: "actionable", confidence: 0.6 } });
+  assertEquals(await processText(d, job()), "discarded:server:empty");
+  assertEquals([calls.classify.length, calls.gate, calls.status, calls.embed], [1, [["actionable", 0.6]], [["discarded:server:empty", false]], [["i1", false]]]);
+});
+
+Deno.test("save rule: skip_gate restored item that matches → no recordGate call, 0 facts → kept", async () => {
+  const { d, calls } = fake({ rules: [PAY], text: PAY_TEXT, result: { kind: "none" } });
+  assertEquals(await processText(d, job({ payload: { item_id: "i1", skip_gate: true } })), "kept");
+  assertEquals([calls.classify.length, calls.gate, calls.status, calls.embed], [0, [], [["kept", false]], [["i1", false]]]);   // 복구 항목은 원래 라벨 유지
+});
+
+Deno.test("save rule: SHARE never looks up rules (saveRules not called) and 0 facts → discarded:server:empty", async () => {
+  const { d, calls } = fake({ item: { source: "SHARE", appName: "메모" }, rules: [PAY], text: PAY_TEXT, result: { kind: "none" } });
+  d.saveRules = () => { throw new Error("must not query"); };
+  assertEquals(await processText(d, job()), "discarded:server:empty");
+  assertEquals([calls.classify.length, calls.gate, calls.status], [0, [], [["discarded:server:empty", false]]]);
+});
+
+Deno.test("save rule: already kept item on retry → embed only (no decrypt, classify, extract)", async () => {
+  const { d, calls } = fake({ item: { status: "kept" }, rules: [PAY] });
+  assertEquals(await processText(d, job()), "kept");
+  assertEquals([calls.decrypt, calls.classify.length, calls.extract.length, calls.status, calls.notify, calls.ruleCalls, calls.embed],
+    [0, 0, 0, [], [], 0, [["i1", false]]]);
+  const bf = fake({ item: { status: "kept" } });
+  await processText(bf.d, job({ payload: { item_id: "i1", backfill: true } }));
+  assertEquals(bf.calls.embed, [["i1", true]]);
+});
+
+Deno.test("save rule: extract request is identical with or without a matching rule", async () => {
+  const item: Partial<TextItem> = { source: "MESSAGES", appName: "SMS", sender: "합성PAY", title: "합성PAY 알림" };
+  const ruled = fake({ item, rules: [PAY], text: PAY_TEXT });
+  const plain = fake({ item, text: PAY_TEXT });
+  await processText(ruled.d, job());
+  await processText(plain.d, job());
+  assertEquals([ruled.calls.gate, plain.calls.classify.length], [[["rule", null]], 1]);
+  assertEquals([ruled.calls.extract, ruled.calls.extractMeta], [plain.calls.extract, plain.calls.extractMeta]);
+});
+
+Deno.test("save rule: log line has rule:true and no rule value/title/body", async () => {
+  const lines: string[] = [];
+  const orig = console.log;
+  console.log = (...a: unknown[]) => { lines.push(a.map(String).join(" ")); };
+  try {
+    const k = fake({ item: { title: "합성PAY 알림" }, rules: [PAY], text: PAY_TEXT, result: { kind: "none", why: "model_none", raw_events: 0 } });
+    assertEquals(await processText(k.d, job()), "kept");
+    const p = fake({ rules: [PAY], text: PAY_TEXT });
+    assertEquals(await processText(p.d, job()), "proposed");
+    const n = fake({ text: "[합성의원] 내일 오후 3시 진료 예약" });
+    assertEquals(await processText(n.d, job()), "proposed");
+  } finally {
+    console.log = orig;
+  }
+  const logs = lines.map((l) => JSON.parse(l) as Record<string, unknown>);
+  assertEquals(logs.map((l) => [l.checkpoint, l.rule]), [["kept", true], ["proposed", true], ["proposed", false]]);
+  assertEquals([logs[0].why, logs[0].raw_events], ["model_none", 0]);
+  for (const l of lines) for (const w of ["합성PAY", "PAY", "타임아웃", "알림", "r-"]) assertEquals(l.includes(w), false, w);
 });

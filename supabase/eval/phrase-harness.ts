@@ -22,6 +22,7 @@ export async function runPhrase(p: { id: string; text: string }, o: { classifier
     enqueueNotify: async () => {},
     unpushedProposals: async () => [],
     enqueueEmbed: async () => {},
+    saveRules: async () => [],                         // 저장 규칙 없음(0.17.0) — 문구 평가는 게이트를 그대로 탄다
     budget: { reserve: async () => ({ level: "ok", month: "2026-10-01" }), settle: async () => {}, acquire: async () => 1, release: async () => {}, now: () => new Date() },
   };
   await processText(deps, { id: `eval-${p.id}`, kind: "process", user_id: "eval", payload: { item_id: p.id }, attempts: 1, checkpoint: null });

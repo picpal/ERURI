@@ -5,6 +5,7 @@ import type { Classifier } from "../_shared/classify.ts";
 import { decrypt } from "../_shared/crypto.ts";
 import { extractTextDetailed } from "../_shared/extract-text.ts";
 import { enqueueNotify, saveFacts } from "../_shared/facts.ts";
+import type { SaveRule } from "../_shared/save-rules.ts";
 import { addExtractTokens } from "./media-deps.ts";
 import type { TextDeps, TextItem } from "./text.ts";
 
@@ -52,6 +53,12 @@ export function textDeps(sb: SupabaseClient, o: { classifier: Classifier; thresh
         p_lease_key: backfill ? `${o.leasePrefix ?? ""}backfill:${userId}` : `${o.leasePrefix ?? ""}embed:${itemId}`,
         p_payload: backfill ? { item_id: itemId, backfill: true } : { item_id: itemId } });
       if (error) throw new Error("enqueue_job " + error.code);
+    },
+    // 저장 규칙(0035 save_rules_of, 만든 순). 값은 비교에만 쓰고 로그에 남기지 않는다
+    async saveRules(userId) {
+      const { data, error } = await sb.rpc("save_rules_of", { p_user: userId });
+      if (error) throw new Error("save_rules_of " + error.code);
+      return data as SaveRule[];
     },
     budget: o.budget ?? budgetDeps(sb),
   };
