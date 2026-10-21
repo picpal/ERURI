@@ -178,6 +178,9 @@ end $$;
 -- p_bucket_key null → {total, buckets}(0 이 아닌 칸, 키 순), 있으면 그 칸 {total, items}(최신순 50).
 -- 감사 read 1행(0건도) — target = 센 항목(목록 모드는 그 칸) id 정렬 목록의 SHA-256 hex, 0건은 sha256('')(chat sha256Hex("") 와 같다, PF-F10).
 -- 감사 insert 가 있어 volatile. statement_timeout 5초는 함수 속성(K5 — 실행 중 문장을 끊는지는 U1, D1)
+-- 키워드 판정이 항목마다 item_chunks 를 item_id 로 찾는다 — 실데이터(90일 수천 항목)에서 5초 제한 안에 들게(A2 리뷰 I1). cascade 삭제·embed 대상 조회도 쓴다
+create index if not exists item_chunks_item_id on item_chunks (item_id);
+
 create or replace function aggregate_items(p_user uuid, p_keywords text[], p_sender text, p_sources text[], p_from date, p_to date,
   p_bucket text, p_bucket_key text default null) returns jsonb language plpgsql volatile
 set statement_timeout = '5s' as $$
