@@ -1,4 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert";
+import { decryptCandidates } from "../functions/chat/deps.ts";
 import { type Candidate, judgeSaveRule, matchingCandidates, ruleButton, type RuleDeps } from "../functions/chat/save-rule.ts";
 import type { SaveRule } from "../functions/_shared/save-rules.ts";
 
@@ -216,4 +217,16 @@ Deno.test("ruleButton log: op, status, rule count, matched, restored only — no
     { save_rule: "remove", status: "removed", rules: 1 },
   ]);
   assert(lines.every((l) => !l.includes("합성") && !l.includes("i-")), lines.join("\n"));
+});
+
+// Ruling A8-decrypt: 복호화가 실패한 행은 후보에서 빼고(불일치로 셈) 실패 수만 돌려준다 — 감사는 cands 의 id 만 해시
+Deno.test("decryptCandidates: one row fails → the rest returned in order, failed 1, failed id out of the audited list", async () => {
+  const row = (item_id: string, content_enc: string) => ({ item_id, source: "NOTIFICATION", app_name: "합성앱", sender: null, title: null, content_enc });
+  const { cands, failed } = await decryptCandidates([row("i-1", "enc-1"), row("i-2", "bad"), row("i-3", "enc-3")], (enc) => {
+    if (enc === "bad") return Promise.reject(new Error("decrypt"));
+    return Promise.resolve(`합성본문 ${enc}`);
+  });
+  assertEquals(failed, 1);
+  assertEquals(cands.map((c) => [c.item_id, c.text]), [["i-1", "합성본문 enc-1"], ["i-3", "합성본문 enc-3"]]);
+  assert(!cands.some((c) => c.item_id === "i-2"));
 });

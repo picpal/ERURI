@@ -33,6 +33,18 @@ function factText(r: { kind: string; payload: Record<string, unknown>; evidence:
   return `[${r.kind}] ${head}${r.evidence ? ` — ${r.evidence}` : ""}`;
 }
 
+export type CandidateRow = { item_id: string; source: string; app_name: string | null; sender: string | null; title: string | null; content_enc: string };
+// 폐기분 후보 복호화(Ruling A8-decrypt): 실패한 행은 후보에서 빼고(불일치로 셈) 수만 센다 — 손상 행 하나가 [함께 저장] 전체를 막지 않게
+export async function decryptCandidates(rows: CandidateRow[], decryptFn: (enc: string) => Promise<string>): Promise<{ cands: Candidate[]; failed: number }> {
+  const texts = await Promise.all(rows.map((r) => decryptFn(r.content_enc).catch(() => null)));
+  const cands: Candidate[] = [];
+  rows.forEach((r, i) => {
+    const text = texts[i];
+    if (text !== null) cands.push({ item_id: r.item_id, source: r.source, app_name: r.app_name, sender: r.sender, title: r.title, text });
+  });
+  return { cands, failed: rows.length - cands.length };
+}
+
 // service role. 모든 RPC 에 user_id 명시(스펙 §12 통제 4). 모델: gpt-6-sol effort low, 예산 80% 이상이면 gpt-6-luna(§13)
 export function chatDeps(sb: SupabaseClient): ChatDeps {
   const rpc = async (fn: string, args: Record<string, unknown>) => {
@@ -108,12 +120,9 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
     // 형식이 틀린 id 는 uuid 변환 오류(500) 대신 없는 규칙
     ruleRemove: async (u, id) => (UUID.test(id) ? ((await rpc("save_rule_remove", { p_user: u, p_rule: id })) as "removed" | "not_found") : "not_found"),
     async ruleCandidates(u): Promise<Candidate[]> {
-      const rows = (await rpc("save_rule_candidates", { p_user: u, p_limit: 500 })) as { item_id: string; source: string; app_name: string | null;
-        sender: string | null; title: string | null; content_enc: string }[];
-      const out: Candidate[] = [];
-      for (const r of rows) {
-        out.push({ item_id: r.item_id, source: r.source, app_name: r.app_name, sender: r.sender, title: r.title, text: await decrypt(u, r.content_enc) });
-      }
+      const rows = (await rpc("save_rule_candidates", { p_user: u, p_limit: 500 })) as CandidateRow[];
+      const { cands: out, failed } = await decryptCandidates(rows, (enc) => decrypt(u, enc));
+      if (failed) console.log(JSON.stringify({ save_rule_candidates: "decrypt_failed", n: failed }));     // 실패 수만 — id·값 없음
       // 복호화한 항목 id 목록 감사(§7 "폐기분 함께 저장" — 건수만 앱으로, 본문은 서버 안에서만 비교)
       if (out.length) await rpc("audit_read", { p_user: u, p_actor: "chat", p_target: await sha256Hex(out.map((c) => c.item_id).sort().join(",")) });
       return out;
