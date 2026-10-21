@@ -1,0 +1,19 @@
+{
+  "today": "2026-10-21",
+  "note": "0.17.0 최종 리뷰 I2 — 집계·규칙 단서(또는 직전 집계 맥락)가 걸려 0.17.0 스키마를 타는 기존 의도 문장. 합성 문구. 기대 의도는 같은 문장의 0.16.x 요청 결과로 먼저 확인했다",
+  "cases": [
+    { "id": "p01", "text": "내일 3시 합성치과 예약 캘린더에 저장해 줘", "intent": "add_event" },
+    { "id": "p02", "text": "금요일 2시 합성워크숍 일정 저장해 줘", "intent": "add_event" },
+    { "id": "p03", "text": "이번 주 일정 몇 개야?", "intent": "question" },
+    { "id": "p04", "text": "다음 주 약속 몇 건 있어?", "intent": "question" },
+    { "id": "p05", "text": "내일 합성회의 몇 번 회의실이야?", "intent": "question" },
+    { "id": "p06", "text": "합성상점 메일 몇 통 왔는지 보고 요약해줘", "intent": "mail_summary" },
+    { "id": "p07", "text": "합성상점 광고 메일 남겨 두지 말고 휴지통에 버려줘", "intent": "mail_action" },
+    { "id": "p08", "text": "합성역 몇 번 출구였지?", "intent": "question" },
+    { "id": "p09", "text": "3시로 바꿔서 저장해 줘", "intent": "edit_event",
+      "registered": { "title": "합성 치과 예약", "start": "2026-10-22T11:00:00+09:00", "end": "2026-10-22T12:00:00+09:00", "location": null } },
+    { "id": "p10", "text": "내일 3시 합성치과 등록해줘", "intent": "add_event",
+      "context": [{ "question": "이번 주 합성PAY 타임아웃 언제 많았어?", "answer": "10/19–10/21 '합성PAY·타임아웃' 메시지 12건 — 14시대가 4건으로 가장 많았어요" }],
+      "previous": { "keywords": ["합성PAY", "타임아웃"], "sender": null, "sources": [], "from": "2026-10-19", "to": "2026-10-21", "bucket": "hour", "defaulted": false, "clamped": false } }
+  ]
+}
