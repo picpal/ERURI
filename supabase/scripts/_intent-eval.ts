@@ -102,3 +102,14 @@ export function summarize(rows: Row[], runs: number, mailJudged: boolean, readJu
     recall_mail: r3(recall("mail_action")), recall_summary: r3(recall("mail_summary")), confusion, mail_match: r3(mail), read_match: r3(read),
     target_match: r3(target), mail_judged: mailJudged, read_judged: readJudged };
 }
+
+// INTENT-eval 0.17.0 회귀(K13): 같은 세션 0.16.x 기준선의 모든 회차에서 맞고(의도·칸) 0.17.0 회차 중 하나라도 틀린 id(0.17 행이 없으면 틀림).
+// 기준선에서 한 번이라도 틀린(흔들리는) 사례와 기준선에 없는 id 는 넣지 않는다
+const right = (r: Row) => r.got === r.expected && r.mail_ok !== false && r.read_ok !== false && r.target_ok !== false;
+export function newlyWrong(base: Row[], agg: Row[]): string[] {
+  const ids = [...new Set(base.map((r) => r.id))];
+  return ids.filter((id) => {
+    const b = base.filter((r) => r.id === id), a = agg.filter((r) => r.id === id);
+    return b.every(right) && (a.length === 0 || !a.every(right));
+  }).sort();
+}
