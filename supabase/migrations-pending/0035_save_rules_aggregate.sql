@@ -1,5 +1,6 @@
 -- 0.17.0 저장 규칙·집계 질문(스펙 §7 "저장 규칙", §8 0035, §9 "채팅 저장 규칙·집계 질문"). 배포 전까지 migrations-pending 에 둔다(계획 K1 — D1 이 git mv 후 적용).
 -- 이 파일 ①(A1): save_rules 표·정책, items.status 'kept', gate_feedback 'rule_saved'(사용자 쓰기 금지, K2), 규칙 함수 셋, 판정 함수 둘(K3·K4), embed 대상 함수 셋에 kept.
+-- ②(A2): 폐기분 후보·복구(save_rule_candidates·save_rule_restore), 집계(aggregate_items).
 -- 함수는 모두 service role 전용(public·anon·authenticated 실행 회수). 사용자 id 는 chat·worker 가 정해 p_user 로 넘긴다(hybrid_search 와 같은 방식).
 -- items.status 'kept'(저장 규칙에 맞고 일정 없음, 원문 유지)는 체크 제약이 없어 값만 더한다(0034 'failed' 와 같다). 격리 기한(quarantine_until)을 바꾸는 문은 두지 않는다(운영 조치 UD6)
 
@@ -135,8 +136,95 @@ begin
   return n;
 end $$;
 
+-- ── 폐기분 함께 저장(§7 "저장 규칙") ──
+-- 격리 중인 게이트 폐기(restore_discarded 가 되살릴 수 있는 것과 같은 조건 — 규칙 폐기·기한 지남·정리됨은 빠진다), 받은 시각 최신순 최대 500건.
+-- 본문 복호화·일치 판정은 chat(키는 Edge 에만) — 복호화 감사도 chat 이 남긴다(A8). 여기서는 감사 없음
+create or replace function save_rule_candidates(p_user uuid, p_limit int default 500)
+returns table (item_id uuid, source text, app_name text, sender text, title text, content_enc bytea) language sql stable as $$
+  select i.id, i.source, i.app_name, i.sender, i.title, i.content_enc from items i
+  where i.user_id = p_user and i.status = 'discarded:server:' || i.gate_label
+    and i.quarantine_until >= now() and i.content_enc is not null
+  order by i.occurred_at desc, i.id limit least(greatest(coalesce(p_limit, 500), 0), 500);
+$$;
+
+-- 맞은 id 를 되살린다: 항목마다 행 잠금으로 위 조건을 다시 확인(그 사이 복구·만료·남의 id 는 세지 않는다).
+-- 갱신·잡·lease 식은 restore_discarded(0011)와 같게 유지 — 바꾸면 둘 다 바꾼다(K24, PF-F20). 다른 점: 사용자는 p_user(chat 이 JWT 로 정함),
+-- gate_feedback 은 wrong_discard 가 아니라 rule_saved(이미 행이 있으면 그대로), 감사 actor 'chat'·target '<id> rule'
+create or replace function save_rule_restore(p_user uuid, p_items uuid[]) returns int language plpgsql as $$
+declare r record; n int := 0;
+begin
+  for r in select i.id, i.idempotency_key from items i
+           where i.user_id = p_user and i.id = any (coalesce(p_items, '{}'))
+             and i.status = 'discarded:server:' || i.gate_label and i.quarantine_until >= now() and i.content_enc is not null
+           order by i.id for update
+  loop
+    update items set status = 'queued', quarantine_until = null where id = r.id and user_id = p_user;
+    insert into gate_feedback (item_id, user_id, verdict) values (r.id, p_user, 'rule_saved') on conflict (item_id) do nothing;
+    insert into jobs (kind, user_id, lease_key, payload)
+    values ('process', p_user,
+            case when r.idempotency_key like 'test:%'
+                 then split_part(r.idempotency_key, ':', 1) || ':' || split_part(r.idempotency_key, ':', 2) || ':' else '' end
+            || 'item:' || r.id,
+            jsonb_build_object('item_id', r.id, 'skip_gate', true));
+    insert into audit_log (user_id, actor, action, target) values (p_user, 'chat', 'restore', r.id::text || ' rule');
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+
+-- ── 집계 질문(§9 "채팅 저장 규칙·집계 질문" RPC) ──
+-- 세는 단위 = 항목. 키워드마다 그 항목 청크 하나에 ILIKE(낱말 안의 \ % _ 는 글자 그대로), 키워드끼리 같은 청크일 필요 없음.
+-- 칸 = 서울 시각 hour '00'~'23'·day 'YYYY-MM-DD'·weekday '1'~'7'(ISO, 1 = 월). 출처 MESSAGES 는 메시지 앱 알림까지(작성자 판정 ⑥, SQL 에서만).
+-- p_bucket_key null → {total, buckets}(0 이 아닌 칸, 키 순), 있으면 그 칸 {total, items}(최신순 50).
+-- 감사 read 1행(0건도) — target = 센 항목(목록 모드는 그 칸) id 정렬 목록의 SHA-256 hex, 0건은 sha256('')(chat sha256Hex("") 와 같다, PF-F10).
+-- 감사 insert 가 있어 volatile. statement_timeout 5초는 함수 속성(K5 — 실행 중 문장을 끊는지는 U1, D1)
+create or replace function aggregate_items(p_user uuid, p_keywords text[], p_sender text, p_sources text[], p_from date, p_to date,
+  p_bucket text, p_bucket_key text default null) returns jsonb language plpgsql volatile
+set statement_timeout = '5s' as $$
+declare res jsonb; ids text;
+begin
+  if coalesce(p_bucket, '') not in ('hour', 'day', 'weekday') or coalesce(cardinality(p_keywords), 0) = 0
+     or exists (select 1 from unnest(p_keywords) w where coalesce(w, '') = '') then
+    raise exception 'bad_args';
+  end if;
+  with t as (
+    select i.id, i.title, i.sender, i.source, i.app_name, i.occurred_at,
+           case p_bucket when 'hour' then to_char(i.occurred_at at time zone 'Asia/Seoul', 'HH24')
+                         when 'day' then to_char(i.occurred_at at time zone 'Asia/Seoul', 'YYYY-MM-DD')
+                         else extract(isodow from i.occurred_at at time zone 'Asia/Seoul')::int::text end as k
+    from items i
+    where i.user_id = p_user and i.status in ('extracted', 'discarded:server:empty', 'kept')
+      and i.occurred_at >= (p_from::timestamp at time zone 'Asia/Seoul') and i.occurred_at < ((p_to + 1)::timestamp at time zone 'Asia/Seoul')
+      and (coalesce(cardinality(p_sources), 0) = 0
+           or i.source = any (p_sources)
+           or ('MESSAGES' = any (p_sources) and i.source = 'NOTIFICATION' and i.app_name = '메시지'))
+      and (p_sender is null or sender_matches(i.source, i.app_name, i.sender, i.title, p_sender))
+      and not exists (select 1 from unnest(p_keywords) w
+                      where not exists (select 1 from item_chunks c where c.item_id = i.id and c.user_id = p_user
+                                        and c.text ilike '%' || replace(replace(replace(w, '\', '\\'), '%', '\%'), '_', '\_') || '%' escape '\'))
+  ), s as (
+    select * from t where p_bucket_key is null or t.k = p_bucket_key
+  )
+  select case when p_bucket_key is null then
+           jsonb_build_object('total', (select count(*)::int from s),
+             'buckets', coalesce((select jsonb_agg(jsonb_build_object('key', b.k, 'count', b.n) order by b.k)
+                                  from (select s.k, count(*)::int as n from s group by s.k) b), '[]'::jsonb))
+         else
+           jsonb_build_object('total', (select count(*)::int from s),
+             'items', coalesce((select jsonb_agg(jsonb_build_object('item_id', l.id, 'title', l.title, 'sender', l.sender, 'source', l.source,
+                                                                    'app_name', l.app_name, 'occurred_at', l.occurred_at) order by l.occurred_at desc, l.id)
+                                from (select * from s order by s.occurred_at desc, s.id limit 50) l), '[]'::jsonb))
+         end,
+         coalesce((select string_agg(s.id::text, ',' order by s.id) from s), '')
+  into res, ids;
+  insert into audit_log (user_id, actor, action, target) values (p_user, 'chat', 'read', encode(sha256(convert_to(ids, 'UTF8')), 'hex'));
+  return res;
+end $$;
+
 -- service role 전용. create or replace 는 권한을 유지하지만 0015·0016 과 같게 다시 회수한다(멱등)
 revoke execute on function save_rules_of(uuid), save_rule_add(uuid, text, text), save_rule_remove(uuid, uuid),
   is_messenger(text, text), sender_matches(text, text, text, text, text),
-  worker_get_embed_source(uuid, uuid), worker_save_chunks(uuid, uuid, jsonb), enqueue_embed_backlog(uuid, int)
+  worker_get_embed_source(uuid, uuid), worker_save_chunks(uuid, uuid, jsonb), enqueue_embed_backlog(uuid, int),
+  save_rule_candidates(uuid, int), save_rule_restore(uuid, uuid[]),
+  aggregate_items(uuid, text[], text, text[], date, date, text, text)
   from public, anon, authenticated;
