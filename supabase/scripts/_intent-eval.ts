@@ -123,3 +123,23 @@ export function flakyCases(base: Row[], agg: Row[]): Flaky[] {
     return br > 0 && br < b.length ? [{ id, base_right: br, base_runs: b.length, agg_right: a.filter(right).length, agg_runs: a.length }] : [];
   });
 }
+
+// 오답률 판정(2026-10-21 메인 판정, Ruling A10-rate — 스펙 §15 괄호): 첫 4회에서 어느 모드든 한 번이라도 틀린(갈린) 사례만 두 모드 각 8회 더 돌리고,
+// 모든 회차(4 + 8)의 0.17.0 오답률 − 0.16.x 오답률 ≥ 25%p 면 새로 틀림. 두 모드 다 늘 맞은 사례는 추가 실행하지 않는다
+export const RATE_EXTRA_RUNS = 8, RATE_THRESHOLD = 0.25;
+export type ErrorRate = { id: string; base_wrong: number; base_runs: number; agg_wrong: number; agg_runs: number; diff: number };
+export function unsettled(base: Row[], agg: Row[]): string[] {
+  return [...new Set([...base, ...agg].filter((r) => !right(r)).map((r) => r.id))].sort();
+}
+export function errorRates(base: Row[], agg: Row[], ids: string[]): ErrorRate[] {
+  return [...ids].sort().map((id) => {
+    const b = base.filter((r) => r.id === id), a = agg.filter((r) => r.id === id);
+    const bw = b.filter((r) => !right(r)).length, aw = a.filter((r) => !right(r)).length;
+    const rate = (w: number, n: number) => (n ? w / n : 1);   // 행이 없으면 오답으로 본다(빈 집합 통과 방지)
+    return { id, base_wrong: bw, base_runs: b.length, agg_wrong: aw, agg_runs: a.length, diff: Math.round((rate(aw, a.length) - rate(bw, b.length)) * 1000) / 1000 };
+  });
+}
+// 비교는 건수로(부동소수 오차 없이): agg_wrong·base_runs − base_wrong·agg_runs ≥ 0.25·agg_runs·base_runs
+export const newlyWrongByRate = (rates: ErrorRate[], threshold = RATE_THRESHOLD): string[] =>
+  rates.filter((r) => r.agg_runs > 0 && r.base_runs > 0 && r.agg_wrong * r.base_runs - r.base_wrong * r.agg_runs >= threshold * r.agg_runs * r.base_runs)
+    .map((r) => r.id);

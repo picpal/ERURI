@@ -69,6 +69,9 @@ Deno.test("filterRequest with agg: 8-value enum (9 with edit), aggregate/save_ru
   const scope = AGG_RULE.split("\n").find((l) => l.startsWith("aggregate.sender·save_rule 의 '~에서 온·~가 보낸' 규칙은 그 두 칸에만 쓴다."));
   assert(scope && scope.includes("mail·mail_read 의 sender") && scope.includes("상호·서비스 이름 포함") && scope.includes("'어제 온·오늘 온'처럼 받은 때를 말하는 '온'은 발신자가 아니다"),
     "sender scope line");
+  // 짧은 행동 지시(A10 수정 3차 — s07 "요약해줘"가 0.17.0 요청에서 question 으로): 새 의도는 정의에 맞을 때만, aggregate 는 개수·분포에만, 짧은 지시는 기존 행동 의도
+  const short = AGG_RULE.split("\n").find((l) => l.startsWith("새 의도 넷은 그 정의에 맞을 때만 고른다"));
+  assert(short && short.includes("aggregate 는 개수·분포를 묻는 말에만") && short.includes("요약해줘") && short.includes("question 으로 바꾸지 않는다"), "short action line");
 });
 
 Deno.test("filterRequest with agg and previous: <previous_aggregate> block escaped, AGG_CONTEXT_RULE; without previous equals the agg request byte-for-byte", () => {

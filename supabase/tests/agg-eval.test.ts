@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import { type AggCase, type AggCaseFile, type AggRow, BOUNDARY_TEXTS, judgeAgg, parseEvalMode, summarizeAgg, validateAggCases } from "../scripts/_agg-eval.ts";
-import { flakyCases, newlyWrong, type Row } from "../scripts/_intent-eval.ts";
+import { errorRates, flakyCases, newlyWrong, newlyWrongByRate, type Row, unsettled } from "../scripts/_intent-eval.ts";
 import type { Intent } from "../functions/chat/filters.ts";
 
 const file = JSON.parse(await Deno.readTextFile(new URL("../eval/agg-cases.json", import.meta.url))) as AggCaseFile;
@@ -133,4 +133,22 @@ Deno.test("flakyCases: baseline split across runs (some right, some wrong) → l
     row("b", "question"), row("b", "question"), row("c", "add_event"), row("c", "question"), row("c", "add_event"), row("c", "add_event")];
   assertEquals(flakyCases(base, agg), [{ id: "a", base_right: 3, base_runs: 4, agg_right: 4, agg_runs: 4 }]);   // c 는 늘 틀림(흔들림 아님), b 는 기준선 4/4
   assertEquals(newlyWrong(base, agg), ["b"]);   // 흔들림 a·늘 틀림 c 는 비교에서 빠진다
+});
+
+Deno.test("rate judgment: cases split in either mode get extra runs; new_wrong = 0.17 wrong rate − baseline wrong rate ≥ 25%p over all runs", () => {
+  const row = (id: string, got: Intent): Row => ({ id, group: "g", expected: "question", got, mail_ok: null, read_ok: null, target_ok: null });
+  const rows = (id: string, wrong: number, n: number) => Array.from({ length: n }, (_, i) => row(id, i < wrong ? "add_event" : "question"));
+  // 4회: a 는 두 모드 다 늘 맞음(추가 실행 없음), b 는 0.17 에서 1/4 틀림, c 는 기준선 1/4 틀림, d 는 두 모드 다 늘 틀림
+  const base4 = [...rows("a", 0, 4), ...rows("b", 0, 4), ...rows("c", 1, 4), ...rows("d", 4, 4)];
+  const agg4 = [...rows("a", 0, 4), ...rows("b", 1, 4), ...rows("c", 0, 4), ...rows("d", 4, 4)];
+  assertEquals(unsettled(base4, agg4), ["b", "c", "d"]);
+  // 추가 8회 뒤(합 12회): b 0.17 4/12 − 기준선 0/12 = 33%p → 새로 틀림. c 0.17 2/12 − 기준선 3/12 < 0. d 12/12 − 12/12 = 0
+  const base = [...base4, ...rows("b", 0, 8), ...rows("c", 2, 8), ...rows("d", 8, 8)];
+  const agg = [...agg4, ...rows("b", 3, 8), ...rows("c", 2, 8), ...rows("d", 8, 8)];
+  const r = errorRates(base, agg, ["b", "c", "d"]);
+  assertEquals(r.map((x) => [x.id, x.base_wrong, x.base_runs, x.agg_wrong, x.agg_runs]), [["b", 0, 12, 4, 12], ["c", 3, 12, 2, 12], ["d", 12, 12, 12, 12]]);
+  assertEquals(newlyWrongByRate(r), ["b"]);
+  // 경계: 정확히 25%p 는 새로 틀림(3/12 − 0/12), 그 아래는 아님(2/12 − 0/12)
+  assertEquals(newlyWrongByRate([{ id: "x", base_wrong: 0, base_runs: 12, agg_wrong: 3, agg_runs: 12, diff: 0.25 }, { id: "y", base_wrong: 0, base_runs: 12, agg_wrong: 2,
+    agg_runs: 12, diff: 2 / 12 }]), ["x"]);
 });
