@@ -230,6 +230,12 @@ function edeps(o: { target?: EditTargetRead; intent?: string; edit?: EditRaw | n
       return o.apply ?? { status: "ok", proposal_id: "p2", action: "create_event", before: T_OK.status === "ok" ? T_OK.values : (null as never),
         after: { ...(T_OK as { values: EventValues }).values, ...(patch as Partial<EventValues>) } };
     },
+    saveRules: async () => { throw new Error("saveRules is not expected in chat-edit.test.ts"); },
+    ruleAdd: async () => { throw new Error("ruleAdd is not expected in chat-edit.test.ts"); },
+    ruleRemove: async () => { throw new Error("ruleRemove is not expected in chat-edit.test.ts"); },
+    ruleCandidates: async () => { throw new Error("ruleCandidates is not expected in chat-edit.test.ts"); },
+    ruleRestore: async () => { throw new Error("ruleRestore is not expected in chat-edit.test.ts"); },
+    aggregate: async () => { throw new Error("aggregate is not expected in chat-edit.test.ts"); },
   };
   return { d, seen };
 }

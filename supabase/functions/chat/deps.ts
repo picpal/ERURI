@@ -4,17 +4,22 @@ import { budgetDeps } from "../_shared/budget-deps.ts";
 import { decrypt } from "../_shared/crypto.ts";
 import { embedWithUsage, toPgVector } from "../_shared/embeddings.ts";
 import { openai } from "../_shared/openai.ts";
-import { ANSWER_SCHEMA, answerUserMessage, type ChatDeps, type Meta, type ProposalCard, type RawAnswer, relevantItems, type ScoredRow,
+import type { SaveRule } from "../_shared/save-rules.ts";
+import type { BucketCount } from "./aggregate.ts";
+import { type AggItem, ANSWER_SCHEMA, answerUserMessage, type ChatDeps, type Meta, type ProposalCard, type RawAnswer, relevantItems, type ScoredRow,
   type SearchResult, systemPrompt } from "./handler.ts";
 import { parseApplyRow, parseTargetRow } from "./edit.ts";
 import { extractFilters, type Filters, FILTER_MODEL } from "./filters.ts";
 import { queryEmbedder } from "./query-vector.ts";
+import type { Candidate } from "./save-rule.ts";
 
 // 모델 문서는 상위 12 청크. "보관함에서 보기" 후보는 같은 한 번의 검색의 융합 목록(의미 40 ∪ 키워드 40) 중 관련도 컷을 통과한 행(스펙 §9)
 export const DOC_CHUNKS = 12;
 export const CANDIDATE_CHUNKS = 80;
 // facts 문서 수(스펙 §9): 기본 받은 시각 역순 5, 일정 기간이 있으면 시작 순 8(모델 문서 상한 12 안 — 가까운 일정이 늦게 받았다고 빠지지 않게, Fable N2)
 export const FACTS_LIMIT = 5, FACTS_EVENT_LIMIT = 8;
+// aggregate_items 의 5초 statement_timeout(함수 속성)이 실행 중 문장을 끊는지는 미실측(U1) — 사용자 대기는 여기서 묶는다(K5)
+export const AGGREGATE_ABORT_MS = 6000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -95,5 +100,36 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
     // 0.16.0 고치기(스펙 §9 B 서버 1·5, 0033 — 0033 적용 전에는 edit_target 을 보내는 0.16.0 앱만 이 경로에 온다)
     editTarget: async (u, pid) => parseTargetRow(await rpc("chat_edit_target", { p_user: u, p_proposal: pid })),
     editApply: async (u, pid, patch, clear) => parseApplyRow(await rpc("chat_edit_proposal", { p_user: u, p_proposal: pid, p_patch: patch, p_clear: clear })),
+    // 0.17.0 저장 규칙·집계(0035 — 스펙 §9 "채팅 저장 규칙·집계 질문"). 규칙 값은 비교용 평문(§12 통제 1)
+    saveRules: async (u) => ((await rpc("save_rules_of", { p_user: u })) as SaveRule[]),
+    ruleAdd: async (u, kind, value) => ((await rpc("save_rule_add", { p_user: u, p_kind: kind, p_value: value })) as
+      { status: "added" | "duplicate" | "limit" | "bad_value"; rule_id: string | null }),
+    // 형식이 틀린 id 는 uuid 변환 오류(500) 대신 없는 규칙
+    ruleRemove: async (u, id) => (UUID.test(id) ? ((await rpc("save_rule_remove", { p_user: u, p_rule: id })) as "removed" | "not_found") : "not_found"),
+    async ruleCandidates(u): Promise<Candidate[]> {
+      const rows = (await rpc("save_rule_candidates", { p_user: u, p_limit: 500 })) as { item_id: string; source: string; app_name: string | null;
+        sender: string | null; title: string | null; content_enc: string }[];
+      const out: Candidate[] = [];
+      for (const r of rows) {
+        out.push({ item_id: r.item_id, source: r.source, app_name: r.app_name, sender: r.sender, title: r.title, text: await decrypt(u, r.content_enc) });
+      }
+      // 복호화한 항목 id 목록 감사(§7 "폐기분 함께 저장" — 건수만 앱으로, 본문은 서버 안에서만 비교)
+      if (out.length) await rpc("audit_read", { p_user: u, p_actor: "chat", p_target: await sha256Hex(out.map((c) => c.item_id).sort().join(",")) });
+      return out;
+    },
+    ruleRestore: async (u, ids) => ((await rpc("save_rule_restore", { p_user: u, p_items: ids })) as number),
+    async aggregate(u, c, bucketKey) {
+      // AbortSignal.timeout 대신 직접 타이머 — 끝나면 지운다(safe-post 와 같은 이유)
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), AGGREGATE_ABORT_MS);
+      try {
+        const { data, error } = await sb.rpc("aggregate_items", { p_user: u, p_keywords: c.keywords, p_sender: c.sender, p_sources: c.sources,
+          p_from: c.from, p_to: c.to, p_bucket: c.bucket, p_bucket_key: bucketKey }).abortSignal(ac.signal);
+        if (error) throw new Error("aggregate_items " + (ac.signal.aborted ? "timeout" : error.code));
+        return data as { total: number; buckets?: BucketCount[]; items?: AggItem[] };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
   };
 }

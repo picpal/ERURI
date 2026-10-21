@@ -3,6 +3,9 @@ import { isOpenAiError, llmUnavailable } from "../_shared/llm-errors.ts";
 import { ampmMarked, confirmedCodes, type EditApplied, type EditRaw, type EditResult, type EditTargetRead, type EventValues, parseEditTarget, revalidate } from "./edit.ts";
 import { type ActionIntent, ACTION_INTENTS, type ContextTurn, type EditMode, escTags, type FilterOutput, type Filters, formatContext, type Intent, type MailFields,
   type MailReadFields, type Schedule, scheduleOf } from "./filters.ts";
+import type { AggConditions, BucketCount } from "./aggregate.ts";
+import type { Candidate } from "./save-rule.ts";
+import type { RuleKind, SaveRule } from "../_shared/save-rules.ts";
 export type { ActionIntent, ContextTurn, Filters, Intent, MailFields, MailReadFields, Schedule } from "./filters.ts";
 
 // 채팅(스펙 §9): 필터 추출 → facts SQL(구조화 조건이 있을 때) → 하이브리드 상위 12(기간 필터로 0건이면 기간 없이 1회 더) → gpt-6-sol 답변(예산 80% 이상이면 gpt-6-luna, §13)
@@ -17,6 +20,8 @@ export type ProposalCard = { id: string; item_id: string; action: string; status
 export type SearchResult = { docs: ChatHit[]; candidates: string[] };
 // hybrid_search 행의 원점수(0017). RRF score 는 순위만 반영해 관련도 컷에 못 쓴다
 export type ScoredRow = { item_id: string; sem_sim: number | null; kw_score: number | null };
+// aggregate_items 목록 모드 행(0035, 최신순 50)
+export type AggItem = { item_id: string; title: string | null; sender: string | null; source: string; app_name: string | null; occurred_at: string };
 export type AnswerInput = { question: string; today: string; documents: ChatHit[]; context?: ContextTurn[]; query?: string };
 export type ChatDeps = {
   authUser(token: string): Promise<string | null>;
@@ -39,6 +44,15 @@ export type ChatDeps = {
   editTarget(userId: string, proposalId: string): Promise<EditTargetRead>;
   /** B 서버 5: 새 버전(0033 chat_edit_proposal — 잠근 뒤 1의 검사를 다시) */
   editApply(userId: string, proposalId: string, patch: Partial<EventValues>, clear: string[]): Promise<EditApplied>;
+  /** 0.17.0 저장 규칙(0035 — 스펙 §7 "저장 규칙"·§9): 만든 순 목록 */
+  saveRules(userId: string): Promise<SaveRule[]>;
+  ruleAdd(userId: string, kind: RuleKind, value: string): Promise<{ status: "added" | "duplicate" | "limit" | "bad_value"; rule_id: string | null }>;
+  ruleRemove(userId: string, ruleId: string): Promise<"removed" | "not_found">;
+  /** 격리 중 게이트 폐기 후보를 복호화(최대 500) — 복호화한 id 가 있으면 감사 read 한 행 */
+  ruleCandidates(userId: string): Promise<Candidate[]>;
+  ruleRestore(userId: string, itemIds: string[]): Promise<number>;
+  /** 0.17.0 집계(0035 aggregate_items) — bucketKey null 이면 칸별 건수, 있으면 그 칸 목록. 6초에 끊는다(K5) */
+  aggregate(userId: string, c: AggConditions, bucketKey: string | null): Promise<{ total: number; buckets?: BucketCount[]; items?: AggItem[] }>;
 };
 export type ChatResult = RawAnswer & { forced_refusal: boolean; dropped_ids: number; hits: string[]; candidates: string[]; citations: Meta[];
   proposals: ProposalCard[]; model: string | null; schedule: Schedule | null; intent: Intent; mail: MailFields | null;

@@ -77,6 +77,12 @@ function deps(o: { facts?: ChatHit[]; hits?: ChatHit[]; searches?: ChatHit[][]; 
     mailRead: () => o.readOn ?? false,
     editTarget: async () => ({ status: "not_found" }),
     editApply: async () => { throw new Error("editApply is not expected in chat.test.ts"); },
+    saveRules: async () => { throw new Error("saveRules is not expected in chat.test.ts"); },
+    ruleAdd: async () => { throw new Error("ruleAdd is not expected in chat.test.ts"); },
+    ruleRemove: async () => { throw new Error("ruleRemove is not expected in chat.test.ts"); },
+    ruleCandidates: async () => { throw new Error("ruleCandidates is not expected in chat.test.ts"); },
+    ruleRestore: async () => { throw new Error("ruleRestore is not expected in chat.test.ts"); },
+    aggregate: async () => { throw new Error("aggregate is not expected in chat.test.ts"); },
   };
   return { d, seen };
 }
