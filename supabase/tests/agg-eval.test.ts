@@ -91,6 +91,10 @@ Deno.test("summarizeAgg: thresholds per run; one run under → pass false", () =
   // 출처 구별 7사례 중 하나라도 틀리면 실패(sources 전체로는 15/16 이어도)
   const splitId = perfect.find((r) => r.split)!.id;
   assertEquals(summarizeAgg([set(perfect, splitId, { sources_ok: false })]).pass, false);
+  // 의도를 놓친 출처 사례(→ question)는 의도 일치에서 센다 — 출처 구별 분모는 aggregate 로 간 사례만(2026-10-21 메인 판정, Ruling A10-src)
+  const missed = summarizeAgg([set(perfect, splitId, { got: "question", keywords_ok: false, sender_ok: false, sources_ok: false, from_ok: false, to_ok: false,
+    bucket_ok: false })]).per_run[0];
+  assertEquals([missed.intent, missed.split_cases, missed.split, missed.pass], [43, 6, 6, true]);
   // 저장 규칙 9/10 통과, 8/10 실패
   const ruleIds = perfect.filter((r) => r.rule_ok !== null).map((r) => r.id);
   assertEquals(summarizeAgg([set(perfect, ruleIds[0], { rule_ok: false })]).pass, true);

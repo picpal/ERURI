@@ -222,6 +222,7 @@ export const AGG_RULE = [
     "'~에서 온'과 낱말이 함께 있어도 그 메시지들의 개수·분포를 물으면 aggregate 이다(예: 합성마트에서 온 배송 문자 날짜별로 몇 건이야? → keywords 배송, sender 합성마트).",
   "aggregate.sources 는 집계 전용이다: 문자 = MESSAGES 만, 알림 = NOTIFICATION, 문자랑 알림처럼 둘 다 말하면 둘 다, 메일 = GMAIL, 공유한 것 = SHARE, 말하지 않으면 빈 배열이다. 필터 칸 sources 의 '문자 = MESSAGES와 NOTIFICATION' 규칙은 aggregate.sources 에 쓰지 않는다.",
   "aggregate.from·to 는 메시지를 받은 기간이고 필터 칸 date_from·event_from 과 따로 채운다.",
+  "aggregate.sender·save_rule 의 '~에서 온·~가 보낸' 규칙은 그 두 칸에만 쓴다. mail·mail_read 의 sender 는 이 규칙과 상관없이 지금처럼 메일 발신자 이름(상호·서비스 이름 포함)을 채운다.",
   "save_rule 은 intent 가 save_rule_add·save_rule_remove 일 때만 채우고 그 밖에는(save_rule_list 포함) null 이다. '~에서 온·~가 보낸' 메시지면 kind 는 sender, 그 밖은 keyword 이고, value 에 출처 말은 넣지 않는다.",
 ].join("\n");
 // 직전 집계 이어받기(스펙 §9 "대화 기록" — Codex 0.17.0 리뷰 #6). 블록이 있을 때만 system 끝에 붙는다

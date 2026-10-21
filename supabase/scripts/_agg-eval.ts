@@ -147,11 +147,13 @@ export function judgeAgg(c: AggCase, got: AggGot, today: string = AGG_TODAY): Ag
 }
 
 // 합격선(스펙 §15, 각 실행): 의도 ≥ 42/44 · 다른 의도 15(단발 14 + seq_c) 중 aggregate·save_rule_* 0 · add↔remove 혼동 0 ·
-// aggregate 16 의 bucket ≥ 15 · 키워드 ≥ 14 · sender·sources·from·to 각 ≥ 14 · 출처 구별 7/7 · 저장 규칙 10 의 종류·값 ≥ 9. pass = 모든 실행
+// aggregate 16 의 bucket ≥ 15 · 키워드 ≥ 14 · sender·sources·from·to 각 ≥ 14 · 출처 구별 7/7(aggregate 로 간 것 기준) · 저장 규칙 10 의 종류·값 ≥ 9. pass = 모든 실행
 export function summarizeAgg(runs: AggRow[][]) {
   const per_run = runs.map((rows, i) => {
     const n = (f: (r: AggRow) => boolean) => rows.filter(f).length;
-    const aggRows = rows.filter((r) => r.expected === "aggregate"), splitRows = rows.filter((r) => r.split), ruleRows = rows.filter((r) => r.rule_ok !== null);
+    // 출처 구별 분모 = aggregate 로 간 출처 사례만(의도 놓침은 의도 일치에서 센다 — 스펙 §15, 2026-10-21 메인 판정)
+    const aggRows = rows.filter((r) => r.expected === "aggregate"), ruleRows = rows.filter((r) => r.rule_ok !== null);
+    const splitRows = rows.filter((r) => r.split && r.got === "aggregate");
     const ok = (k: "keywords_ok" | "sender_ok" | "sources_ok" | "from_ok" | "to_ok" | "bucket_ok") => aggRows.filter((r) => r[k] === true).length;
     const s = { run: i + 1, cases: rows.length, intent: n((r) => r.got === r.expected),
       other_misfire: n((r) => !AGG_INTENTS.includes(r.expected) && AGG_INTENTS.includes(r.got)),
@@ -162,7 +164,7 @@ export function summarizeAgg(runs: AggRow[][]) {
       model_misfire: n((r) => !AGG_INTENTS.includes(r.expected) && AGG_INTENTS.includes(r.model)),
       wrong: rows.filter((r) => r.got !== r.expected).map((r) => r.id) };
     const pass = s.intent >= 42 && s.other_misfire === 0 && s.add_remove_confusion === 0 && s.bucket >= 15 && s.keywords >= 14 &&
-      [s.sender, s.sources, s.from, s.to].every((x) => x >= 14) && s.split_cases === 7 && s.split === 7 && s.rule >= 9;
+      [s.sender, s.sources, s.from, s.to].every((x) => x >= 14) && s.split === s.split_cases && s.rule >= 9;
     return { ...s, pass };
   });
   return { pass: per_run.length > 0 && per_run.every((r) => r.pass), runs: per_run.length, per_run };
