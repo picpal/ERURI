@@ -92,7 +92,7 @@ public enum LinkCaptureText {
       if kinds.contains("task") { return "할 일을 찾았어요 — 알림에서 확인하세요." }
       return noSchedule
     }
-    if status == "discarded:server:empty" { return noSchedule }
+    if status == "discarded:server:empty" || status == "kept" { return noSchedule }          // kept = 저장 규칙 일치·일정 없음(0.17.0 — SHARE 는 규칙을 타지 않지만 끝 상태, I1)
     if let g = gateLabel, status == "discarded:server:\(g)" { return "분류에서 걸러졌어요 — 보관함 › 최근 폐기에서 복구할 수 있어요." }   // 게이트 7일 격리
     if status.hasPrefix("discarded:") { return discarded }                                                                      // 서버 규칙(게이트 전)
     return nil

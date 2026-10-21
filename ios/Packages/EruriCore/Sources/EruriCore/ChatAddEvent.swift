@@ -70,7 +70,7 @@ public enum ChatAddEvent {
       if n > 0 { return .events(n) }
       return .text(kinds.contains("task") ? ChatAddEventText.taskOnly : none)
     }
-    if status == "discarded:server:empty" { return .text(none) }
+    if status == "discarded:server:empty" || status == "kept" { return .text(none) }       // kept = 저장 규칙 일치·일정 없음(0.17.0, 최종 리뷰 I1)
     if status.hasPrefix("discarded:") { return .text(ChatAddEventText.discarded) }      // SHARE 는 게이트를 건너뛰므로 격리는 없다(F6)
     return nil
   }

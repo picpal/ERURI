@@ -87,6 +87,9 @@ final class ChatAddEventTests: XCTestCase {
     XCTAssertEqual(ChatAddEvent.result(status: "extracted", kinds: ["purchase"], withContext: true),
                    .text("일정을 찾지 못했어요. 날짜와 시간을 함께 써 주세요.\n앞 답의 일정은 그 답 카드의 [캘린더에 추가]로 넣을 수 있어요"))
     XCTAssertEqual(ChatAddEvent.result(status: "discarded:server:empty", kinds: [], withContext: false), .text(ChatAddEventText.noEvent))
+    // 0.17.0 kept(저장 규칙 일치·일정 없음)도 끝 상태 — 60초 "처리 중" 뒤 오지 않는 알림 안내를 하지 않는다(최종 리뷰 I1)
+    XCTAssertEqual(ChatAddEvent.result(status: "kept", kinds: [], withContext: false), .text(ChatAddEventText.noEvent))
+    XCTAssertEqual(ChatAddEvent.result(status: "kept", kinds: [], withContext: true), .text("\(ChatAddEventText.noEvent)\n\(ChatAddEventText.contextHint)"))
     XCTAssertEqual(ChatAddEvent.result(status: "discarded:server:otp", kinds: [], withContext: true), .text(ChatAddEventText.discarded))
     XCTAssertNil(ChatAddEvent.result(status: "processing", kinds: [], withContext: false))
   }

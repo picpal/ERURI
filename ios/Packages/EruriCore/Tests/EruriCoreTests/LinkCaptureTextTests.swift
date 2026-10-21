@@ -63,6 +63,9 @@ final class LinkCaptureTextTests: XCTestCase {
     XCTAssertEqual(LinkCaptureText.chatResult(status: "extracted", gateLabel: nil, kinds: ["purchase"]), "이 페이지에서 일정을 찾지 못했어요.")
     XCTAssertEqual(LinkCaptureText.chatResult(status: "discarded:server:empty", gateLabel: "notice", kinds: []), "이 페이지에서 일정을 찾지 못했어요.")
     XCTAssertEqual(LinkCaptureText.chatResult(status: "discarded:server:empty", gateLabel: nil, kinds: [], subject: .image), "이 사진에서 일정을 찾지 못했어요.")
+    // 0.17.0 kept — 링크·사진은 SHARE 라 규칙을 타지 않지만 끝 상태로 본다(최종 리뷰 I1, RecentDiscards K17 과 같은 판정)
+    XCTAssertEqual(LinkCaptureText.chatResult(status: "kept", gateLabel: "rule", kinds: []), "이 페이지에서 일정을 찾지 못했어요.")
+    XCTAssertEqual(LinkCaptureText.chatResult(status: "kept", gateLabel: "rule", kinds: [], subject: .image), "이 사진에서 일정을 찾지 못했어요.")
     XCTAssertEqual(LinkCaptureText.chatResult(status: "discarded:server:promo", gateLabel: "promo", kinds: []),
                    "분류에서 걸러졌어요 — 보관함 › 최근 폐기에서 복구할 수 있어요.")
     XCTAssertEqual(LinkCaptureText.chatResult(status: "discarded:server:otp", gateLabel: nil, kinds: []), "보안 숫자로 보이는 내용이 있어 저장하지 않았어요.")
