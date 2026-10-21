@@ -1,8 +1,8 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import { AGG_SOURCES, type AggConditions } from "../functions/chat/aggregate.ts";
 import type { EventValues } from "../functions/chat/edit.ts";
-import { AGG_CONTEXT_RULE, AGG_EDIT_INTENTS, AGG_INTENT_VALUES, AGG_INTENTS, AGG_RULE, AGGREGATE_SCHEMA, asIntent, CONTEXT_FILTER_RULE, EDIT_RULE,
-  FILTER_SYSTEM, filterRequest, INTENT_CONTEXT_FILTER_SCHEMA, INTENT_EDIT_CONTEXT_FILTER_SCHEMA, INTENT_EDIT_FILTER_SCHEMA, INTENT_FILTER_SCHEMA, INTENT_RULE,
+import { ACTION_INTENTS, AGG_CONTEXT_RULE, AGG_EDIT_INTENTS, AGG_INTENT_VALUES, AGG_INTENTS, AGG_RULE, AGGREGATE_SCHEMA, aggModeFor, asIntent, CONTEXT_FILTER_RULE, EDIT_RULE,
+  FILTER_SYSTEM, filterRequest, hasAggCue, INTENT_CONTEXT_FILTER_SCHEMA, INTENT_EDIT_CONTEXT_FILTER_SCHEMA, INTENT_EDIT_FILTER_SCHEMA, INTENT_FILTER_SCHEMA, INTENT_RULE,
   parseFilterOutput, previousAggregateBlock, registeredBlock, SAVE_RULE_SCHEMA } from "../functions/chat/filters.ts";
 import { parseIntents } from "../functions/chat/handler.ts";
 
@@ -142,4 +142,56 @@ Deno.test("asIntent: aggregate/save_rule_* only with withAgg", () => {
   // 앱 intents 토큰으로도 넷을 안다(스펙 §16 작성자 판정 ① — 라우팅은 A9)
   assertEquals(parseIntents(["add_event", "aggregate", "save_rule_add", "save_rule_list", "save_rule_remove"]),
     new Set(["add_event", "aggregate", "save_rule_add", "save_rule_list", "save_rule_remove"]));
+});
+
+// 단서 게이트(스펙 §9 "앱 → 서버", Ruling A10-cue 2026-10-22): 0.17.0 intents 라도 지금 글에 집계·규칙 단서가 있거나 aggregate_context 가 있을 때만 0.17.0 요청
+const APP_0170 = new Set<string>(ACTION_INTENTS);
+const OLD_0160 = new Set<string>(["add_event", "mail_action", "mail_summary", "edit_event"]);
+type EvalCase = { id: string; text: string; intent: string; previous?: AggConditions };
+const evalCases = (f: string) => (JSON.parse(Deno.readTextFileSync(new URL(`../eval/${f}`, import.meta.url))) as { cases: EvalCase[] }).cases;
+const NEW_FOUR: readonly string[] = AGG_INTENT_VALUES;
+
+Deno.test("hasAggCue: every AGG-eval aggregate/save_rule case reaches the 0.17.0 schema (single turns by cue, follow-ups by aggregate_context)", () => {
+  const cases = evalCases("agg-cases.json");
+  const positive = cases.filter((c) => NEW_FOUR.includes(c.intent));
+  assertEquals(positive.length, 29);                                       // 단발 집계 14·규칙 13 + 연속 턴 집계 2
+  for (const c of positive.filter((c) => !c.previous)) assert(hasAggCue(c.text), c.id);
+  for (const c of positive) assert(aggModeFor(c.text, APP_0170, c.previous ?? null) !== null, c.id);
+  // 다른 의도 14 중 단서가 있는 것(0.17.0 요청 — 모델이 question 으로 골라야 함): 키워드 없음·종류 낱말·부정·인용·기능 질문. 나머지는 0.16.x 요청이라 새 의도가 나올 수 없다
+  assertEquals(cases.filter((c) => !NEW_FOUR.includes(c.intent) && !c.previous && hasAggCue(c.text)).map((c) => c.id), ["q01", "q02", "q03", "q07", "q08", "q09"]);
+});
+
+Deno.test("hasAggCue: INTENT-eval 119 — only q02 (광고 메일 몇 통) carries a cue; a12·s06·s07·s25·s28 stay 0.16.x", () => {
+  const cases = evalCases("intent-cases.json");
+  assertEquals(cases.length, 119);
+  assertEquals(cases.filter((c) => hasAggCue(c.text)).map((c) => c.id), ["q02"]);
+  // 단서 없는 말 경계: 한 건의 시각·일정 요일·몇 시·저장 여부 확인은 단서가 아니다
+  for (const s of ["합성PAY 점검 문자 언제 왔어?", "10월 24일 토요일 결혼식 넣어줘", "합성헬스 PT 예약 몇 시였지?", "합성PAY 문자 저장돼 있어?", "몇 번째 메일이야?"]) {
+    assert(!hasAggCue(s), s);
+  }
+  for (const s of ["합성PAY 몇 번 왔어?", "언제 자주 와?", "시간대별로 보여줘", "요일별로는?", "며칠에 많았어?", "얼마나 자주 와?", "합성PAY 문자 건수 알려줘",
+    "합성PAY 규칙 지워줘", "저장 안 해도 돼", "이 문자 남겨 줘"]) assert(hasAggCue(s), s);
+});
+
+Deno.test("aggModeFor: null without the new four in intents; with them only on a cue or a previous aggregate", () => {
+  assertEquals([aggModeFor("합성PAY 몇 건", null, null), aggModeFor("합성PAY 몇 건", OLD_0160, prev)], [null, null]);
+  assertEquals([aggModeFor("요약해줘", APP_0170, null), aggModeFor("합성 회의 메모 등록해줘", APP_0170, null)], [null, null]);
+  assertEquals(aggModeFor("합성PAY 몇 건", APP_0170, null), { previous: null });
+  assertEquals(aggModeFor("그럼 지난달은?", APP_0170, prev), { previous: prev });
+  assertEquals(aggModeFor("저장 규칙 보여줘", new Set(["save_rule_list"]), null), { previous: null });
+});
+
+Deno.test("no cue + 0.17.0 intents → byte-identical to the 0.16.x request (same fixed hashes)", async () => {
+  const req = (ctx: typeof ctx1 | [], edit: { registered: EventValues | null } | null) =>
+    filterRequest("q", "2026-10-04", ctx, true, edit, aggModeFor("q", APP_0170, null));
+  assertEquals(await sha(req([], null)), "cfd4768ad2dd6241c0869296ba1d1176e7dbc7f09a3fbeeb6ce8e42b51af2f82");
+  assertEquals(await sha(req(ctx1, null)), "c7f84e8cb37a07aa37eaa2a0a4e612f2014f4964db39182d020c9210803b2bdc");
+  assertEquals(await sha(req([], { registered: reg })), "24931659e5d488ff73d6bb37819783b70a30712ec2663c96cb77302e62d9d9b8");
+  assertEquals(await sha(req(ctx1, { registered: null })), "88c98dfdaf1ecb62cd0af0f5649c6674de34a42a9b538a4ff16f1ab406b8083f");
+  for (const t of ["합성 회의 메모 등록해줘", "오늘 온 메일 뭐라고 왔는지 보여줘", "요약해줘"]) {
+    assertEquals(await sha(filterRequest(t, "2026-10-21", [], true, null, aggModeFor(t, APP_0170, null))), await sha(filterRequest(t, "2026-10-21", [], true)), t);
+  }
+  // 단서가 있으면 0.17.0 요청
+  assertEquals((filterRequest("합성PAY 몇 건", "2026-10-21", [], true, null, aggModeFor("합성PAY 몇 건", APP_0170, null)) as unknown as Req).text.format.name,
+    "search_filters_intent_agg");
 });

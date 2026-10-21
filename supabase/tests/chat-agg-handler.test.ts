@@ -80,11 +80,17 @@ Deno.test("intents without the new four: filters called with agg null (0.16.x re
   }
 });
 
-Deno.test("intents with aggregate: filters called with { previous: null }; aggregate_context read only when intents has aggregate; bad shape → 400 bad_context", async () => {
-  for (const intents of [AGG, ["save_rule_add"]]) {
+Deno.test("intents with aggregate: filters called with { previous: null } on a cue; aggregate_context read only when intents has aggregate; bad shape → 400 bad_context", async () => {
+  for (const [intents, question] of [[AGG, "합성PAY 몇 건"], [["save_rule_add"], "앞으로 합성PAY 문자는 저장해"]] as const) {
     const { d, seen } = adeps({ intent: "question" });
-    await call(d, { question: "합성 질문", intents });
+    await call(d, { question, intents });
     assertEquals(seen.agg, [{ previous: null }], intents.join(","));
+  }
+  // 단서 게이트(Ruling A10-cue): 새 의도가 있어도 단서·aggregate_context 가 없으면 0.16.x 요청(agg null)
+  for (const question of ["합성 질문", "요약해줘", "합성 회의 메모 등록해줘"]) {
+    const { d, seen } = adeps({ intent: "question" });
+    await call(d, { question, intents: AGG });
+    assertEquals(seen.agg, [null], question);
   }
   const { d, seen } = adeps({ intent: "question" });
   await call(d, { question: "날짜별로는?", intents: AGG, aggregate_context: CTX });
@@ -102,7 +108,7 @@ Deno.test("intents with aggregate: filters called with { previous: null }; aggre
 Deno.test("aggregate_context is ignored (even malformed, no 400) when intents lacks aggregate", async () => {
   for (const [intents, agg] of [[["save_rule_add", "add_event"], { previous: null }], [OLD, null]] as const) {
     const { d, seen } = adeps({ intent: "question" });
-    const r = await call(d, { question: "합성 질문", intents, aggregate_context: "garbage" });
+    const r = await call(d, { question: "합성PAY 몇 건", intents, aggregate_context: "garbage" });
     assertEquals([r.status, seen.agg], [200, [agg]]);
   }
 });
@@ -227,7 +233,7 @@ Deno.test("save_rule_add duplicate → matched counted from candidates; ok/limit
 Deno.test("save_rule_* without the intent in intents → question", async () => {
   for (const [intent, intents] of [["save_rule_add", [...OLD, "aggregate"]], ["save_rule_list", OLD], ["aggregate", [...OLD, "save_rule_add"]]] as const) {
     const { d, seen } = adeps({ intent, saveRule: { kind: "keyword", value: "합성PAY" }, aggregate: raw() });
-    const { j } = await call(d, { question: "합성PAY", intents });
+    const { j } = await call(d, { question: "앞으로 합성PAY 문자는 저장해", intents });
     assertEquals([j.intent, j.save_rule, j.aggregate, seen.saveRules, seen.aggregate.length, seen.search], ["question", null, null, 0, 0, 1], intent);
   }
 });
@@ -279,11 +285,11 @@ Deno.test("/chat/rule: 401 without JWT, 400 bad_json, routes to ruleButton", asy
 
 Deno.test("logs: intent, context count, inherited, status, total, bucket, clamped, defaulted / op, status, rules, matched — no keyword, sender, value or title strings", async () => {
   const a = adeps({ intent: "aggregate", aggregate: raw({ sender: "합성은행", bucket: "hour" }), rpc: { total: 5, buckets: [{ key: "14", count: 5 }] } });
-  const one = await call(a.d, { question: "합성은행 합성PAY 몇 시", intents: AGG, context: [{ question: "합성 앞 질문", answer: "합성 앞 답" }] });
+  const one = await call(a.d, { question: "합성은행 합성PAY 몇 시에 많았어", intents: AGG, context: [{ question: "합성 앞 질문", answer: "합성 앞 답" }] });
   assertEquals(one.lines.map((l) => JSON.parse(l)), [{ chat: "intent", intent: "aggregate", context: 1, inherited: false, status: "ok", total: 5, bucket: "hour",
     clamped: false, defaulted: true }]);
   const b = adeps({ intent: "aggregate", aggregate: raw({ keywords: ["A", "합성PAY"] }) });
-  assertEquals(JSON.parse((await call(b.d, { question: "합성PAY", intents: AGG })).lines[0]),
+  assertEquals(JSON.parse((await call(b.d, { question: "합성PAY 몇 건", intents: AGG })).lines[0]),
     { chat: "intent", intent: "aggregate", context: 0, inherited: false, status: "bad_condition", total: 0, bucket: null, clamped: false, defaulted: false });
   const s = adeps({ intent: "save_rule_add", saveRule: { kind: "sender", value: "합성PAY" }, rules: [rule("r-3", "sender", "합성PAY")],
     cands: [cand("i-1", { sender: "합성PAY" })] });
@@ -296,7 +302,7 @@ Deno.test("usage: aggregate and save_rule intents settle only the filter element
   for (const o of [{ intent: "aggregate", aggregate: raw(), rpc: { total: 0, buckets: [] } }, { intent: "save_rule_add", saveRule: { kind: "keyword", value: "합성PAY" }, rules: [R1] },
     { intent: "save_rule_list" }] as Opts[]) {
     const { d, seen } = adeps(o);
-    await call(d, { question: "합성", intents: AGG });
+    await call(d, { question: "합성PAY 몇 건", intents: AGG });
     assertEquals(seen.lines, [["chat"]], o.intent);
   }
 });

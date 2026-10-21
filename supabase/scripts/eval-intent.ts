@@ -3,7 +3,7 @@
 // --mode 0.16(기본, 새 의도 없음 — 0.16.x 요청 바이트 동일) · 0.17(0.17.0 intents — aggregate·save_rule_* 결과는 앱 intents 에 있으므로 그대로 오답) ·
 // both(0.17.0 회귀, K13: 사례마다 0.16 → 0.17 을 번갈아 같은 세션 기준선을 만들고 갈린 사례만 각 8회 더 돌려 오답률 차로 new_wrong 을 낸다 — 칸 판정(mail·read)은 늘 켠다. 게이트는 --runs 4)
 // 사용: deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/eval-intent.ts --runs 3 [--mail-judged] [--read-judged] [--mode both]
-import { extractFilters } from "../functions/chat/filters.ts";
+import { ACTION_INTENTS, aggModeFor, extractFilters } from "../functions/chat/filters.ts";
 import { parseEvalMode } from "./_agg-eval.ts";
 import { type Case, type CaseFile, errorRates, gateCases, judge, newlyWrongByRate, parseRuns, RATE_EXTRA_RUNS, type Row, summarize, unsettled, validateCases } from "./_intent-eval.ts";
 
@@ -17,8 +17,10 @@ if (mode === null) { console.log(JSON.stringify({ error: "mode", want: "--mode 0
 const mailJudged = mode === "both" || Deno.args.includes("--mail-judged");
 const readJudged = mode === "both" || Deno.args.includes("--read-judged");
 
+// 0.17 모드 = 0.17.0 앱 intents(새 의도 넷 포함) — 0.17.0 스키마는 handler 와 같은 단서 게이트(aggModeFor, 직전 집계 없음): 단서 없는 글은 0.16.x 요청
+const APP_0170 = new Set<string>(ACTION_INTENTS);
 async function one(c: Case, agg: boolean): Promise<Row> {
-  const r = agg ? await extractFilters(c.text, file.today, c.context ?? [], true, undefined, null, { previous: null })
+  const r = agg ? await extractFilters(c.text, file.today, c.context ?? [], true, undefined, null, aggModeFor(c.text, APP_0170, null))
     : await extractFilters(c.text, file.today, c.context ?? [], true);
   return judge(c, { intent: r.intent ?? "question", mail: r.mail ?? null, mail_read: r.mail_read ?? null });
 }

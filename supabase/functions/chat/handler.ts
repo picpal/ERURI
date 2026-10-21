@@ -1,7 +1,7 @@
 import { type Bill, type BudgetDeps, type BudgetLevel, costKrw, Deferred, guarded } from "../_shared/budget.ts";
 import { isOpenAiError, llmUnavailable } from "../_shared/llm-errors.ts";
 import { ampmMarked, confirmedCodes, type EditApplied, type EditRaw, type EditResult, type EditTargetRead, type EventValues, parseEditTarget, revalidate } from "./edit.ts";
-import { type ActionIntent, ACTION_INTENTS, AGG_INTENT_VALUES, type AggMode, type ContextTurn, type EditMode, escTags, type FilterOutput, type Filters, formatContext,
+import { type ActionIntent, ACTION_INTENTS, type AggMode, aggModeFor, type ContextTurn, type EditMode, escTags, type FilterOutput, type Filters, formatContext,
   type Intent, type MailFields, type MailReadFields, type Schedule, scheduleOf } from "./filters.ts";
 import { AGG_TEXT, type AggConditions, type AggRaw, type AggregateResult, BAD_CONDITION, bucketLabel, type BucketCount, failedAggregate, okAggregate, parseAggregateContext,
   revalidateAggregate, revalidateListRequest } from "./aggregate.ts";
@@ -260,8 +260,8 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps, cont
     // B 서버 1: edit_target 이 있으면 대상부터 — ok 면 필터에 <registered> 블록, 아니면 블록 없이 의도만(그 상태는 edit_event 일 때만 응답)
     const target = editTarget ? await deps.editTarget(userId, editTarget) : null;
     const edit: EditMode | null = target ? { registered: target.status === "ok" ? target.values : null } : null;
-    // 0.17.0 필터는 새 의도 넷 중 하나라도 앱 목록에 있을 때만(아니면 0.16.x 와 바이트 동일). previous = 재검증된 aggregate_context
-    const agg: AggMode | null = allowed && AGG_INTENT_VALUES.some((v) => allowed.has(v)) ? { previous: aggCtx } : null;
+    // 0.17.0 필터는 새 의도 넷 중 하나라도 앱 목록에 있고 지금 글에 집계·규칙 단서가 있거나 aggregate_context 가 있을 때만(아니면 0.16.x 와 바이트 동일, Ruling A10-cue)
+    const agg: AggMode | null = aggModeFor(question, allowed, aggCtx);
     const { filters, query, intent: raw, mail, mail_read, edit: rawEdit, aggregate: rawAgg, save_rule: rawRule } =
       await deps.filters(question, today, context, allowed !== null, bill, edit, agg);
     const intent = allowed ? resolveIntent(raw ?? "question", allowed, deps.mailActions(), deps.mailRead(), target !== null) : "question";

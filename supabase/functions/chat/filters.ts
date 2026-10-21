@@ -236,6 +236,20 @@ export function previousAggregateBlock(c: AggConditions): string {
 }
 // agg = 0.17.0 요청(intents 에 새 의도 넷 중 하나라도). previous = 재검증된 aggregate_context(없으면 null — 블록·지시 없음)
 export type AggMode = { previous: AggConditions | null };
+// 집계·규칙 단서(스펙 §9 "앱 → 서버", 2026-10-22 메인 판정 Ruling A10-cue): 0.17.0 스키마를 늘 실으면 새 의도 넷이 기존 행동 의도 판별을 흔든다(a12·s06).
+// 지금 글에만 본다(맥락 글 아님). 단서가 없어 0.16.x 요청이 된 집계 질문은 question 흐름이다(AGG-eval 이 잰다)
+const AGG_CUES = [
+  /몇\s*(?:건|통|번(?!\s*째)|개|회|차례)|건수|횟수|개수/,                                  // 개수
+  /(?:언제|몇\s*시|며칠|어느\s*날|무슨\s*날)[^?!.]{0,12}(?:많|자주)|얼마나\s*(?:자주|많이)/,   // 분포: 언제·몇 시…많·자주
+  /시간대|날짜별|일별|요일별|(?:무슨|어느|몇)\s*요일|며칠에|(?:제일|가장)\s*많이?\s*(?:왔|와|온|오|들어)/,
+  /저장\s*해|저장하지\s*마|저장\s*안\s*해|남겨|저장\s*규칙|규칙(?:은|을|도|좀)?\s*(?:보여|빼|지워|삭제|없애|목록|뭐)/,   // 규칙
+];
+export const hasAggCue = (text: string): boolean => AGG_CUES.some((re) => re.test(text));
+// 0.17.0 요청 여부: intents 에 새 의도 넷 중 하나라도 있고, 지금 글에 단서가 있거나 유효한 aggregate_context(previous)가 있을 때만. 아니면 null(0.16.x 와 바이트 동일)
+export function aggModeFor(question: string, intents: ReadonlySet<string> | null, previous: AggConditions | null): AggMode | null {
+  if (!intents || !AGG_INTENT_VALUES.some((v) => intents.has(v))) return null;
+  return previous !== null || hasAggCue(question) ? { previous } : null;
+}
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 // 달력에 있는 YYYY-MM-DD 만. 2026-02-30 은 Postgres timestamptz 변환 오류(500)가 되므로 버린다
