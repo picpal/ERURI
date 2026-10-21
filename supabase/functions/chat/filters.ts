@@ -1,5 +1,6 @@
 import { responseUsage, type TokenUsage } from "../_shared/budget.ts";
 import { openai } from "../_shared/openai.ts";
+import { AGG_SOURCES, type AggConditions, type AggRaw } from "./aggregate.ts";
 import type { EditRaw, EventValues } from "./edit.ts";
 
 // 질문 → 검색 필터(스펙 §9 "gpt-6-luna가 필터 추출"). strict json_schema, store:false, effort none. 질문 본문은 로그에 남기지 않는다
@@ -50,11 +51,15 @@ export const CONTEXT_FILTER_SCHEMA = {
 export const INTENTS = ["question", "add_event", "mail_action", "mail_summary"] as const;          // 0.15.0 enum(그대로 — 바이트 동일)
 // 방금 등록한 일정 고치기(스펙 §9 "채팅 일정 개선" B, 0.16.0): edit_target 이 유효하고 intents 에 edit_event 가 있을 때만 enum 이 다섯 값
 export const EDIT_INTENTS = [...INTENTS, "edit_event"] as const;
-export type Intent = typeof EDIT_INTENTS[number];
+// 저장 규칙·집계 질문(스펙 §9 "채팅 저장 규칙·집계 질문", 0.17.0): intents 에 이 넷 중 하나라도 있을 때만 enum 이 여덟 값(고치기면 아홉)
+export const AGG_INTENT_VALUES = ["aggregate", "save_rule_add", "save_rule_list", "save_rule_remove"] as const;
+export const AGG_INTENTS = [...INTENTS, ...AGG_INTENT_VALUES] as const;
+export const AGG_EDIT_INTENTS = [...EDIT_INTENTS, ...AGG_INTENT_VALUES] as const;
+export type Intent = typeof AGG_EDIT_INTENTS[number];
 export type ActionIntent = Exclude<Intent, "question">;
-export const ACTION_INTENTS: readonly ActionIntent[] = ["add_event", "mail_action", "mail_summary", "edit_event"];
-export const asIntent = (v: unknown, withEdit = false): Intent =>
-  (((withEdit ? EDIT_INTENTS : INTENTS) as readonly unknown[]).includes(v) ? v as Intent : "question");
+export const ACTION_INTENTS: readonly ActionIntent[] = ["add_event", "mail_action", "mail_summary", "edit_event", ...AGG_INTENT_VALUES];
+export const asIntent = (v: unknown, withEdit = false, withAgg = false): Intent =>
+  (((withAgg ? (withEdit ? AGG_EDIT_INTENTS : AGG_INTENTS) : (withEdit ? EDIT_INTENTS : INTENTS)) as readonly unknown[]).includes(v) ? v as Intent : "question");
 // 메일 정리 칸(스펙 §7 "메일 정리", 0.14.0). chat 은 검사·정제하지 않고 모델 출력 그대로 돌려준다 — 검사·검색어 조립은 mail-action 한 곳
 export type MailFields = { action: "trash" | "read"; sender: string | null; subject_words: string[]; received_from: string | null;
   received_to: string | null; promotions: boolean; unread_only: boolean };
@@ -160,6 +165,70 @@ export function registeredBlock(v: EventValues): string {
   return `<registered>\n제목: ${f(v.title)}\n시작: ${f(v.start)}\n끝: ${f(v.end)}\n장소: ${f(v.location)}\n</registered>`;
 }
 
+// ── 0.17.0 저장 규칙·집계(스펙 §9 "채팅 저장 규칙·집계 질문"). 위 0.16 스키마·INTENT_RULE·EDIT_RULE 은 건드리지 않는다(새 의도가 없으면 바이트 동일) ──
+// 집계 칸(모델 출력). 재검증 ①~⑥·이어받기는 aggregate.ts(revalidateAggregate) 한 곳 — 여기는 모양과 지시만
+export const AGGREGATE_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["keywords", "sender", "sources", "from", "to", "bucket"],
+  properties: {
+    keywords: { type: "array", items: { type: "string" },
+      description: "세려는 메시지를 가르는 본문 낱말 1~3개, 모두 들어 있어야 센다(예: 합성PAY 타임아웃 → 합성PAY, 타임아웃). 출처 말(문자·메일·알림·메시지)·기간 말·물음 말(언제·몇 건·많았어)은 넣지 않는다" },
+    sender: { type: ["string", "null"], description: "'~에서 온·~가 보낸'처럼 발신자를 말할 때만 그 이름. 아니면 null" },
+    sources: { type: "array", items: { type: "string", enum: AGG_SOURCES },
+      description: "집계 전용 출처: 문자 = MESSAGES만, 알림(카톡·앱 알림 포함) = NOTIFICATION, 문자랑 알림처럼 둘 다 말하면 둘 다, 메일 = GMAIL, 공유한 것 = SHARE. 출처를 말하지 않으면('메시지' 포함) 빈 배열" },
+    from: { type: ["string", "null"],
+      description: "메시지를 받은 기간의 시작 서울 날짜 YYYY-MM-DD(이번 주 → 그 주 월요일, 최근 3일 → 오늘 포함 3일의 첫날, 지난달 → 그달 1일, 올해 → 1월 1일). 기간을 말하지 않았으면 null" },
+    to: { type: ["string", "null"],
+      description: "받은 기간의 끝 서울 날짜 YYYY-MM-DD, 그날 포함(이번 주 → 그 주 일요일, 최근 3일 → 오늘, 지난달 → 그달 말일, 올해 → 오늘). 기간을 말하지 않았으면 null" },
+    bucket: { type: ["string", "null"], enum: ["hour", "day", "weekday", null],
+      description: "언제·몇 시·시간대 → hour, 날짜별·며칠·어느 날 → day, 무슨 요일·요일별 → weekday, 개수만 물으면 null" },
+  },
+} as const;
+// 저장 규칙 칸(save_rule_add·save_rule_remove 만). 값 검사·정규화는 save-rule.ts·0035 SQL
+export const SAVE_RULE_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["kind", "value"],
+  properties: {
+    kind: { type: "string", enum: ["keyword", "sender"],
+      description: "'~에서 온·~가 보낸' 메시지를 저장하라는(빼라는) 말 → sender, 그 밖(합성PAY 문자는 저장해, 타임아웃 들어간 건 저장해) → keyword" },
+    value: { type: "string", description: "규칙의 키워드 또는 발신자 이름 하나. 출처 말(문자·메일·알림·메시지)은 넣지 않는다" },
+  },
+} as const;
+const AGG_PROPS = {
+  aggregate: { anyOf: [AGGREGATE_SCHEMA, { type: "null" }], description: "intent 가 aggregate 일 때만 채운다. 아니면 null" },
+  save_rule: { anyOf: [SAVE_RULE_SCHEMA, { type: "null" }], description: "intent 가 save_rule_add·save_rule_remove 일 때만 채운다. 아니면(save_rule_list 포함) null" },
+} as const;
+const AGG_INTENT_DESCRIPTION = ". 본문 키워드가 있는 메시지의 개수·분포를 물으면 aggregate, 앞으로 올 메시지를 저장하라고 시키면 save_rule_add, " +
+  "저장 규칙을 보여 달라고 하면 save_rule_list, 저장 규칙을 빼라고 하면 save_rule_remove";
+// 0.16 스키마 하나에 intent enum·설명만 넓히고 aggregate·save_rule 을 더한다(다른 칸은 그대로)
+function withAggProps<S extends { required: readonly string[]; properties: { intent: { description: string } } }>(s: S, intents: readonly string[]) {
+  return { ...s, required: [...s.required, "aggregate", "save_rule"],
+    properties: { ...s.properties, intent: { type: "string", enum: intents, description: `${s.properties.intent.description}${AGG_INTENT_DESCRIPTION}` }, ...AGG_PROPS } };
+}
+export const INTENT_AGG_FILTER_SCHEMA = withAggProps(INTENT_FILTER_SCHEMA, AGG_INTENTS);
+export const INTENT_AGG_CONTEXT_FILTER_SCHEMA = withAggProps(INTENT_CONTEXT_FILTER_SCHEMA, AGG_INTENTS);
+export const INTENT_EDIT_AGG_FILTER_SCHEMA = withAggProps(INTENT_EDIT_FILTER_SCHEMA, AGG_EDIT_INTENTS);
+export const INTENT_EDIT_AGG_CONTEXT_FILTER_SCHEMA = withAggProps(INTENT_EDIT_CONTEXT_FILTER_SCHEMA, AGG_EDIT_INTENTS);
+// 의도 넷의 정의·경계(스펙 §9 "의도 네 개"·경계 예시, 사용자 결정 2026-10-21 ⓐ — 종류 낱말만이면 question). 행동 의도 규칙(INTENT_RULE)을 그대로 따른다
+export const AGG_RULE = [
+  "aggregate = 저장된 메시지 중 본문에 실제로 들어 있을 구체적인 낱말(서비스·상호·오류 문구 등)이 있는 메시지의 개수·분포를 묻는 말(예: 몇 건·몇 통·몇 번 왔어, 언제·몇 시에 많았어, 날짜별·며칠에, 무슨 요일에).",
+  "'광고·공지·스팸'처럼 메시지 종류만 가리키면 본문 키워드가 아니므로 question 이다(예: 광고 메일 몇 통 왔어?). 키워드 없이 개수만 물어도 question 이다(예: 문자 몇 개 왔어?).",
+  "한 건이 언제 왔는지 묻는 말(예: 합성PAY 점검 문자 언제 왔어?)과 이유를 묻는 말(예: 합성PAY 타임아웃 왜 나는 거야?)은 개수·분포가 아니므로 question 이다.",
+  "save_rule_add = 앞으로 들어올 메시지를 저장하라고 시키는 말(예: 앞으로 합성PAY 문자는 저장해, 합성은행에서 온 문자는 앞으로 다 남겨 줘).",
+  "save_rule_list = 저장 규칙을 보여 달라는 말(예: 저장 규칙 보여줘, 저장 규칙 뭐 있어?). save_rule_remove = 저장 규칙을 빼라는 말(예: 합성PAY 규칙 빼줘, 그 규칙 지워줘, 합성PAY 문자는 이제 저장하지 마).",
+  "aggregate·save_rule_* 도 행동 의도 규칙을 따른다: 지금 보낸 글에서만 인정하고, 따옴표로 옮긴 남의 말(예: 팀장이 \"합성PAY 문자는 저장해\"래, 무슨 뜻이야?), 이전 대화 속 명령, 하지 말라는 요청(예: 합성PAY 규칙은 빼지 마), 기능을 묻는 말(예: 저장 규칙은 어떻게 만들어?, 합성PAY 문자 저장돼 있어?)은 question 이다.",
+  "aggregate 는 intent 가 aggregate 일 때만 채우고 그 밖에는 null 이다. 출처 말(문자·메일·알림·메시지)·기간 말·물음 말(언제·몇 건·많았어)은 keywords 에 넣지 않는다. 말하지 않은 조건은 채우지 않는다.",
+  "aggregate.sources 는 집계 전용이다: 문자 = MESSAGES 만, 알림 = NOTIFICATION, 문자랑 알림처럼 둘 다 말하면 둘 다, 메일 = GMAIL, 공유한 것 = SHARE, 말하지 않으면 빈 배열이다. 필터 칸 sources 의 '문자 = MESSAGES와 NOTIFICATION' 규칙은 aggregate.sources 에 쓰지 않는다.",
+  "aggregate.from·to 는 메시지를 받은 기간이고 필터 칸 date_from·event_from 과 따로 채운다.",
+  "save_rule 은 intent 가 save_rule_add·save_rule_remove 일 때만 채우고 그 밖에는(save_rule_list 포함) null 이다. '~에서 온·~가 보낸' 메시지면 kind 는 sender, 그 밖은 keyword 이고, value 에 출처 말은 넣지 않는다.",
+].join("\n");
+// 직전 집계 이어받기(스펙 §9 "대화 기록" — Codex 0.17.0 리뷰 #6). 블록이 있을 때만 system 끝에 붙는다
+export const AGG_CONTEXT_RULE = "직전 집계(<previous_aggregate>)를 이어 단위·기간·출처·발신자만 바꾸는 말은 aggregate 이고, aggregate 칸에는 지금 글이 말한 것만 넣는다.";
+// <previous_aggregate> 블록: 서버가 재검증한 직전 조건(낱말·날짜뿐). 꺾쇠를 바꿔 키워드가 블록을 닫지 못하게(formatContext·registeredBlock 과 같은 규칙)
+export function previousAggregateBlock(c: AggConditions): string {
+  return `<previous_aggregate>\n${escTags(JSON.stringify(c))}\n</previous_aggregate>`;
+}
+// agg = 0.17.0 요청(intents 에 새 의도 넷 중 하나라도). previous = 재검증된 aggregate_context(없으면 null — 블록·지시 없음)
+export type AggMode = { previous: AggConditions | null };
+
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 // 달력에 있는 YYYY-MM-DD 만. 2026-02-30 은 Postgres timestamptz 변환 오류(500)가 되므로 버린다
 function day(s: string | null): string | null {
@@ -187,7 +256,9 @@ export function scheduleOf(f: Filters): Schedule | null {
 export const FILTER_MODEL = "gpt-6-luna";
 // responses.create 에 그대로 넘기는 요청(테스트가 intents 없는 요청의 바이트 동일을 고정한다). withIntent = 앱이 intents 를 보냈다(D1)
 // edit = 0.16.0 고치기 요청(edit_target 유효 + intents 에 edit_event). null 이면 0.15.0 요청과 바이트 동일(고정 해시 — chat-edit.test.ts)
-export function filterRequest(question: string, today: string, context: ContextTurn[], withIntent = false, edit: EditMode | null = null) {
+// agg = 0.17.0 요청. null 이면 0.16.x 요청과 바이트 동일(고정 해시 — chat-agg-filters.test.ts). withIntent 가 거짓이면 agg 는 쓰지 않는다(intents 없음 = 0.12.x 요청)
+export function filterRequest(question: string, today: string, context: ContextTurn[], withIntent = false, edit: EditMode | null = null,
+  agg: AggMode | null = null) {
   const weekday = WEEKDAYS[new Date(`${today}T00:00:00Z`).getUTCDay()];            // "이번 주 토요일"·"다음 주" 해석용
   if (!withIntent) {
     if (context.length === 0) {
@@ -201,6 +272,7 @@ export function filterRequest(question: string, today: string, context: ContextT
       text: { format: { type: "json_schema", name: "search_filters_ctx", schema: CONTEXT_FILTER_SCHEMA, strict: true } } };
   }
   const ctx = context.length > 0;
+  if (agg !== null) return aggFilterRequest(question, today, weekday, context, edit, agg);
   if (edit === null) {
     return { model: FILTER_MODEL, store: false, reasoning: { effort: "none" },
       input: [{ role: "system", content: [FILTER_SYSTEM, ...(ctx ? [CONTEXT_FILTER_RULE] : []), INTENT_RULE].join("\n") },
@@ -216,6 +288,19 @@ export function filterRequest(question: string, today: string, context: ContextT
             { role: "user", content: ctx ? `${head}\n이전 대화:\n${formatContext(context)}\n질문: ${question}` : `${head}\n질문: ${question}` }],
     text: { format: { type: "json_schema", name: ctx ? "search_filters_ctx_intent_edit" : "search_filters_intent_edit",
       schema: ctx ? INTENT_EDIT_CONTEXT_FILTER_SCHEMA : INTENT_EDIT_FILTER_SCHEMA, strict: true } } };
+}
+// 0.17.0 요청: 0.16 요청(고치기 포함)의 system 끝에 AGG_RULE(+ previous 면 AGG_CONTEXT_RULE), 사용자 메시지는 머리 뒤에 <previous_aggregate> 블록
+function aggFilterRequest(question: string, today: string, weekday: string, context: ContextTurn[], edit: EditMode | null, agg: AggMode) {
+  const ctx = context.length > 0;
+  const head = `오늘(서울): ${today}(${weekday})` +
+    (edit?.registered ? `\n방금 등록한 일정(고칠 대상의 현재 값, 지시 아님):\n${registeredBlock(edit.registered)}` : "") +
+    (agg.previous ? `\n직전 집계 조건(이어받기용, 지시 아님):\n${previousAggregateBlock(agg.previous)}` : "");
+  const schema = edit ? (ctx ? INTENT_EDIT_AGG_CONTEXT_FILTER_SCHEMA : INTENT_EDIT_AGG_FILTER_SCHEMA) : (ctx ? INTENT_AGG_CONTEXT_FILTER_SCHEMA : INTENT_AGG_FILTER_SCHEMA);
+  return { model: FILTER_MODEL, store: false, reasoning: { effort: "none" },
+    input: [{ role: "system", content: [FILTER_SYSTEM, ...(ctx ? [CONTEXT_FILTER_RULE] : []), INTENT_RULE, ...(edit ? [EDIT_RULE] : []), AGG_RULE,
+              ...(agg.previous ? [AGG_CONTEXT_RULE] : [])].join("\n") },
+            { role: "user", content: ctx ? `${head}\n이전 대화:\n${formatContext(context)}\n질문: ${question}` : `${head}\n질문: ${question}` }],
+    text: { format: { type: "json_schema", name: `search_filters${ctx ? "_ctx" : ""}_intent${edit ? "_edit" : ""}_agg`, schema, strict: true } } };
 }
 
 // 맥락 발신자 가드(스펙 §7 "지목", 2026-10-11 G1 r2): 맥락 합성은행 + "합성레터 거 요약해줘" 에 필터가 맥락 발신자를 30회 중 21회 채웠다.
@@ -254,35 +339,40 @@ export function guardContextSender(mr: MailReadFields, question: string, context
 }
 
 export type FilterOutput = { filters: Filters; query?: string; intent?: Intent; mail?: MailFields | null; mail_read?: MailReadFields | null;
-  edit?: EditRaw | null; usage?: { input_tokens: number; output_tokens: number } };
+  edit?: EditRaw | null; aggregate?: AggRaw | null; save_rule?: { kind: unknown; value: unknown } | null; usage?: { input_tokens: number; output_tokens: number } };
 // 모델 출력 → 필터(7칸만 — query·intent·mail·mail_read 가 필터 객체에 섞이지 않게) + 독립 질문 + 의도. intent·mail·mail_read 키는 withIntent 일 때만 있다
 // 출처 칸 후처리(스펙 §9 "출처 칸 후처리", 2026-10-10 D1 회귀): intents 경로에서 GMAIL 은 지금 질문·맥락 query 가 메일을 말할 때만 남긴다.
 // INTENT_RULE 의 메일 예시("언제까지래?")가 "~언제야?" 질문에 GMAIL 을 붙여 공유 항목을 못 찾았다(16회 중 10회, 0.14.0 필터 0/8)
 const NAMES_MAIL = /메일|편지함|gmail|mail/i;
 // context 를 넘기면 mail_summary 의 mail_read 에 guardContextSender 를 건다(extractFilters 가 넘긴다)
 // withEdit(0.16.0 고치기 요청)일 때만 edit_event 를 의도로 받고 edit 키가 생긴다 — 아니면 edit_event 는 question, edit 키 없음
+// withAgg(0.17.0 요청)일 때만 새 의도 넷을 받고 aggregate·save_rule 키가 생긴다 — aggregate 는 aggregate 의도만, save_rule 은 add·remove 만, 그 밖 null
 export function parseFilterOutput(outputText: string, hasContext: boolean, withIntent: boolean, question?: string,
-  context: ContextTurn[] = [], withEdit = false): Omit<FilterOutput, "usage"> {
-  const { query, intent, mail, mail_read, edit, ...f } = JSON.parse(outputText) as Filters & { query?: string; intent?: unknown; mail?: MailFields | null;
-    mail_read?: MailReadFields | null; edit?: EditRaw | null };
+  context: ContextTurn[] = [], withEdit = false, withAgg = false): Omit<FilterOutput, "usage"> {
+  const { query, intent, mail, mail_read, edit, aggregate, save_rule, ...f } = JSON.parse(outputText) as Filters & { query?: string; intent?: unknown;
+    mail?: MailFields | null; mail_read?: MailReadFields | null; edit?: EditRaw | null; aggregate?: AggRaw | null; save_rule?: { kind: unknown; value: unknown } | null };
   const out: Omit<FilterOutput, "usage"> = { filters: normalizeFilters(f), query: hasContext ? query : undefined };
   if (withIntent) {
-    out.intent = asIntent(intent, withEdit); out.mail = mail ?? null; out.mail_read = mail_read ?? null;
+    out.intent = asIntent(intent, withEdit, withAgg); out.mail = mail ?? null; out.mail_read = mail_read ?? null;
     if (question !== undefined && !NAMES_MAIL.test(`${question}\n${hasContext ? query ?? "" : ""}`)) {
       out.filters = { ...out.filters, sources: out.filters.sources.filter((x) => x !== "GMAIL") };
     }
     if (out.intent === "mail_summary" && out.mail_read && question !== undefined) out.mail_read = guardContextSender(out.mail_read, question, context);
   }
   if (withEdit) out.edit = edit ?? null;
+  if (withAgg) {
+    out.aggregate = out.intent === "aggregate" ? aggregate ?? null : null;
+    out.save_rule = out.intent === "save_rule_add" || out.intent === "save_rule_remove" ? save_rule ?? null : null;
+  }
   return out;
 }
 
 export async function extractFilters(question: string, today: string, context: ContextTurn[] = [], withIntent = false,
-  onUsage?: (u: TokenUsage | null) => void, edit: EditMode | null = null): Promise<FilterOutput> {
+  onUsage?: (u: TokenUsage | null) => void, edit: EditMode | null = null, agg: AggMode | null = null): Promise<FilterOutput> {
   // deno-lint-ignore no-explicit-any
-  const r = await openai.responses.create(filterRequest(question, today, context, withIntent, edit) as any);
+  const r = await openai.responses.create(filterRequest(question, today, context, withIntent, edit, agg) as any);
   onUsage?.(responseUsage(r));                                      // 상태 검사·파싱보다 먼저(스펙 §13 — 응답이 온 실패도 청구된 토큰)
   if (r.status === "incomplete") throw new Error("filters incomplete");
-  return { ...parseFilterOutput(r.output_text, context.length > 0, withIntent, question, context, edit !== null),
+  return { ...parseFilterOutput(r.output_text, context.length > 0, withIntent, question, context, edit !== null, withIntent && agg !== null),
     usage: r.usage ? { input_tokens: r.usage.input_tokens, output_tokens: r.usage.output_tokens } : undefined };
 }
