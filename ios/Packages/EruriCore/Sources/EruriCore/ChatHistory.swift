@@ -3,7 +3,7 @@ import Foundation
 /// 채팅 대화 기록·짧은 맥락(스펙 §9 "대화 기록·짧은 맥락", 2026-10-04 사용자 결정 B): 대화 하나가 이어지고, 기록은 기기에만 30일.
 /// 질문 턴의 서버 응답은 받은 그대로(JSON) 둔다 — 다시 열 때 같은 해석(ChatReply.decode)·카드 계산(기기 캘린더는 다시 읽음)을 거친다
 public enum ChatHistory {
-  public enum Kind: String, Codable, Sendable { case question, link, image, addEvent, mailAction, mailSummary, editEvent }   // addEvent = 채팅 일정 등록(0.13.0) · mailAction = 채팅 메일 정리(0.14.0) · mailSummary = 채팅 메일 요약(0.15.0) · editEvent = 방금 등록한 일정 고치기(0.16.0)
+  public enum Kind: String, Codable, Sendable { case question, link, image, addEvent, mailAction, mailSummary, editEvent, aggregate, saveRule }   // addEvent = 채팅 일정 등록(0.13.0) · mailAction = 채팅 메일 정리(0.14.0) · mailSummary = 채팅 메일 요약(0.15.0) · editEvent = 방금 등록한 일정 고치기(0.16.0) · aggregate = 집계 질문 · saveRule = 저장 규칙(0.17.0)
 
   public struct Record: Codable, Sendable, Equatable, Identifiable {
     public let id: UUID
@@ -22,14 +22,17 @@ public enum ChatHistory {
     public var proposalIDs: [String]?            // 일정 등록 턴(0.16.0): 카드가 처음 제안을 읽을 때 fact 마다 최고 버전 id(순번 순) — 첫 id 가 edit_target
     public var contextLine: String?              // 등록 턴 "등록함: …"(일정마다 한 줄, proposalIDs 순서)·ok 고치기 턴 "고침: …" — 맥락으로 보내는 줄(스펙 A)
     public var editPid: String?                  // 고치기 턴(0.16.0): 카드가 따라가는 제안 id — 응답의 edit.proposal_id, 같은 카드의 되묻기 성공 때 그 새 버전(Fable 플랜 리뷰 #1)
+    public var saveRule: SaveRuleTurn?           // 저장 규칙 턴(0.17.0): 카드 버튼 결과(K23). 판정 응답은 reply 에(집계 턴도 reply 만)
     public var judged: [String: Bool]      // 인용 item_id → 관련 있음(맞아요·틀렸어요 — 서버 eval_judgments 와 같은 값)
 
     public init(id: UUID = UUID(), at: Date, kind: Kind, question: String, reply: Data? = nil, error: String? = nil, link: String? = nil,
                 linkDone: Bool = false, linkSaved: Bool = false, seenItemID: String? = nil, itemID: String? = nil, judged: [String: Bool] = [:],
-                mail: MailTurn? = nil, mailRead: MailSummaryTurn? = nil, proposalIDs: [String]? = nil, contextLine: String? = nil, editPid: String? = nil) {
+                mail: MailTurn? = nil, mailRead: MailSummaryTurn? = nil, proposalIDs: [String]? = nil, contextLine: String? = nil, editPid: String? = nil,
+                saveRule: SaveRuleTurn? = nil) {
       self.id = id; self.at = at; self.kind = kind; self.question = question; self.reply = reply; self.error = error; self.link = link
       self.linkDone = linkDone; self.linkSaved = linkSaved; self.seenItemID = seenItemID; self.itemID = itemID; self.judged = judged
       self.mail = mail; self.mailRead = mailRead; self.proposalIDs = proposalIDs; self.contextLine = contextLine; self.editPid = editPid
+      self.saveRule = saveRule
     }
   }
 
@@ -69,9 +72,12 @@ public enum ChatHistory {
         // 검색·읽기 결과를 받기 전에 닫혔으면 끝난 문구로(읽기는 비용이 들어 다시 보내지 않는다). 후보 카드(choosing)는 10분 안이면 그대로 누를 수 있다
         if x.mailRead == nil { x.mailRead = MailSummaryTurn(phase: .ended, note: MailSummaryText.interrupted) }
         else if x.mailRead?.phase == .finding || x.mailRead?.phase == .reading { x.mailRead?.phase = .ended; x.mailRead?.note = MailSummaryText.interrupted }
-      case .editEvent:
-        // 고치기 턴은 응답을 받은 뒤에만 이 종류가 된다(K16). 응답이 없으면 질문 턴과 같은 문구
+      case .editEvent, .aggregate:
+        // 고치기·집계 턴은 응답을 받은 뒤에만 이 종류가 된다(K16). 응답이 없으면 질문 턴과 같은 문구
         if x.reply == nil && x.error == nil { x.error = ChatHistoryText.interruptedAnswer }
+      case .saveRule:
+        // 버튼 요청 중 닫힘(0.17.0 K16): 바뀌었는지 모른다 — 버튼을 다시 켠다(같은 버튼을 다시 눌러도 duplicate·not_found 라 두 번 바뀌지 않는다)
+        if x.saveRule?.phase == .working { x.saveRule?.phase = .idle; x.saveRule?.note = SaveRules.Text.buttonFailed }
       }
       return x
     }
@@ -91,8 +97,8 @@ public enum ChatHistory {
     return i
   }
 
-  /// 다음 질문과 보낼 직전 대화(최대 3, 오래된 것부터, 스펙 A): 구간 안에서 답을 받은 질문 턴 + 일정을 찾은 등록 턴(proposalIDs·contextLine) + ok 고치기 턴(contextLine).
-  /// 링크·사진·오류·메일 턴은 구간을 잇지만 넣지 않는다
+  /// 다음 질문과 보낼 직전 대화(최대 3, 오래된 것부터, 스펙 A): 구간 안에서 답을 받은 질문 턴 + 일정을 찾은 등록 턴(proposalIDs·contextLine) + ok 고치기 턴(contextLine)
+  /// + ok 집계 턴(서버 문장, 0.17.0 K10). 링크·사진·오류·메일·저장 규칙 턴과 bad_condition·failed 집계 턴은 구간을 잇지만 넣지 않는다
   public static func context(_ r: [Record], now: Date) -> [ContextTurn] {
     guard let s = segmentStart(r, now: now) else { return [] }
     var out: [ContextTurn] = []                        // 뒤에서부터 3개를 모으면 멈춘다(긴 구간에서 응답을 전부 decode 하지 않게)
@@ -104,6 +110,9 @@ public enum ChatHistory {
       case .addEvent where rec.proposalIDs?.isEmpty == false, .editEvent:
         guard let line = rec.contextLine, !line.isEmpty else { continue }
         out.append(ContextTurn(question: rec.question, answer: clip16(line, max: contextAnswerMax)))
+      case .aggregate:
+        guard let a = okAggregate(rec) else { continue }
+        out.append(ContextTurn(question: rec.question, answer: clip16(a.sentence, max: contextAnswerMax)))
       default: continue
       }
       if out.count == contextTurns { break }
@@ -117,6 +126,18 @@ public enum ChatHistory {
     guard let s = segmentStart(r, now: now), let reg = r[s...].last(where: { $0.kind == .addEvent }) else { return nil }
     guard now.timeIntervalSince(reg.at) <= contextWindow else { return nil }
     return reg.proposalIDs?.first
+  }
+
+  /// 직전 집계 조건(스펙 §9 aggregate_context, K11): 맥락 구간이 살아 있고 마지막 턴(= 지금 질문 바로 앞, 턴을 더하기 전에 부른다 — PF-F23)이
+  /// ok 집계 턴일 때 서버가 재검증한 조건 그대로. 사이에 다른 턴이 끼면 이어받지 않는다
+  public static func aggregateContext(_ r: [Record], now: Date) -> ChatAggregate.Conditions? {
+    guard segmentStart(r, now: now) != nil, let last = r.last, last.kind == .aggregate else { return nil }
+    return okAggregate(last)?.conditions
+  }
+
+  private static func okAggregate(_ rec: Record) -> ChatAggregate.Response? {
+    guard let d = rec.reply, let a = ChatReply.decode(d)?.aggregate, a.status == "ok" else { return nil }
+    return a
   }
 
   /// C 되묻기 성공(스펙 A 예외, Codex M6): 그 fact 를 가리키는 가장 최근 맥락 턴의 줄을 새 값으로. 등록 턴은 그 일정 줄만(proposalIDs 색인, K15),
@@ -173,6 +194,46 @@ public enum ChatHistory {
       for (item, ok) in rec.judged { out[ChatFeedback.key(answer: a.answer_id, item: item)] = ok }
     }
     return out
+  }
+}
+
+/// 대화 기록의 저장 규칙 턴(0.17.0 K23): 카드 버튼 결과 — add 의 status·rule.id·규칙 수·matched, restore 의 status·restored, remove 성공 id.
+/// 기록 파일 호환: 모든 칸이 없어도 읽고(기본값), 모르는 phase 는 idle — 레코드 하나 때문에 기록 파일 전체가 손상(빈 기록)이 되지 않게
+public struct SaveRuleTurn: Codable, Sendable, Equatable {
+  public enum Phase: String, Codable, Sendable { case idle, working, done }
+  public var phase: Phase
+  public var addStatus: String?          // added·duplicate·limit·bad_value
+  public var ruleID: String?             // add 결과 rule.id(duplicate 면 기존 규칙)
+  public var addedCount: Int?            // N/20 의 N
+  public var matched: Int                // add 결과 그 규칙의 폐기분 수
+  public var restoreStatus: String?      // queued·none·not_found
+  public var restored: Int?
+  public var removedIDs: [String]
+  public var note: String?               // 마지막 결과 문구
+  public init(phase: Phase = .idle, addStatus: String? = nil, ruleID: String? = nil, addedCount: Int? = nil, matched: Int = 0,
+              restoreStatus: String? = nil, restored: Int? = nil, removedIDs: [String] = [], note: String? = nil) {
+    self.phase = phase; self.addStatus = addStatus; self.ruleID = ruleID; self.addedCount = addedCount; self.matched = matched
+    self.restoreStatus = restoreStatus; self.restored = restored; self.removedIDs = removedIDs; self.note = note
+  }
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    phase = (try c.decodeIfPresent(String.self, forKey: .phase)).flatMap(Phase.init(rawValue:)) ?? .idle
+    addStatus = try c.decodeIfPresent(String.self, forKey: .addStatus)
+    ruleID = try c.decodeIfPresent(String.self, forKey: .ruleID)
+    addedCount = try c.decodeIfPresent(Int.self, forKey: .addedCount)
+    matched = try c.decodeIfPresent(Int.self, forKey: .matched) ?? 0
+    restoreStatus = try c.decodeIfPresent(String.self, forKey: .restoreStatus)
+    restored = try c.decodeIfPresent(Int.self, forKey: .restored)
+    removedIDs = try c.decodeIfPresent([String].self, forKey: .removedIDs) ?? []
+    note = try c.decodeIfPresent(String.self, forKey: .note)
+  }
+
+  /// [함께 저장] 대상(K23): 이미 눌렀으면 nil. 추가 버튼 결과(added·duplicate)에 규칙 id 와 폐기분이 있으면 그 id —
+  /// 첫 판정 응답은 바꾸기 전이라 새 규칙 id 가 없다. 그 밖은 채팅 판정 duplicate 의 기존 규칙(SaveRules.restoreRuleID)
+  public func restoreRuleID(_ r: SaveRules.Response) -> String? {
+    if restoreStatus != nil { return nil }
+    if let id = ruleID, addStatus == "added" || addStatus == "duplicate", matched > 0 { return id }
+    return SaveRules.restoreRuleID(r)
   }
 }
 

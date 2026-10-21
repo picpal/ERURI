@@ -403,4 +403,129 @@ final class ChatHistoryTests: XCTestCase {
                                                      line: "합성 미팅 · 10/9(금) 18:00"))
     XCTAssertEqual(b[1].contextLine, "고침: 합성 미팅 · 10/9(금) 18:00")
   }
+
+  // ── 0.17.0 집계 질문·저장 규칙 턴(스펙 §9 "대화 기록", K10·K16·K23) ──
+  let conds = #"{"keywords":["합성PAY"],"sender":null,"sources":["MESSAGES"],"from":"2026-10-15","to":"2026-10-21","bucket":"hour","defaulted":true,"clamped":false}"#
+  func aggReply(status: String = "ok", sentence: String = "합성PAY 메시지는 7일 동안 3건이에요", conditions: Bool = true) -> Data {
+    let agg = #"{"status":"\#(status)","conditions":\#(conditions ? conds : "null"),"total":3,"buckets":[],"top":[],"sentence":"\#(sentence)","notes":["저장된 메시지만 셌어요."]}"#
+    return Data(#"{"answer_id":"g","answer":"","refused":false,"citations":[],"proposals":[],"intent":"aggregate","aggregate":\#(agg),"save_rule":null}"#.utf8)
+  }
+  func aggTurn(at: TimeInterval, status: String = "ok", sentence: String = "합성PAY 메시지는 7일 동안 3건이에요", conditions: Bool = true) -> R {
+    R(at: t0.addingTimeInterval(at), kind: .aggregate, question: "이번 주 합성PAY 몇 건이야?", reply: aggReply(status: status, sentence: sentence, conditions: conditions))
+  }
+  func ruleReply(status: String = "ok", matched: Int = 0, matches: String = "[]") -> Data {
+    let rule = #"{"op":"add","status":"\#(status)","candidate":{"kind":"keyword","value":"합성PAY"},"matches":\#(matches),"rules":[],"matched":\#(matched),"limit":20}"#
+    return Data(#"{"answer_id":"r","answer":"","refused":false,"citations":[],"proposals":[],"intent":"save_rule_add","aggregate":null,"save_rule":\#(rule)}"#.utf8)
+  }
+  func ruleTurn(at: TimeInterval, reply: Data? = nil, saveRule: SaveRuleTurn? = SaveRuleTurn()) -> R {
+    R(at: t0.addingTimeInterval(at), kind: .saveRule, question: "앞으로 합성PAY 문자는 저장해", reply: reply ?? ruleReply(), saveRule: saveRule)
+  }
+  func expectedConditions() throws -> ChatAggregate.Conditions {
+    try JSONDecoder().decode(ChatAggregate.Conditions.self, from: Data(conds.utf8))
+  }
+  func roundTrip(_ r: [R]) throws -> [R] {
+    let s = tempStore(); defer { s.wipe() }
+    try s.save(r); return ChatHistory.restored(try s.load())
+  }
+
+  func testOldFileWithoutNewKindsStillLoads() throws {
+    let s = tempStore(); defer { s.wipe() }
+    // 0.16.x 가 쓴 파일: saveRule 키 없음 + 이 앱도 모르는 다음 kind 하나
+    let id1 = UUID().uuidString, id2 = UUID().uuidString
+    let old = #"{"version":1,"records":[{"id":"\#(id1)","at":1790000000,"kind":"question","question":"q","linkDone":false,"linkSaved":false,"judged":{}},{"id":"\#(UUID().uuidString)","at":1790000001,"kind":"futureTurn","question":"x","linkDone":false,"linkSaved":false,"judged":{}},{"id":"\#(id2)","at":1790000002,"kind":"editEvent","question":"e","linkDone":false,"linkSaved":false,"judged":{}}]}"#
+    try s.save([]); try Data(old.utf8).write(to: s.url)
+    let back = try s.load()
+    XCTAssertEqual(back.map(\.id.uuidString), [id1, id2])
+    XCTAssertEqual(back.map(\.kind), [.question, .editEvent])
+    XCTAssertEqual(back.map(\.saveRule), [nil, nil])
+    // 새 kind 두 개는 이 앱이 읽는다
+    let rec = [aggTurn(at: 0), ruleTurn(at: 60)]
+    try s.save(rec)
+    XCTAssertEqual(try s.load(), rec)
+    XCTAssertEqual(ChatHistory.Kind.aggregate.rawValue, "aggregate"); XCTAssertEqual(ChatHistory.Kind.saveRule.rawValue, "saveRule")
+  }
+  func testAggregateTurnContextUsesSentenceOnlyWhenOk() {
+    let long = String(repeating: "가", count: 450)
+    let r = [q("앞 질문", at: 0), aggTurn(at: 60), aggTurn(at: 120, status: "bad_condition", sentence: ChatAggregate.Text.badCondition, conditions: false),
+             aggTurn(at: 180, status: "failed", sentence: ChatAggregate.Text.failed)]
+    let c = ChatHistory.context(r, now: t0.addingTimeInterval(200))
+    XCTAssertEqual(c.map(\.answer), ["답", "합성PAY 메시지는 7일 동안 3건이에요"])          // 오류 문구는 맥락이 아니다(K10)
+    XCTAssertEqual(c[1].question, "이번 주 합성PAY 몇 건이야?")
+    // bad_condition·failed 턴도 구간은 잇는다: q(-50분)·bad(-25분)·지금 → 구간 시작 0
+    let bridged = [q("합성 질문", at: -3000), aggTurn(at: -1500, status: "bad_condition", sentence: "x", conditions: false)]
+    XCTAssertEqual(ChatHistory.context(bridged, now: t0).map(\.question), ["합성 질문"])
+    // 문장은 UTF-16 400자로
+    XCTAssertEqual(ChatHistory.context([aggTurn(at: 0, sentence: long)], now: t0.addingTimeInterval(10)).first?.answer.utf16.count, ChatHistory.contextAnswerMax)
+    // 읽을 수 없는 응답·응답 없음은 넣지 않는다
+    let broken = R(at: t0, kind: .aggregate, question: "깨짐", reply: Data("{}".utf8)), none = R(at: t0, kind: .aggregate, question: "없음")
+    XCTAssertEqual(ChatHistory.context([broken, none], now: t0.addingTimeInterval(10)), [])
+  }
+  func testSaveRuleTurnNotInContextButKeepsSegment() {
+    let far = q("합성세미나 언제야?", at: -3000), rule = ruleTurn(at: -1500)
+    XCTAssertEqual(ChatHistory.segmentStart([far, rule], now: t0), 0)
+    XCTAssertEqual(ChatHistory.context([far, rule], now: t0).map(\.question), ["합성세미나 언제야?"])
+    XCTAssertEqual(ChatHistory.context([aggTurn(at: -100), ruleTurn(at: -50)], now: t0).map(\.question), ["이번 주 합성PAY 몇 건이야?"])
+  }
+  func testAggregateContextOnlyWhenLastIsOkAggregateWithin30Min() throws {
+    let c = try expectedConditions()
+    XCTAssertEqual(ChatHistory.aggregateContext([q("q", at: -60), aggTurn(at: 0)], now: t0.addingTimeInterval(1800)), c)   // 정확히 30분은 된다
+    XCTAssertNil(ChatHistory.aggregateContext([aggTurn(at: 0)], now: t0.addingTimeInterval(1801)))
+    XCTAssertNil(ChatHistory.aggregateContext([aggTurn(at: 0), ruleTurn(at: 60)], now: t0.addingTimeInterval(120)))        // 바로 앞이 저장 규칙 턴
+    XCTAssertNil(ChatHistory.aggregateContext([aggTurn(at: 0), q("q", at: 60)], now: t0.addingTimeInterval(120)))           // 바로 앞이 질문 턴
+    XCTAssertNil(ChatHistory.aggregateContext([aggTurn(at: 0, status: "bad_condition", conditions: false)], now: t0.addingTimeInterval(60)))
+    XCTAssertNil(ChatHistory.aggregateContext([aggTurn(at: 0, status: "failed")], now: t0.addingTimeInterval(60)))          // failed 는 조건이 있어도 아니다
+    XCTAssertNil(ChatHistory.aggregateContext([aggTurn(at: 0, conditions: false)], now: t0.addingTimeInterval(60)))         // ok 인데 조건 없음
+    XCTAssertNil(ChatHistory.aggregateContext([], now: t0))
+  }
+  func testRestoredWorkingRuleButtonBecomesRetry() {
+    var working = SaveRuleTurn(); working.phase = .working
+    var done = SaveRuleTurn(); done.phase = .done; done.addStatus = "added"; done.note = "저장 규칙을 추가했어요 (1/20)"
+    let out = ChatHistory.restored([ruleTurn(at: 0, saveRule: working), ruleTurn(at: 60, saveRule: done),
+                                    R(at: t0, kind: .aggregate, question: "답 전에 닫힘"), aggTurn(at: 120)])
+    XCTAssertEqual(out[0].saveRule?.phase, .idle); XCTAssertEqual(out[0].saveRule?.note, SaveRules.Text.buttonFailed)
+    XCTAssertEqual(out[1].saveRule, done)
+    XCTAssertEqual(out[2].error, ChatHistoryText.interruptedAnswer)                                  // 집계 턴 = 고치기 턴과 같은 처리
+    XCTAssertNil(out[3].error)
+  }
+  /// K23(Codex 계획 리뷰 #2): 추가 성공 뒤 앱을 다시 열어도 [함께 저장]은 같은 규칙으로, 이미 눌렀으면 다시 나오지 않는다
+  func testAddResultSurvivesRelaunchThenRestore() throws {
+    var t = SaveRuleTurn(); t.phase = .done; t.addStatus = "added"; t.ruleID = "r-1"; t.addedCount = 3; t.matched = 2
+    let rec = ruleTurn(at: 0, saveRule: t)
+    let back = try roundTrip([rec])
+    XCTAssertEqual(back, [rec])
+    let resp = try XCTUnwrap(back[0].reply.flatMap { ChatReply.decode($0)?.save_rule })
+    XCTAssertEqual(resp.status, "ok"); XCTAssertNil(SaveRules.restoreRuleID(resp))                 // 첫 응답에는 새 규칙 id 가 없다
+    XCTAssertEqual(back[0].saveRule?.restoreRuleID(resp), "r-1")
+    var pressed = back
+    pressed[0].saveRule?.restoreStatus = "queued"; pressed[0].saveRule?.restored = 2
+    let again = try roundTrip(pressed)
+    XCTAssertEqual(again[0].saveRule?.restored, 2)
+    XCTAssertNil(again[0].saveRule?.restoreRuleID(resp))                                              // 이미 누름
+    // duplicate 버튼 결과도 그 규칙으로, 폐기분 0 이면 버튼 없음, 그 밖(limit)은 채팅 판정으로
+    var dup = t; dup.addStatus = "duplicate"; dup.ruleID = "r-0"
+    XCTAssertEqual(dup.restoreRuleID(resp), "r-0")
+    var zero = t; zero.matched = 0
+    XCTAssertNil(zero.restoreRuleID(resp))
+    var limit = t; limit.addStatus = "limit"
+    XCTAssertNil(limit.restoreRuleID(resp))
+    // 아직 누르지 않은 채팅 판정 duplicate(폐기분 있음) = 기존 규칙 id
+    let judged = try XCTUnwrap(ChatReply.decode(ruleReply(status: "duplicate", matched: 3,
+      matches: #"[{"id":"r-9","kind":"keyword","value":"합성PAY","created_at":"2026-10-20T00:00:00Z"}]"#))?.save_rule)
+    XCTAssertEqual(SaveRuleTurn().restoreRuleID(judged), "r-9")
+  }
+  func testSaveRuleTurnLenientDecode() throws {
+    let d = JSONDecoder()
+    var only = SaveRuleTurn(); only.phase = .done
+    XCTAssertEqual(try d.decode(SaveRuleTurn.self, from: Data(#"{"phase":"done"}"#.utf8)), only)
+    XCTAssertEqual(try d.decode(SaveRuleTurn.self, from: Data(#"{"phase":"weird","matched":1,"later":true}"#.utf8)).phase, .idle)
+    let empty = try d.decode(SaveRuleTurn.self, from: Data("{}".utf8))
+    XCTAssertEqual(empty, SaveRuleTurn())
+    XCTAssertEqual([empty.matched, empty.removedIDs.count], [0, 0])
+    // 모르는 phase 의 저장 규칙 턴이 있어도 기록 파일 전체가 비지 않는다
+    let s = tempStore(); defer { s.wipe() }
+    let file = #"{"version":1,"records":[{"id":"\#(UUID().uuidString)","at":1790000000,"kind":"saveRule","question":"q","linkDone":false,"linkSaved":false,"judged":{},"saveRule":{"phase":"weird"}},{"id":"\#(UUID().uuidString)","at":1790000001,"kind":"saveRule","question":"q2","linkDone":false,"linkSaved":false,"judged":{}}]}"#
+    try s.save([]); try Data(file.utf8).write(to: s.url)
+    let back = try s.load()
+    XCTAssertEqual(back.map(\.saveRule), [SaveRuleTurn(), nil])
+  }
 }
