@@ -6,7 +6,7 @@ import { assert, assertEquals } from "jsr:@std/assert";
 export type Row = Record<string, any>;
 export type Q = (sql: string, params?: unknown[]) => Promise<Row[]>;
 export type ACtx = { q: Q; user: string; other: string; tag: string };
-export const MIGRATION_0035 = new URL("../migrations-pending/0035_save_rules_aggregate.sql", import.meta.url);
+export const MIGRATION_0035 = new URL("../migrations/0035_save_rules_aggregate.sql", import.meta.url);
 
 const one = async (c: ACtx, sql: string, p: unknown[] = []) => (await c.q(sql, p))[0];
 const add = async (c: ACtx, kind: string, value: string, user = c.user) =>
