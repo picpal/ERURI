@@ -34,7 +34,8 @@ function factText(r: { kind: string; payload: Record<string, unknown>; evidence:
 }
 
 export type CandidateRow = { item_id: string; source: string; app_name: string | null; sender: string | null; title: string | null; content_enc: string };
-// 폐기분 후보 복호화(Ruling A8-decrypt): 실패한 행은 후보에서 빼고(불일치로 셈) 수만 센다 — 손상 행 하나가 [함께 저장] 전체를 막지 않게
+// 폐기분 후보 복호화(Ruling A8-decrypt): 실패한 행은 후보에서 빼고(불일치로 셈) 수만 센다 — 손상 행 하나가 [함께 저장] 전체를 막지 않게.
+// 전부 실패면 예외(Ruling A8-all)
 export async function decryptCandidates(rows: CandidateRow[], decryptFn: (enc: string) => Promise<string>): Promise<{ cands: Candidate[]; failed: number }> {
   const texts = await Promise.all(rows.map((r) => decryptFn(r.content_enc).catch(() => null)));
   const cands: Candidate[] = [];
@@ -42,6 +43,8 @@ export async function decryptCandidates(rows: CandidateRow[], decryptFn: (enc: s
     const text = texts[i];
     if (text !== null) cands.push({ item_id: r.item_id, source: r.source, app_name: r.app_name, sender: r.sender, title: r.title, text });
   });
+  // 행이 있는데 전부 실패면 체계적 실패(키 로드 등 — Ruling A8-all): matched 0 으로 숨기지 않고 올린다(500)
+  if (rows.length > 0 && cands.length === 0) throw new Error("save_rule_candidates decrypt_all_failed");
   return { cands, failed: rows.length - cands.length };
 }
 

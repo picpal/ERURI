@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "jsr:@std/assert";
+import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 import { decryptCandidates } from "../functions/chat/deps.ts";
 import { type Candidate, judgeSaveRule, matchingCandidates, ruleButton, type RuleDeps } from "../functions/chat/save-rule.ts";
 import type { SaveRule } from "../functions/_shared/save-rules.ts";
@@ -229,4 +229,18 @@ Deno.test("decryptCandidates: one row fails → the rest returned in order, fail
   assertEquals(failed, 1);
   assertEquals(cands.map((c) => [c.item_id, c.text]), [["i-1", "합성본문 enc-1"], ["i-3", "합성본문 enc-3"]]);
   assert(!cands.some((c) => c.item_id === "i-2"));
+});
+
+// Ruling A8-all: 행이 1개 이상인데 전부 실패면 체계적 실패(키 로드 등) — 0건으로 숨기지 않고 예외를 올린다(500)
+Deno.test("decryptCandidates: every row fails → throws; no rows → empty, not a failure", async () => {
+  const row = (item_id: string) => ({ item_id, source: "NOTIFICATION", app_name: "합성앱", sender: null, title: null, content_enc: "bad" });
+  await assertRejects(() => decryptCandidates([row("i-1"), row("i-2")], () => Promise.reject(new Error("decrypt"))));
+  assertEquals(await decryptCandidates([], () => Promise.reject(new Error("decrypt"))), { cands: [], failed: 0 });
+});
+
+Deno.test("decryptCandidates: some rows fail → the rest returned, no throw", async () => {
+  const row = (item_id: string, content_enc: string) => ({ item_id, source: "NOTIFICATION", app_name: "합성앱", sender: null, title: null, content_enc });
+  const { cands, failed } = await decryptCandidates([row("i-1", "bad"), row("i-2", "enc-2")], (enc) =>
+    enc === "bad" ? Promise.reject(new Error("decrypt")) : Promise.resolve(`합성본문 ${enc}`));
+  assertEquals([failed, cands.map((c) => c.item_id)], [1, ["i-2"]]);
 });

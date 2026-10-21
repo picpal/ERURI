@@ -18,7 +18,7 @@ const raw = (o: AggRaw = {}): AggRaw => ({ keywords: ["합성PAY"], sender: null
 const CTX: AggConditions = { keywords: ["합성PAY"], sender: null, sources: [], from: "2026-10-15", to: "2026-10-21", bucket: "hour", defaulted: true, clamped: false };
 
 type Opts = { intent?: string; aggregate?: AggRaw | null; saveRule?: { kind: unknown; value: unknown } | null; sources?: string[];
-  rpc?: { total: number; buckets?: BucketCount[]; items?: AggItem[] } | Error; rules?: SaveRule[]; cands?: Candidate[] };
+  rpc?: { total: number; buckets?: BucketCount[]; items?: AggItem[] } | Error; rules?: SaveRule[] | Error; cands?: Candidate[] };
 function adeps(o: Opts = {}) {
   const seen = { agg: [] as unknown[], withIntent: [] as boolean[], aggregate: [] as { c: AggConditions; key: string | null }[], saveRules: 0, cands: 0,
     search: 0, answer: 0, audit: 0, remove: [] as string[], add: [] as string[][], lines: [] as string[][] };
@@ -43,7 +43,11 @@ function adeps(o: Opts = {}) {
     budget, today: () => TODAY, sleep: async () => {}, mailActions: () => true, mailRead: () => true,
     editTarget: async () => ({ status: "not_found" }),
     editApply: async () => { throw new Error("editApply is not expected in chat-agg-handler.test.ts"); },
-    saveRules: async () => { seen.saveRules++; return o.rules ?? []; },
+    saveRules: async () => {
+      seen.saveRules++;
+      if (o.rules instanceof Error) throw o.rules;
+      return o.rules ?? [];
+    },
     ruleAdd: async (_u, kind, value) => { seen.add.push([kind, value]); return { status: "added", rule_id: "r-new" }; },
     ruleRemove: async (_u, id) => { seen.remove.push(id); return "removed"; },
     ruleCandidates: async () => { seen.cands++; return o.cands ?? []; },
@@ -188,6 +192,15 @@ Deno.test("aggregate: zero total reads rules for the hint; non-zero total does n
   assertEquals([(await call(has.d, { question: "합성PAY 몇 건", intents: AGG })).j.aggregate.notes, has.seen.saveRules], [[AGG_TEXT.savedOnly], 1]);
   const some = adeps({ intent: "aggregate", aggregate: raw(), rpc: { total: 3, buckets: [{ key: "2026-10-20", count: 3 }] } });
   assertEquals([(await call(some.d, { question: "합성PAY 몇 건", intents: AGG })).j.aggregate.total, some.seen.saveRules], [3, 0]);
+});
+
+// Ruling A9-hint: 0건 집계에서 규칙 읽기가 실패해도 집계는 ok — 꼬리 줄 ②(힌트)만 뺀다
+Deno.test("saveRules throws on zero total → status ok, 0건 문장, notes = [savedOnly]", async () => {
+  const { d, seen } = adeps({ intent: "aggregate", aggregate: raw(), rpc: { total: 0, buckets: [] }, rules: new Error("save_rules_of 57014") });
+  const { status, j, lines } = await call(d, { question: "합성PAY 몇 건", intents: AGG });
+  assertEquals([status, j.aggregate.status, j.aggregate.total, j.aggregate.sentence, j.aggregate.notes, seen.saveRules],
+    [200, "ok", 0, "최근 7일 '합성PAY' 메시지는 0건이에요", [AGG_TEXT.savedOnly], 1]);
+  assertEquals(JSON.parse(lines.at(-1)!).status, "ok");
 });
 
 Deno.test("save_rule_add duplicate → matched counted from candidates; ok/limit/bad_value → matched 0 and no candidate decrypt", async () => {

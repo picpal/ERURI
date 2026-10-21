@@ -3,7 +3,7 @@ import { isOpenAiError, llmUnavailable } from "../_shared/llm-errors.ts";
 import { ampmMarked, confirmedCodes, type EditApplied, type EditRaw, type EditResult, type EditTargetRead, type EventValues, parseEditTarget, revalidate } from "./edit.ts";
 import { type ActionIntent, ACTION_INTENTS, AGG_INTENT_VALUES, type AggMode, type ContextTurn, type EditMode, escTags, type FilterOutput, type Filters, formatContext,
   type Intent, type MailFields, type MailReadFields, type Schedule, scheduleOf } from "./filters.ts";
-import { type AggConditions, type AggRaw, type AggregateResult, BAD_CONDITION, bucketLabel, type BucketCount, failedAggregate, okAggregate, parseAggregateContext,
+import { AGG_TEXT, type AggConditions, type AggRaw, type AggregateResult, BAD_CONDITION, bucketLabel, type BucketCount, failedAggregate, okAggregate, parseAggregateContext,
   revalidateAggregate, revalidateListRequest } from "./aggregate.ts";
 import { type Candidate, judgeSaveRule, matchingCandidates, ruleButton, type RuleOp, type SaveRuleJudgment } from "./save-rule.ts";
 import type { RuleKind, SaveRule } from "../_shared/save-rules.ts";
@@ -227,13 +227,18 @@ async function runAggregate(userId: string, deps: ChatDeps, raw: AggRaw | null, 
     return { aggregate: BAD_CONDITION, log: { status: "bad_condition", total: 0, bucket: null, clamped: false, defaulted: false, inherited: false } };
   }
   const c = v.conditions;
-  let aggregate: AggregateResult;
+  let r: Awaited<ReturnType<ChatDeps["aggregate"]>>;
   try {
-    const r = await deps.aggregate(userId, c, null);
-    aggregate = okAggregate(c, r.buckets ?? [], r.total, r.total === 0 ? await deps.saveRules(userId) : [], today);
+    r = await deps.aggregate(userId, c, null);
   } catch {
-    aggregate = failedAggregate(c);
+    const aggregate = failedAggregate(c);
+    return { aggregate, log: { status: aggregate.status, total: 0, bucket: c.bucket, clamped: c.clamped, defaulted: c.defaulted, inherited: v.inherited } };
   }
+  // 규칙 읽기 실패는 집계 실패가 아니다(Ruling A9-hint) — 0건 문장은 그대로, 꼬리 줄 ②(힌트)만 뺀다
+  let rules: SaveRule[] | null = [];
+  if (r.total === 0) rules = await deps.saveRules(userId).catch(() => null);
+  let aggregate = okAggregate(c, r.buckets ?? [], r.total, rules ?? [], today);
+  if (rules === null) aggregate = { ...aggregate, notes: [AGG_TEXT.savedOnly] };
   return { aggregate, log: { status: aggregate.status, total: aggregate.total, bucket: c.bucket, clamped: c.clamped, defaulted: c.defaulted, inherited: v.inherited } };
 }
 
