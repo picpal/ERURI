@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import { type AggCase, type AggCaseFile, type AggRow, BOUNDARY_TEXTS, judgeAgg, parseEvalMode, summarizeAgg, validateAggCases } from "../scripts/_agg-eval.ts";
-import { newlyWrong, type Row } from "../scripts/_intent-eval.ts";
+import { flakyCases, newlyWrong, type Row } from "../scripts/_intent-eval.ts";
 import type { Intent } from "../functions/chat/filters.ts";
 
 const file = JSON.parse(await Deno.readTextFile(new URL("../eval/agg-cases.json", import.meta.url))) as AggCaseFile;
@@ -123,4 +123,14 @@ Deno.test("parseEvalMode: default 0.16, --mode both / 0.17 / 0.16, anything else
   assertEquals(parseEvalMode(["--mode", "0.16"]), "0.16");
   assertEquals(parseEvalMode(["--mode"]), null);
   assertEquals(parseEvalMode(["--mode", "all"]), null);
+});
+
+Deno.test("flakyCases: baseline split across runs (some right, some wrong) → listed with right/total ratios for both modes; steady cases not listed", () => {
+  const row = (id: string, got: Intent, o: Partial<Row> = {}): Row => ({ id, group: "g", expected: "question", got, mail_ok: null, read_ok: null, target_ok: null, ...o });
+  const base = [row("a", "question"), row("a", "add_event"), row("a", "question"), row("a", "question"), row("b", "question"), row("b", "question"),
+    row("b", "question"), row("b", "question"), row("c", "add_event"), row("c", "add_event"), row("c", "add_event"), row("c", "add_event")];
+  const agg = [row("a", "question"), row("a", "question"), row("a", "question"), row("a", "question"), row("b", "question"), row("b", "aggregate"),
+    row("b", "question"), row("b", "question"), row("c", "add_event"), row("c", "question"), row("c", "add_event"), row("c", "add_event")];
+  assertEquals(flakyCases(base, agg), [{ id: "a", base_right: 3, base_runs: 4, agg_right: 4, agg_runs: 4 }]);   // c 는 늘 틀림(흔들림 아님), b 는 기준선 4/4
+  assertEquals(newlyWrong(base, agg), ["b"]);   // 흔들림 a·늘 틀림 c 는 비교에서 빠진다
 });

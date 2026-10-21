@@ -113,3 +113,13 @@ export function newlyWrong(base: Row[], agg: Row[]): string[] {
     return b.every(right) && (a.length === 0 || !a.every(right));
   }).sort();
 }
+
+// 흔들림(2026-10-21 메인 판정, Ruling A10-s28): 기준선 회차끼리 갈린(맞음·틀림이 섞인) 사례 — new_wrong 비교에서 빠지고(newlyWrong 은 기준선 모두 맞음만 본다) 비율과 함께 따로 기록
+export type Flaky = { id: string; base_right: number; base_runs: number; agg_right: number; agg_runs: number };
+export function flakyCases(base: Row[], agg: Row[]): Flaky[] {
+  const ids = [...new Set(base.map((r) => r.id))].sort();
+  return ids.flatMap((id) => {
+    const b = base.filter((r) => r.id === id), a = agg.filter((r) => r.id === id), br = b.filter(right).length;
+    return br > 0 && br < b.length ? [{ id, base_right: br, base_runs: b.length, agg_right: a.filter(right).length, agg_runs: a.length }] : [];
+  });
+}

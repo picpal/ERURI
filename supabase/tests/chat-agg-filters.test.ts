@@ -67,7 +67,8 @@ Deno.test("filterRequest with agg: 8-value enum (9 with edit), aggregate/save_ru
     "따옴표", "어떻게 만들어?", "keywords 에 넣지 않는다", "MESSAGES 만", "NOTIFICATION", "빈 배열"]) assert(AGG_RULE.includes(s), s);
   // 발신자 규칙 범위(A10 INTENT-0170 회귀 — "'~에서 온'일 때만"이 mail·mail_read sender 로 번져 상호 이름이 제목 낱말로 갔다): 그 두 칸에만, 메일 칸은 그대로
   const scope = AGG_RULE.split("\n").find((l) => l.startsWith("aggregate.sender·save_rule 의 '~에서 온·~가 보낸' 규칙은 그 두 칸에만 쓴다."));
-  assert(scope && scope.includes("mail·mail_read 의 sender") && scope.includes("상호·서비스 이름 포함"), "sender scope line");
+  assert(scope && scope.includes("mail·mail_read 의 sender") && scope.includes("상호·서비스 이름 포함") && scope.includes("'어제 온·오늘 온'처럼 받은 때를 말하는 '온'은 발신자가 아니다"),
+    "sender scope line");
 });
 
 Deno.test("filterRequest with agg and previous: <previous_aggregate> block escaped, AGG_CONTEXT_RULE; without previous equals the agg request byte-for-byte", () => {
