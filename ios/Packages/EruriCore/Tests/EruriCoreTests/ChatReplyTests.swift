@@ -155,4 +155,45 @@ final class ChatReplyTests: XCTestCase {
     XCTAssertNil(ChatReply.decode(Data(("{" + base + #","intent":"question","mail":null}"#).utf8))!.mail)
     XCTAssertNil(ChatReply.decode(Data(("{" + base + "}").utf8))!.mail)
   }
+
+  /// 0.17.0 칸(스펙 §9 "응답"): 0.16.x 응답(키 없음) → nil, 집계·저장 규칙 응답 → 해석
+  func testDecodesAggregateAndMissingIsNil() throws {
+    let old = try XCTUnwrap(ChatReply.decode(Data(#"{"answer_id":"x","answer":"합성","refused":false,"citations":[],"proposals":[],"intent":"question"}"#.utf8)))
+    XCTAssertNil(old.aggregate)
+    XCTAssertNil(old.save_rule)
+    let agg = #"""
+    {"answer_id":"x","answer":"","refused":false,"source_item_ids":[],"citations":[],"proposals":[],"hits":[],"intent":"aggregate",
+     "mail":null,"mail_read":null,"edit":null,"save_rule":null,
+     "aggregate":{"status":"ok","conditions":{"keywords":["합성PAY"],"sender":null,"sources":["MESSAGES"],"from":"2026-10-15","to":"2026-10-21",
+                  "bucket":"weekday","defaulted":true,"clamped":false},"total":3,
+                  "buckets":[{"key":"1","label":"월","count":0},{"key":"2","label":"화","count":3}],"top":[{"key":"2","label":"화","count":3}],
+                  "sentence":"최근 7일 '합성PAY' 문자 3건 — 화요일이 3건으로 가장 많았어요","notes":["저장된 메시지만 셌어요."]}}
+    """#
+    let a = try XCTUnwrap(ChatReply.decode(Data(agg.utf8)))
+    let r = try XCTUnwrap(a.aggregate)
+    XCTAssertEqual(r.status, "ok")
+    XCTAssertEqual(r.conditions?.keywords, ["합성PAY"])
+    XCTAssertNil(r.conditions?.sender)
+    XCTAssertEqual(r.conditions?.bucket, "weekday")
+    XCTAssertEqual(r.total, 3)
+    XCTAssertEqual(r.buckets.map(\.count), [0, 3])
+    XCTAssertEqual(r.top.first?.key, "2")
+    XCTAssertEqual(r.notes, ["저장된 메시지만 셌어요."])
+    XCTAssertTrue(ChatAggregate.isAggregate(a.intent))
+    // bad_condition 은 conditions null·숫자 칸 비움
+    let bad = try XCTUnwrap(ChatReply.decode(Data(#"""
+    {"answer_id":"x","answer":"","refused":false,"citations":[],"proposals":[],"intent":"aggregate",
+     "aggregate":{"status":"bad_condition","conditions":null,"total":0,"buckets":[],"top":[],"sentence":"조건을 정확히 알아듣지 못했어요 — 키워드·기간을 다시 말해 주세요","notes":[]}}
+    """#.utf8)))
+    XCTAssertEqual(bad.aggregate?.status, "bad_condition")
+    XCTAssertNil(bad.aggregate?.conditions)
+    let rule = try XCTUnwrap(ChatReply.decode(Data(#"""
+    {"answer_id":"x","answer":"","refused":false,"citations":[],"proposals":[],"intent":"save_rule_add","aggregate":null,
+     "save_rule":{"op":"add","status":"duplicate","candidate":null,"matches":[{"id":"r1","kind":"keyword","value":"PINPAY","created_at":"2026-10-21T01:00:00+00:00"}],
+                  "rules":[],"matched":2,"limit":20}}
+    """#.utf8)))
+    XCTAssertEqual(rule.save_rule?.status, "duplicate")
+    XCTAssertEqual(rule.save_rule.flatMap(SaveRules.restoreRuleID), "r1")
+    XCTAssertTrue(SaveRules.isSaveRule(rule.intent))
+  }
 }

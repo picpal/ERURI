@@ -68,7 +68,7 @@ public enum RecentDiscards {
   /// 채팅 링크·사진 결과(LinkCapture.result)와 같은 기준: 활성 facts 의 종류
   public static func factKindsQuery(itemID: String) -> String { "rest/v1/facts?select=kind&status=eq.active&item_id=eq.\(itemID)" }
 
-  /// nil = 아직. queued 는 잡이 dead 일 때만 실패, extracted 는 일정 수·할 일, empty 는 일정 없음, 그 밖 폐기(서버 규칙)는 실패
+  /// nil = 아직. queued 는 잡이 dead 일 때만 실패, extracted 는 일정 수·할 일, empty·kept 는 일정 없음, 그 밖 폐기(서버 규칙)는 실패
   public static func restoreState(itemStatus: String?, jobStatus: String?, kinds: [String]) -> RestoreState? {
     guard let itemStatus else { return nil }
     switch itemStatus {
@@ -77,7 +77,7 @@ public enum RecentDiscards {
     case "extracted":
       let events = kinds.filter { $0 == "event" }.count
       return events > 0 ? .proposed(events) : kinds.contains("task") ? .task : .noSchedule
-    case "discarded:server:empty": return .noSchedule
+    case "discarded:server:empty", "kept": return .noSchedule                       // kept = 저장 규칙에 맞아 저장, 일정 없음(0.17.0, K17)
     default: return itemStatus.hasPrefix("discarded:") ? .failed : nil
     }
   }

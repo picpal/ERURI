@@ -28,6 +28,10 @@ public enum ChatReply {
     public let mail_read: JSONValue?
     /// 일정 고치기(스펙 §9 B 서버 6, 0.16.0): intent = edit_event 일 때 status·before·after·proposal_id·action. 0.15.x 서버·다른 의도면 nil
     public let edit: ChatEdit.Response?
+    /// 집계 질문(스펙 §9 "채팅 저장 규칙·집계 질문", 0.17.0): intent = aggregate 일 때 서버가 센 칸·문장. 0.16.x 서버·다른 의도면 nil
+    public let aggregate: ChatAggregate.Response?
+    /// 저장 규칙 판정(0.17.0): intent = save_rule_* 일 때. 판정만 — 카드 버튼(/chat/rule)을 눌러야 바뀐다. 0.16.x 서버·다른 의도면 nil
+    public let save_rule: SaveRules.Response?
   }
   public struct Schedule: Decodable, Sendable, Equatable {
     public let from: String; public let to: String

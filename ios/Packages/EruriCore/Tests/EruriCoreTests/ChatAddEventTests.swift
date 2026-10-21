@@ -98,7 +98,7 @@ final class ChatAddEventTests: XCTestCase {
     XCTAssertEqual(ChatAddEventText.duplicate, "이미 등록한 글이에요. 보관함에서 그 항목을 열면 일정을 다시 볼 수 있어요")
     XCTAssertEqual(ChatAddEventText.discarded, LinkCaptureText.discarded)
     XCTAssertEqual(ChatAddEventText.pending, LinkCaptureText.pending)
-    XCTAssertEqual(ChatAddEvent.intents, ["add_event", "mail_action", "mail_summary", "edit_event"])   // 0.16.0 edit_event
+    XCTAssertEqual(Array(ChatAddEvent.intents.prefix(4)), ["add_event", "mail_action", "mail_summary", "edit_event"])   // 0.16.0 edit_event(0.17.0 이 뒤에 더한다)
     XCTAssertTrue(ChatAddEvent.isAddEvent("add_event"))
     XCTAssertFalse(ChatAddEvent.isAddEvent(nil))
     XCTAssertFalse(ChatAddEvent.isAddEvent("mail_action"))
@@ -124,5 +124,10 @@ final class ChatAddEventTests: XCTestCase {
     XCTAssertEqual([c.item_id, c.source, c.app_name], ["item-9", "SHARE", "채팅"])
     XCTAssertEqual(ScheduleCard.sourceLine(c), "채팅에서 등록한 일정")
     XCTAssertEqual(ScheduleCard.receivedLine(c), "10/6 등록")
+  }
+
+  /// 0.17.0(스펙 §9 "앱 → 서버"): 새 의도 넷을 늘 보낸다 — 서버가 단서 게이트로 거른다
+  func testIntentsIncludeAggregateAndRules() {
+    XCTAssertEqual(ChatAddEvent.intents, ["add_event", "mail_action", "mail_summary", "edit_event", "aggregate", "save_rule_add", "save_rule_list", "save_rule_remove"])
   }
 }

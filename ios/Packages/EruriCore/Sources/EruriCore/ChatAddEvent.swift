@@ -6,8 +6,9 @@ import CryptoKit
 /// EventKit·네트워크 없이 판단·문구만 — 업로드·결과 조회는 앱(ChatView·LinkCapture)
 public enum ChatAddEvent {
   public static let appName = "채팅"
-  /// 이 앱이 처리하는 행동 의도(스펙 §9 "하위 호환"): add_event(0.13.0)·mail_action(0.14.0)·mail_summary(0.15.0)·edit_event(0.16.0 — edit_target 과 함께)
-  public static let intents = ["add_event", "mail_action", "mail_summary", "edit_event"]
+  /// 이 앱이 처리하는 행동 의도(스펙 §9 "하위 호환"): add_event(0.13.0)·mail_action(0.14.0)·mail_summary(0.15.0)·edit_event(0.16.0 — edit_target 과 함께)·
+  /// aggregate·save_rule_*(0.17.0 — 늘 보낸다. 서버가 지금 글의 단서로 0.17.0 스키마를 고른다)
+  public static let intents = ["add_event", "mail_action", "mail_summary", "edit_event", "aggregate", "save_rule_add", "save_rule_list", "save_rule_remove"]
   public static func isAddEvent(_ intent: String?) -> Bool { intent == "add_event" }
 
   /// 같은 글 판정용(키에만): 줄바꿈을 포함한 공백 연속을 공백 하나로, 앞뒤 제거

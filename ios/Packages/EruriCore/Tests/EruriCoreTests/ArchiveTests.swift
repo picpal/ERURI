@@ -112,4 +112,17 @@ final class ArchiveTests: XCTestCase {
     let fail = await s.load(from: 0) { _ in nil }
     XCTAssertNil(fail)
   }
+
+  /// 0.17.0 저장 규칙(스펙 §8 items kept·gate_label 'rule'): 규칙으로 저장된 항목은 Jev 를 거치지 않아 게이트 통과가 아니다(오통과 표시 없음).
+  /// 규칙 단계 뒤 Jev 가 notice 를 낸 kept 항목(복구 등)은 그 라벨 폐기 상태가 아니라 통과로 본다
+  func testKeptStatusAndRuleGate() {
+    XCTAssertEqual(Archive.statusKo("kept"), "저장됨(일정 없음)")
+    XCTAssertFalse(Archive.gatePassed(status: "kept", gateLabel: "rule"))
+    XCTAssertFalse(Archive.gatePassed(status: "extracted", gateLabel: "rule"))
+    XCTAssertTrue(Archive.gatePassed(status: "kept", gateLabel: "notice"))
+  }
+
+  func testFeedbackRuleSaved() {
+    XCTAssertEqual(Archive.feedback(status: 200, data: Data(#"[{"verdict":"rule_saved"}]"#.utf8)), .ruleSaved)
+  }
 }

@@ -27,4 +27,9 @@ if grep -q "llm_unavailable" Packages/EruriCore/Sources/EruriCore/ChatReply.swif
   echo "LLM 사용 불가 코드가 있는데 MARKETING_VERSION=$VER (< 0.16.1) — 0.16.0 업로드는 이 코드 전 커밋 worktree 에서 하거나 TF_ALLOW_PRE_LLM=1"
   exit 1
 fi
+# 0.17.0 계획 K18: 저장 규칙·집계 코드(ChatAggregate·intents 에 aggregate·save_rule_*)가 있는데 0.17.0 전 이름이면 멈춘다 — AGG-sim 전 빌드가 0.16.x 이름으로 나가지 않게
+if [ -f Packages/EruriCore/Sources/EruriCore/ChatAggregate.swift ] && [ "$NUM" -lt 17000 ] && [ "${TF_ALLOW_PRE_AGG:-0}" != 1 ]; then
+  echo "저장 규칙·집계 코드가 있는데 MARKETING_VERSION=$VER (< 0.17.0) — AGG-sim 통과 전 업로드 금지(0.17.0 계획 K18). 이 코드 전 커밋 worktree 에서 올리거나 TF_ALLOW_PRE_AGG=1"
+  exit 1
+fi
 echo "version-guard ok ($VER)"

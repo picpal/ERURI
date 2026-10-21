@@ -156,4 +156,9 @@ final class RecentDiscardsTests: XCTestCase {
     let s3 = await RecentDiscards.pollRestore(itemID: "i1", tries: 2, wait: {}, get: broken.get)
     XCTAssertEqual(s3, .timedOut)
   }
+
+  /// Review Focus 1(K17): "최근 폐기"에서 복구한 항목이 저장 규칙에 맞아 kept 가 되면 "처리 중…"에 멈추지 않고 일정 없음으로 끝난다
+  func testKeptIsNoSchedule() {
+    XCTAssertEqual(RecentDiscards.restoreState(itemStatus: "kept", jobStatus: nil, kinds: []), .noSchedule)
+  }
 }
