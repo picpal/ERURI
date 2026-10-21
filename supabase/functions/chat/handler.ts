@@ -1,10 +1,11 @@
 import { type Bill, type BudgetDeps, type BudgetLevel, costKrw, Deferred, guarded } from "../_shared/budget.ts";
 import { isOpenAiError, llmUnavailable } from "../_shared/llm-errors.ts";
 import { ampmMarked, confirmedCodes, type EditApplied, type EditRaw, type EditResult, type EditTargetRead, type EventValues, parseEditTarget, revalidate } from "./edit.ts";
-import { type ActionIntent, ACTION_INTENTS, type ContextTurn, type EditMode, escTags, type FilterOutput, type Filters, formatContext, type Intent, type MailFields,
-  type MailReadFields, type Schedule, scheduleOf } from "./filters.ts";
-import type { AggConditions, BucketCount } from "./aggregate.ts";
-import type { Candidate } from "./save-rule.ts";
+import { type ActionIntent, ACTION_INTENTS, AGG_INTENT_VALUES, type AggMode, type ContextTurn, type EditMode, escTags, type FilterOutput, type Filters, formatContext,
+  type Intent, type MailFields, type MailReadFields, type Schedule, scheduleOf } from "./filters.ts";
+import { type AggConditions, type AggRaw, type AggregateResult, BAD_CONDITION, bucketLabel, type BucketCount, failedAggregate, okAggregate, parseAggregateContext,
+  revalidateAggregate, revalidateListRequest } from "./aggregate.ts";
+import { type Candidate, judgeSaveRule, matchingCandidates, ruleButton, type RuleOp, type SaveRuleJudgment } from "./save-rule.ts";
 import type { RuleKind, SaveRule } from "../_shared/save-rules.ts";
 export type { ActionIntent, ContextTurn, Filters, Intent, MailFields, MailReadFields, Schedule } from "./filters.ts";
 
@@ -12,6 +13,8 @@ export type { ActionIntent, ContextTurn, Filters, Intent, MailFields, MailReadFi
 // → 서버 인용 검증(이번 문서 집합에 없는 id 제거, 근거 0개면 거절) → 출처 메타·제안 카드·보관함 후보(인용 ∪ 구별 facts ∪ 관련도 컷, 거절이면 없음) · 일정 질문이면 schedule(기간만, 앱이 기기 캘린더를 읽는다). 수집 문서 안의 지시는 데이터(<document> 블록).
 // 로그에 질문·문서·답변 본문을 남기지 않는다. 문서로 읽은 item_id 목록은 감사(read)
 // 의도 판별(§9, 2026-10-06): intents 가 있는 요청만 필터가 intent·mail·mail_read 도 뽑고, 행동 의도면 검색·답변 없이 의도만 돌려준다(앱이 처리)
+// 저장 규칙·집계(§9 "채팅 저장 규칙·집계 질문", 0.17.0): intents 에 새 의도 넷 중 하나라도 있을 때만 0.17.0 필터. 집계는 재검증 → aggregate_items 숫자로 서버 문장,
+// 저장 규칙은 판정만(쓰기는 /chat/rule 버튼). 둘 다 답변·임베딩 없음. /chat/aggregate(칸 목록)·/chat/rule 은 모델·예산 없음
 export type ChatHit = { item_id: string; text: string; occurred_at: string };
 export type RawAnswer = { answer: string; source_item_ids: string[]; refused: boolean };
 export type Usage = { input_tokens: number; output_tokens: number; cached_tokens?: number; reasoning_tokens?: number };
@@ -25,7 +28,7 @@ export type AggItem = { item_id: string; title: string | null; sender: string | 
 export type AnswerInput = { question: string; today: string; documents: ChatHit[]; context?: ContextTurn[]; query?: string };
 export type ChatDeps = {
   authUser(token: string): Promise<string | null>;
-  filters(question: string, today: string, context: ContextTurn[], withIntent?: boolean, bill?: Bill, edit?: EditMode | null): Promise<FilterOutput>;   // withIntent 없음 = false(기존 테스트의 3인자 호출 그대로), edit 없음 = 0.15.0 요청
+  filters(question: string, today: string, context: ContextTurn[], withIntent?: boolean, bill?: Bill, edit?: EditMode | null, agg?: AggMode | null): Promise<FilterOutput>;   // withIntent 없음 = false(기존 테스트의 3인자 호출 그대로), edit 없음 = 0.15.0 요청, agg 없음 = 0.16.x 요청
   facts(userId: string, f: Filters): Promise<ChatHit[]>;
   search(userId: string, q: { question: string; from: string | null; to: string | null; sources: string[] }, bill?: Bill): Promise<SearchResult>;
   answer(input: AnswerInput, level: BudgetLevel, bill?: Bill): Promise<RawAnswer & { usage?: Usage; model: string }>;
@@ -56,8 +59,10 @@ export type ChatDeps = {
 };
 export type ChatResult = RawAnswer & { forced_refusal: boolean; dropped_ids: number; hits: string[]; candidates: string[]; citations: Meta[];
   proposals: ProposalCard[]; model: string | null; schedule: Schedule | null; intent: Intent; mail: MailFields | null;
-  mail_read: MailReadFields | null; edit: EditResult | null };
-export type ChatOutcome = ChatResult & { rewritten: boolean; raw_intent?: Intent; edit_log?: { fields: string[]; marker: boolean } };
+  mail_read: MailReadFields | null; edit: EditResult | null; aggregate: AggregateResult | null; save_rule: SaveRuleJudgment | null };
+export type ChatOutcome = ChatResult & { rewritten: boolean; raw_intent?: Intent; edit_log?: { fields: string[]; marker: boolean };
+  agg_log?: { status: string; total: number; bucket: string | null; clamped: boolean; defaulted: boolean; inherited: boolean };
+  rule_log?: { op: string; status: string; rules: number; matched: number } };
 
 export const REFUSAL = "저장된 정보에서 확인되지 않음";
 
@@ -110,7 +115,8 @@ export function answerUserMessage(input: AnswerInput): string {
   return `오늘: ${input.today}\n이전 대화(질문 이해용, 근거 아님):\n${formatContext(input.context)}\n질문: ${input.question}${q}\n\n${docs}`;
 }
 
-export function validateAnswer(raw: RawAnswer, hits: ChatHit[]): Omit<ChatResult, "hits" | "candidates" | "citations" | "proposals" | "model" | "schedule" | "intent" | "mail" | "mail_read" | "edit"> {
+export function validateAnswer(raw: RawAnswer, hits: ChatHit[]): Omit<ChatResult, "hits" | "candidates" | "citations" | "proposals" | "model" | "schedule" | "intent" | "mail" | "mail_read" | "edit" |
+  "aggregate" | "save_rule"> {
   const allowed = new Set(hits.map((h) => h.item_id));
   const ids = [...new Set(raw.source_item_ids)].filter((id) => allowed.has(id));
   const dropped = new Set(raw.source_item_ids).size - ids.length;
@@ -181,10 +187,11 @@ export function resolveIntent(raw: Intent, allowed: Set<ActionIntent>, mailOn: b
   if (raw === "edit_event" && !editOn) return "question";
   return raw;
 }
-// 행동 의도 응답(스펙 §9 "응답"): 검색·답변 없이 빈 목록. mail·mail_read 는 그 의도일 때만 모델 출력 그대로, edit 는 runEdit 이 채운다
+// 행동 의도 응답(스펙 §9 "응답"): 검색·답변 없이 빈 목록. mail·mail_read 는 그 의도일 때만 모델 출력 그대로, edit 는 runEdit 이, aggregate·save_rule 은 answerOnce 가 채운다
 export function actionResult(intent: ActionIntent, mail: MailFields | null, mailRead: MailReadFields | null = null): ChatResult {
   return { answer: "", source_item_ids: [], refused: false, forced_refusal: false, dropped_ids: 0, hits: [], candidates: [], citations: [], proposals: [],
-    model: null, schedule: null, intent, mail: intent === "mail_action" ? mail : null, mail_read: intent === "mail_summary" ? mailRead : null, edit: null };
+    model: null, schedule: null, intent, mail: intent === "mail_action" ? mail : null, mail_read: intent === "mail_summary" ? mailRead : null, edit: null,
+    aggregate: null, save_rule: null };
 }
 
 // 방금 등록한 일정 고치기(스펙 §9 B 서버 3~6): 대상이 ok 가 아니면 그 상태로(쓰기 없음). 재검증 뒤 바뀐 칸도 이번 글이 확인한 코드도 없으면
@@ -209,22 +216,66 @@ export async function runEdit(userId: string, message: string, deps: ChatDeps, t
   return empty(a.status, fields);
 }
 
+// 집계(스펙 §9 재검증 ①~⑥·RPC·응답): 키워드 0개이고 이어받을 직전 조건도 없으면 null → 호출부가 질문 흐름으로. 무효 조건은 RPC 없이 bad_condition,
+// RPC 오류·6초 abort(K5)는 failed(재검증 뒤 조건은 싣는다). 0건이면 꼬리 줄 ②를 위해 규칙을 읽는다. 로그 칸에 키워드·발신자 없음(§9 "로그")
+type AggLog = NonNullable<ChatOutcome["agg_log"]>;
+async function runAggregate(userId: string, deps: ChatDeps, raw: AggRaw | null, today: string, previous: AggConditions | null):
+  Promise<{ aggregate: AggregateResult; log: AggLog } | null> {
+  const v = revalidateAggregate(raw, today, previous);
+  if (v.kind === "question") return null;
+  if (v.kind === "bad_condition") {
+    return { aggregate: BAD_CONDITION, log: { status: "bad_condition", total: 0, bucket: null, clamped: false, defaulted: false, inherited: false } };
+  }
+  const c = v.conditions;
+  let aggregate: AggregateResult;
+  try {
+    const r = await deps.aggregate(userId, c, null);
+    aggregate = okAggregate(c, r.buckets ?? [], r.total, r.total === 0 ? await deps.saveRules(userId) : [], today);
+  } catch {
+    aggregate = failedAggregate(c);
+  }
+  return { aggregate, log: { status: aggregate.status, total: aggregate.total, bucket: c.bucket, clamped: c.clamped, defaulted: c.defaulted, inherited: v.inherited } };
+}
+
+// 저장 규칙 판정(스펙 §9 "저장 규칙 응답"): 쓰지 않는다(카드를 누르기 전에는 바뀌지 않는다). duplicate 면 그 규칙에 맞는 격리 중 폐기 수(복호화·감사는 deps)
+async function runSaveRule(userId: string, deps: ChatDeps, op: RuleOp, raw: { kind: unknown; value: unknown } | null):
+  Promise<{ save_rule: SaveRuleJudgment; log: NonNullable<ChatOutcome["rule_log"]> }> {
+  const rules = await deps.saveRules(userId);
+  let j = judgeSaveRule(op, raw, rules);
+  if (j.status === "duplicate") j = { ...j, matched: matchingCandidates(j.matches[0], await deps.ruleCandidates(userId)).length };
+  return { save_rule: j, log: { op, status: j.status, rules: rules.length, matched: j.matched } };
+}
+const RULE_OPS: Partial<Record<Intent, RuleOp>> = { save_rule_add: "add", save_rule_list: "list", save_rule_remove: "remove" };
+
 async function answerOnce(userId: string, question: string, deps: ChatDeps, context: ContextTurn[], allowed: Set<ActionIntent> | null,
-  editTarget: string | null): Promise<ChatOutcome> {
+  editTarget: string | null, aggCtx: AggConditions | null): Promise<ChatOutcome> {
   const today = deps.today();
   // 금액은 응답마다 bill 로 쌓인 원소의 합(스펙 §13 "기능별 기록") — 필터·질의 임베딩·답변 모두 예약 chat·집계 chat
   const { value } = await guarded(deps.budget, userId, "chat", CHAT_EST_KRW, crypto.randomUUID(), async (level, bill): Promise<ChatOutcome> => {
     // B 서버 1: edit_target 이 있으면 대상부터 — ok 면 필터에 <registered> 블록, 아니면 블록 없이 의도만(그 상태는 edit_event 일 때만 응답)
     const target = editTarget ? await deps.editTarget(userId, editTarget) : null;
     const edit: EditMode | null = target ? { registered: target.status === "ok" ? target.values : null } : null;
-    const { filters, query, intent: raw, mail, mail_read, edit: rawEdit } = await deps.filters(question, today, context, allowed !== null, bill, edit);
+    // 0.17.0 필터는 새 의도 넷 중 하나라도 앱 목록에 있을 때만(아니면 0.16.x 와 바이트 동일). previous = 재검증된 aggregate_context
+    const agg: AggMode | null = allowed && AGG_INTENT_VALUES.some((v) => allowed.has(v)) ? { previous: aggCtx } : null;
+    const { filters, query, intent: raw, mail, mail_read, edit: rawEdit, aggregate: rawAgg, save_rule: rawRule } =
+      await deps.filters(question, today, context, allowed !== null, bill, edit, agg);
     const intent = allowed ? resolveIntent(raw ?? "question", allowed, deps.mailActions(), deps.mailRead(), target !== null) : "question";
     if (intent === "edit_event" && target) {
       const e = await runEdit(userId, question, deps, target, rawEdit ?? null);
       return { ...actionResult(intent, null, null), edit: e.edit, rewritten: false, raw_intent: raw, edit_log: { fields: e.fields, marker: e.marker } } as ChatOutcome;
     }
+    // 집계·저장 규칙도 행동 의도처럼 검색·답변 없이(정산은 필터 원소만). 키워드 없는 집계는 아래 질문 흐름(응답 intent question)
+    if (intent === "aggregate") {
+      const a = await runAggregate(userId, deps, rawAgg ?? null, today, aggCtx);
+      if (a) return { ...actionResult(intent, null, null), aggregate: a.aggregate, rewritten: false, raw_intent: raw, agg_log: a.log } as ChatOutcome;
+    }
+    const op = RULE_OPS[intent];
+    if (op) {
+      const r = await runSaveRule(userId, deps, op, rawRule ?? null);
+      return { ...actionResult(intent as ActionIntent, null, null), save_rule: r.save_rule, rewritten: false, raw_intent: raw, rule_log: r.log } as ChatOutcome;
+    }
     // 행동 의도: 검색·facts·답변 모델을 부르지 않는다 — 문서를 읽지 않으므로 감사 read 도 없다. 예약은 같고 정산은 필터 원소만(스펙 §9 "응답")
-    if (intent !== "question") return { ...actionResult(intent, mail ?? null, mail_read ?? null), rewritten: false, raw_intent: raw } as ChatOutcome;
+    if (intent !== "question" && intent !== "aggregate") return { ...actionResult(intent, mail ?? null, mail_read ?? null), rewritten: false, raw_intent: raw } as ChatOutcome;
     // 맥락이 있으면 검색은 독립 질문으로(스펙 §9) — "거기 주소" 만으로는 키워드·임베딩이 대상을 못 고른다. 비었으면 원 질문
     const standalone = context.length && query?.trim() ? cut(query.trim(), 500) : question;
     const rewritten = standalone !== question;
@@ -236,7 +287,7 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps, cont
     if (s.docs.length === 0 && (q.from !== null || q.to !== null)) s = await deps.search(userId, { ...q, from: null, to: null }, bill);
     const read = dedupe([...mergeFactDocs(factDocs), ...s.docs]);
     const docs = read.slice(0, 12);
-    const asked = { intent: "question" as const, mail: null, mail_read: null, edit: null, raw_intent: raw };
+    const asked = { intent: "question" as const, mail: null, mail_read: null, edit: null, aggregate: null, save_rule: null, raw_intent: raw };
     if (docs.length === 0) {
       return { answer: REFUSAL, source_item_ids: [], refused: true, forced_refusal: false, dropped_ids: 0, hits: [], candidates: [],
         citations: [], proposals: [], model: null, schedule, rewritten, ...asked } as ChatOutcome;
@@ -256,11 +307,11 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps, cont
 }
 
 export async function answerQuestion(userId: string, question: string, deps: ChatDeps, context: ContextTurn[] = [],
-  intents: Set<ActionIntent> | null = null, editTarget: string | null = null): Promise<ChatOutcome> {
+  intents: Set<ActionIntent> | null = null, editTarget: string | null = null, aggContext: AggConditions | null = null): Promise<ChatOutcome> {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   for (let attempt = 0; ; attempt++) {
     try {
-      return await answerOnce(userId, question, deps, context, intents, editTarget);
+      return await answerOnce(userId, question, deps, context, intents, editTarget, aggContext);
     } catch (e) {
       if (!(e instanceof Deferred && e.message === "llm_busy" && attempt < BUSY_RETRY_MS.length)) throw e;
       await sleep(BUSY_RETRY_MS[attempt]);
@@ -268,16 +319,38 @@ export async function answerQuestion(userId: string, question: string, deps: Cha
   }
 }
 
+// 집계 칸 목록(스펙 §9 "목록"): 응답 conditions 를 ①~⑤로 다시(이어받기 없음) → 그 칸의 최신순 50. 모델·예산 없음. 로그는 칸 종류·건수만
+export async function handleAggregateList(userId: string, body: unknown, deps: ChatDeps): Promise<Response> {
+  const b = (typeof body === "object" && body !== null ? body : {}) as { conditions?: unknown; bucket_key?: unknown };
+  const v = revalidateListRequest(b.conditions, b.bucket_key, deps.today());
+  if (!v) return Response.json({ error: "bad_request" }, { status: 400 });
+  try {
+    const r = await deps.aggregate(userId, v.conditions, v.bucketKey);
+    console.log(JSON.stringify({ chat: "aggregate_list", bucket: v.conditions.bucket, total: r.total }));
+    return Response.json({ status: "ok", bucket_key: v.bucketKey, label: bucketLabel(v.conditions.bucket, v.bucketKey), total: r.total, items: r.items ?? [],
+      truncated: r.total > 50 });
+  } catch {
+    console.log(JSON.stringify({ chat: "aggregate_list", bucket: v.conditions.bucket, status: "failed" }));
+    return Response.json({ error: "aggregate_failed" }, { status: 500 });
+  }
+}
+
 export async function handleChat(req: Request, deps: ChatDeps): Promise<Response> {
   const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
   const user = token ? await deps.authUser(token) : null;
   if (!user) return new Response(null, { status: 401 });
-  let b: { question?: unknown; item_id?: unknown; context?: unknown; intents?: unknown; edit_target?: unknown };
+  let b: { question?: unknown; item_id?: unknown; context?: unknown; intents?: unknown; edit_target?: unknown; aggregate_context?: unknown };
   try { b = await req.json(); } catch { return Response.json({ error: "bad_json" }, { status: 400 }); }
-  if (/\/chat\/item\/?$/.test(new URL(req.url).pathname)) {
+  const path = new URL(req.url).pathname;
+  if (/\/chat\/item\/?$/.test(path)) {
     if (typeof b.item_id !== "string") return Response.json({ error: "bad_item" }, { status: 400 });
     const d = await deps.itemDetail(user, b.item_id);
     return d ? Response.json(d) : new Response(null, { status: 404 });
+  }
+  if (/\/chat\/aggregate\/?$/.test(path)) return await handleAggregateList(user, b, deps);
+  if (/\/chat\/rule\/?$/.test(path)) {
+    const r = await ruleButton(user, b, deps);
+    return Response.json(r.body, { status: r.status });
   }
   if (typeof b.question !== "string" || b.question.trim().length === 0 || b.question.length > 500) {
     return Response.json({ error: "bad_question" }, { status: 400 });
@@ -286,9 +359,17 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
   if (context === null) return Response.json({ error: "bad_context" }, { status: 400 });
   const intents = parseIntents(b.intents);
   const editTarget = intents?.has("edit_event") ? parseEditTarget(b.edit_target) : null;   // 그 밖은 무시 — 0.15.0 과 같은 요청(스펙 §9 B 서버)
+  // 직전 집계 조건(K11)은 intents 에 aggregate 가 있을 때만 읽는다(없으면 모양이 틀려도 무시)
+  const aggCtx = intents?.has("aggregate") ? parseAggregateContext(b.aggregate_context, deps.today()) : null;
+  if (aggCtx === "bad") return Response.json({ error: "bad_context" }, { status: 400 });
   try {
-    const r = await answerQuestion(user, b.question, deps, context, intents, editTarget);
-    if (r.intent === "edit_event") {
+    const r = await answerQuestion(user, b.question, deps, context, intents, editTarget, aggCtx);
+    if (r.agg_log) {
+      // 의도·맥락 턴 수·이어받기·집계 상태·건수·칸 종류·플래그만(스펙 §9 "로그") — 키워드·발신자 없음
+      console.log(JSON.stringify({ chat: "intent", intent: r.intent, context: context.length, ...r.agg_log }));
+    } else if (r.rule_log) {
+      console.log(JSON.stringify({ chat: "intent", intent: r.intent, context: context.length, ...r.rule_log }));   // op·상태·규칙 수·matched 만 — 규칙 값 없음
+    } else if (r.intent === "edit_event") {
       // 의도·상태·고친 칸 이름·표지 유무·맥락 턴 수만(스펙 §9 B 서버 6) — 글·값 없음
       console.log(JSON.stringify({ chat: "intent", intent: r.intent, context: context.length, edit: r.edit?.status ?? null,
         fields: r.edit_log?.fields ?? [], ampm_marker: r.edit_log?.marker ?? false }));
@@ -301,7 +382,7 @@ export async function handleChat(req: Request, deps: ChatDeps): Promise<Response
     }
     return Response.json({ answer_id: crypto.randomUUID(), answer: r.answer, refused: r.refused, source_item_ids: r.source_item_ids,
       citations: r.citations, proposals: r.proposals, hits: r.hits, candidates: r.candidates, schedule: r.schedule, intent: r.intent, mail: r.mail,
-      mail_read: r.mail_read, edit: r.edit });
+      mail_read: r.mail_read, edit: r.edit, aggregate: r.aggregate, save_rule: r.save_rule });
   } catch (e) {
     if (e instanceof Deferred) {
       console.log(JSON.stringify({ chat: e.message }));

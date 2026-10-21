@@ -44,7 +44,8 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
   const queryVector = queryEmbedder((texts, onUsage) => embedWithUsage(texts, "query", onUsage));
   return {
     authUser: async (t) => { const { data, error } = await sb.auth.getUser(t); return error ? null : data.user?.id ?? null; },
-    filters: (q, today, context, withIntent, bill, edit) => extractFilters(q, today, context, withIntent, (u) => bill?.("chat", FILTER_MODEL, u), edit ?? null),
+    filters: (q, today, context, withIntent, bill, edit, agg) =>
+      extractFilters(q, today, context, withIntent, (u) => bill?.("chat", FILTER_MODEL, u), edit ?? null, agg ?? null),
     async facts(u, f: Filters) {
       // 받은 기간은 늘 받은 시각, 일정 기간은 event·task 의 start·due 에만(0024, §9)
       const scheduled = f.event_from !== null || f.event_to !== null;
