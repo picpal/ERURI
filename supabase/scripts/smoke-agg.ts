@@ -29,6 +29,7 @@ async function call(path: string, body: unknown) {
 }
 const runItems = async () => ((await sb.from("items").select("id, status, gate_label").eq("user_id", u.id).like("idempotency_key", `%:${RUN}:%`)).data ?? []) as
   { id: string; status: string; gate_label: string | null }[];
+let threw = false;   // 예외로 끝나면 gate 는 fail(D1 리뷰 I1 — finally 의 판정 줄이 거짓 통과를 찍지 않게)
 try {
   const left = (await sb.from("save_rules").select("id", { count: "exact", head: true }).eq("user_id", u.id)).count ?? 0;
   if (left !== 0) throw new Error(`test user 22 already has ${left} save_rules — remove them first`);
@@ -77,6 +78,9 @@ try {
   // ⑦ 규칙 빼기
   const rm = ruleId ? await call("chat/rule", { op: "remove", rule_id: ruleId }) : { status: 0, body: {} as J };
   check("rule_remove", rm.status === 200 && rm.body.status === "removed" && (rm.body.rules ?? []).length === 0, { status: rm.body?.status ?? null });
+} catch (e) {
+  threw = true;
+  throw e;
 } finally {
   const ids = (await runItems()).map((i) => i.id);
   for (const id of ids) await sb.from("jobs").delete().eq("user_id", u.id).eq("payload->>item_id", id);   // /ingest 항목의 잡 lease 는 item:<id>(K24)
@@ -101,6 +105,6 @@ try {
   await sb.from("llm_slots").delete().eq("user_id", u.id);
   const leftItems = (await runItems()).length;
   const leftRules = (await sb.from("save_rules").select("id", { count: "exact", head: true }).eq("user_id", u.id).like("value", `r${RUN8}%`)).count ?? 0;
-  console.log(JSON.stringify({ gate: failures === 0 && leftItems === 0 && leftRules === 0 ? "pass" : "fail", failures, left_items: leftItems, left_rules: leftRules }));
+  console.log(JSON.stringify({ gate: !threw && failures === 0 && leftItems === 0 && leftRules === 0 ? "pass" : "fail", threw, failures, left_items: leftItems, left_rules: leftRules }));
   if (failures || leftItems || leftRules) Deno.exitCode = 1;
 }
