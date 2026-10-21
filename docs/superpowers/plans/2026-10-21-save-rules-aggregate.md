@@ -16,7 +16,7 @@
 
 | ID | 태스크 | 선행 | 시점 | 게이트 행 |
 |---|---|---|---|---|
-| S0 | 스펙 세부 반영(K표·`rule_saved` 사용자 쓰기 금지 한 줄 — §8·§16) | 이 계획 커밋 | 문서 | — |
+| S0 | 스펙 세부 반영(K1~K27·`rule_saved` 사용자 쓰기 금지 한 줄 — §8·§16) | 이 계획 커밋 | 문서 | — |
 | A1 | `0035` ① — 테이블·상태·체크·정책·`save_rules_of`·`save_rule_add`·`save_rule_remove`·`is_messenger`·`sender_matches`·embed 함수 3개 + `_agg-sql.ts`·PGlite·호스팅 테스트 파일 | S0 | 로컬만 | `AGG-db`(로컬) |
 | A2 | `0035` ② — `save_rule_candidates`·`save_rule_restore`·`aggregate_items` + 사례 | A1 | 로컬만 | `AGG-db`(로컬) |
 | A3 | `_shared/save-rules.ts` — 값 정규화·`matchSaveRules`·SQL 메신저 목록 대조 | A1 | 로컬만 | `AGG-unit` ① |
@@ -54,27 +54,32 @@
 | # | 항목 | 결정 | 이유 |
 |---|---|---|---|
 | K1 | 0035 위치 | `supabase/migrations-pending/0035_save_rules_aggregate.sql`로 만들고 D1에서 `git mv` → 적용 | 0.16.0 계획 관례. `supabase db push`가 배포 전에 실수로 적용하지 못하게 |
-| K2 | `rule_saved` 사용자 쓰기 금지 | 0035가 `gate_feedback_owner_insert`를 다시 만들며 `with check`에 `and verdict <> 'rule_saved'`, `gate_feedback_owner_delete`의 `using`에도 `and verdict <> 'rule_saved'`(update 정책은 원래 없다) | 사용자가 `rule_saved`를 넣으면 그 항목이 정확도에서 빠지고, 지우면 `notice` → `kept` 항목이 Jev 통과로 둔갑한다(Codex #5와 같은 오염). 지우기 금지는 메인 판정의 같은 목적 확장 — 확인 필요 ① |
+| K2 | `rule_saved` 사용자 쓰기 금지 | 0035가 `gate_feedback_owner_insert`를 다시 만들며 `with check`에 `and verdict <> 'rule_saved'`, `gate_feedback_owner_delete`의 `using`에도 `and verdict <> 'rule_saved'`(update 정책은 원래 없다) | 사용자가 `rule_saved`를 넣으면 그 항목이 정확도에서 빠지고, 지우면 `notice` → `kept` 항목이 Jev 통과로 둔갑한다(Codex #5와 같은 오염). 지우기 금지는 메인 판정의 같은 목적 확장 — **메인 판정 ① 유지**(K27) |
 | K3 | 메신저 판정 SQL | 0035에 `is_messenger(p_source, p_app) returns boolean immutable` — `classify.ts` `MESSENGER_APPS`와 같은 목록(공백 제거·소문자). A3 테스트가 마이그레이션 글의 배열과 TS 집합을 대조 | 저장 규칙(TS)과 집계(SQL)의 발신자·메신저 제목 판정이 갈리면 규칙으로 저장한 카톡 문자를 집계가 못 센다(Review Focus 2) |
 | K4 | 발신자 조건 SQL | `sender_matches(p_source, p_app, p_sender, p_title, p_value) returns boolean immutable` = 공백(`\s`) 제거·소문자 `strpos` > 0, 메신저 항목은 제목도. ILIKE가 아니라 이스케이프가 필요 없다 | 스펙 "공백·대소문자 무시, 메신저 항목은 제목도 — 저장 규칙 `sender`와 같은 판정" |
-| K5 | `statement_timeout` | 스펙대로 함수 속성 `set statement_timeout = '5s'`를 두고, chat deps가 `aggregate_items` RPC를 `AbortSignal.timeout(6000)`으로 끊어 `failed`로 만든다. 함수 속성이 실행 중 문장을 끊는지는 U1로 실측 | Postgres는 실행 중 문장의 타이머를 함수 SET으로 다시 걸지 않는다고 알려져 있다 — 미실측이라 사용자 대기는 chat 쪽에서 확실히 묶는다 |
+| K5 | `statement_timeout` | 스펙대로 함수 속성 `set statement_timeout = '5s'`를 두고, chat deps가 `aggregate_items` RPC를 `AbortSignal.timeout(6000)`으로 끊어 `failed`로 만든다. 함수 속성이 실행 중 문장을 끊는지는 U1로 실측 | Postgres는 실행 중 문장의 타이머를 함수 SET으로 다시 걸지 않는다고 알려져 있다 — 미실측이라 사용자 대기는 chat 쪽에서 확실히 묶는다. 끊지 않으면 D1이 스펙 문장을 보강한다(**메인 판정 ② 유지**, K27·U1) |
 | K6 | 규칙 비교 글 | worker: 제목 = `applyRules`의 `maskedTitle ?? item.title`, 본문 = `masked`. chat 후보: 저장된 제목·본문(ingest가 이미 마스킹해 저장) | 스펙 §16 판정 ⑪(마스킹 뒤 글) |
 | K7 | 규칙 조회 범위 | worker는 `item.source !== "SHARE"`일 때만 `save_rules_of`를 부른다(잡마다 최대 한 번) | SHARE는 규칙과 무관(스펙 §7) — 호출을 아낀다 |
 | K8 | 길이 단위 | 2~30자 = 코드 포인트(`[...s].length`, SQL `char_length`). 정규화 = 앞뒤 공백 제거 + 안쪽 연속 공백(`\s+`) 한 칸. chat이 정규화한 값을 넘기고 SQL도 같은 정규화를 다시 한다(멱등) | SQL·TS가 같은 수를 센다 |
 | K9 | 집계·후보 위치 | 집계 RPC와 저장 규칙 후보 복호화는 `guarded`(예약 `chat`) 클로저 안 — 키워드 0개 → 질문 흐름 전환을 같은 클로저에서 하려고 | 비용은 필터 한 번(스펙 §9 "비용"), 슬롯 보유는 최대 6초 더 |
 | K10 | 집계 맥락 | `ChatHistory.context`는 `status = "ok"` 집계 턴만 `{question, answer: sentence}`로 넣는다(`bad_condition`·`failed` 문구는 넣지 않는다, 구간은 잇는다) | 오류 문구가 다음 필터의 맥락이 되면 판단만 흐린다 |
-| K11 | `aggregate_context` 검사 | 서버: 객체 + 8칸 타입이 맞고 `revalidateAggregate(그 값, today, null)`이 `ok`이며 그 `conditions`가 입력과 같아야 한다 — 아니면 400 `bad_context`. 앱: 400 `bad_context`면 `context`·`aggregate_context`를 둘 다 빼고 한 번 더(지금 맥락 재시도와 같은 한 번) | 재검증된 값만 받는다(스펙 "서버가 재검증한 값 그대로") — 날이 바뀌어 미래 칸이 된 직전 조건은 버리고 새로 묻게 |
+| K11 | `aggregate_context` 검사 | 서버: 객체 + 8칸 타입이 맞고(`defaulted`·`clamped`는 불리언), **검색 조건 6칸**(`keywords`·`sender`·`sources`·`from`·`to`·`bucket`)만 `revalidateAggregate(6칸, today, null)`에 넣어 `ok`이고 재검증된 6칸이 입력 6칸과 같아야 한다 — 아니면 400 `bad_context`. **이력 플래그 `defaulted`·`clamped`는 비교에서 뺀다**(확정된 `from`·`to`를 다시 검증하면 `defaulted: false`, 이미 90일인 기간은 `clamped: false`가 되므로). 통과하면 6칸 + 입력의 두 플래그를 돌려준다. 이어받기 ⑥에서 지금 글이 `from`·`to`를 둘 다 비우면(기간을 이어받으면) 직전 `defaulted`·`clamped`를 그대로 잇고, 하나라도 말하면 ④가 새로 정한다. 앱: 400 `bad_context`면 `context`·`aggregate_context`를 둘 다 빼고 한 번 더(지금 맥락 재시도와 같은 한 번) | 재검증된 값만 받는다(스펙 "서버가 재검증한 값 그대로") — 날이 바뀌어 미래 칸이 된 직전 조건은 버리고 새로 묻게. 플래그까지 비교하면 기본 기간·90일 줄임 응답 직후 "날짜별로는?"이 늘 400이 된다(Codex 계획 리뷰 #1 HIGH) — 왕복 테스트 A6·A9 |
 | K12 | 응답 키 | `/chat` 응답에 `aggregate`·`save_rule`을 늘 싣는다(그 의도가 아니면 null) | `edit`과 같은 방식. 0.16.x 앱 디코더는 모르는 키를 무시한다 |
 | K13 | INTENT-eval 회귀 기준 | 같은 세션에서 119개를 0.16.x 모드(새 의도 없음) 2회 + 0.17.0 모드 2회. **새로 틀린 사례** = 0.16.x 2회 모두 맞고 0.17.0 2회 중 한 번이라도 틀림 | 저장된 0.16.x 결과가 HEAD 코드와 같은 문장 기준인지 보장할 수 없다 — 같은 시각 기준선이 정직하다 |
 | K14 | AGG-eval 사례 | §9 경계 예시 20개를 그대로 + 나머지 24개를 §15 구성표에 맞춰 합성(검사 함수가 구성을 강제) | 스펙 §15 |
 | K15 | AGG-db 호스팅 | 테스트 사용자 22(주)·21(남). 사용자 삭제 cascade는 PGlite만 실행, 호스팅은 FK `confdeltype = 'c'` 확인. 동시 추가 사례만 커밋 — 규칙 값 = 실행 태그(`r<8자>-<n>`)로 만들고 `finally`에서 `user_id = 22 and value like 'r<8자>-%'`만 지운다 | 호스팅 `auth.users`를 지우지 않는다. 동시 사례는 커밋 없이 잴 수 없다(0.16.0 동시 고치기와 같은 방식) |
-| K16 | 저장 규칙 턴 복원 | 버튼 요청 중 앱이 닫혔으면 다시 열 때 "바꾸지 못했어요. 다시 눌러 주세요."(버튼 유지) | 같은 버튼을 두 번 눌러도 바뀌지 않는다(스펙 — `duplicate`·`not_found`) |
+| K16 | 저장 규칙 턴 복원 | 버튼 요청 중 앱이 닫혔으면 다시 열 때 "바꾸지 못했어요. 다시 눌러 주세요."(버튼 유지). 버튼 결과는 K23 필드로 기록에 남는다 | 같은 버튼을 두 번 눌러도 바뀌지 않는다(스펙 — `duplicate`·`not_found`) |
 | K17 | 최근 폐기 복구 행 | `RecentDiscards.restoreState`가 `kept`를 `.noSchedule`("일정을 찾지 못했어요")로 본다 | 규칙에 맞는 항목을 "최근 폐기"에서 복구하면 `kept`가 된다 — 지금 코드는 90초 동안 "처리 중…"으로 남는다(Review Focus 1) |
 | K18 | 업로드 가드 | `version-guard.sh`에 0.17.0 가드(`ChatAggregate.swift`가 있는데 < 0.17.0이면 멈춤, `TF_ALLOW_PRE_AGG=1` 예외) | 0.16.0·0.16.1과 같은 방식 |
 | K19 | Gmail 프로모션 라벨 | worker 테스트는 OTP·`(광고)`만. Gmail 프로모션 라벨은 수집(`gmail.ts` `applyRules(…, {labels})`)에서 폐기돼 worker에 오지 않는다 — 기존 `gmail-mail.test.ts`가 덮는다 | `processText`의 `applyRules`에는 라벨이 없다(코드 확인) |
 | K20 | 목록 칸 키 | `/chat/aggregate`의 `bucket_key`: `hour` `"00"`~`"23"`, `weekday` `"1"`~`"7"`, `day` = `from`~`to` 안의 `YYYY-MM-DD` — 밖이면 400 `bad_request` | 스펙 "그 칸 종류 밖이면 400"의 `day` 해석 |
 | K21 | [함께 저장] 0건 | `/chat/rule` `restore`에서 `save_rule_restore`가 0을 돌려주면 `none` | 그사이 다른 경로로 복구·정리된 경우 |
 | K22 | 집계 0건 칸 탭 | 앱이 서버를 부르지 않고 "이 칸에는 없어요" | 스펙 문구, 호출 절약 |
+| K23 | 저장 규칙 턴 영속 필드 | `SaveRuleTurn`(Codable) = `phase`·`addStatus`(`added`·`duplicate`·`limit`·`bad_value`)·`ruleID`(add 결과 `rule.id`)·`addedCount`(N/20)·`matched`·`restoreStatus`(`queued`·`none`·`not_found`)·`restored`·`removedIDs`·`note`. 디코드는 관대하게(없는 칸은 기본값, 모르는 `phase`는 `.idle`). [함께 저장] 대상 = `SaveRuleTurn.restoreRuleID(response)` — `restoreStatus`가 있으면 nil(이미 누름), `addStatus`가 `added`·`duplicate`이고 `ruleID`가 있고 `matched > 0`이면 `ruleID`, 그 밖은 `SaveRules.restoreRuleID(response)`(채팅 판정 `duplicate`) | 첫 `reply`는 바꾸기 전 확인 응답이라 새 규칙 id가 없다 — 추가 성공 뒤 앱을 다시 열어도 [함께 저장]이 같은 규칙으로 가야 한다(Codex 계획 리뷰 #2) |
+| K24 | SQL 테스트 멱등 키 | `_agg-sql.ts` 시드 키 = `<tag>:<source>-<k>`, `tag` = `test:<run8>`(호스팅은 `_testenv` `RUN`) — 0011 `restore_discarded`의 `idempotency_key like 'test:%'` 판정과 같다. `save_rule_restore`는 0011의 lease 식을 그대로 복사한다(`test:` 접두면 `test:<run>:item:<id>`, 아니면 `item:<id>`). **`/ingest` source 접두 형식(`<source>:test:<run>:…`)은 지원하지 않는다** — 그 항목의 복구 잡은 `item:<id>`이고 배포 워커가 처리한다(D1 스모크·AGG-sim ②⑨는 배포 워커 처리가 필요하다). 그 잡은 스크립트 정리가 `payload->>item_id`로 지운다(smoke-gate와 같은 방식) | 복사 대상 0011과 다른 키를 쓰면 복구 잡 lease 기대값이 어긋난다(Codex 계획 리뷰 #3) |
+| K25 | AGG-sim 실행 순서 | ① → ② → ③ → ④ → ⑩(스펙 "④ 바로 뒤") → ⑤ → ⑥ → ⑦ → **⑨ → ⑧**. ⑧의 `--phase rules20`은 그때 있는 규칙(⑨의 "합성은행" 포함)을 세어 **합계 20개**까지만 채운다(값 `r<run8>-<n>`) | 스펙 번호 순서대로면 ⑧이 20개를 채워 ⑨의 추가가 `limit`가 된다(Codex 계획 리뷰 #4). 번호·판정은 스펙 그대로, 실행 순서만 바꾼다 |
+| K26 | 규칙 목록 테스트 | 중복·정규화 사례는 `save_rules_of` 결과를 `kind:value` 정렬 배열로 비교(순서 무관). 정렬은 별도 사례 — `created_at`을 서로 다르게 명시해 직접 insert(삽입 순서와 다르게)한 뒤 `created_at, id` 순을 단언 | 한 트랜잭션 안의 `default now()`는 같은 값이라 순서가 임의 UUID에 달린다(Codex 계획 리뷰 #5) |
+| K27 | 메인 판정 (2026-10-21, Codex 계획 리뷰 뒤) | ① `gate_feedback` `rule_saved`는 사용자 insert·delete 모두 금지(K2 유지) ② 5초 `statement_timeout` 함수 속성이 실행 중 문장을 끊지 않으면 D1이 `gates.md` 기록과 함께 스펙 문장을 보강한다(사전 승인, K5·U1 유지) ③ **D1 시작 = 이 계획의 서버·앱 코드 태스크(A1~A10·P1~P4) 전부 완료·리뷰 통과 뒤** — 다른 버전의 게이트(0.15.0·0.16.0 대기 행)를 기다리지 않는다 ④ **AGG-real 기한 2026-11-30**(격리 연장분 만료) | 계획 작성자 확인 항목에 대한 메인 판정 |
 
 ## 이 계획이 기대는 사실 (코드에서 확인, `874e148`)
 
@@ -101,7 +106,7 @@
 
 | # | 전제 | 흡수 게이트 | 실패하면 |
 |---|---|---|---|
-| U1 | 함수 속성 `set statement_timeout = '5s'`가 그 함수를 부른 RPC 문장을 끊는다 | D1 Step 3 호스팅 사례 `statement_timeout attribute`(임시 함수 `set statement_timeout='1s'` + `pg_sleep(2)`) | 끊지 않으면 chat 6초 abort(K5)만으로 사용자 대기를 묶는다 — 결과를 `gates.md`에 적고 S0의 스펙 문장 "statement_timeout 5초(함수 속성)" 옆에 "실행 중 문장은 끊지 않음 — chat 6초"를 메인 승인 뒤 더한다 |
+| U1 | 함수 속성 `set statement_timeout = '5s'`가 그 함수를 부른 RPC 문장을 끊는다 | D1 Step 3 호스팅 사례 `statement_timeout attribute`(임시 함수 `set statement_timeout='1s'` + `pg_sleep(2)`) | 끊지 않으면 chat 6초 abort(K5)만으로 사용자 대기를 묶는다 — 결과를 `gates.md`에 적고 D1이 스펙 문장 "statement_timeout 5초(함수 속성)" 옆에 "실행 중 문장은 끊지 않음 — chat 6초"를 더해 같은 커밋에 넣는다(메인 판정 ② 사전 승인, K27) |
 | U2 | PGlite가 `set statement_timeout` 함수 속성·`sha256()`·`extract(isodow)`·`at time zone 'Asia/Seoul'`을 Postgres처럼 처리한다 | A2 Step 2 | 안 되는 사례만 `hostedOnly` 표시, D1 호스팅으로 판정 |
 | U3 | `gpt-6-luna`가 0.17.0 스키마로 AGG-eval 합격선을 2회 모두 넘는다 | A10 | `AGG_RULE`·칸 설명을 고쳐 다시(최대 2회, INTENT 회귀도 다시). 그래도 실패면 메인 보고(모델 전환은 사용자 결정) |
 | U4 | 시뮬레이터에서 SwiftUI `ScrollView(.horizontal)` 막대가 `List` 행 탭과 섞이지 않고 막대 탭을 받는다 | G1 ④⑤ | 막대 줄을 `Button` 대신 `onTapGesture` + `contentShape(Rectangle())`로, 그래도 안 되면 막대 아래 칸 `Picker`로 — 메인에게 |
@@ -170,7 +175,7 @@
 - Modify: `docs/superpowers/specs/2026-09-22-assistant-design.md` — 머리 갱신 줄, §8 `gate_feedback` 행, §16 "2026-10-21 저장 규칙·집계 질문" 끝에 새 소절
 
 **Interfaces:**
-- Produces: 스펙의 K1~K22 원본(이 계획 이후 태스크의 근거).
+- Produces: 스펙의 K1~K27 원본(이 계획 이후 태스크의 근거).
 
 - [ ] **Step 1: §8 `gate_feedback` 행 끝에 한 문장을 더한다**
 
@@ -178,7 +183,7 @@
 
 - [ ] **Step 2: §16에 계획 세부 소절을 넣는다**
 
-"2026-10-21 저장 규칙·집계 질문" 소절 아래(외부 리뷰 반영 소절 앞)에 제목 "2026-10-21 저장 규칙·집계 질문 구현 계획 세부 (계획 2026-10-21-save-rules-aggregate.md, 메인 판단 — 사용자 재검토 가능)"의 `###` 소절을 넣고 K1~K22를 한 줄씩(번호·결정 — 이유는 계획에 있다고 적는다) 옮긴다. 머리 갱신 줄 맨 앞에 "2026-10-21 (0.17.0 구현 계획 세부 — 0035 미적용 위치·rule_saved 사용자 쓰기 금지·메신저 SQL 목록·statement_timeout 실측·INTENT 회귀 같은 세션 기준선 등, §8·§16) · "를 더한다.
+"2026-10-21 저장 규칙·집계 질문" 소절 아래(외부 리뷰 반영 소절 앞)에 제목 "2026-10-21 저장 규칙·집계 질문 구현 계획 세부 (계획 2026-10-21-save-rules-aggregate.md, 메인 판단 — 사용자 재검토 가능)"의 `###` 소절을 넣고 K1~K27을 한 줄씩(번호·결정 — 이유는 계획에 있다고 적는다) 옮긴다. 머리 갱신 줄 맨 앞에 "2026-10-21 (0.17.0 구현 계획 세부 — 0035 미적용 위치·rule_saved 사용자 쓰기 금지·메신저 SQL 목록·statement_timeout 실측·aggregate_context 6칸 검증·저장 규칙 턴 영속 필드·AGG-sim ⑨→⑧ 순서·INTENT 회귀 같은 세션 기준선·D1 시작 조건·AGG-real 기한 2026-11-30 등, §8·§16) · "를 더한다.
 
 - [ ] **Step 3: 확인 후 커밋**
 
@@ -187,7 +192,7 @@ Expected: 이전보다 2 이상 많고, 스펙 파일 하나만 바뀜.
 
 ```bash
 git add docs/superpowers/specs/2026-09-22-assistant-design.md
-git commit -m "docs(spec): 0.17.0 plan details — users cannot insert or delete rule_saved feedback (0035 policies), plan K1–K22 in §16
+git commit -m "docs(spec): 0.17.0 plan details — users cannot insert or delete rule_saved feedback (0035 policies), plan K1–K27 in §16
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -209,11 +214,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `save_rule_remove(p_user uuid, p_rule uuid) returns text` — `'removed'|'not_found'`.
   - `is_messenger(p_source text, p_app text) returns boolean immutable`(K3), `sender_matches(p_source text, p_app text, p_sender text, p_title text, p_value text) returns boolean immutable`(K4).
   - `worker_get_embed_source`·`worker_save_chunks`·`enqueue_embed_backlog` — 0016·0015 본문 그대로, 상태 목록에 `'kept'`만 더한다.
-- Produces(TS): `_agg-sql.ts`의 `export const MIGRATION_0035: URL`, `export type ACtx = { q: Q; user: string; other: string; tag: string }`, `export const AGG_CASES: { name: string; hostedOnly?: boolean; localOnly?: boolean; run(c: ACtx): Promise<void> }[]`.
+- Produces(TS): `_agg-sql.ts`의 `export const MIGRATION_0035: URL`, `export type ACtx = { q: Q; user: string; other: string; tag: string }`(`tag` = `test:<run8>`, K24), `export const AGG_CASES: { name: string; hostedOnly?: boolean; localOnly?: boolean; run(c: ACtx): Promise<void> }[]`.
 
 - [ ] **Step 1: 실패하는 사례를 쓴다(`_agg-sql.ts`, A1분 — `_failed-sql.ts`와 같은 모양: `one`·`as`·시드 도우미)**
 
-시드는 `items`에 직접 insert(`content_enc = convert_to(<합성 글>, 'UTF8')` — PGlite·호스팅 공통 가짜 암호문, 호스팅은 롤백되므로 남지 않는다), 멱등 키 `<source>:<tag>-<k>`.
+시드는 `items`에 직접 insert(`content_enc = convert_to(<합성 글>, 'UTF8')` — PGlite·호스팅 공통 가짜 암호문, 호스팅은 롤백되므로 남지 않는다), 멱등 키 `${c.tag}:<source>-<k>`(`c.tag` = `test:<run8>` — PGlite는 사례마다 새로, 호스팅은 `_testenv` `RUN`). 0011 `restore_discarded`의 `like 'test:%'` 판정과 같은 형식이다(K24).
 
 ```ts
 export const AGG_CASES = [
@@ -226,7 +231,11 @@ export const AGG_CASES = [
     assertEquals((await add(c, "keyword", "가".repeat(31))).status, "bad_value");
     assertEquals((await add(c, "regex", "합성PAY")).status, "bad_value");
     assertEquals((await add(c, "sender", "합성PAY")).status, "added");          // 종류가 다르면 다른 규칙
-    assertEquals((await rulesOf(c)).map((r) => r.value), ["합성PAY", "PIN PAY", "합성PAY"]);
+    // 순서 없이 비교(K26 — 한 트랜잭션 안 created_at 은 같다)
+    assertEquals((await rulesOf(c)).map((r) => `${r.kind}:${r.value}`).sort(), ["keyword:PIN PAY", "keyword:합성PAY", "sender:합성PAY"].sort());
+  } },
+  { name: "save_rules_of orders by created_at then id (explicit distinct created_at, inserted out of order)", run: async (c) => {
+    // 직접 insert: B(created_at = '2026-10-21 10:00+09'), A('2026-10-21 09:00+09'), C('2026-10-21 11:00+09') → rulesOf = [A, B, C]
   } },
   { name: "20 rules then limit; duplicate still answers duplicate at the limit", run: async (c) => { /* 20개 added → 21번째 limit, 1번째 값 다시 → duplicate + 같은 rule_id */ } },
   { name: "save_rule_remove: own → removed; again → not_found; other user's id → not_found (row kept)", run: async (c) => {} },
@@ -316,7 +325,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: A1 `sender_matches`·`is_messenger`·시드 도우미.
 - Produces:
   - `save_rule_candidates(p_user uuid, p_limit int default 500) returns table(item_id uuid, source text, app_name text, sender text, title text, content_enc bytea)` — `status = 'discarded:server:' || gate_label and quarantine_until >= now() and content_enc is not null`, `order by occurred_at desc limit least(greatest(p_limit, 0), 500)`. 감사 없음(복호화·감사는 chat, A8).
-  - `save_rule_restore(p_user uuid, p_items uuid[]) returns int` — 항목마다 `for update`로 위 조건 재확인 → `restore_discarded`와 같은 갱신·잡(`skip_gate`, 테스트 태그 lease)·감사(`actor 'chat'`, `action 'restore'`, `target <item_id> || ' rule'`) + `gate_feedback(item_id, user_id, verdict) values (…, 'rule_saved') on conflict (item_id) do nothing`. 조건이 안 맞는 id(이미 복구·남의·기한 지남)는 세지 않는다.
+  - `save_rule_restore(p_user uuid, p_items uuid[]) returns int` — 항목마다 `for update`로 위 조건 재확인 → `restore_discarded`와 같은 갱신·잡(`skip_gate`, lease = 0011 식 그대로 — `idempotency_key like 'test:%'`면 `split_part(…,1) || ':' || split_part(…,2) || ':item:' || id`, 아니면 `'item:' || id`, K24)·감사(`actor 'chat'`, `action 'restore'`, `target <item_id> || ' rule'`) + `gate_feedback(item_id, user_id, verdict) values (…, 'rule_saved') on conflict (item_id) do nothing`. 조건이 안 맞는 id(이미 복구·남의·기한 지남)는 세지 않는다.
   - `aggregate_items(p_user uuid, p_keywords text[], p_sender text, p_sources text[], p_from date, p_to date, p_bucket text, p_bucket_key text default null) returns jsonb` `set statement_timeout = '5s'` — 집계 `{total, buckets: [{key, count}]}`(0이 아닌 칸, 키 순) / 목록 `{total, items: [{item_id, title, sender, source, app_name, occurred_at}]}`(최신순 50). `p_bucket`이 셋 밖이거나 키워드가 비면 `raise exception 'bad_args'`.
 
 - [ ] **Step 1: 실패하는 사례를 더한다**
@@ -324,7 +333,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```ts
 // 후보·복구
 { name: "candidates: only quarantined gate discards with a body (rule discard, expired, purged, other user's, kept excluded), newest first, limit", run: … },
-{ name: "restore: queued, quarantine null, process job skip_gate with test-tag lease, audit restore '<id> rule', gate_feedback rule_saved (no wrong_discard)", run: … },
+{ name: "restore: queued, quarantine null, process job skip_gate with lease '<c.tag>:item:<id>', audit restore '<id> rule', gate_feedback rule_saved (no wrong_discard)", run: … },
+{ name: "restore lease follows 0011: ingest-form key 'MESSAGES:test:<run8>:x' (not supported as a test tag) → lease 'item:<id>'", run: … },   // K24
 { name: "restore: already restored / other user's / expired ids are not counted; returns the count", run: … },
 { name: "restore keeps an existing gate_feedback row (on conflict do nothing)", run: … },
 // 집계 — 시드: 사용자 user 에 kept·extracted·empty·격리 폐기·queued·규칙 폐기(otp) 항목 + 각 청크(text), 남 other 에 같은 키워드 항목
@@ -547,7 +557,15 @@ Deno.test("revalidate ⑥: previous fills only empty fields; the message's field
   const r = revalidateAggregate({ keywords: [], sender: null, sources: [], from: null, to: null, bucket: "day" }, "2026-10-21", prev);
   assertEquals(r, { kind: "ok", inherited: true, conditions: { ...prev, bucket: "day" } });
 });
-Deno.test("parseAggregateContext: absent → null; wrong shape or not equal to its own revalidation → 'bad'", …);
+Deno.test("parseAggregateContext: absent → null; wrong shape (flags not boolean included) or 6 search fields not equal to their revalidation → 'bad'", …);
+Deno.test("parseAggregateContext round-trip: default-period (defaulted) and 90-day (clamped) ok responses sent back unchanged → same 8 fields, not 'bad'", () => {
+  // 응답 conditions 를 그대로 되보낸다 — 플래그는 비교하지 않는다(K11, Codex 계획 리뷰 #1)
+  for (const r of [raw(), raw({ from: "2026-01-01", to: "2026-10-21" })]) {
+    const c = (revalidateAggregate(r, "2026-10-21", null) as { conditions: AggConditions }).conditions;
+    assertEquals(parseAggregateContext(JSON.parse(JSON.stringify(c)), "2026-10-21"), c);
+  }
+});
+Deno.test("revalidate ⑥: inherited period keeps previous defaulted/clamped; a message that names a date recomputes them", …);
 Deno.test("revalidateListRequest: bucket key outside its kind or outside from..to → null", …);
 Deno.test("fillBuckets: hour 24, weekday 7 (Mon..Sun), day every date (90) with zeros and labels", …);
 Deno.test("topBuckets: zeros dropped, ties in bucket order, max 3", …);
@@ -682,6 +700,7 @@ Expected: FAIL.
 Deno.test("intents without the new four: filters called with agg null (0.16.x request), aggregate/save_rule null in response", …);
 Deno.test("intents with aggregate: filters called with { previous: null }; aggregate_context read only when intents has aggregate; bad shape → 400 bad_context", …);
 Deno.test("aggregate_context is ignored (even malformed, no 400) when intents lacks aggregate", …);
+Deno.test("aggregate round-trip: a defaulted (and a clamped) ok response's conditions sent back as aggregate_context with '날짜별로는?' → 200, inherited, bucket day, same from/to, sentence keeps '최근 7일' / '(최대 90일)'", …);   // K11
 Deno.test("aggregate ok: RPC args (keywords, sender, MESSAGES only stays MESSAGES, from/to, bucket), response {intent:'aggregate', answer:'', aggregate:{status:'ok', buckets 24, top, sentence, notes}}, no search/answer/audit calls", …);
 Deno.test("aggregate: legacy filter sources (문자 = MESSAGES+NOTIFICATION) never reach the RPC — only aggregate.sources", …);
 Deno.test("aggregate: zero keywords → question flow (search + answer, intent question); with aggregate_context → inherited", …);
@@ -768,7 +787,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Produces:
   - `public enum ChatAggregate` — `struct Conditions: Codable, Sendable, Equatable { keywords: [String]; sender: String?; sources: [String]; from: String; to: String; bucket: String; defaulted: Bool; clamped: Bool }`, `struct Bucket: Codable, Sendable, Equatable { key: String; label: String; count: Int }`, `struct Response: Codable, Sendable { status: String; conditions: Conditions?; total: Int; buckets: [Bucket]; top: [Bucket]; sentence: String; notes: [String] }`, `static func isAggregate(_ intent: String?) -> Bool`, `struct Bars: Equatable { bars: [Bucket]; max: Int; leaderKeys: Set<String>; tickIndices: [Int]; tickLabels: [String]; scrolls: Bool }`, `static func bars(_ r: Response) -> Bars`(hour 눈금 0·6·12·18, weekday 7개 모두, day 첫·마지막·월요일 `M/D`, `scrolls` = day 31칸 초과), `static func listHeader(bucket: String, label: String, total: Int) -> String`("14시대 9건"·"10/15(수) 9건"·"수요일 9건"), `struct ListItem: Decodable, Sendable, Identifiable { item_id; title: String?; sender: String?; source: String; app_name: String?; occurred_at: String }`, `struct ListResponse: Decodable, Sendable { status; bucket_key; label; total: Int; items: [ListItem]; truncated: Bool }`, `static func line(_ i: ListItem) -> (title: String, meta: String)`(제목 없으면 발신자 · `SourceLabel.label` · 서울 `M/d HH:mm`), `static func listBody(_ c: Conditions, bucketKey: String) -> [String: Any]`, `static func contextJSON(_ c: Conditions) -> [String: Any]`, `static func copyText(_ r: Response) -> String`(문장 + 꼬리 줄 줄바꿈), `enum Text { failed, emptyBucket = "이 칸에는 없어요", truncated = "최근 50건만 보여요" }`.
-  - `public enum SaveRules` — `struct Rule: Codable, Sendable, Equatable, Identifiable { id; kind; value; created_at }`, `struct Candidate: Codable, Sendable, Equatable { kind; value }`, `struct Response: Codable, Sendable { op; status; candidate: Candidate?; matches: [Rule]; rules: [Rule]; matched: Int; limit: Int }`, `static func isSaveRule(_ intent: String?) -> Bool`, `static func ruleLine(_ r: Rule) -> String`("키워드 · PINPAY"·"발신자 · 합성은행"), `static func addPrompt(_ c: Candidate) -> (title: String, line: String, note: String)`(스펙 문구 — 키워드/발신자), `static func headline(_ r: Response) -> String`(`duplicate`·`limit`·`bad_value`·`not_found`·`list` 머리 "저장 규칙 N/20"·0개 문구·`remove ok` "이 저장 규칙을 뺄까요?"), `static func added(count: Int) -> String`("저장 규칙을 추가했어요 (N/20)"), `static func matchedLine(_ n: Int) -> String`, `struct AddResult: Decodable { status; rule: Rule?; rules: [Rule]; matched: Int }`, `struct RemoveResult: Decodable { status; rules: [Rule] }`, `struct RestoreResult: Decodable { status; restored: Int }`, `static func restoreText(_ r: RestoreResult) -> String`, `static func restoreRuleID(_ r: Response) -> String?`(`duplicate`이고 `matched > 0`이면 `matches[0].id`, 그 밖 nil — 추가 뒤 [함께 저장]은 `AddResult.rule`), `static func addBody(kind: String, value: String) -> [String: Any]`·`removeBody(ruleID: String)`·`restoreBody(ruleID: String)`, `enum Text { removed = "저장 규칙을 뺐어요 — 이미 저장된 메시지는 그대로 있어요", removedRow = "뺐어요", buttonFailed = "바꾸지 못했어요. 다시 눌러 주세요." … }`.
+  - `public enum SaveRules` — `struct Rule: Codable, Sendable, Equatable, Identifiable { id; kind; value; created_at }`, `struct Candidate: Codable, Sendable, Equatable { kind; value }`, `struct Response: Codable, Sendable { op; status; candidate: Candidate?; matches: [Rule]; rules: [Rule]; matched: Int; limit: Int }`, `static func isSaveRule(_ intent: String?) -> Bool`, `static func ruleLine(_ r: Rule) -> String`("키워드 · PINPAY"·"발신자 · 합성은행"), `static func addPrompt(_ c: Candidate) -> (title: String, line: String, note: String)`(스펙 문구 — 키워드/발신자), `static func headline(_ r: Response) -> String`(`duplicate`·`limit`·`bad_value`·`not_found`·`list` 머리 "저장 규칙 N/20"·0개 문구·`remove ok` "이 저장 규칙을 뺄까요?"), `static func added(count: Int) -> String`("저장 규칙을 추가했어요 (N/20)"), `static func matchedLine(_ n: Int) -> String`, `struct AddResult: Decodable { status; rule: Rule?; rules: [Rule]; matched: Int }`, `struct RemoveResult: Decodable { status; rules: [Rule] }`, `struct RestoreResult: Decodable { status; restored: Int }`, `static func restoreText(_ r: RestoreResult) -> String`, `static func restoreRuleID(_ r: Response) -> String?`(`duplicate`이고 `matched > 0`이면 `matches[0].id`, 그 밖 nil — 추가 뒤 [함께 저장]은 P2 `SaveRuleTurn.restoreRuleID`가 기록된 `ruleID`로, K23), `static func addBody(kind: String, value: String) -> [String: Any]`·`removeBody(ruleID: String)`·`restoreBody(ruleID: String)`, `enum Text { removed = "저장 규칙을 뺐어요 — 이미 저장된 메시지는 그대로 있어요", removedRow = "뺐어요", buttonFailed = "바꾸지 못했어요. 다시 눌러 주세요." … }`.
   - `ChatReply.Answer`에 `aggregate: ChatAggregate.Response?`, `save_rule: SaveRules.Response?`.
   - `ChatAddEvent.intents = ["add_event", "mail_action", "mail_summary", "edit_event", "aggregate", "save_rule_add", "save_rule_list", "save_rule_remove"]`.
   - `Archive.statusKo("kept") = "저장됨(일정 없음)"`, `Archive.gatePassed`: `gateLabel == "rule"` → false, `Archive.Feedback`에 `.ruleSaved`(`"rule_saved"`).
@@ -811,7 +830,7 @@ Expected: FAIL(컴파일).
 - Consumes: P1 `ChatAggregate.Response`·`Conditions`, `SaveRules.Response`.
 - Produces:
   - `Kind`에 `.aggregate`, `.saveRule`.
-  - `public struct SaveRuleTurn: Codable, Sendable, Equatable { var phase: Phase(.idle, .working, .done); var addedCount: Int?; var matched: Int; var restore: String?; var removedIDs: [String]; var note: String? }`, `Record.saveRule: SaveRuleTurn?`(init 인자 기본 nil). 집계·저장 규칙 턴의 서버 응답은 `reply`(받은 그대로)에 둔다.
+  - `public struct SaveRuleTurn: Codable, Sendable, Equatable { var phase: Phase(.idle, .working, .done); var addStatus: String?; var ruleID: String?; var addedCount: Int?; var matched: Int; var restoreStatus: String?; var restored: Int?; var removedIDs: [String]; var note: String? }`(K23) — 버튼 결과 영속 칸: `add` 응답의 `status`·`rule?.id`·`rules.count`·`matched`, `restore` 응답의 `status`·`restored`, `remove` 성공 id. **관대한 디코드**: `init(from:)`이 모든 칸을 `decodeIfPresent`(기본 `.idle`·nil·0·`[]`), 모르는 `phase` 문자열은 `.idle`. `public func restoreRuleID(_ r: SaveRules.Response) -> String?` — `restoreStatus != nil`이면 nil, `addStatus ∈ {added, duplicate}`·`ruleID != nil`·`matched > 0`이면 `ruleID`, 그 밖 `SaveRules.restoreRuleID(r)`. `Record.saveRule: SaveRuleTurn?`(init 인자 기본 nil). 집계·저장 규칙 턴의 서버 응답은 `reply`(받은 그대로)에 둔다.
   - `restored`: `.aggregate`는 `.editEvent`와 같은 처리, `.saveRule`은 `phase == .working`이면 `.idle` + `note = SaveRules.Text.buttonFailed`(K16).
   - `context`: `.aggregate`이고 `reply`의 `aggregate.status == "ok"`면 `{question, answer: clip16(sentence)}`(K10). `.saveRule`은 넣지 않는다(구간은 잇는다).
   - `public static func aggregateContext(_ r: [Record], now: Date) -> ChatAggregate.Conditions?` — `segmentStart`가 있고 **마지막 레코드**가 `.aggregate`이며 `ok`이고 `conditions`가 있을 때만.
@@ -825,6 +844,11 @@ func testSaveRuleTurnNotInContextButKeepsSegment()
 func testAggregateContextOnlyWhenLastIsOkAggregateWithin30Min()
   // 바로 앞이 저장 규칙 턴 → nil, bad_condition·failed → nil, 31분 → nil, 30분 → conditions
 func testRestoredWorkingRuleButtonBecomesRetry()
+func testAddResultSurvivesRelaunchThenRestore()  // K23 (Codex 계획 리뷰 #2)
+  // reply = add 확인 응답(op add·status ok·candidate), saveRule = {phase .done, addStatus "added", ruleID "r-1", addedCount 3, matched 2}
+  // → 기록 파일 인코드 → 디코드(지금 ChatHistory 저장 형식, 앱 재실행) → restored → 턴 그대로, restoreRuleID(reply) == "r-1"
+  // → restoreStatus "queued"·restored 2 기록 → 다시 저장·복원 → restoreRuleID == nil(이미 누름)
+func testSaveRuleTurnLenientDecode()             // {"phase":"done"}만 → 나머지 기본값, {"phase":"weird"} → .idle, 0.17.0 이전 칸 이름 없는 파일도 로드
 ```
 
 Run: `cd ios && ./scripts/sim.sh test EruriCoreTests/ChatHistoryTests`
@@ -870,7 +894,7 @@ Expected: BUILD SUCCEEDED, 경고 증가 없음(`grep -c warning:`를 구현 전
 - Produces:
   - `ChatRuleAPI.add(kind:value:) async -> (status: Int, result: SaveRules.AddResult?)`, `remove(ruleID:)`, `restore(ruleID:)`(`functions/v1/chat/rule`).
   - `struct SaveRuleCard: View { let response: SaveRules.Response; let turn: SaveRuleTurn; let onAdd: () -> Void; let onRemove: (SaveRules.Rule) -> Void; let onRestore: (String) -> Void }` — 스펙 §9 "앱 — 저장 규칙 카드" 그대로(추가 확인 줄 + 작은 글씨 개인 대화 안내 + [저장 규칙 추가] → "저장 규칙을 추가했어요 (N/20)" → `matched > 0`이면 matchedLine + [함께 저장]; `duplicate` + `matched > 0`이면 기존 규칙 id로 [함께 저장]; `limit`·`not_found`는 목록 카드; 목록 줄마다 [빼기] → "뺐어요"; `remove ok`는 맞은 규칙마다 [빼기] → `Text.removed`). 버튼 진행 중 비활성, 네트워크·500 → `buttonFailed`(버튼 유지). accessibilityIdentifier: `rule-add`·`rule-restore`·`rule-remove-<id>`·`rule-line`.
-  - `ChatView`: `SaveRules.isSaveRule(a.intent)`면 `kind = .saveRule; reply = r.data; saveRule = SaveRuleTurn(phase: .idle, …)`. 버튼은 `settle(id, epoch)`로 `phase .working → .done`·결과 기록 → `persist()`. DiagLog `CHAT rule op=<op> status=<status>`(값 없음).
+  - `ChatView`: `SaveRules.isSaveRule(a.intent)`면 `kind = .saveRule; reply = r.data; saveRule = SaveRuleTurn(phase: .idle, …)`. 버튼은 `settle(id, epoch)`로 `phase .working → .done`·결과를 K23 칸(`addStatus`·`ruleID`·`addedCount`·`matched`·`restoreStatus`·`restored`·`removedIDs`)에 기록 → `persist()`. [함께 저장]의 대상·표시는 `turn.restoreRuleID(response)`만 쓴다(재실행 뒤에도 같은 규칙). DiagLog `CHAT rule op=<op> status=<status>`(값 없음).
   - `ArchiveView` `WrongPassSection`: `state != .restored && state != .ruleSaved`일 때만 버튼.
 
 - [ ] **Step 1: 구현 → 빌드** — `cd ios && ./scripts/sim.sh build` BUILD SUCCEEDED.
@@ -890,7 +914,7 @@ Expected: BUILD SUCCEEDED, 경고 증가 없음(`grep -c warning:`를 구현 전
 - Consumes: A1~A10·P1~P4 커밋.
 - Produces: 배포된 0035·chat·worker, `smoke-agg.ts`(배포 회귀 도구 — 커밋).
 
-- [ ] **Step 1: 선행 확인(하나라도 어긋나면 멈추고 메인에게)**
+- [ ] **Step 1: 선행 확인(하나라도 어긋나면 멈추고 메인에게)** — D1 시작 조건은 A1~A10·P1~P4 전부 완료·리뷰 통과뿐이다(메인 판정 ③, K27). 다른 버전의 대기 게이트(0.15.0·0.16.0 행)는 기다리지 않는다.
 
 Run: `grep -n 'AGG-eval\|INTENT-0170' docs/superpowers/phase1/gates.md; ls supabase/migrations-pending/; supabase migration list 2>/dev/null | tail -2; pgrep -x xcodebuild || echo none; vm_stat | grep -E 'free|compressor'`
 Expected: `AGG-eval`·`INTENT-0170` 통과, pending에 `0035_save_rules_aggregate.sql`만, 원격 마지막 = 0034, xcodebuild 없음.
@@ -909,10 +933,10 @@ Run: `git mv supabase/migrations-pending/0035_save_rules_aggregate.sql supabase/
 Expected: 적용 대상 `0035_save_rules_aggregate.sql` 하나뿐. 아니면 push하지 않고 멈춘다.
 
 Run: `supabase db push --yes && AGG_DB_TEST=1 deno test --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/tests/agg-db.test.ts supabase/tests/agg-sql.test.ts supabase/tests/quarantine-db.test.ts supabase/tests/embed-db.test.ts`
-Expected: `0035 already applied` + 사례 전부, **동시 사례 결과 `{added, limit}`**·정리 뒤 `r<RUN8>-%` 행 0, 0010·0015 회귀 없음. U1 결과가 "끊지 않음"이면 Global Constraints의 K5 대로 진행하고 기록에 적는다.
+Expected: `0035 already applied` + 사례 전부, **동시 사례 결과 `{added, limit}`**·정리 뒤 `r<RUN8>-%` 행 0, 0010·0015 회귀 없음. U1 결과가 "끊지 않음"이면 K5 대로 진행하고, 스펙 §8 "0035"의 `aggregate_items` 줄("`statement_timeout` 5초(함수 속성)")과 §9 **RPC** 줄의 `statement_timeout` 5초 옆에 "실행 중 문장은 끊지 않음 — chat 6초 abort"를 더해 아래 커밋에 스펙 파일도 넣는다(메인 판정 ② 사전 승인, K27).
 
 ```bash
-git add supabase/migrations/0035_save_rules_aggregate.sql supabase/tests/_agg-sql.ts
+git add supabase/migrations/0035_save_rules_aggregate.sql supabase/tests/_agg-sql.ts   # U1 "끊지 않음"이면 + docs/superpowers/specs/2026-09-22-assistant-design.md
 git commit -m "chore(db): move 0035 save rules and aggregate into supabase/migrations/ and apply it (hosted rolled-back cases and concurrent add at 19 passed)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -923,7 +947,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 Run: `supabase functions deploy chat && supabase functions deploy worker`
 Expected: 두 함수 새 버전. 0.16.x 앱 요청은 바이트 동일(A7)이라 지금 실기기 앱은 그대로 동작한다.
 
-- [ ] **Step 5: `smoke-agg.ts`(테스트 사용자 22, 실행 태그, 실제 `gpt-6-luna` 필터·Jev·추출) 작성·실행** — 순서: ① `/chat/rule {op:"add", kind:"keyword", value:"r<RUN8>합성PAY"}` → `added`·`matched 0` ② `/ingest`(smoke-gate 모양, source MESSAGES, 발신자 "합성PAY", 본문 "[r<RUN8>합성PAY] 결제 타임아웃 발생 …" 3건, capturedAt = 오늘 서울 10·14·14시) → 처리 대기(10초 간격 최대 300초) → 3건 모두 `kept` 또는 `extracted`·`gate_label 'rule'`·청크 있음 ③ `/chat` `{question: "오늘 r<RUN8>합성PAY 타임아웃 언제 많았어?", intents: 0.17.0 여덟}` → `intent aggregate`·`status ok`·`total 3`·최다 칸 `14` ④ `/chat/aggregate`로 그 칸 → `total 2` ⑤ intents 없이 같은 질문 → `intent question`(구 앱 경로) ⑥ `/chat/rule remove` → `removed`. 출력은 단계·상태·숫자·불리언만. `finally`: 이 실행의 items(멱등 키 `%:test:<run>:%`)·jobs(`deleteRunJobs`)·규칙(`value like 'r<RUN8>%'`)만 지우고 사용자 22 이번 달 사용 집계를 시작 값으로 되돌린다(`smoke-edit.ts`와 같은 방식).
+- [ ] **Step 5: `smoke-agg.ts`(테스트 사용자 22, 실행 태그, 실제 `gpt-6-luna` 필터·Jev·추출) 작성·실행** — 순서: ① `/chat/rule {op:"add", kind:"keyword", value:"r<RUN8>합성PAY"}` → `added`·`matched 0` ② `/ingest`(smoke-gate 모양, source MESSAGES, 발신자 "합성PAY", 본문 "[r<RUN8>합성PAY] 결제 타임아웃 발생 …" 3건, capturedAt = 오늘 서울 10·14·14시) → 처리 대기(10초 간격 최대 300초) → 3건 모두 `kept` 또는 `extracted`·`gate_label 'rule'`·청크 있음 ③ `/chat` `{question: "오늘 r<RUN8>합성PAY 타임아웃 언제 많았어?", intents: 0.17.0 여덟}` → `intent aggregate`·`status ok`·`total 3`·최다 칸 `14` ④ `/chat/aggregate`로 그 칸 → `total 2` ⑤ intents 없이 같은 질문 → `intent question`(구 앱 경로) ⑥ `/chat/rule remove` → `removed`. 출력은 단계·상태·숫자·불리언만. `finally`: 이 실행의 items(멱등 키 `%:test:<run>:%`)와 그 항목의 jobs(`payload->>item_id` — `/ingest` 항목의 잡 lease는 `item:<id>`라 `deleteRunJobs`로는 안 잡힌다, K24)·규칙(`value like 'r<RUN8>%'`)만 지우고 사용자 22 이번 달 사용 집계를 시작 값으로 되돌린다(`smoke-edit.ts`와 같은 방식).
 
 Run: `deno run --allow-net --allow-env --allow-read --env-file=supabase/.env supabase/scripts/smoke-agg.ts`
 Expected: 단계 ①~⑥ 모두 기대값, 정리 뒤 남은 행 0.
@@ -948,12 +972,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: D1 배포, P1~P4 앱.
-- Produces: `seed-agg.ts --phase before|after|bank|rules20|cleanup`(테스트 사용자 23, `/ingest`, 실행 태그 — 출력은 건수·상태만), 0.17.0 버전 커밋.
+- Produces: `seed-agg.ts --phase before|after|bank|rules20|cleanup`(테스트 사용자 23, `/ingest`, 실행 태그 — 출력은 건수·상태만; `rules20`은 있는 규칙을 세어 합계 20개까지만 `r<run8>-<n>`로 채운다, K25), 0.17.0 버전 커밋.
 
 - [ ] **Step 1: 준비** — `vm_stat`, `pgrep -x deno`(없어야 함), 전용 UDID 시뮬레이터에 0.16.1 기록을 지운 앱 설치·테스트 사용자 23 로그인.
-- [ ] **Step 2: 스펙 §15 AGG-sim ①~⑩을 그대로 실행한다**(문구·숫자는 스펙). 각 단계 판정 근거 = 화면 식별자·DiagLog 코드·DB 상태(항목 `status`·`gate_label`·`gate_feedback.verdict`·청크 수)와 `gate-report --user <23>`의 `labeled`·`rule_saved`. ①의 시드 시각은 이번 주 월요일~오늘 안에서 정하고 ④ 최다 시각 기대값을 그 분포로 미리 적어 둔다. ⑨는 `/chat/rule`을 스크립트로 직접 불러 응답을 버린다.
+- [ ] **Step 2: 스펙 §15 AGG-sim ①~⑩을 K25 순서로 실행한다** — ① → ② → ③ → ④ → ⑩ → ⑤ → ⑥ → ⑦ → **⑨ → ⑧**(⑧이 먼저면 ⑨의 추가가 한도에 막힌다). 문구·숫자는 스펙. 각 단계 판정 근거 = 화면 식별자·DiagLog 코드·DB 상태(항목 `status`·`gate_label`·`gate_feedback.verdict`·청크 수)와 `gate-report --user <23>`의 `labeled`·`rule_saved`. ①의 시드 시각은 이번 주 월요일~오늘 안에서 정하고 ④ 최다 시각 기대값을 그 분포로 미리 적어 둔다. ⑨는 `/chat/rule`을 스크립트로 직접 불러 응답을 버린다.
 - [ ] **Step 3: 통과 뒤 버전** — `ios/project.yml` `MARKETING_VERSION: 0.17.0`, `bash ios/scripts/version-guard.sh` → `version-guard ok (0.17.0)`.
-- [ ] **Step 4: 정리** — `seed-agg.ts --phase cleanup`(실행 태그 행·테스트 사용자 23 규칙만), 남은 행 0 확인.
+- [ ] **Step 4: 정리** — `seed-agg.ts --phase cleanup`(실행 태그 항목과 그 항목의 jobs(`payload->>item_id`, K24)·테스트 사용자 23 규칙만), 남은 행 0 확인.
 - [ ] **Step 5: 기록·커밋**
 
 ```bash
@@ -989,6 +1013,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **3. 이름·타입 일관성** — `SaveRule`·`RuleKind`(A3)를 A4·A6·A8이, `AggConditions`·`AggRaw`·`BucketCount`(A6)를 A7·A8·A9·A10이, `AggMode`(A7)를 A9·A10이, `SaveRuleJudgment`·`Candidate`·`ruleButton`(A8)을 A9가, `ChatAggregate.Conditions`(P1)를 P2·P3이, `SaveRuleTurn`(P2)을 P4가 같은 이름으로 쓴다. SQL 이름은 스펙 §8과 같다.
 
 **4. Review Focus** — 다섯 줄 모두 소유 태스크에 테스트가 있다: ① P1 `testKeptIsNoSchedule` ② A3 메신저 목록 대조 + A1·A3 공유 `SENDER_TABLE` ③ A1 `save_rule_add normalizes and dedupes` + A8 `judgeSaveRule … duplicate ignores case and inner spaces` ④ P1 `testLineUsesSeoulForUTCDevice` ⑤ P1 `testDayBarsOver31ScrollWithMondayTicks` + A6 `fillBuckets … (90)`.
+
+**Codex 계획 리뷰 반영 (2026-10-21, `.context/codex-review-plan0170.out.md` 1~5 — 메인 판정 5건 모두 반영)** — #1 HIGH K11 6칸 검증·플래그 비교 제외 + 왕복 테스트(A6·A9) · #2 K23 `SaveRuleTurn` 영속 칸 + 재실행 뒤 [함께 저장] 테스트(P2·P4) · #3 K24 SQL 시드 키 `test:` 접두·0011 lease 식 복사·`/ingest` 형식 미지원 명시(A1·A2·D1·G1) · #4 K25 AGG-sim ⑨ → ⑧(G1) · #5 K26 목록 순서 무관 비교 + 정렬 사례 분리(A1). 메인 판정 ①~④는 K27.
 
 **5. 분량** — 함수 본문은 알고리즘이 시그니처로 정해지지 않는 곳(집계 SQL 조각·정규화)만 적었다. 문구는 스펙이 고정한 것만 옮겼다.
 
