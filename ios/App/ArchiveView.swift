@@ -101,7 +101,7 @@ struct ArchiveView: View {
   }
 }
 
-/// "잘못 통과로 표시 (정확도 평가용)" → gate_feedback wrong_pass(본인 항목만, RLS). 다시 누르면 취소. 복구한 항목에는 보이지 않는다.
+/// "잘못 통과로 표시 (정확도 평가용)" → gate_feedback wrong_pass(본인 항목만, RLS). 다시 누르면 취소. 복구한 항목·저장 규칙으로 저장한 항목(rule_saved, 0.17.0)에는 보이지 않는다.
 /// 교정 기능이 아니다: 항목을 지우거나 이후 분류·검색을 바꾸지 않고 Jev 정확도 채점 기록만 남긴다(스펙 §8 gate_feedback, 2026-09-30)
 struct WrongPassSection: View {
   let itemID: String
@@ -111,7 +111,7 @@ struct WrongPassSection: View {
   init(itemID: String) { self.itemID = itemID }
 
   var body: some View {
-    if state != .restored {
+    if state != .restored && state != .ruleSaved {
       Section {
         Button(state == .wrongPass ? "표시 취소" : "잘못 통과로 표시 (정확도 평가용)") { toggle() }
           .disabled(busy || state == .unknown)

@@ -86,6 +86,11 @@ struct ChatView: View {
               } else if t.record.kind == .aggregate {                     // 집계 질문 턴(§9, 0.17.0): 카드 하나 — 답 막대·보관함 버튼 없음
                 if let r = t.answer?.aggregate { AggregateCard(response: r) { openItem = $0 } }
                 else { Text(ChatAggregate.Text.failed).foregroundStyle(.secondary) }
+              } else if t.record.kind == .saveRule {                      // 저장 규칙 턴(§9, 0.17.0): 판정 카드 — 버튼을 눌러야 바뀐다. 답 막대·보관함 버튼 없음
+                if let r = t.answer?.save_rule {
+                  SaveRuleCard(response: r, turn: t.record.saveRule ?? SaveRuleTurn(),
+                               onAdd: { addRule(t.id) }, onRemove: { removeRule(t.id, $0) }, onRestore: { restoreRule(t.id, $0) })
+                } else { Text(ChatHistoryText.unreadableReply).foregroundStyle(.secondary) }
               } else if t.record.kind == .mailSummary {                   // 메일 요약 턴(§9, 0.15.0): 카드 하나. 다시 보내지 않는다(읽기는 비용) — 복원은 ChatHistory.restored
                 MailSummaryCard(turn: t.record.mailRead ?? MailSummaryTurn(phase: .ended, note: MailSummaryText.failed),
                                 onPick: { pickSummary(t.id, $0) }, onResearch: { researchSummary(t.id) }, onSettings: { SettingsRouter.shared.open() })
@@ -786,6 +791,13 @@ struct ChatView: View {
             scroll(to: id)
             return
           }
+          if SaveRules.isSaveRule(a.intent) {
+            // 저장 규칙(§9, 0.17.0): 판정만 — 카드 버튼이 /chat/rule 로 바꾼다. 턴 종류는 응답을 받은 뒤에(복원은 버튼 working 만 다룸). 진단에는 op·상태만
+            DiagLog.append("CHAT intent save_rule op=\(a.save_rule?.op ?? "none") status=\(a.save_rule?.status ?? "none")")
+            settle(id, epoch) { $0.record.kind = .saveRule; $0.record.reply = r.data; $0.answer = a; $0.record.saveRule = SaveRuleTurn(phase: .idle) }
+            scroll(to: id)
+            return
+          }
           settle(id, epoch) { $0.record.reply = r.data; $0.answer = a }
           readCalendar(id)
           scroll(to: id)
@@ -839,6 +851,68 @@ struct ChatView: View {
         DiagLog.append("CHAT add done events=\(r.itemID != nil ? 1 : 0)")
         settle(id, epoch) { $0.record.link = r.text; $0.record.itemID = r.itemID; $0.record.linkDone = true }
         if r.itemID != nil { loadAddEventCards(id, scroll: true) }
+      }
+    }
+  }
+
+  // ── 저장 규칙 카드 버튼(스펙 §9, 0.17.0). 모든 갱신은 id·epoch 로(settle). 요청 중(working)은 기록에 남겨 닫혀도 다시 열 때 버튼을 켠다(K16).
+  // 진단에는 op·상태만(규칙 값·id 없음). 네트워크·비200·모르는 상태 → idle + "바꾸지 못했어요"(버튼 유지)
+
+  /// 진행 중이 아닌 저장 규칙 턴이면 working 으로 바꾸고 epoch 를 준다(연타·두 버튼 동시 요청 막기)
+  private func beginRule(_ id: UUID) -> Int? {
+    guard let t = turns.first(where: { $0.id == id }), t.record.kind == .saveRule, t.record.saveRule?.phase != .working else { return nil }
+    let epoch = log.clearCount
+    settle(id, epoch) { var s = $0.record.saveRule ?? SaveRuleTurn(); s.phase = .working; s.note = nil; $0.record.saveRule = s }
+    return epoch
+  }
+  private func failRule(_ s: inout SaveRuleTurn) { s.phase = .idle; s.note = SaveRules.Text.buttonFailed }
+
+  private func addRule(_ id: UUID) {
+    guard let c = turns.first(where: { $0.id == id })?.answer?.save_rule?.candidate, let epoch = beginRule(id) else { return }
+    Task {
+      let r = await ChatRuleAPI.add(kind: c.kind, value: c.value)
+      DiagLog.append("CHAT rule op=add status=\(r.result?.status ?? "http\(r.status)")")
+      settle(id, epoch) {
+        var s = $0.record.saveRule ?? SaveRuleTurn()
+        if let a = r.result, ["added", "duplicate", "limit", "bad_value"].contains(a.status) {
+          s.phase = .done; s.addStatus = a.status; s.ruleID = a.rule?.id; s.addedCount = a.rules.count; s.matched = a.matched
+          s.note = SaveRules.addText(a)
+        } else { failRule(&s) }
+        $0.record.saveRule = s
+      }
+    }
+  }
+
+  private func removeRule(_ id: UUID, _ rule: SaveRules.Rule) {
+    guard let epoch = beginRule(id) else { return }
+    Task {
+      let r = await ChatRuleAPI.remove(ruleID: rule.id)
+      DiagLog.append("CHAT rule op=remove status=\(r.result?.status ?? "http\(r.status)")")
+      settle(id, epoch) {
+        var s = $0.record.saveRule ?? SaveRuleTurn()
+        // not_found = 이미 없는 규칙(다른 턴·기기에서 뺌) — 다시 눌러도 같으니 그 줄도 뺀 것으로
+        if let x = r.result, x.status == "removed" || x.status == "not_found" {
+          s.phase = .done
+          if !s.removedIDs.contains(rule.id) { s.removedIDs.append(rule.id) }
+          s.note = x.status == "removed" ? SaveRules.Text.removed : SaveRules.Text.notFound
+        } else { failRule(&s) }
+        $0.record.saveRule = s
+      }
+    }
+  }
+
+  /// [함께 저장]: 대상은 카드가 넘긴 turn.restoreRuleID(response) — 추가 결과의 규칙 또는 판정 duplicate 의 기존 규칙
+  private func restoreRule(_ id: UUID, _ ruleID: String) {
+    guard let epoch = beginRule(id) else { return }
+    Task {
+      let r = await ChatRuleAPI.restore(ruleID: ruleID)
+      DiagLog.append("CHAT rule op=restore status=\(r.result?.status ?? "http\(r.status)")")
+      settle(id, epoch) {
+        var s = $0.record.saveRule ?? SaveRuleTurn()
+        if let x = r.result, ["queued", "none", "not_found"].contains(x.status) {
+          s.phase = .done; s.restoreStatus = x.status; s.restored = x.restored; s.note = SaveRules.restoreText(x)
+        } else { failRule(&s) }
+        $0.record.saveRule = s
       }
     }
   }
