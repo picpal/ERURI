@@ -83,6 +83,9 @@ struct ChatView: View {
               if let e = t.record.error { Text(e).foregroundStyle(.red) }
               if t.record.kind == .editEvent, let a = t.answer {           // 일정 고치기 턴(§9 B 앱, 0.16.0) — 답이 아니라 막대·보관함 버튼 없음
                 editRows(t, a)
+              } else if t.record.kind == .aggregate {                     // 집계 질문 턴(§9, 0.17.0): 카드 하나 — 답 막대·보관함 버튼 없음
+                if let r = t.answer?.aggregate { AggregateCard(response: r) { openItem = $0 } }
+                else { Text(ChatAggregate.Text.failed).foregroundStyle(.secondary) }
               } else if t.record.kind == .mailSummary {                   // 메일 요약 턴(§9, 0.15.0): 카드 하나. 다시 보내지 않는다(읽기는 비용) — 복원은 ChatHistory.restored
                 MailSummaryCard(turn: t.record.mailRead ?? MailSummaryTurn(phase: .ended, note: MailSummaryText.failed),
                                 onPick: { pickSummary(t.id, $0) }, onResearch: { researchSummary(t.id) }, onSettings: { SettingsRouter.shared.open() })
@@ -685,6 +688,9 @@ struct ChatView: View {
     DiagLog.append("CHAT ctx n=\(ctx.count)")
     // 방금 등록한 일정 고치기(스펙 §9 B 앱 → 서버): 맥락 구간 안 가장 최근 등록 턴이 30분 안이면 그 첫 제안 id(기록을 못 불러왔으면 보내지 않는다)
     let editTarget = loaded ? ChatHistory.editTarget(turns.map(\.record), now: Date()) : nil
+    // 직전 집계 조건(스펙 §9 aggregate_context, K11): 바로 앞 턴이 ok 집계 턴이면 서버가 재검증한 조건 그대로 — 이 턴을 넣기 전에(PF-F23). 진단에는 유무만
+    let aggCtx = loaded ? ChatHistory.aggregateContext(turns.map(\.record), now: Date()) : nil
+    if aggCtx != nil { DiagLog.append("CHAT agg_ctx n=1") }
     let sentAt = Date()                                     // 일정 등록이면 이 시각이 occurred_at·같은 글 키의 날짜(§9)
     let id = append(ChatHistory.Record(at: sentAt, kind: .question, question: q))
     let epoch = log.clearCount                              // 답이 오기 전에 지우면 이 턴을 고치지 않는다(settle)
@@ -699,10 +705,11 @@ struct ChatView: View {
       }
       DiagLog.append("CHAT edit_target n=\(editTarget == nil ? 0 : 1) flush=\(flushed ? 1 : 0)")
       var attempt = 0
-      var withContext = !ctx.isEmpty
+      var withContext = !ctx.isEmpty || aggCtx != nil
       while true {
         var body: [String: Any] = ["question": q, "intents": ChatAddEvent.intents]   // 이 앱이 처리하는 행동(§9 하위 호환). 배포 전 서버는 무시하고 답한다
-        if withContext { body["context"] = ctx.map(\.json) }     // 맥락이 없으면 키를 넣지 않는다(0.11.x 와 같은 요청)
+        if withContext, !ctx.isEmpty { body["context"] = ctx.map(\.json) }     // 맥락이 없으면 키를 넣지 않는다(0.11.x 와 같은 요청)
+        if withContext, let aggCtx { body["aggregate_context"] = ChatAggregate.contextJSON(aggCtx) }   // 없으면 키를 넣지 않는다(0.16.x 와 같은 요청)
         if let editTarget { body["edit_target"] = editTarget }   // 고칠 대상(0.16.0) — 없으면 키를 넣지 않는다(0.15.x 와 같은 요청)
         guard let r = await API.send("functions/v1/chat", method: "POST", json: body, timeout: 60) else {
           settle(id, epoch) { $0.record.error = "연결 실패" }; return
@@ -714,7 +721,7 @@ struct ChatView: View {
           try? await Task.sleep(for: .seconds(wait))
           continue
         }
-        // 맥락 형식을 서버가 거절(400 bad_context)했을 때만 맥락 없이 한 번 더 — 다른 400(bad_question 등)은 다시 보내지 않는다
+        // 맥락 형식을 서버가 거절(400 bad_context)했을 때만 맥락 없이 한 번 더 — context·aggregate_context 둘 다 뺀다(K11). 다른 400(bad_question 등)은 다시 보내지 않는다
         if r.status == 400, withContext, code == "bad_context" {
           withContext = false; DiagLog.append("CHAT ctx rejected"); continue
         }
@@ -770,6 +777,13 @@ struct ChatView: View {
               settle(id, epoch) { $0.record.kind = .mailSummary; $0.record.mailRead = MailSummaryTurn(phase: .finding, translate: translate) }
               searchSummary(id, body: body, request: q, epoch: epoch, direct: true)
             }
+            return
+          }
+          if ChatAggregate.isAggregate(a.intent) {
+            // 집계 질문(§9, 0.17.0): 답이 아니다 — 응답 그대로 기록(서버 문장이 다음 맥락, 조건이 다음 aggregate_context). 진단에는 상태·건수만
+            DiagLog.append("CHAT intent aggregate status=\(a.aggregate?.status ?? "none") n=\(a.aggregate?.total ?? 0)")
+            settle(id, epoch) { $0.record.kind = .aggregate; $0.record.reply = r.data; $0.answer = a }
+            scroll(to: id)
             return
           }
           settle(id, epoch) { $0.record.reply = r.data; $0.answer = a }
