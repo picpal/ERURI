@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import { type AggCase, type AggCaseFile, type AggRow, BOUNDARY_TEXTS, judgeAgg, parseEvalMode, summarizeAgg, validateAggCases } from "../scripts/_agg-eval.ts";
-import { errorRates, flakyCases, newlyWrong, newlyWrongByRate, type Row, unsettled } from "../scripts/_intent-eval.ts";
+import { errorRates, excludeIdentical, flakyCases, newlyWrong, newlyWrongByRate, type Row, unsettled } from "../scripts/_intent-eval.ts";
 import type { Intent } from "../functions/chat/filters.ts";
 
 const file = JSON.parse(await Deno.readTextFile(new URL("../eval/agg-cases.json", import.meta.url))) as AggCaseFile;
@@ -151,4 +151,9 @@ Deno.test("rate judgment: cases split in either mode get extra runs; new_wrong =
   // 경계: 정확히 25%p 는 새로 틀림(3/12 − 0/12), 그 아래는 아님(2/12 − 0/12)
   assertEquals(newlyWrongByRate([{ id: "x", base_wrong: 0, base_runs: 12, agg_wrong: 3, agg_runs: 12, diff: 0.25 }, { id: "y", base_wrong: 0, base_runs: 12, agg_wrong: 2,
     agg_runs: 12, diff: 2 / 12 }]), ["x"]);
+});
+
+Deno.test("excludeIdentical (Ruling A10-identical): ids whose two-mode requests are byte-identical leave the regression comparison", () => {
+  assertEquals(excludeIdentical(["q02", "s04", "s28"], ["s04", "s28", "a01"]), ["q02"]);
+  assertEquals(excludeIdentical(["s28"], []), ["s28"]);
 });

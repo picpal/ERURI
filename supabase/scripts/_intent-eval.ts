@@ -143,3 +143,6 @@ export function errorRates(base: Row[], agg: Row[], ids: string[]): ErrorRate[] 
 export const newlyWrongByRate = (rates: ErrorRate[], threshold = RATE_THRESHOLD): string[] =>
   rates.filter((r) => r.agg_runs > 0 && r.base_runs > 0 && r.agg_wrong * r.base_runs - r.base_wrong * r.agg_runs >= threshold * r.agg_runs * r.base_runs)
     .map((r) => r.id);
+// 바이트 동일 제외(2026-10-22 메인 판정, Ruling A10-identical — 스펙 §15): 두 모드의 필터 요청 JSON 이 같은 사례는 구조상 회귀할 수 없다(같은 요청의 표본 잡음) —
+// unsettled·추가 8회·new_wrong 에서 뺀다
+export const excludeIdentical = (ids: string[], identical: string[]): string[] => ids.filter((id) => !identical.includes(id));
