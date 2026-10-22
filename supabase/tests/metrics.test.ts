@@ -3,22 +3,42 @@ import { normalizeMetrics } from "../functions/_shared/metrics.ts";
 
 // 받은 시각 = 서울 2026-10-22 14:12
 const R = "2026-10-22T05:12:00Z";
-const at1 = (start: string | null, occurredAt = R) => normalizeMetrics([{ label: "타임아웃", count: 6, start, end: null }], occurredAt)[0];
+const at1 = (start: string | null, occurredAt = R) => normalizeMetrics([{ label: "타임아웃", count: 6, start, end: null }], occurredAt, "[합성결제] 타임아웃 6건")[0];
 const mk = (label: string) => ({ label, count: 1, start: null, end: null });
 
 Deno.test("label: trims and collapses spaces; '' and 31 code points dropped; 30 kept; non-string dropped", () => {
-  const r = normalizeMetrics([mk("  타임  아웃 "), mk("   "), mk("가".repeat(31)), mk("가".repeat(30)), mk(7 as unknown as string)], R);
+  const r = normalizeMetrics([mk("  타임  아웃 "), mk("   "), mk("가".repeat(31)), mk("가".repeat(30)), mk(7 as unknown as string)], R,
+    `타임 아웃 1건, ${"가".repeat(31)} 1건, ${"가".repeat(30)} 1건`);
   assertEquals(r.map((x) => x.label), ["타임 아웃", "가".repeat(30)]);
 });
 
 Deno.test("count: 0, -1, 1.5, 100001, '6' dropped; 1 and 100000 kept", () => {
-  assertEquals(normalizeMetrics([0, -1, 1.5, 100001, "6", 1, 100000].map((n) => ({ label: "오류", count: n, start: null, end: null })), R).map((x) => x.count), [1, 100000]);
+  assertEquals(normalizeMetrics([0, -1, 1.5, 100001, "6", 1, 100000].map((n) => ({ label: "오류", count: n, start: null, end: null })), R,
+    "오류 0건, 오류 -1건, 오류 1.5건, 오류 100001건, 오류 6건, 오류 1건, 오류 100000건").map((x) => x.count), [1, 100000]);
 });
 
 Deno.test("not an array → []; 11 valid → first 10 (after drops)", () => {
-  assertEquals(normalizeMetrics(null, R), []);
-  assertEquals(normalizeMetrics({}, R), []);
-  assertEquals(normalizeMetrics(Array.from({ length: 11 }, (_, i) => ({ label: `l${i}`, count: i + 1, start: null, end: null })), R).map((x) => x.count), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assertEquals(normalizeMetrics(null, R, ""), []);
+  assertEquals(normalizeMetrics({}, R, ""), []);
+  const eleven = Array.from({ length: 11 }, (_, i) => ({ label: `l${i}`, count: i + 1, start: null, end: null }));
+  assertEquals(normalizeMetrics(eleven, R, eleven.map((m) => `${m.label} ${m.count}건`).join(", ")).map((x) => x.count), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+});
+
+Deno.test("proximity (Ruling N8-prox): label must be in the same clause within the 20 chars before the count number; else dropped", () => {
+  const one = (label: string, count: number, text: string) => normalizeMetrics([{ label, count, start: null, end: null }], R, text).map((m) => [m.label, m.count]);
+  assertEquals(one("타임아웃", 20, "타임아웃 발생, 재시도 20건"), []);                    // 사용자 결정 A 반례 — 건수 없는 사건 낱말에 다른 건수
+  assertEquals(one("재시도", 20, "타임아웃 발생, 재시도 20건"), [["재시도", 20]]);
+  const two = normalizeMetrics([{ label: "타임아웃", count: 6, start: null, end: null }, { label: "오류", count: 2, start: null, end: null }], R, "[ABC] 타임아웃 6건, 오류 2건");
+  assertEquals(two.map((m) => [m.label, m.count]), [["타임아웃", 6], ["오류", 2]]);
+  assertEquals(one("타임아웃", 1234, "타임아웃 1,234건"), [["타임아웃", 1234]]);           // 천 단위 쉼표
+  assertEquals(one("TIME OUT", 3, "API timeout 3건"), [["TIME OUT", 3]]);                  // 대소문자·공백 무시
+  assertEquals(one("오류", 7, "오류 6건"), []);                                           // 숫자가 본문에 없음
+  assertEquals(one("오류", 20, "오류 120건"), []);                                        // 더 긴 숫자의 일부는 아니다
+  assertEquals(one("타임아웃", 6, "6건 타임아웃"), []);                                   // label 이 숫자 뒤
+  assertEquals(one("타임아웃", 3, "재시도 3건 후 타임아웃 3건"), [["타임아웃", 3]]);      // 여러 번 나오면 하나라도 만족
+  assertEquals(one("타임아웃", 6, "14:00~14:10 타임아웃 6건 (오늘 누적 14건)"), [["타임아웃", 6]]);
+  assertEquals(one("타임아웃", 6, "타임아웃이 오늘 오후 결제 화면에서 계속 6건"), []);     // 20자 밖
+  assertEquals(one("결제 승인 게이트웨이 응답 타임아웃", 6, "1) 결제 승인 게이트웨이 응답 타임아웃 6건"), [["결제 승인 게이트웨이 응답 타임아웃", 6]]); // 긴 label 은 그 길이까지
 });
 
 Deno.test("HH:MM → received Seoul day; received 00:30 KST uses that Seoul date", () => {

@@ -48,7 +48,26 @@ function bodyMs(start: unknown, occurredAt: string, received: number): number | 
   return ms !== null && ms - received > LATE_MS ? ms - DAY_MS : ms;   // 서울은 서머타임이 없어 하루 = 24시간
 }
 
-export function normalizeMetrics(raw: unknown, occurredAt: string): Metric[] {
+// 근접 검증(Ruling N8-prox): count 숫자가 본문에 나오는 자리 바로 앞 20자(label 이 더 길면 그 길이 + 1) 안, 같은 구절(마지막 구분 기호 뒤)에
+// label 이 있어야(공백·대소문자 무시) 받는다. 숫자가 여러 번 나오면 하나라도 만족하면 된다. 구절을 끊어야 "타임아웃 발생, 재시도 20건"의
+// {타임아웃, 20}을 버린다. 숫자는 천 단위 쉼표를 받고, 더 긴 숫자·소수의 일부는 아니다
+const NEAR = 20;
+const NUM = /(?<![\d.,])\d{1,3}(?:,\d{3})+(?![\d]|[.,]\d)|(?<![\d.,])\d+(?![\d]|[.,]\d)/g;
+const CLAUSE = /[,，.。;；/|·\n()（）\[\]{}]/;
+const squash = (s: string) => s.replace(/\s/g, "").toLowerCase();
+function nearLabel(text: string, label: string, count: number): boolean {
+  const want = squash(label), size = Math.max(NEAR, [...label].length + 1);
+  for (const m of text.matchAll(NUM)) {
+    if (Number(m[0].replace(/,/g, "")) !== count) continue;
+    const before = [...text.slice(0, m.index)].slice(-size).join("");
+    const cut = before.split(CLAUSE).at(-1) ?? "";
+    if (squash(cut).includes(want)) return true;
+  }
+  return false;
+}
+
+// text = 추출에 보낸 본문(가린 글) — 근접 검증용
+export function normalizeMetrics(raw: unknown, occurredAt: string, text: string): Metric[] {
   if (!Array.isArray(raw)) return [];
   const parsed = Date.parse(occurredAt);
   const received = Number.isFinite(parsed) ? parsed : Date.now(); // receivedDay와 같은 대체
@@ -62,6 +81,7 @@ export function normalizeMetrics(raw: unknown, occurredAt: string): Metric[] {
     const len = [...label].length;
     if (len < 1 || len > LABEL_MAX) continue;
     if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > COUNT_MAX) continue;
+    if (!nearLabel(text, label, count)) continue;
     const body = bodyMs(start, occurredAt, received);
     const atBody = body !== null && body - received <= AHEAD_MS && received - body <= BEHIND_MS;
     out.push({ label, count, at: new Date(atBody ? body : received).toISOString(), at_body: atBody });

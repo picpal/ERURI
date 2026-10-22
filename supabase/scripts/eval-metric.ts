@@ -58,7 +58,7 @@ if (Deno.args.includes("--regression")) {
       const k = ruled.indexOf(c);
       if (k < 0) { console.log(JSON.stringify({ run, id: c.id, general: general[i].at(-1), general_tokens: g.output_tokens, rule: "n/a_share" })); continue; }
       const r = await call(c.text, meta, today, ruleOpts);
-      const n = r.out ? normalizeMetrics(r.out.metrics, `${today}T12:00:00+09:00`).length : 0;
+      const n = r.out ? normalizeMetrics(r.out.metrics, `${today}T12:00:00+09:00`, c.text).length : 0;
       rule[k].push(code(c, r)); rTok.push(r.output_tokens);
       if (n > 0) emitted[k]++;
       console.log(JSON.stringify({ run, id: c.id, general: general[i].at(-1), general_tokens: g.output_tokens, rule: rule[k].at(-1), rule_metrics: n,
@@ -86,7 +86,7 @@ for (let run = 1; run <= runs; run++) {
   for (const c of cases) {
     const r = await call(c.text, META, receivedDay(c.occurred_at), ruleOpts);
     const evs = r.out && r.out.result.kind === "event" ? r.out.result.events.map((e) => e.event.start ?? "") : [];
-    const row = judgeMetricCase(c, { metrics: r.out ? normalizeMetrics(r.out.metrics, c.occurred_at) : [], events: evs, status: r.status,
+    const row = judgeMetricCase(c, { metrics: r.out ? normalizeMetrics(r.out.metrics, c.occurred_at, c.text) : [], events: evs, status: r.status,
       output_tokens: r.output_tokens });
     rows.push(row);
     console.log(JSON.stringify({ run, ...row, ...(r.err ? { err: r.err } : {}), cap: effectiveCap }));

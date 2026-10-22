@@ -442,7 +442,7 @@ Deno.test("metrics: rule item 0 facts → saveMetrics(normalized) before setStat
 });
 
 Deno.test("metrics: rule item with an event → saveMetrics before saveFacts, both saved", async () => {
-  const { d, calls } = fake({ rules: RULE, text: BODY, result: EVENT_X, metrics: [{ label: "오류", count: 2, start: null, end: null }] });
+  const { d, calls } = fake({ rules: RULE, text: BODY, result: EVENT_X, metrics: [{ label: "타임아웃", count: 6, start: null, end: null }] });
   assertEquals(await processText(d, job()), "proposed");
   assertEquals([calls.seq.indexOf("saveMetrics") < calls.seq.indexOf("saveFacts"), calls.saved.length, calls.metrics[0][0].at_body], [true, 1, false]);
 });
@@ -454,9 +454,17 @@ Deno.test("metrics: rule item with no metrics key / [] still calls saveMetrics([
 });
 
 Deno.test("metrics: skip_gate restored rule item also saves metrics", async () => {
-  const { d, calls } = fake({ rules: RULE, text: BODY, result: { kind: "none" }, metrics: [{ label: "타임아웃", count: 3, start: null, end: null }] });
+  const { d, calls } = fake({ rules: RULE, text: BODY, result: { kind: "none" }, metrics: [{ label: "타임아웃", count: 6, start: null, end: null }] });
   await processText(d, job({ payload: { item_id: "i1", skip_gate: true } }));
   assertEquals([calls.gate.length, calls.metrics[0].length], [0, 1]);
+});
+
+Deno.test("metrics: proximity check uses the masked text sent to extract (N8-prox) — a count not written right after its label is dropped", async () => {
+  // BODY 에는 "타임아웃 6건"만 — {타임아웃, 20}(숫자 없음)·{합성결제, 6}(label 이 같은 구절에 없음)은 버리고 {타임아웃, 6}만 남는다
+  const { d, calls } = fake({ rules: RULE, text: BODY, result: { kind: "none" }, metrics: [{ label: "타임아웃", count: 20, start: null, end: null },
+    { label: "합성결제", count: 6, start: null, end: null }, { label: "타임아웃", count: 6, start: null, end: null }] });
+  await processText(d, job());
+  assertEquals(calls.metrics[0].map((m) => [m.label, m.count]), [["타임아웃", 6]]);
 });
 
 Deno.test("metrics: non-rule item and SHARE never call saveMetrics; log lines have no metrics key", async () => {

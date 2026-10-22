@@ -112,7 +112,7 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   // 본문 건수(0.18.0): 규칙 항목은 save_facts·kept 전에 덮어쓴다 — 빈 배열도 보내 재시도가 이전 행을 지운다. 로그는 개수만(K6)
   let mlog = {};
   if (ruled) {
-    const ms = normalizeMetrics(out.metrics ?? [], item.occurredAt);
+    const ms = normalizeMetrics(out.metrics ?? [], item.occurredAt, v.masked);   // 근접 검증은 추출에 보낸 가린 글로(N8-prox)
     await deps.saveMetrics(user, itemId, ms);
     mlog = { metrics: ms.length, metric_body: ms.filter((m) => m.at_body).length };
   }
