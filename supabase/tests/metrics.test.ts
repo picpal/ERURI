@@ -26,6 +26,16 @@ Deno.test("HH:MM → received Seoul day; received 00:30 KST uses that Seoul date
   assertEquals(at1("00:10", "2026-10-21T15:30:00Z").at, "2026-10-21T15:10:00.000Z"); // 받음 10/22 00:30 KST → 10/22 00:10 KST
 });
 
+Deno.test("HH:MM is the latest such time not after receipt + 10 min (Ruling N8-time): 00:05 recv 23:50 → previous day; 14:00 recv 13:50 / 14:05 → same day", () => {
+  assertEquals(at1("23:50", "2026-10-21T15:05:00Z"), { label: "타임아웃", count: 6, at: "2026-10-21T14:50:00.000Z", at_body: true }); // 받음 10/22 00:05 → 10/21 23:50
+  assertEquals(at1("23:50+09:00", "2026-10-21T15:05:00Z").at, "2026-10-21T14:50:00.000Z");                                     // +09:00 붙은 시각만도 같다
+  assertEquals(at1("13:50", "2026-10-22T05:00:00Z").at, "2026-10-22T04:50:00.000Z");                                           // 받음 14:00 → 당일 13:50
+  assertEquals(at1("14:05", "2026-10-22T05:00:00Z").at, "2026-10-22T05:05:00.000Z");                                           // 10분 안 → 당일
+  assertEquals(at1("14:10", "2026-10-22T05:00:00Z").at, "2026-10-22T05:10:00.000Z");                                           // 정확히 10분 → 당일(경계 포함)
+  assertEquals(at1("14:11", "2026-10-22T05:00:00Z").at, "2026-10-21T05:11:00.000Z");                                           // 10분 넘게 뒤 → 전날
+  assertEquals(at1("2026-10-22 23:50", "2026-10-21T15:05:00Z").at, "2026-10-22T14:50:00.000Z");                                // 날짜가 있으면 앞당기지 않는다
+});
+
 Deno.test("YYYY-MM-DD HH:MM and T separator are Seoul", () => {
   assertEquals(at1("2026-10-22 13:30").at, "2026-10-22T04:30:00.000Z");
   assertEquals(at1("2026-10-22T13:30").at, "2026-10-22T04:30:00.000Z");

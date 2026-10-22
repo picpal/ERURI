@@ -111,15 +111,18 @@ export function validateMetricCases(f: MetricCaseFile): string[] {
 }
 
 const norm = (s: string) => s.replace(/\s/g, "").toLowerCase();
+// 기대 label 의 핵심 낱말 = 끝 낱말(명사구의 머리 — '거부 오류' → '오류'). 일치 = 그것이 모델 label 에 들어 있음(공백·대소문자 무시) —
+// 집계의 키워드 ⊂ label 매칭과 같은 기준(Ruling N8-label). label 세분성('요청 거부 오류' ↔ '오류')은 판정하지 않는다
+const core = (label: string) => norm(label.trim().split(/\s+/).at(-1) ?? "");
 const minute = (iso: string) => Math.floor(Date.parse(iso) / 60_000);
 
 export function judgeMetricCase(c: MetricCase, got: MetricGot): MetricRow {
   const ms = got.status === "ok" ? got.metrics : [];                   // 잘림·throw 는 metric 0개로 판정
   const used = new Set<number>();
   let matched = 0, timeOk = 0;
-  // K19: 기대마다 아직 쓰지 않은 모델 metric 중 첫 번째로 label 을 담은 것 — 일대일
+  // K19: 기대마다 아직 쓰지 않은 모델 metric 중 첫 번째로 기대 핵심 낱말을 담은 것 — 일대일
   for (const e of c.expect) {
-    const i = ms.findIndex((m, k) => !used.has(k) && norm(m.label).includes(norm(e.label)));
+    const i = ms.findIndex((m, k) => !used.has(k) && norm(m.label).includes(core(e.label)));
     if (i < 0) continue;
     used.add(i);
     if (ms[i].count === e.count) matched++;

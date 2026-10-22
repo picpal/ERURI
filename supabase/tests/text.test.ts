@@ -433,7 +433,8 @@ Deno.test("metrics: rule item 0 facts → saveMetrics(normalized) before setStat
     metrics: [{ label: "타임아웃", count: 6, start: "14:00", end: "14:10" }, { label: "", count: 1, start: null, end: null }] });
   const logs = captureLogs();
   try { assertEquals(await processText(d, job()), "kept"); } finally { logs.stop(); }
-  assertEquals(calls.metrics, [[{ label: "타임아웃", count: 6, at: "2026-09-29T05:00:00.000Z", at_body: true }]]);
+  // 받음 서울 09-29 00:30 — 시각만 "14:00"은 받은 시각 이전의 가장 최근 14:00 = 09-28 14:00(Ruling N8-time)
+  assertEquals(calls.metrics, [[{ label: "타임아웃", count: 6, at: "2026-09-28T05:00:00.000Z", at_body: true }]]);
   assertEquals(calls.seq.slice(0, 2), ["saveMetrics", "setStatus:kept"]);
   const line = JSON.parse(logs.lines.find((l) => l.includes('"kept"'))!);
   assertEquals([line.metrics, line.metric_body], [1, 1]);

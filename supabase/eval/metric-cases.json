@@ -1,5 +1,5 @@
 {
- "_note": "METRIC-eval(스펙 §15, 0.18.0) 합성 알림 42종 — 실제 알림·문자 원문 아님, 서비스명도 합성. occurred_at = 받은 시각(UTC), 러너 today = 받은 서울 날짜. expect = normalizeMetrics 뒤 기대 {label(모델 label 에 공백·대소문자 무시로 들어 있으면 일치), count, at(분 단위 비교), at_body}. 혼합 사례 expect label = 본문 긴 label(15자 이상)의 끝 두 낱말, events = 혼합 사례의 일정 시작(run-multi-event-eval judge 와 같은 접두 규칙). 반례·누적·시간대 글은 스펙 §15 그대로",
+ "_note": "METRIC-eval(스펙 §15, 0.18.0) 합성 알림 42종 — 실제 알림·문자 원문 아님, 서비스명도 합성. occurred_at = 받은 시각(UTC), 러너 today = 받은 서울 날짜. expect = normalizeMetrics 뒤 기대 {label(그 끝 낱말 = 핵심 낱말이 모델 label 에 공백·대소문자 무시로 들어 있으면 일치 — Ruling N8-label), count, at(분 단위 비교), at_body}. 혼합 사례 expect label = 본문 긴 label(15자 이상)의 끝 두 낱말, events = 혼합 사례의 일정 시작(run-multi-event-eval judge 와 같은 접두 규칙). 반례·누적·시간대 글은 스펙 §15 그대로",
  "cases": [
   {
    "id": "s01",

@@ -32,15 +32,20 @@ function toMs(y: number, mo: number, d: number, h: number, mi: number, off: stri
   return Date.UTC(y, mo - 1, d, h, mi) - offMin * 60_000;
 }
 
-// 본문 시작 시각(K4). 날짜+시각은 오프셋이 없으면 서울, 시각만은 받은 서울 날짜의 그 시각(오프셋은 +09:00만). 형식 밖이면 null
-function bodyMs(start: unknown, occurredAt: string): number | null {
+const LATE_MS = 10 * 60_000; // 시각만: 받은 날에 붙인 값이 받은 시각보다 이만큼 넘게 뒤면 전날(Ruling N8-time)
+const DAY_MS = 24 * 3600_000;
+
+// 본문 시작 시각(K4). 날짜+시각은 오프셋이 없으면 서울, 시각만은 받은 시각 이전의 가장 최근 그 시각(받은 서울 날짜, 받은 시각 + 10분보다 뒤면
+// 하루 앞 — 자정 직후 받은 "23:50"은 전날, 오프셋은 +09:00만). 형식 밖이면 null
+function bodyMs(start: unknown, occurredAt: string, received: number): number | null {
   if (typeof start !== "string") return null;
   const dt = DT.exec(start);
   if (dt) return toMs(+dt[1], +dt[2], +dt[3], +dt[4], +dt[5], dt[6] ?? SEOUL);
   const t = T.exec(start);
   if (!t || (t[3] !== undefined && t[3] !== SEOUL)) return null;
   const [y, mo, d] = receivedDay(occurredAt).split("-").map(Number);
-  return toMs(y, mo, d, +t[1], +t[2], SEOUL);
+  const ms = toMs(y, mo, d, +t[1], +t[2], SEOUL);
+  return ms !== null && ms - received > LATE_MS ? ms - DAY_MS : ms;   // 서울은 서머타임이 없어 하루 = 24시간
 }
 
 export function normalizeMetrics(raw: unknown, occurredAt: string): Metric[] {
@@ -57,7 +62,7 @@ export function normalizeMetrics(raw: unknown, occurredAt: string): Metric[] {
     const len = [...label].length;
     if (len < 1 || len > LABEL_MAX) continue;
     if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > COUNT_MAX) continue;
-    const body = bodyMs(start, occurredAt);
+    const body = bodyMs(start, occurredAt, received);
     const atBody = body !== null && body - received <= AHEAD_MS && received - body <= BEHIND_MS;
     out.push({ label, count, at: new Date(atBody ? body : received).toISOString(), at_body: atBody });
   }

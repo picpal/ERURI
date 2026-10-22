@@ -41,6 +41,20 @@ Deno.test("judgeMetricCase: label containment (spaces/case), count, at minute an
   assertEquals([r2.matched, r2.extra, r2.time_ok, r2.sum_ok, r2.got], [1, 1, 0, false, 2]);
 });
 
+Deno.test("judgeMetricCase: label match = expected core word (last word) contained in model label (Ruling N8-label); order still one-to-one", () => {
+  const at = "2026-10-19T00:00:00.000Z";
+  const c = { id: "m9", group: "mixed_max", expect: [{ label: "거부 오류", count: 11, at, at_body: true }, { label: "지연 경고", count: 7, at, at_body: true },
+    { label: "결제 실패", count: 5, at, at_body: true }, { label: "취소 실패", count: 1, at, at_body: true }], events: [] };
+  // 모델이 머리 낱말만('오류') · 더 긴 구('푸시 전송 지연 경고') · 같은 머리 낱말 둘(실패 ×2, 본문 순서)
+  const got = [{ label: "오류", count: 11, at, at_body: true }, { label: "푸시 전송 지연 경고", count: 7, at, at_body: true },
+    { label: "결제 실패", count: 5, at, at_body: true }, { label: "취소실패", count: 1, at, at_body: true }];
+  const r = judgeMetricCase(c as never, { metrics: got, events: [], status: "ok", output_tokens: 80 });
+  assertEquals([r.matched, r.extra, r.time_ok], [4, 0, 4]);
+  // 머리 낱말이 없으면 불일치('거부'만 — 오류 없음)
+  const r2 = judgeMetricCase(c as never, { metrics: [{ label: "거부", count: 11, at, at_body: true }], events: [], status: "ok", output_tokens: 80 });
+  assertEquals([r2.matched, r2.extra], [0, 1]);
+});
+
 Deno.test("summarizeMetric: one run under any threshold → pass false; thresholds 0 none-emit, ≥47/49, extra ≤1, sum ≥32/33, time ≥47/49, out 2/2, tz 4/4, mixed done 2/2 events 2/2 metrics ≥19/20", () => {
   const ok = summarizeMetric(passRun(), 2048);
   assertEquals(ok.pass, true);
