@@ -85,12 +85,15 @@ Deno.test({ name: "hosted: U1′ 0036 aggregate p95 over 3,000 items and 1,500 m
     const runs: number[] = [];
     for (let n = 0; n < 5; n++) runs.push(await call());
     const p95 = [...runs].sort((a, b) => a - b)[Math.ceil(0.95 * runs.length) - 1];
-    console.log(JSON.stringify({ pre_analyze_ms: pre, u1prime_ms: runs, p95 }));
+    console.log(JSON.stringify({ pre_analyze_ms: pre, u1prime_ms: runs, p95, audit_ids: audits.length }));
     assert(p95 < 2000, `p95 ${p95}ms`);
   } finally {
     try {
       await sql.unsafe("delete from items where user_id = $1::uuid and idempotency_key like $2", [user, key + "%"]);   // cascade: 청크·metrics
       if (audits.length) await sql.unsafe("delete from audit_log where id = any(array(select jsonb_array_elements_text($1::text::jsonb)::bigint))", [JSON.stringify(audits)]);
+      const left = (await sql.unsafe(`select (select count(*)::int from items where user_id = $1::uuid and idempotency_key like $2) as items,
+        (select count(*)::int from audit_log where id = any(array(select jsonb_array_elements_text($3::text::jsonb)::bigint))) as audits`, [user, key + "%", JSON.stringify(audits)]))[0];
+      console.log(JSON.stringify({ cleanup_left_items: left.items, cleanup_left_audits: left.audits }));   // K29: 둘 다 0
     } finally { await sql.end(); }
   }
 } });
