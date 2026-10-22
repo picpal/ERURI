@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert";
-import { type ACtx, agg, asUser, attempt, chunk, kw, listIds, one, type Row, seed, sorted } from "./_agg-sql.ts";
+import { type ACtx, agg, asUser, attempt, chunk, kw, legacy, listIds, one, pick, type Row, seed, sorted } from "./_agg-sql.ts";
 
 // 0036 SQL 사례(0.18.0 본문 건수 — 스펙 §8 item_metrics·0036, §9 RPC, §15 METRIC-db): PGlite(로컬, metric-sql.test.ts)와 호스팅 롤백 트랜잭션(metric-db.test.ts)이 같은 사례를 돈다.
 // 사례마다 실행자가 롤백한다. 값은 합성 글·키만(멱등 키 = `<tag>:<source>-<k>`, 낱말 = kw(c) 사례 고유)
@@ -27,6 +27,17 @@ const withChunk = async (c: ACtx, k: string, text: string) => {
   await chunk(c, id, c.user, text);
   return id;
 };
+
+// ②(N2) 사례 시드: 받은 시각 at(서울 표기) 의 kept 항목 + 청크 "<kw(c)> <text>". metric 은 saveMetrics, m() 의 at 은 UTC ISO
+const msg = async (c: ACtx, k: string, o: { at: string; text: string; user?: string }) => {
+  const id = await seed(c, k, { status: "kept", at: o.at, user: o.user });
+  await chunk(c, id, o.user ?? c.user, `${kw(c)} ${o.text}`);
+  return id;
+};
+const T = (c: ACtx) => [kw(c), "타임아웃"];
+const NEW = (r: Record<string, unknown>) => pick(r, "total", "body_total", "metric_items", "metric_unmatched");
+const sha256Hex = async (s: string) =>
+  Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))).map((b) => b.toString(16).padStart(2, "0")).join("");
 
 export const METRIC_CASES: { name: string; hostedOnly?: boolean; localOnly?: boolean; run(c: ACtx): Promise<void> }[] = [
   { name: "item_metrics: authenticated and anon cannot select or insert (42501); service role can", run: async (c) => {
@@ -157,5 +168,169 @@ export const METRIC_CASES: { name: string; hostedOnly?: boolean; localOnly?: boo
     const lower = await score(`${kw(c)}timeout`), upper = await score(`${kw(c)}TIMEOUT`);
     assert(lower > 0, String(lower));
     assertEquals(lower, upper);
+  } },
+  // ── ②(N2) 본문 기준 값(사용자 결정 A)·발생 시각 기간·새 반환 칸(K26 — total·칸 count·목록 total 은 메시지 수 그대로) ──
+  { name: "value: matched label sum; no metrics → 1; no matching label → 1 (counter-examples)", run: async (c) => {
+    const a = await msg(c, "a", { at: "2026-10-15T14:12:00+09:00", text: "[ABC결제] 타임아웃 6건, 오류 2건" });
+    await saveMetrics(c, a, [m("타임아웃", 6, "2026-10-15T05:00:00Z"), m("오류", 2, "2026-10-15T05:00:00Z")]);
+    const e = await msg(c, "e", { at: "2026-10-15T11:40:00+09:00", text: "[ABC결제] 타임아웃 발생, 재시도 20건" });
+    await saveMetrics(c, e, [m("재시도", 20, "2026-10-15T02:40:00Z", false)]);
+    const z = await msg(c, "z", { at: "2026-10-15T09:10:00+09:00", text: "[ABC결제] 타임아웃 0건, 오류 20건" });
+    await saveMetrics(c, z, [m("오류", 20, "2026-10-15T00:10:00Z", false)]);
+    await msg(c, "d", { at: "2026-10-15T16:20:00+09:00", text: "[ABC결제] 결제 타임아웃 발생" });     // metrics 없음
+    const day = { from: "2026-10-15", to: "2026-10-15", bucket: "hour" };
+    const t = await agg(c, { keywords: [kw(c), "타임아웃"], ...day });
+    assertEquals(NEW(t), { total: 4, body_total: 9, metric_items: 1, metric_unmatched: 2 });
+    assertEquals(t.buckets, [{ key: "09", count: 1, body: 1 }, { key: "11", count: 1, body: 1 }, { key: "14", count: 1, body: 6 }, { key: "16", count: 1, body: 1 }]);
+    assertEquals((await agg(c, { keywords: [kw(c), "재시도"], ...day })).buckets!.find((b) => b.key === "11"), { key: "11", count: 1, body: 20 });
+    assertEquals(NEW(await agg(c, { keywords: [kw(c)], ...day })), { total: 4, body_total: 4, metric_items: 0, metric_unmatched: 3 });   // 서비스명만 → 메시지 수
+    // 판정 ⑨: 세 낱말 AND 로 a·z 만 선택(e·d 본문에 '오류' 없음) — a = 타임아웃 6 + 오류 2(한 행 한 번), z = 오류 20
+    assertEquals(pick(await agg(c, { keywords: [kw(c), "타임아웃", "오류"], ...day }), "total", "body_total"), { total: 2, body_total: 28 });
+  } },
+  { name: "label match ignores spaces and case (타임 아웃 ↔ 타임아웃, timeout ↔ TIMEOUT)", run: async (c) => {
+    const at = "2026-10-15T12:00:00+09:00", day = { from: "2026-10-15", to: "2026-10-15", bucket: "day" };
+    const p = await msg(c, "p", { at, text: "[x] 타임아웃 TIMEOUT 6건" });
+    await saveMetrics(c, p, [m("타임아웃", 6, "2026-10-15T03:00:00Z")]);
+    const q = await msg(c, "q", { at, text: "[x] TIMEOUT 3" });
+    await saveMetrics(c, q, [m("TIMEOUT", 3, "2026-10-15T03:00:00Z")]);
+    // 본문 판정도 공백 무시라 p 만 선택, label 타임아웃 일치
+    assertEquals(NEW(await agg(c, { keywords: [kw(c), "타임 아웃"], ...day })), { total: 1, body_total: 6, metric_items: 1, metric_unmatched: 0 });
+    // K27 — p 는 본문의 TIMEOUT 으로 선택되지만 label '타임아웃'이 'timeout'에 맞지 않아 1(사용자 결정 A), q 는 label TIMEOUT 3
+    for (const w of ["timeout", "Time Out"]) {
+      assertEquals(NEW(await agg(c, { keywords: [kw(c), w], ...day })), { total: 2, body_total: 4, metric_items: 1, metric_unmatched: 1 }, w);
+    }
+  } },
+  { name: "two metrics of one item split across hours 14 and 15", run: async (c) => {
+    const a = await msg(c, "a", { at: "2026-10-15T15:20:00+09:00", text: "[x] 14:05 타임아웃 4건, 15:10 타임아웃 3건" });
+    await saveMetrics(c, a, [m("타임아웃", 4, "2026-10-15T05:05:00Z"), m("타임아웃", 3, "2026-10-15T06:10:00Z")]);
+    const r = await agg(c, { keywords: T(c), from: "2026-10-15", to: "2026-10-15", bucket: "hour" });
+    assertEquals(NEW(r), { total: 1, body_total: 7, metric_items: 1, metric_unmatched: 0 });
+    assertEquals(r.buckets, [{ key: "14", count: 1, body: 4 }, { key: "15", count: 1, body: 3 }]);   // 칸 count 합 2 > total 1(한 메시지가 두 칸, K26)
+  } },
+  { name: "two matched rows in one bucket → one list line with count 8, value 8, total 1", run: async (c) => {
+    const a = await msg(c, "a", { at: "2026-10-15T14:40:00+09:00", text: "[x] 14:00 타임아웃 6건 … 14:30 타임아웃 2건" });
+    await saveMetrics(c, a, [m("타임아웃", 6, "2026-10-15T05:00:00Z"), m("타임아웃", 2, "2026-10-15T05:30:00Z")]);
+    const p = { keywords: T(c), from: "2026-10-15", to: "2026-10-15", bucket: "hour" };
+    assertEquals((await agg(c, p)).buckets, [{ key: "14", count: 1, body: 8 }]);
+    const l = await agg(c, { ...p, key: "14" });
+    assertEquals(pick(l, "total", "value"), { total: 1, value: 8 });
+    assertEquals(l.items!.map((x) => [x.item_id, x.count]), [[a, 8]]);
+  } },
+  { name: "list mode: value = bucket sum, line count from metrics only (null for value 1), newest first", run: async (c) => {
+    const a = await msg(c, "a", { at: "2026-10-15T14:12:00+09:00", text: "[x] 타임아웃 6건" });
+    await saveMetrics(c, a, [m("타임아웃", 6, "2026-10-15T05:00:00Z")]);
+    const b = await msg(c, "b", { at: "2026-10-15T14:40:00+09:00", text: "[x] 결제 타임아웃" });
+    const l = await agg(c, { keywords: T(c), from: "2026-10-15", to: "2026-10-15", bucket: "hour", key: "14" });
+    assertEquals([l.total, l.value, l.buckets], [2, 7, undefined]);
+    assertEquals(l.items!.map((x) => [x.item_id, x.count]), [[b, null], [a, 6]]);
+    assertEquals([l.items![1].source, Date.parse(l.items![1].occurred_at)], ["MESSAGES", Date.parse("2026-10-15T14:12:00+09:00")]);   // 줄 시각 = 받은 시각(0035 칸)
+  } },
+  { name: "other user's metrics are never counted", run: async (c) => {
+    const p = { keywords: T(c), from: "2026-10-15", to: "2026-10-15", bucket: "hour" };
+    const a = await msg(c, "a", { at: "2026-10-15T14:12:00+09:00", text: "[x] 타임아웃 6건" });
+    await saveMetrics(c, a, [m("타임아웃", 6, "2026-10-15T05:00:00Z")]);
+    const before = await agg(c, p);
+    assertEquals(NEW(before), { total: 1, body_total: 6, metric_items: 1, metric_unmatched: 0 });
+    const o = await msg(c, "o", { at: "2026-10-15T14:20:00+09:00", text: "[x] 타임아웃 50건", user: c.other });
+    await saveMetrics(c, o, [m("타임아웃", 50, "2026-10-15T05:10:00Z")], c.other);
+    assertEquals(await agg(c, p), before);
+    assertEquals(NEW(await agg(c, p, c.other)), { total: 1, body_total: 50, metric_items: 1, metric_unmatched: 0 });
+  } },
+  { name: "audit read: one row, sha256 of the sorted ids of messages with an in-period unit", run: async (c) => {
+    const a = await msg(c, "a", { at: "2026-10-15T14:12:00+09:00", text: "[x] 타임아웃 6건" });
+    await saveMetrics(c, a, [m("타임아웃", 6, "2026-10-15T05:00:00Z")]);
+    const b = await msg(c, "b", { at: "2026-10-15T00:30:00+09:00", text: "[x] 10/14 23:50 타임아웃 3건" });   // 맞은 행 at 이 기간 밖만
+    await saveMetrics(c, b, [m("타임아웃", 3, "2026-10-14T14:50:00Z")]);
+    const reads = () => c.q("select actor, target from audit_log where user_id = $1::uuid and action = 'read' and at = now() order by id", [c.user]);
+    const p = { keywords: T(c), from: "2026-10-15", to: "2026-10-15", bucket: "day" };
+    assertEquals(NEW(await agg(c, p)), { total: 1, body_total: 6, metric_items: 1, metric_unmatched: 0 });
+    assertEquals((await reads()).map((r) => [r.actor, r.target]), [["chat", await sha256Hex(a)]]);
+    await agg(c, { ...p, from: "2026-10-14", bucket: "day", key: "2026-10-14" });                 // 목록 모드 = 그 칸 메시지(b)
+    assertEquals((await reads()).map((r) => r.target), [await sha256Hex(a), await sha256Hex(b)]);
+    await agg(c, { ...p, from: "2026-10-14" });                                                     // 두 날 = 둘, 정렬
+    assertEquals((await reads())[2].target, await sha256Hex(sorted([a, b]).join(",")));
+  } },
+  // 발생 시각 기간(Codex #2) — 키워드 [kw, "타임아웃"]
+  { name: "occurrence day: received 10/22 00:05, at 10/21 23:50 → 10/22 day 0; 10/21 day 6 in hour '23'; 10/21~10/22 hour '23' 6 and day '2026-10-21' 6", run: async (c) => {
+    const K = T(c);
+    const a = await msg(c, "a", { at: "2026-10-22T00:05:00+09:00", text: "[x] 10/21 23:50 타임아웃 6건" });
+    await saveMetrics(c, a, [m("타임아웃", 6, "2026-10-21T14:50:00Z")]);
+    assertEquals((await agg(c, { keywords: K, from: "2026-10-22", to: "2026-10-22", bucket: "day" })).total, 0);
+    assertEquals((await agg(c, { keywords: K, from: "2026-10-21", to: "2026-10-21", bucket: "hour" })).buckets, [{ key: "23", count: 1, body: 6 }]);
+    assertEquals((await agg(c, { keywords: K, from: "2026-10-21", to: "2026-10-22", bucket: "hour" })).buckets, [{ key: "23", count: 1, body: 6 }]);
+    assertEquals((await agg(c, { keywords: K, from: "2026-10-21", to: "2026-10-22", bucket: "day" })).buckets, [{ key: "2026-10-21", count: 1, body: 6 }]);
+  } },
+  { name: "list follows occurrence day: 10/21 list has the item with count 6; 10/22 list does not", run: async (c) => {
+    const a = await msg(c, "a", { at: "2026-10-22T00:05:00+09:00", text: "[x] 10/21 23:50 타임아웃 6건" });
+    await saveMetrics(c, a, [m("타임아웃", 6, "2026-10-21T14:50:00Z")]);
+    const p = { keywords: T(c), from: "2026-10-21", to: "2026-10-22", bucket: "day" };
+    const l21 = await agg(c, { ...p, key: "2026-10-21" });
+    assertEquals([l21.total, l21.value, l21.items!.map((x) => [x.item_id, x.count])], [1, 6, [[a, 6]]]);
+    assertEquals(await agg(c, { ...p, key: "2026-10-22" }), { total: 0, value: 0, items: [] });
+  } },
+  { name: "candidate window +7 days: received 10/28 14:00, at 10/21 14:00 → in 10/21 day total 1", run: async (c) => {
+    const a = await msg(c, "a", { at: "2026-10-28T14:00:00+09:00", text: "[x] 10/21 14:00 타임아웃 6건" });
+    await saveMetrics(c, a, [m("타임아웃", 6, "2026-10-21T05:00:00Z")]);
+    const late = await msg(c, "late", { at: "2026-10-29T00:00:00+09:00", text: "[x] 10/21 23:59 타임아웃 2건" });   // 창 끝(to + 8일 0시) = 밖
+    await saveMetrics(c, late, [m("타임아웃", 2, "2026-10-21T14:59:00Z")]);
+    const r = await agg(c, { keywords: T(c), from: "2026-10-21", to: "2026-10-21", bucket: "day" });
+    assertEquals([NEW(r), r.buckets], [{ total: 1, body_total: 6, metric_items: 1, metric_unmatched: 0 }, [{ key: "2026-10-21", count: 1, body: 6 }]]);
+  } },
+  { name: "candidate window −1 day: received 10/20 23:30, at 10/21 00:10 → in 10/21 day total 1", run: async (c) => {
+    const a = await msg(c, "a", { at: "2026-10-20T23:30:00+09:00", text: "[x] 00:10 타임아웃 6건" });
+    await saveMetrics(c, a, [m("타임아웃", 6, "2026-10-20T15:10:00Z")]);
+    const early = await msg(c, "early", { at: "2026-10-19T23:59:00+09:00", text: "[x] 타임아웃 2건" });   // 창 시작(from − 1일 0시) 전 = 밖
+    await saveMetrics(c, early, [m("타임아웃", 2, "2026-10-20T15:20:00Z")]);
+    const r = await agg(c, { keywords: T(c), from: "2026-10-21", to: "2026-10-21", bucket: "day" });
+    assertEquals([NEW(r), r.buckets], [{ total: 1, body_total: 6, metric_items: 1, metric_unmatched: 0 }, [{ key: "2026-10-21", count: 1, body: 6 }]]);
+    assertEquals((await agg(c, { keywords: T(c), from: "2026-10-20", to: "2026-10-20", bucket: "day" })).total, 0);   // 받은 날 10/20 에는 없다
+  } },
+  { name: "one item, two matched rows, only one in period → that row only, total 1", run: async (c) => {
+    const a = await msg(c, "a", { at: "2026-10-22T01:05:00+09:00", text: "[x] 23:00 타임아웃 6건, 01:00 타임아웃 3건" });
+    await saveMetrics(c, a, [m("타임아웃", 6, "2026-10-21T14:00:00Z"), m("타임아웃", 3, "2026-10-21T16:00:00Z")]);
+    const p = { keywords: T(c), bucket: "day" };
+    assertEquals(NEW(await agg(c, { ...p, from: "2026-10-22", to: "2026-10-22" })), { total: 1, body_total: 3, metric_items: 1, metric_unmatched: 0 });
+    assertEquals(NEW(await agg(c, { ...p, from: "2026-10-21", to: "2026-10-21" })), { total: 1, body_total: 6, metric_items: 1, metric_unmatched: 0 });
+  } },
+  { name: "no-metrics items use received time for the period (0.17.0 behaviour)", run: async (c) => {
+    await msg(c, "a", { at: "2026-10-20T23:59:00+09:00", text: "[x] 결제 타임아웃" });
+    const p = { keywords: T(c), bucket: "day" };
+    assertEquals((await agg(c, { ...p, from: "2026-10-21", to: "2026-10-21" })).total, 0);
+    const r = await agg(c, { ...p, from: "2026-10-20", to: "2026-10-20" });
+    assertEquals([NEW(r), r.buckets], [{ total: 1, body_total: 1, metric_items: 0, metric_unmatched: 0 }, [{ key: "2026-10-20", count: 1, body: 1 }]]);
+  } },
+  // 배포 조합(Codex #6)
+  { name: "deploy combo: with no item_metrics rows, buckets sum = total = body_total, metric_items = metric_unmatched = 0", run: async (c) => {
+    const ids = [await msg(c, "a", { at: "2026-10-15T09:10:00+09:00", text: "[x] 결제 타임아웃" }),
+      await msg(c, "b", { at: "2026-10-15T14:10:00+09:00", text: "[x] 결제 타임아웃" }),
+      await msg(c, "d", { at: "2026-10-15T14:50:00+09:00", text: "[x] 결제 타임아웃" })];
+    const p = { keywords: T(c), from: "2026-10-15", to: "2026-10-15", bucket: "hour" };
+    const r = await agg(c, p);
+    assertEquals(NEW(r), { total: 3, body_total: 3, metric_items: 0, metric_unmatched: 0 });
+    assertEquals(r.buckets, [{ key: "09", count: 1, body: 1 }, { key: "14", count: 2, body: 2 }]);
+    assertEquals(legacy(r), { total: 3, buckets: [{ key: "09", count: 1 }, { key: "14", count: 2 }] });   // 같은 시드의 0035 반환
+    const l = await agg(c, { ...p, key: "14" });
+    assertEquals([l.total, l.value, l.items!.map((x) => [x.item_id, x.count])], [2, 2, [[ids[2], null], [ids[1], null]]]);
+  } },
+  // 롤백 조합(Codex 계획 리뷰 P-H2, K26) — 구 chat 은 total·buckets[].count·목록 total 만 읽는다
+  { name: "rollback combo (old chat reads total/buckets[].count): with metrics vs same seed without metrics → legacy() equal, only body/body_total/value/line count differ", run: async (c) => {
+    const a = await msg(c, "a", { at: "2026-10-15T14:12:00+09:00", text: "[x] 14:00~14:10 타임아웃 6건, 오류 2건" });
+    const b = await msg(c, "b", { at: "2026-10-15T15:05:00+09:00", text: "[x] 타임아웃 3건" });
+    await msg(c, "d", { at: "2026-10-15T16:20:00+09:00", text: "[x] 결제 타임아웃" });                   // metrics 없음
+    const p = { keywords: T(c), from: "2026-10-15", to: "2026-10-15", bucket: "hour" };
+    const r0 = await agg(c, p), l0 = await agg(c, { ...p, key: "14" });
+    assertEquals([NEW(r0), r0.buckets!.map((x) => x.body)], [{ total: 3, body_total: 3, metric_items: 0, metric_unmatched: 0 }, [1, 1, 1]]);
+    assertEquals([l0.value, l0.items!.map((x) => x.count)], [1, [null]]);
+    await saveMetrics(c, a, [m("타임아웃", 6, "2026-10-15T05:00:00Z"), m("오류", 2, "2026-10-15T05:00:00Z")]);
+    await saveMetrics(c, b, [m("타임아웃", 3, "2026-10-15T06:05:00Z", false)]);
+    const r1 = await agg(c, p), l1 = await agg(c, { ...p, key: "14" });
+    assertEquals(legacy(r1), legacy(r0));
+    assertEquals(legacy(r0), { total: 3, buckets: [{ key: "14", count: 1 }, { key: "15", count: 1 }, { key: "16", count: 1 }] });
+    assertEquals(legacy(l1), legacy(l0));
+    assertEquals([l0.total, l0.items!.map((x) => x.item_id)], [1, [a]]);
+    // 이 값을 N7 구 chat 테스트가 그대로 쓴다
+    assertEquals(NEW(r1), { total: 3, body_total: 10, metric_items: 2, metric_unmatched: 0 });
+    assertEquals(r1.buckets, [{ key: "14", count: 1, body: 6 }, { key: "15", count: 1, body: 3 }, { key: "16", count: 1, body: 1 }]);
+    assertEquals([l1.total, l1.value, l1.items!.map((x) => [x.item_id, x.count])], [1, 6, [[a, 6]]]);
   } },
 ];
