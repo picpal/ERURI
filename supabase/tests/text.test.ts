@@ -467,6 +467,15 @@ Deno.test("metrics: proximity check uses the masked text sent to extract (N8-pro
   assertEquals(calls.metrics[0].map((m) => [m.label, m.count]), [["타임아웃", 6]]);
 });
 
+Deno.test("metrics: count only in the title is kept — check text = masked title + newline + masked body (N8-title)", async () => {
+  // 제목 '[합성PAY] 결제 타임아웃 6건', 본문 '14:00~14:10 발생' — 본문만 보면 6을 찾지 못해 버렸다(리뷰 Important 1)
+  const { d, calls } = fake({ rules: [{ id: "r1", kind: "keyword", value: "합성PAY", created_at: "2026-10-21T00:00:00Z" }],
+    item: { title: "[합성PAY] 결제 타임아웃 6건" }, text: "14:00~14:10 발생", result: { kind: "none" },
+    metrics: [{ label: "타임아웃", count: 6, start: "14:00", end: "14:10" }, { label: "발생", count: 6, start: null, end: null }] });
+  await processText(d, job());
+  assertEquals(calls.metrics[0].map((m) => [m.label, m.count]), [["타임아웃", 6]]);   // '발생 6'은 제목·본문이 줄바꿈으로 갈려 버린다
+});
+
 Deno.test("metrics: non-rule item and SHARE never call saveMetrics; log lines have no metrics key", async () => {
   for (const o of [{ text: BODY }, { text: BODY, item: { source: "SHARE" } }]) {
     const { d, calls } = fake({ ...o, result: { kind: "none" } });

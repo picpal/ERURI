@@ -4,10 +4,11 @@ import type { Metric } from "../functions/_shared/metrics.ts";
 import { judge } from "../eval/run-multi-event-eval.ts";
 
 export type MetricGroup = "single" | "multi" | "sum_detail" | "repeat" | "cumulative_mixed" | "counter" | "tz" | "none_plain" | "none_money"
-  | "none_ratio" | "none_cumulative" | "mixed_max";
+  | "none_ratio" | "none_cumulative" | "mixed_max" | "title";
 export type MetricTime = "range" | "point" | "datetime" | "none" | "out_of_window" | "tz";
+// title = 알림 제목(보충 그룹 title 만 — 러너가 meta.title 로 보내고 검증 글은 metricCheckText(title, text), N8-title)
 export type MetricCase = { id: string; group: MetricGroup; time?: MetricTime; service: string; text: string; occurred_at: string; expect: Metric[];
-  events?: { starts: string }[] };
+  events?: { starts: string }[]; title?: string };
 export type MetricCaseFile = { _note?: string; cases: MetricCase[] };
 export type MetricStatus = "ok" | "incomplete" | "error";
 export type MetricGot = { metrics: Metric[]; events: string[]; status: MetricStatus; output_tokens: number };
@@ -16,8 +17,8 @@ export type MetricGot = { metrics: Metric[]; events: string[]; status: MetricSta
 export type MetricRow = { id: string; group: MetricGroup; time: MetricTime | null; expected: number; got: number; matched: number; extra: number;
   time_ok: number; sum_ok: boolean; timeout: number; events_ok: boolean | null; status: MetricStatus; output_tokens: number };
 
-// 스펙 §15 구성
-export const GROUP_COUNTS: Record<MetricGroup, number> = { single: 12, multi: 10, sum_detail: 2, repeat: 2, cumulative_mixed: 1, counter: 2, tz: 4,
+// 스펙 §15 구성(42) — 보충 그룹 title 은 따로 센다(TITLE_CASES, 2026-10-22 메인 판정 N8-title)
+export const GROUP_COUNTS: Record<Exclude<MetricGroup, "title">, number> = { single: 12, multi: 10, sum_detail: 2, repeat: 2, cumulative_mixed: 1, counter: 2, tz: 4,
   none_plain: 2, none_money: 2, none_ratio: 2, none_cumulative: 1, mixed_max: 2 };
 export const TIME_COUNTS: Record<MetricTime, number> = { range: 12, point: 4, datetime: 4, none: 7, out_of_window: 2, tz: 4 };
 const METRIC_GROUPS: MetricGroup[] = ["single", "multi", "sum_detail", "repeat", "cumulative_mixed", "counter", "tz"];
@@ -25,6 +26,7 @@ const NONE_GROUPS: MetricGroup[] = ["none_plain", "none_money", "none_ratio", "n
 const EXPECT_TOTAL = 49;
 const MIXED_EVENTS = 5, MIXED_METRICS = 10, MIXED_LABEL_MIN = 15;
 const SERVICES_MIN = 12, SERVICE_MAX_USES = 4;
+const TITLE_CASES = 1;
 // 그룹별 기대 metric 수 [최소, 최대]
 const EXPECT_RANGE: Partial<Record<MetricGroup, [number, number]>> = { single: [1, 1], multi: [2, 3], sum_detail: [2, 3], repeat: [1, 1],
   cumulative_mixed: [1, 1], counter: [1, 1], tz: [1, 1] };
@@ -44,10 +46,26 @@ const seoulMinute = (iso: string) => new Date(Date.parse(iso) + 9 * 3600_000).to
 
 export function validateMetricCases(f: MetricCaseFile): string[] {
   const p: string[] = [];
-  const cases = Array.isArray(f?.cases) ? f.cases : [];
+  const all = Array.isArray(f?.cases) ? f.cases : [];
+  const ids = new Set(all.map((c) => c.id));
+  if (ids.size !== all.length) p.push("duplicate id");
+  // 보충: 제목에만 건수가 있는 사례 — 본문에는 그 count 숫자가 없고, 기대는 1개
+  const titled = all.filter((c) => c.group === "title");
+  if (titled.length !== TITLE_CASES) p.push(`title cases ${titled.length} != ${TITLE_CASES}`);
+  for (const c of titled) {
+    if (typeof c.title !== "string" || !c.title.includes(c.service)) p.push(`${c.id} title missing or service not in title`);
+    if (!Array.isArray(c.expect) || c.expect.length !== 1) { p.push(`${c.id} title expect != 1`); continue; }
+    const m = c.expect[0];
+    if (typeof c.title === "string" && !c.title.includes(`${m.count}`)) p.push(`${c.id} count not in title`);
+    if (typeof c.text === "string" && c.text.includes(`${m.count}`)) p.push(`${c.id} count also in body`);
+    const bodyTime = c.time === "range" || c.time === "point" || c.time === "datetime";
+    if (c.time === undefined || m.at_body !== bodyTime) p.push(`${c.id} at_body vs time ${c.time}`);
+    if (!m.at_body && Date.parse(m.at) !== Date.parse(c.occurred_at)) p.push(`${c.id} at_body false but at != occurred_at`);
+    if (c.events !== undefined) p.push(`${c.id} events outside mixed_max`);
+  }
+  const cases = all.filter((c) => c.group !== "title");
   if (cases.length !== 42) p.push(`cases ${cases.length} != 42`);
-  const ids = new Set(cases.map((c) => c.id));
-  if (ids.size !== cases.length) p.push("duplicate id");
+  for (const c of cases) if (c.title !== undefined) p.push(`${c.id} title outside title group`);
   for (const [g, n] of Object.entries(GROUP_COUNTS)) {
     const k = cases.filter((c) => c.group === g).length;
     if (k !== n) p.push(`group ${g} ${k} != ${n}`);
@@ -61,7 +79,7 @@ export function validateMetricCases(f: MetricCaseFile): string[] {
   const total = withMetrics.reduce((s, c) => s + (Array.isArray(c.expect) ? c.expect.length : 0), 0);
   if (total !== EXPECT_TOTAL) p.push(`expect total ${total} != ${EXPECT_TOTAL}`);
   const uses = new Map<string, number>();
-  for (const c of cases) uses.set(c.service, (uses.get(c.service) ?? 0) + 1);
+  for (const c of all) uses.set(c.service, (uses.get(c.service) ?? 0) + 1);
   if (uses.size < SERVICES_MIN) p.push(`services ${uses.size} < ${SERVICES_MIN}`);
   for (const [s, n] of uses) if (n > SERVICE_MAX_USES) p.push(`service used ${n} > ${SERVICE_MAX_USES}: ${s}`);
   for (const c of cases) {
@@ -140,8 +158,8 @@ export function judgeMetricCase(c: MetricCase, got: MetricGot): MetricRow {
     status: got.status, output_tokens: got.output_tokens };
 }
 
-type CheckKey = "c1" | "c2" | "c2_extra" | "c3" | "c4" | "c5" | "c6" | "c7" | "c7_out" | "c7_tz" | "c8_done" | "c8_events" | "c8_metrics";
-const CHECK_KEYS: CheckKey[] = ["c1", "c2", "c2_extra", "c3", "c4", "c5", "c6", "c7", "c7_out", "c7_tz", "c8_done", "c8_events", "c8_metrics"];
+type CheckKey = "c1" | "c2" | "c2_extra" | "c3" | "c4" | "c5" | "c6" | "c7" | "c7_out" | "c7_tz" | "c8_done" | "c8_events" | "c8_metrics" | "c9_title";
+const CHECK_KEYS: CheckKey[] = ["c1", "c2", "c2_extra", "c3", "c4", "c5", "c6", "c7", "c7_out", "c7_tz", "c8_done", "c8_events", "c8_metrics", "c9_title"];
 
 // 한 실행의 합격선 ①~⑧. 그 그룹 사례가 이 실행에 없으면 n/a(합격에 영향 없음 — --mixed-only·--ids 부분 실행).
 // 허용 틀림(②⑦ 2개, ⑥ 1개, ⑧ metric 1개)은 전체 실행에서 스펙 숫자(≥47/49·≥32/33·≥19/20)와 같다
@@ -174,6 +192,8 @@ function runChecks(rows: MetricRow[]): Record<CheckKey, { text: string; ok: bool
     c8_done: frac(mixed, (r) => r.status === "ok" ? 1 : 0, () => 1, 0),
     c8_events: frac(mixed, (r) => r.events_ok ? 1 : 0, () => 1, 0),
     c8_metrics: frac(mixed, (r) => r.matched, (r) => r.expected, 1),
+    // ⑨ 보충(N8-title): 제목 건수 사례 — label·count·시각 모두, 여분 0
+    c9_title: frac(of(["title"]), (r) => r.matched === r.expected && r.time_ok === r.expected && r.extra === 0 ? 1 : 0, () => 1, 0),
   };
 }
 

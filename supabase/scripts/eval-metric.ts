@@ -5,7 +5,7 @@
 //       … --regression --runs 2 [--cap n]   (multi-event 24 × 일반 모드, SHARE 뺀 23 × 규칙 모드)
 // --cap 은 ExtractOpts.cap 으로만 넘긴다(규칙 모드 상한 — 상수를 고치지 않고 잰다)
 import { extractTextDetailed, type ExtractOpts, RULE_MAX_OUTPUT_TOKENS, type TextMeta } from "../functions/_shared/extract-text.ts";
-import { normalizeMetrics } from "../functions/_shared/metrics.ts";
+import { metricCheckText, normalizeMetrics } from "../functions/_shared/metrics.ts";
 import { receivedDay } from "../functions/_shared/time.ts";
 import { judge } from "../eval/run-multi-event-eval.ts";
 import { judgeMetricCase, judgeRegression, type MetricCaseFile, type MetricRow, type MetricStatus, summarizeMetric,
@@ -84,9 +84,11 @@ if (cases.length === 0) { console.log(JSON.stringify({ error: "ids", want: "--id
 const rows: MetricRow[] = [];
 for (let run = 1; run <= runs; run++) {
   for (const c of cases) {
-    const r = await call(c.text, META, receivedDay(c.occurred_at), ruleOpts);
+    // 제목 사례(N8-title)는 알림 제목을 meta.title 로 보내고 worker 와 같은 검증 글(가린 제목 + 본문)로 정규화한다
+    const meta: TextMeta = c.title === undefined ? META : { source: "NOTIFICATION", appName: null, title: c.title };
+    const r = await call(c.text, meta, receivedDay(c.occurred_at), ruleOpts);
     const evs = r.out && r.out.result.kind === "event" ? r.out.result.events.map((e) => e.event.start ?? "") : [];
-    const row = judgeMetricCase(c, { metrics: r.out ? normalizeMetrics(r.out.metrics, c.occurred_at, c.text) : [], events: evs, status: r.status,
+    const row = judgeMetricCase(c, { metrics: r.out ? normalizeMetrics(r.out.metrics, c.occurred_at, metricCheckText(c.title, c.text)) : [], events: evs, status: r.status,
       output_tokens: r.output_tokens });
     rows.push(row);
     console.log(JSON.stringify({ run, ...row, ...(r.err ? { err: r.err } : {}), cap: effectiveCap }));

@@ -79,7 +79,12 @@ function nearLabel(text: string, label: string, count: number): boolean {
   return false;
 }
 
-// text = 추출에 보낸 본문(가린 글) — 근접 검증용
+// 근접·단위 검증 글 = 모델이 본 가린 제목 + 가린 본문(N8-title — 제목에만 있는 건수도 받는다). 줄바꿈이 구절을 갈라 제목 낱말이 본문 숫자에 붙지 않는다
+export function metricCheckText(title: string | null | undefined, body: string): string {
+  return [title, body].filter((s): s is string => !!s && s.trim() !== "").join("\n");
+}
+
+// text = metricCheckText(가린 제목, 가린 본문) — 근접 검증용
 export function normalizeMetrics(raw: unknown, occurredAt: string, text: string): Metric[] {
   if (!Array.isArray(raw)) return [];
   const parsed = Date.parse(occurredAt);

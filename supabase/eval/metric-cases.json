@@ -1,5 +1,5 @@
 {
- "_note": "METRIC-eval(스펙 §15, 0.18.0) 합성 알림 42종 — 실제 알림·문자 원문 아님, 서비스명도 합성. occurred_at = 받은 시각(UTC), 러너 today = 받은 서울 날짜. expect = normalizeMetrics 뒤 기대 {label(그 끝 낱말 = 핵심 낱말이 모델 label 에 공백·대소문자 무시로 들어 있으면 일치 — Ruling N8-label), count, at(분 단위 비교), at_body}. 혼합 사례 expect label = 본문 긴 label(15자 이상)의 끝 두 낱말, events = 혼합 사례의 일정 시작(run-multi-event-eval judge 와 같은 접두 규칙). 반례·누적·시간대 글은 스펙 §15 그대로",
+ "_note": "METRIC-eval(스펙 §15, 0.18.0) 합성 알림 42종 + 보충 1(t1 — 제목에만 건수, 메인 판정 N8-title, 42 구성 밖·합격선 ⑨) — 실제 알림·문자 원문 아님, 서비스명도 합성. occurred_at = 받은 시각(UTC), 러너 today = 받은 서울 날짜. expect = normalizeMetrics 뒤 기대 {label(그 끝 낱말 = 핵심 낱말이 모델 label 에 공백·대소문자 무시로 들어 있으면 일치 — Ruling N8-label), count, at(분 단위 비교), at_body}. 혼합 사례 expect label = 본문 긴 label(15자 이상)의 끝 두 낱말, events = 혼합 사례의 일정 시작(run-multi-event-eval judge 와 같은 접두 규칙). 반례·누적·시간대 글은 스펙 §15 그대로",
  "cases": [
   {
    "id": "s01",
@@ -486,6 +486,23 @@
     { "starts": "2026-10-27T14:00" },
     { "starts": "2026-10-29T16:00" },
     { "starts": "2026-11-02T09:30" }
+   ]
+  },
+  {
+   "id": "t1",
+   "group": "title",
+   "time": "range",
+   "service": "합성제목페이",
+   "title": "[합성제목페이] 결제 타임아웃 6건",
+   "text": "14:00~14:10 발생",
+   "occurred_at": "2026-10-22T05:12:00.000Z",
+   "expect": [
+    {
+     "label": "타임아웃",
+     "count": 6,
+     "at": "2026-10-22T05:00:00.000Z",
+     "at_body": true
+    }
    ]
   }
  ]

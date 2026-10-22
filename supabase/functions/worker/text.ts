@@ -4,7 +4,7 @@ import { EXTRACT_MODEL, type ExtractUsage } from "../_shared/extract.ts";
 import { type ExtractOpts, RULE_MAX_OUTPUT_TOKENS, type TextExtraction, type TextMeta } from "../_shared/extract-text.ts";
 import { type FactsInput, type SavedFact, textFacts } from "../_shared/facts.ts";
 import type { Job } from "../_shared/job.ts";
-import { type Metric, normalizeMetrics } from "../_shared/metrics.ts";
+import { type Metric, metricCheckText, normalizeMetrics } from "../_shared/metrics.ts";
 import { applyRules } from "../_shared/rules.ts";
 import { matchSaveRules, type SaveRule } from "../_shared/save-rules.ts";
 import { receivedDay } from "../_shared/time.ts";
@@ -112,7 +112,8 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   // 본문 건수(0.18.0): 규칙 항목은 save_facts·kept 전에 덮어쓴다 — 빈 배열도 보내 재시도가 이전 행을 지운다. 로그는 개수만(K6)
   let mlog = {};
   if (ruled) {
-    const ms = normalizeMetrics(out.metrics ?? [], item.occurredAt, v.masked);   // 근접 검증은 추출에 보낸 가린 글로(N8-prox)
+    // 근접·단위 검증은 모델이 본 가린 제목 + 가린 본문으로(N8-prox·N8-title) — 줄바꿈이 구절을 갈라 제목 낱말이 본문 숫자에 붙지 않는다
+    const ms = normalizeMetrics(out.metrics ?? [], item.occurredAt, metricCheckText(v.maskedTitle ?? item.title, v.masked));
     await deps.saveMetrics(user, itemId, ms);
     mlog = { metrics: ms.length, metric_body: ms.filter((m) => m.at_body).length };
   }

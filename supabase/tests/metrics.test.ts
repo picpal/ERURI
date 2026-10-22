@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import { normalizeMetrics } from "../functions/_shared/metrics.ts";
+import { metricCheckText, normalizeMetrics } from "../functions/_shared/metrics.ts";
 
 // 받은 시각 = 서울 2026-10-22 14:12
 const R = "2026-10-22T05:12:00Z";
@@ -100,6 +100,16 @@ Deno.test("window: +24h exactly → body; +24h 1m → received; −168h exactly 
   assertEquals(at1("2026-10-23 14:13").at_body, false);
   assertEquals(at1("2026-10-15 14:12").at_body, true);
   assertEquals(at1("2026-10-15 14:11").at_body, false);
+});
+
+Deno.test("metricCheckText (N8-title): no title → body unchanged; title + newline + body; title-only count kept; title word never joins a body number", () => {
+  assertEquals([metricCheckText(null, "타임아웃 6건"), metricCheckText("  ", "타임아웃 6건"), metricCheckText("[합성PAY] 결제", "타임아웃 6건")],
+    ["타임아웃 6건", "타임아웃 6건", "[합성PAY] 결제\n타임아웃 6건"]);
+  const raw = [{ label: "타임아웃", count: 6, start: "14:00", end: "14:10" }];
+  assertEquals(normalizeMetrics(raw, R, "14:00~14:10 발생").length, 0);                                   // 본문만: 6 없음
+  assertEquals(normalizeMetrics(raw, R, metricCheckText("[합성PAY] 결제 타임아웃 6건", "14:00~14:10 발생")).map((m) => [m.count, m.at_body]), [[6, true]]);
+  // 제목 끝 '타임아웃' + 본문 첫 '6건' — 줄바꿈이 구절을 갈라 버린다
+  assertEquals(normalizeMetrics(raw, R, metricCheckText("[합성PAY] 타임아웃", "6건")).length, 0);
 });
 
 Deno.test("module imports only time.ts (no OpenAI client)", async () => {

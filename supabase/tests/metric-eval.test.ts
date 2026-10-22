@@ -1,4 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert";
+import { metricCheckText, normalizeMetrics } from "../functions/_shared/metrics.ts";
 import { judgeMetricCase, judgeRegression, type MetricCase, type MetricCaseFile, type MetricRow, summarizeMetric,
   validateMetricCases } from "../scripts/_metric-eval.ts";
 
@@ -16,9 +17,9 @@ Deno.test("validateMetricCases: committed file passes; dropping a case, a 5th us
   const five = structuredClone(f); for (const c of five.cases.slice(0, 5)) c.service = "합성같은이름"; assert(validateMetricCases(five).length > 0);
   const extra = structuredClone(f); extra.cases.find((c: { group: string }) => c.group === "single").expect.push({ label: "x", count: 1, at: "2026-10-22T05:00:00.000Z", at_body: false });
   assert(validateMetricCases(extra).length > 0);
-  // 구성 숫자(스펙 §15): 42 = 33 + 7 + 2, 기대 metric 49, 혼합은 일정 5 + metric 10씩
-  assertEquals(file.cases.length, 42);
-  assertEquals(file.cases.filter((c) => c.time !== undefined).reduce((s, c) => s + c.expect.length, 0), 49);
+  // 구성 숫자(스펙 §15): 42 = 33 + 7 + 2, 기대 metric 49, 혼합은 일정 5 + metric 10씩. 보충 title 1개는 42 밖(N8-title)
+  assertEquals([file.cases.length, byGroup("title").length], [43, 1]);
+  assertEquals(file.cases.filter((c) => c.time !== undefined && c.group !== "title").reduce((s, c) => s + c.expect.length, 0), 49);
   for (const m of byGroup("mixed_max")) assertEquals([m.events?.length, m.expect.length], [5, 10]);
   // 혼합 본문의 긴 label 을 15자 밑으로 줄이면 실패(기대 label 은 그 끝 두 낱말)
   const short = structuredClone(f);
@@ -29,6 +30,32 @@ Deno.test("validateMetricCases: committed file passes; dropping a case, a 5th us
   const reworded = structuredClone(f);
   const x = reworded.cases.find((c: { group: string }) => c.group === "counter"); x.text = x.text.replace("재시도 20건", "재시도 21건");
   assert(validateMetricCases(reworded).some((p: string) => p.startsWith("spec text")), JSON.stringify(validateMetricCases(reworded)));
+});
+
+Deno.test("title supplement (N8-title): t1 count only in title; validator rejects a body count, a missing title, a title outside its group, or a 2nd title case", () => {
+  const t = byGroup("title")[0];
+  assertEquals([t.id, t.title?.includes(`${t.expect[0].count}`), t.text.includes(`${t.expect[0].count}`)], ["t1", true, false]);
+  const bad = (f: (x: MetricCaseFile) => void) => { const x = structuredClone(file); f(x); return validateMetricCases(x); };
+  assert(bad((x) => { x.cases.find((c) => c.group === "title")!.text += " 6건"; }).some((p) => p.includes("count also in body")));
+  assert(bad((x) => { delete x.cases.find((c) => c.group === "title")!.title; }).some((p) => p.includes("title missing")));
+  assert(bad((x) => { x.cases[0].title = "[합성] 제목"; }).some((p) => p.includes("title outside title group")));
+  assert(bad((x) => { x.cases.push({ ...structuredClone(t), id: "t2" }); }).some((p) => p.includes("title cases 2")));
+  // 본문만 보면 버리고(이전 동작), 가린 제목 + 본문이면 받는다 — 러너·worker 와 같은 metricCheckText
+  const raw = t.expect.map((m) => ({ label: m.label, count: m.count, start: "14:00", end: "14:10" }));
+  assertEquals([normalizeMetrics(raw, t.occurred_at, t.text).length, normalizeMetrics(raw, t.occurred_at, metricCheckText(t.title, t.text))], [0, t.expect]);
+  // ⑨: 놓치면 실패
+  const miss = summarizeMetric(passRun().map((r) => r.id === "t1" ? judgeMetricCase(t, { metrics: [], events: [], status: "ok", output_tokens: 80 }) : r), 2048);
+  assertEquals([miss.pass, miss.checks.c9_title], [false, "0/1"]);
+});
+
+Deno.test("check text widening keeps every committed case (N8-title): each expected metric of the 42 is still accepted with a title line in front", () => {
+  for (const c of file.cases.filter((c) => c.group !== "title")) {
+    const raw = c.expect.map((m) => ({ label: m.label, count: m.count, start: null, end: null }));
+    const pick = (ms: { label: string; count: number }[]) => ms.map((m) => [m.label, m.count]);
+    const bodyOnly = pick(normalizeMetrics(raw, c.occurred_at, c.text));
+    assertEquals(bodyOnly, pick(c.expect), c.id);
+    assertEquals(pick(normalizeMetrics(raw, c.occurred_at, metricCheckText(`[${c.service}] 합성 알림 제목`, c.text))), bodyOnly, c.id);
+  }
 });
 
 Deno.test("judgeMetricCase: label containment (spaces/case), count, at minute and at_body; one model metric used once (K19)", () => {
@@ -59,8 +86,8 @@ Deno.test("summarizeMetric: one run under any threshold → pass false; threshol
   const ok = summarizeMetric(passRun(), 2048);
   assertEquals(ok.pass, true);
   assertEquals([ok.checks.c1, ok.checks.c2, ok.checks.c2_extra, ok.checks.c3, ok.checks.c4, ok.checks.c5, ok.checks.c6, ok.checks.c7, ok.checks.c7_out,
-    ok.checks.c7_tz, ok.checks.c8_done, ok.checks.c8_events, ok.checks.c8_metrics],
-    ["0 emitted", "49/49", "0", "0", "2/2", "0", "33/33", "49/49", "2/2", "4/4", "2/2", "2/2", "20/20"]);
+    ok.checks.c7_tz, ok.checks.c8_done, ok.checks.c8_events, ok.checks.c8_metrics, ok.checks.c9_title],
+    ["0 emitted", "49/49", "0", "0", "2/2", "0", "33/33", "49/49", "2/2", "4/4", "2/2", "2/2", "20/20", "1/1"]);
   assertEquals(ok.cap, 2048);
   // 사례 하나만 바꾼 줄
   const swap = (id: string, row: MetricRow) => passRun().map((r) => r.id === id ? row : r);
