@@ -152,7 +152,11 @@ Deno.test("summarizeMetric: one run under any threshold → pass false; threshol
   assertEquals([body.pass, body.checks.c7_out], [false, "1/2"]);
   const tz = byGroup("tz")[0];
   const shifted = summarizeMetric(swap(tz.id, judgeMetricCase(tz, { metrics: tz.expect.map((m) => ({ ...m, at: new Date(Date.parse(m.at) + 9 * 3600_000).toISOString() })), events: [], status: "ok", output_tokens: 90 })), 2048);
-  assertEquals([shifted.pass, shifted.checks.c7_tz, shifted.checks.c7], [false, "3/4", "49/50"]);
+  assertEquals([shifted.pass, shifted.checks.c7_tz, shifted.checks.c7], [true, "3/4", "49/50"]);   // final-tz: 시간대 하나 어긋남은 허용
+  const tz2 = byGroup("tz")[1];
+  const off9 = (c: typeof tz) => judgeMetricCase(c, { metrics: c.expect.map((m) => ({ ...m, at: new Date(Date.parse(m.at) + 9 * 3600_000).toISOString() })), events: [], status: "ok", output_tokens: 90 });
+  const shifted2 = summarizeMetric(passRun().map((r) => r.id === tz.id ? off9(tz) : r.id === tz2.id ? off9(tz2) : r), 2048);
+  assertEquals([shifted2.pass, shifted2.checks.c7_tz], [false, "2/4"]);   // 둘은 실패
   // ⑧ 혼합: 일정 하나 빠짐 → 실패, metric 하나 틀림(19/20) → 통과, 둘(18/20) → 실패
   const mx = byGroup("mixed_max")[0];
   const fewer = summarizeMetric(swap(mx.id, judgeMetricCase(mx, { metrics: mx.expect, events: mx.events!.slice(1).map((e) => e.starts), status: "ok", output_tokens: 900 })), 2048);

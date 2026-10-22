@@ -193,9 +193,9 @@ function runChecks(rows: MetricRow[]): Record<CheckKey, { text: string; ok: bool
     c4: frac(of(["repeat"]), (r) => r.got === 1 ? 1 : 0, () => 1, 0),
     c5: zero(of(["counter"]), (r) => r.timeout > 0 ? 1 : 0),
     c6: frac(m, (r) => r.sum_ok ? 1 : 0, () => 1, 1),
-    c7: frac(m, (r) => r.time_ok, (r) => r.expected, 2),
+    c7: frac(m, (r) => r.time_ok, (r) => r.expected, 3),   // final-tz: UTC 명시 사례의 시작 시각 비움 흔들림 1개 허용(비우면 받은 시각)
     c7_out: frac(m.filter((r) => r.time === "out_of_window"), (r) => r.time_ok === r.expected ? 1 : 0, () => 1, 0),
-    c7_tz: frac(of(["tz"]), (r) => r.time_ok === r.expected ? 1 : 0, () => 1, 0),
+    c7_tz: frac(of(["tz"]), (r) => r.time_ok === r.expected ? 1 : 0, () => 1, 1),   // final-tz
     c8_done: frac(mixed, (r) => r.status === "ok" ? 1 : 0, () => 1, 0),
     c8_events: frac(mixed, (r) => r.events_ok ? 1 : 0, () => 1, 0),
     c8_metrics: frac(mixed, (r) => r.matched, (r) => r.expected, 1),
