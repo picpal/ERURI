@@ -8,7 +8,7 @@ export type Q = (sql: string, params?: unknown[]) => Promise<Row[]>;
 export type ACtx = { q: Q; user: string; other: string; tag: string };
 export const MIGRATION_0035 = new URL("../migrations/0035_save_rules_aggregate.sql", import.meta.url);
 
-const one = async (c: ACtx, sql: string, p: unknown[] = []) => (await c.q(sql, p))[0];
+export const one = async (c: ACtx, sql: string, p: unknown[] = []) => (await c.q(sql, p))[0];
 const add = async (c: ACtx, kind: string, value: string, user = c.user) =>
   (await one(c, "select save_rule_add($1::uuid, $2, $3) as r", [user, kind, value])).r as { status: string; rule_id: string | null };
 const remove = async (c: ACtx, rule: string, user = c.user) =>
@@ -17,22 +17,22 @@ const rulesOf = (c: ACtx, user = c.user) => c.q("select id, kind, value, created
 
 // 항목은 items 에 직접 넣는다(insert_item 은 잡을 만든다). content_enc = 합성 글 바이트(가짜 암호문 — 호스팅은 롤백돼 남지 않는다)
 // at = 받은 시각(occurred_at), key = 멱등 키를 직접 줄 때(K24 ingest 형식 사례)
-type Seed = { source?: string; app?: string | null; sender?: string | null; title?: string | null; body?: string | null; status?: string;
+export type Seed = { source?: string; app?: string | null; sender?: string | null; title?: string | null; body?: string | null; status?: string;
   gateLabel?: string | null; quarantine?: string | null; user?: string; at?: string; key?: string };
-const seed = async (c: ACtx, k: string, o: Seed = {}) => {
+export const seed = async (c: ACtx, k: string, o: Seed = {}) => {
   const source = o.source ?? "MESSAGES";
   return (await one(c, `insert into items (user_id, source, app_name, sender, title, content_enc, occurred_at, idempotency_key, status, gate_label, quarantine_until)
     values ($1::uuid, $2, $3, $4, $5, convert_to($6, 'UTF8'), $11::timestamptz, $7, $8, $9, $10::timestamptz) returning id`,
     [o.user ?? c.user, source, o.app ?? null, o.sender ?? null, o.title ?? null, o.body === undefined ? "합성 글" : o.body,
       o.key ?? `${c.tag}:${source}-${k}`, o.status ?? "queued", o.gateLabel ?? null, o.quarantine ?? null, o.at ?? "2026-10-20T03:00:00Z"])).id as string;
 };
-const chunk = (c: ACtx, item: string, user = c.user, text = "합성 청크", index = 0) =>
+export const chunk = (c: ACtx, item: string, user = c.user, text = "합성 청크", index = 0) =>
   c.q("insert into item_chunks (item_id, user_id, chunk_index, text) values ($1::uuid, $2::uuid, $4, $3)", [item, user, text, index]);
 // worker_get_embed_source 는 user_keys 를 조인한다 — 호스팅 테스트 사용자는 이미 있을 수 있다(롤백되므로 남지 않는다)
 const userKey = (c: ACtx) => c.q("insert into user_keys (user_id, wrapped_key) values ($1::uuid, '\\x00'::bytea) on conflict (user_id) do nothing", [c.user]);
 
 // 실패를 기대하는 문장은 savepoint 안에서 — 실패한 문장이 바깥 트랜잭션을 오류 상태로 두지 않게. 오류 문구를 돌려준다(없으면 "")
-const attempt = async (c: ACtx, fn: () => Promise<unknown>) => {
+export const attempt = async (c: ACtx, fn: () => Promise<unknown>) => {
   await c.q("savepoint agg_expect");
   let err = "";
   try { await fn(); } catch (e) { err = e instanceof Error ? e.message : String(e); }
@@ -41,7 +41,7 @@ const attempt = async (c: ACtx, fn: () => Promise<unknown>) => {
 };
 // 사용자 JWT 처럼(authenticated + claims sub). Supabase auth.uid() 는 claim.sub·claims.sub 둘 다 읽는다(PGlite 스텁도 둘 다). 끝나면 역할을 되돌린다.
 // 문장이 실패하면 트랜잭션이 오류 상태라 되돌리기도 실패한다 — 그 오류는 삼키고 원래 오류를 올린다(attempt 의 savepoint 롤백이 역할·클레임을 되돌린다)
-const asUser = async <T>(c: ACtx, user: string, fn: () => Promise<T>): Promise<T> => {
+export const asUser = async <T>(c: ACtx, user: string, fn: () => Promise<T>): Promise<T> => {
   await c.q("select set_config('request.jwt.claim.sub', $1, true), set_config('request.jwt.claims', $2, true)", [user, JSON.stringify({ sub: user, role: "authenticated" })]);
   await c.q("set local role authenticated");
   try { return await fn(); } finally {
@@ -69,16 +69,23 @@ const candidates = (c: ACtx, limit?: number, user = c.user) => limit === undefin
   : c.q("select item_id, source, app_name, sender, title, convert_from(content_enc, 'UTF8') as body from save_rule_candidates($1::uuid, $2::int)", [user, limit]);
 const restore = async (c: ACtx, ids: string[], user = c.user) =>
   (await one(c, "select save_rule_restore($1::uuid, array(select jsonb_array_elements_text($2::text::jsonb)::uuid)) as n", [user, JSON.stringify(ids)])).n as number;
-type AggArgs = { keywords: string[]; sender?: string | null; sources?: string[]; from: string; to: string; bucket: string; key?: string | null };
-type AggOut = { total: number; buckets?: { key: string; count: number }[];
-  items?: { item_id: string; title: string | null; sender: string | null; source: string; app_name: string | null; occurred_at: string }[] };
-const agg = async (c: ACtx, a: AggArgs, user = c.user) => (await one(c, `select aggregate_items($1::uuid,
+export type AggArgs = { keywords: string[]; sender?: string | null; sources?: string[]; from: string; to: string; bucket: string; key?: string | null };
+// 0036 이 더하는 칸(body_total·metric_items·metric_unmatched·칸 body·목록 value·줄 count)은 optional — 0035 는 내지 않는다(K26, PF-F4)
+export type AggOut = { total: number; body_total?: number; metric_items?: number; metric_unmatched?: number; value?: number;
+  buckets?: { key: string; count: number; body?: number }[];
+  items?: { item_id: string; title: string | null; sender: string | null; source: string; app_name: string | null; occurred_at: string; count?: number | null }[] };
+export const agg = async (c: ACtx, a: AggArgs, user = c.user) => (await one(c, `select aggregate_items($1::uuid,
     array(select jsonb_array_elements_text($2::text::jsonb)), $3, array(select jsonb_array_elements_text($4::text::jsonb)), $5::date, $6::date, $7, $8) as r`,
   [user, JSON.stringify(a.keywords), a.sender ?? null, JSON.stringify(a.sources ?? []), a.from, a.to, a.bucket, a.key ?? null])).r as AggOut;
 // 사례마다 고유 낱말(호스팅 테스트 사용자의 다른 청크와 섞이지 않게) — 합성<run8>
-const kw = (c: ACtx, s = "") => "합성" + c.tag.slice("test:".length) + s;
-const sorted = (xs: string[]) => [...xs].sort();
-const listIds = async (c: ACtx, a: Omit<AggArgs, "bucket" | "key">) => {
+export const kw = (c: ACtx, s = "") => "합성" + c.tag.slice("test:".length) + s;
+export const sorted = (xs: string[]) => [...xs].sort();
+export const pick = <T extends Record<string, unknown>>(o: T, ...k: string[]) => Object.fromEntries(k.map((x) => [x, o[x]]));
+// 0035 가 내던 칸만(구 chat 이 읽는 모양): 칸 {key, count}, 줄은 count 를 뺀 0035 칸(K12·K26). 0035·0036 둘 다에서 같은 사례가 통과하게
+export const legacy = (r: AggOut) => ({ total: r.total,
+  ...(r.buckets ? { buckets: r.buckets.map(({ key, count }) => ({ key, count })) } : {}),
+  ...(r.items ? { items: r.items.map(({ count: _c, ...rest }) => rest) } : {}) });
+export const listIds = async (c: ACtx, a: Omit<AggArgs, "bucket" | "key">) => {
   const r = await agg(c, { ...a, bucket: "day", key: a.from });              // 사례는 하루짜리 기간 — 그날 칸 = 전부
   return sorted(r.items!.map((x) => x.item_id));
 };
@@ -342,7 +349,7 @@ export const AGG_CASES: { name: string; hostedOnly?: boolean; localOnly?: boolea
     const d = await seed(c, "d", { status: "extracted", at });
     await chunk(c, d, c.user, kw(c), 0);                                               // 두 번째 키워드 없음
     const one1 = await agg(c, { keywords: [kw(c)], ...day, bucket: "day" });
-    assertEquals([one1.total, one1.buckets], [3, [{ key: "2026-10-15", count: 3 }]]);
+    assertEquals([one1.total, legacy(one1).buckets], [3, [{ key: "2026-10-15", count: 3 }]]);
     const both = await agg(c, { keywords: [kw(c), t2], ...day, bucket: "day" });
     assertEquals(both.total, 2);
     assertEquals(await listIds(c, { keywords: [kw(c), t2], ...day }), sorted([a, b]));
@@ -416,12 +423,12 @@ export const AGG_CASES: { name: string; hostedOnly?: boolean; localOnly?: boolea
     await mk("before", "2026-10-14T23:59:59+09:00");                                  // from 밖
     await mk("after", "2026-10-17T00:00:00+09:00");                                   // to 다음 날 0시 = 밖
     const p = { keywords: [kw(c)], from: "2026-10-15", to: "2026-10-16" };
-    assertEquals(await agg(c, { ...p, bucket: "hour" }), { total: 2, buckets: [{ key: "00", count: 1 }, { key: "23", count: 1 }] });
-    assertEquals(await agg(c, { ...p, bucket: "day" }), { total: 2, buckets: [{ key: "2026-10-15", count: 1 }, { key: "2026-10-16", count: 1 }] });
-    assertEquals(await agg(c, { ...p, bucket: "weekday" }), { total: 2, buckets: [{ key: "4", count: 1 }, { key: "5", count: 1 }] });
-    assertEquals(await agg(c, { ...p, from: "2026-10-16", bucket: "day" }), { total: 1, buckets: [{ key: "2026-10-16", count: 1 }] });
-    assertEquals(await agg(c, { ...p, to: "2026-10-15", bucket: "day" }), { total: 1, buckets: [{ key: "2026-10-15", count: 1 }] });
-    assertEquals(await agg(c, { ...p, from: "2026-10-14", to: "2026-10-17", bucket: "day" }),
+    assertEquals(legacy(await agg(c, { ...p, bucket: "hour" })), { total: 2, buckets: [{ key: "00", count: 1 }, { key: "23", count: 1 }] });
+    assertEquals(legacy(await agg(c, { ...p, bucket: "day" })), { total: 2, buckets: [{ key: "2026-10-15", count: 1 }, { key: "2026-10-16", count: 1 }] });
+    assertEquals(legacy(await agg(c, { ...p, bucket: "weekday" })), { total: 2, buckets: [{ key: "4", count: 1 }, { key: "5", count: 1 }] });
+    assertEquals(legacy(await agg(c, { ...p, from: "2026-10-16", bucket: "day" })), { total: 1, buckets: [{ key: "2026-10-16", count: 1 }] });
+    assertEquals(legacy(await agg(c, { ...p, to: "2026-10-15", bucket: "day" })), { total: 1, buckets: [{ key: "2026-10-15", count: 1 }] });
+    assertEquals(legacy(await agg(c, { ...p, from: "2026-10-14", to: "2026-10-17", bucket: "day" })),
       { total: 4, buckets: [{ key: "2026-10-14", count: 1 }, { key: "2026-10-15", count: 1 }, { key: "2026-10-16", count: 1 }, { key: "2026-10-17", count: 1 }] });
   } },
   { name: "aggregate list mode: newest 50 of that bucket, total = bucket count", run: async (c) => {
@@ -440,7 +447,7 @@ export const AGG_CASES: { name: string; hostedOnly?: boolean; localOnly?: boolea
     const top = r.items![0];
     assertEquals([top.title, top.sender, top.source, top.app_name, Date.parse(top.occurred_at)],
       ["합성 제목51", null, "NOTIFICATION", "카카오톡", Date.parse("2026-10-15T10:51:00+09:00")]);
-    assertEquals(await agg(c, { keywords: [kw(c)], from: "2026-10-15", to: "2026-10-16", bucket: "day", key: "2026-10-17" }), { total: 0, items: [] });
+    assertEquals(legacy(await agg(c, { keywords: [kw(c)], from: "2026-10-15", to: "2026-10-16", bucket: "day", key: "2026-10-17" })), { total: 0, items: [] });
     assertEquals((await agg(c, { keywords: [kw(c)], from: "2026-10-15", to: "2026-10-16", bucket: "hour", key: "10" })).total, 53);
   } },
   { name: "aggregate writes one audit_log read row whose target is sha256 of the sorted counted ids", run: async (c) => {
