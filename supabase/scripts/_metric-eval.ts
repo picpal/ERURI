@@ -192,8 +192,8 @@ function runChecks(rows: MetricRow[]): Record<CheckKey, { text: string; ok: bool
     c8_done: frac(mixed, (r) => r.status === "ok" ? 1 : 0, () => 1, 0),
     c8_events: frac(mixed, (r) => r.events_ok ? 1 : 0, () => 1, 0),
     c8_metrics: frac(mixed, (r) => r.matched, (r) => r.expected, 1),
-    // ⑨ 보충(N8-title): 제목 건수 사례 — label·count·시각 모두, 여분 0
-    c9_title: frac(of(["title"]), (r) => r.matched === r.expected && r.time_ok === r.expected && r.extra === 0 ? 1 : 0, () => 1, 0),
+    // ⑨ 보충(N8-title): 제목 건수 사례 — label·count, 여분 0(시각은 ⑦이 잰다 — N8-t1)
+    c9_title: frac(of(["title"]), (r) => r.matched === r.expected && r.extra === 0 ? 1 : 0, () => 1, 0),
   };
 }
 
