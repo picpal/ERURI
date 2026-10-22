@@ -1,0 +1,492 @@
+{
+ "_note": "METRIC-eval(스펙 §15, 0.18.0) 합성 알림 42종 — 실제 알림·문자 원문 아님, 서비스명도 합성. occurred_at = 받은 시각(UTC), 러너 today = 받은 서울 날짜. expect = normalizeMetrics 뒤 기대 {label(모델 label 에 공백·대소문자 무시로 들어 있으면 일치), count, at(분 단위 비교), at_body}. 혼합 사례 expect label = 본문 긴 label(15자 이상)의 끝 두 낱말, events = 혼합 사례의 일정 시작(run-multi-event-eval judge 와 같은 접두 규칙). 반례·누적·시간대 글은 스펙 §15 그대로",
+ "cases": [
+  {
+   "id": "s01",
+   "group": "single",
+   "time": "range",
+   "service": "ABC결제",
+   "text": "[ABC결제] 14:00~14:10 타임아웃 6건 발생",
+   "occurred_at": "2026-10-22T05:12:00.000Z",
+   "expect": [
+    { "label": "타임아웃", "count": 6, "at": "2026-10-22T05:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "s02",
+   "group": "single",
+   "time": "range",
+   "service": "합성PAY",
+   "text": "[합성PAY] 09:00~09:30 결제 실패 4건이 감지되었습니다.",
+   "occurred_at": "2026-10-22T00:33:00.000Z",
+   "expect": [
+    { "label": "결제 실패", "count": 4, "at": "2026-10-22T00:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "s03",
+   "group": "single",
+   "time": "range",
+   "service": "SynthGate",
+   "text": "[SynthGate] 22:10~22:40 API Timeout 9건",
+   "occurred_at": "2026-10-21T13:45:00.000Z",
+   "expect": [
+    { "label": "Timeout", "count": 9, "at": "2026-10-21T13:10:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "s04",
+   "group": "single",
+   "time": "range",
+   "service": "가나클라우드",
+   "text": "가나클라우드 알림: 03:00~03:15 디스크 경고 2건이 발생했습니다.",
+   "occurred_at": "2026-10-21T18:20:00.000Z",
+   "expect": [
+    { "label": "디스크 경고", "count": 2, "at": "2026-10-21T18:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "s05",
+   "group": "single",
+   "time": "range",
+   "service": "DemoBank",
+   "text": "[DemoBank] 오늘 11:00~11:05 이체 지연 15건 발생, 현재 정상화되었습니다.",
+   "occurred_at": "2026-10-22T02:10:00.000Z",
+   "expect": [
+    { "label": "이체 지연", "count": 15, "at": "2026-10-22T02:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "s06",
+   "group": "single",
+   "time": "point",
+   "service": "TestPG",
+   "text": "[TestPG] 16:40 승인 거절 7건 확인",
+   "occurred_at": "2026-10-22T07:45:00.000Z",
+   "expect": [
+    { "label": "승인 거절", "count": 7, "at": "2026-10-22T07:40:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "s07",
+   "group": "single",
+   "time": "point",
+   "service": "모의증권",
+   "text": "[모의증권] 08:55 기준 주문 오류 3건 발생",
+   "occurred_at": "2026-10-22T00:00:00.000Z",
+   "expect": [
+    { "label": "주문 오류", "count": 3, "at": "2026-10-21T23:55:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "s08",
+   "group": "single",
+   "time": "datetime",
+   "service": "zetaAPI",
+   "text": "[zetaAPI] 2026-10-21 23:00~23:30 rate limit 초과 120건",
+   "occurred_at": "2026-10-21T22:30:00.000Z",
+   "expect": [
+    { "label": "rate limit", "count": 120, "at": "2026-10-21T14:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "s09",
+   "group": "single",
+   "time": "datetime",
+   "service": "샘플쇼핑",
+   "text": "[샘플쇼핑] 10/20 18:00~18:20 결제 오류 5건이 있었습니다.",
+   "occurred_at": "2026-10-22T01:00:00.000Z",
+   "expect": [
+    { "label": "결제 오류", "count": 5, "at": "2026-10-20T09:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "s10",
+   "group": "single",
+   "time": "none",
+   "service": "다라택배",
+   "text": "[다라택배] 배송 조회 장애 8건이 접수되었습니다.",
+   "occurred_at": "2026-10-22T04:00:00.000Z",
+   "expect": [
+    { "label": "배송 조회 장애", "count": 8, "at": "2026-10-22T04:00:00.000Z", "at_body": false }
+   ]
+  },
+  {
+   "id": "s11",
+   "group": "single",
+   "time": "none",
+   "service": "MockMail",
+   "text": "[MockMail] 메일 발송 실패 30건",
+   "occurred_at": "2026-10-22T06:00:00.000Z",
+   "expect": [
+    { "label": "발송 실패", "count": 30, "at": "2026-10-22T06:00:00.000Z", "at_body": false }
+   ]
+  },
+  {
+   "id": "s12",
+   "group": "single",
+   "time": "out_of_window",
+   "service": "OmegaLink",
+   "text": "[OmegaLink] 2026-10-14 09:00 로그인 실패 11건 보고",
+   "occurred_at": "2026-10-22T01:00:00.000Z",
+   "expect": [
+    { "label": "로그인 실패", "count": 11, "at": "2026-10-22T01:00:00.000Z", "at_body": false }
+   ]
+  },
+  {
+   "id": "u01",
+   "group": "multi",
+   "time": "range",
+   "service": "ABC결제",
+   "text": "[ABC결제] 14:00~14:10 타임아웃 6건, 14:30~14:40 타임아웃 2건",
+   "occurred_at": "2026-10-22T05:45:00.000Z",
+   "expect": [
+    { "label": "타임아웃", "count": 6, "at": "2026-10-22T05:00:00.000Z", "at_body": true },
+    { "label": "타임아웃", "count": 2, "at": "2026-10-22T05:30:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "u02",
+   "group": "multi",
+   "time": "range",
+   "service": "합성PAY",
+   "text": "[합성PAY] 10:00~10:20 타임아웃 4건, 오류 2건, 재시도 9건",
+   "occurred_at": "2026-10-22T01:25:00.000Z",
+   "expect": [
+    { "label": "타임아웃", "count": 4, "at": "2026-10-22T01:00:00.000Z", "at_body": true },
+    { "label": "오류", "count": 2, "at": "2026-10-22T01:00:00.000Z", "at_body": true },
+    { "label": "재시도", "count": 9, "at": "2026-10-22T01:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "u03",
+   "group": "multi",
+   "time": "range",
+   "service": "SynthGate",
+   "text": "[SynthGate] 19:00~19:30 Timeout 3건 / 5xx Error 12건",
+   "occurred_at": "2026-10-22T10:35:00.000Z",
+   "expect": [
+    { "label": "Timeout", "count": 3, "at": "2026-10-22T10:00:00.000Z", "at_body": true },
+    { "label": "Error", "count": 12, "at": "2026-10-22T10:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "u04",
+   "group": "multi",
+   "time": "range",
+   "service": "바사페이",
+   "text": "[바사페이] 07:00~08:00 결제 실패 5건, 취소 실패 1건, 중복 결제 2건",
+   "occurred_at": "2026-10-21T23:05:00.000Z",
+   "expect": [
+    { "label": "결제 실패", "count": 5, "at": "2026-10-21T22:00:00.000Z", "at_body": true },
+    { "label": "취소 실패", "count": 1, "at": "2026-10-21T22:00:00.000Z", "at_body": true },
+    { "label": "중복 결제", "count": 2, "at": "2026-10-21T22:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "u05",
+   "group": "multi",
+   "time": "point",
+   "service": "예시콜센터",
+   "text": "[예시콜센터] 13:20 기준 통화 연결 실패 6건, 대기 초과 4건",
+   "occurred_at": "2026-10-22T04:25:00.000Z",
+   "expect": [
+    { "label": "연결 실패", "count": 6, "at": "2026-10-22T04:20:00.000Z", "at_body": true },
+    { "label": "대기 초과", "count": 4, "at": "2026-10-22T04:20:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "u06",
+   "group": "multi",
+   "time": "datetime",
+   "service": "TestPG",
+   "text": "[TestPG] 2026-10-21 21:00~21:30 승인 지연 7건, 승인 실패 3건, 망 오류 1건",
+   "occurred_at": "2026-10-21T23:00:00.000Z",
+   "expect": [
+    { "label": "승인 지연", "count": 7, "at": "2026-10-21T12:00:00.000Z", "at_body": true },
+    { "label": "승인 실패", "count": 3, "at": "2026-10-21T12:00:00.000Z", "at_body": true },
+    { "label": "망 오류", "count": 1, "at": "2026-10-21T12:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "u07",
+   "group": "multi",
+   "time": "datetime",
+   "service": "LambdaOps",
+   "text": "[LambdaOps] 10/21 02:00~02:10 배치 실패 2건, 재처리 성공 2건",
+   "occurred_at": "2026-10-22T00:00:00.000Z",
+   "expect": [
+    { "label": "배치 실패", "count": 2, "at": "2026-10-20T17:00:00.000Z", "at_body": true },
+    { "label": "재처리 성공", "count": 2, "at": "2026-10-20T17:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "u08",
+   "group": "multi",
+   "time": "none",
+   "service": "합성정산",
+   "text": "[합성정산] 정산 누락 3건, 중복 정산 2건이 확인되었습니다.",
+   "occurred_at": "2026-10-22T02:00:00.000Z",
+   "expect": [
+    { "label": "정산 누락", "count": 3, "at": "2026-10-22T02:00:00.000Z", "at_body": false },
+    { "label": "중복 정산", "count": 2, "at": "2026-10-22T02:00:00.000Z", "at_body": false }
+   ]
+  },
+  {
+   "id": "u09",
+   "group": "multi",
+   "time": "none",
+   "service": "모의증권",
+   "text": "[모의증권] 시세 수신 오류 4건, 주문 거부 6건, 체결 지연 2건 발생",
+   "occurred_at": "2026-10-22T01:30:00.000Z",
+   "expect": [
+    { "label": "시세 수신 오류", "count": 4, "at": "2026-10-22T01:30:00.000Z", "at_body": false },
+    { "label": "주문 거부", "count": 6, "at": "2026-10-22T01:30:00.000Z", "at_body": false },
+    { "label": "체결 지연", "count": 2, "at": "2026-10-22T01:30:00.000Z", "at_body": false }
+   ]
+  },
+  {
+   "id": "u10",
+   "group": "multi",
+   "time": "out_of_window",
+   "service": "QuuxPay",
+   "text": "[QuuxPay] 2026-10-24 11:00~11:20 결제 실패 3건, 환불 실패 1건",
+   "occurred_at": "2026-10-22T00:00:00.000Z",
+   "expect": [
+    { "label": "결제 실패", "count": 3, "at": "2026-10-22T00:00:00.000Z", "at_body": false },
+    { "label": "환불 실패", "count": 1, "at": "2026-10-22T00:00:00.000Z", "at_body": false }
+   ]
+  },
+  {
+   "id": "d1",
+   "group": "sum_detail",
+   "time": "range",
+   "service": "가나클라우드",
+   "text": "[가나클라우드] 15:00~15:30 장애 총 8건: 타임아웃 6건, 오류 2건",
+   "occurred_at": "2026-10-22T06:35:00.000Z",
+   "expect": [
+    { "label": "타임아웃", "count": 6, "at": "2026-10-22T06:00:00.000Z", "at_body": true },
+    { "label": "오류", "count": 2, "at": "2026-10-22T06:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "d2",
+   "group": "sum_detail",
+   "time": "point",
+   "service": "샘플쇼핑",
+   "text": "[샘플쇼핑] 15:20 기준 결제 이상 합계 5건 (승인 거절 3건, 중복 요청 2건)",
+   "occurred_at": "2026-10-22T06:25:00.000Z",
+   "expect": [
+    { "label": "승인 거절", "count": 3, "at": "2026-10-22T06:20:00.000Z", "at_body": true },
+    { "label": "중복 요청", "count": 2, "at": "2026-10-22T06:20:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "r1",
+   "group": "repeat",
+   "time": "range",
+   "service": "DemoBank",
+   "text": "[DemoBank] 오류 3건 발생 안내\n요약: 이체 API 오류 3건\n상세: 10:20~10:30 이체 API 오류 3건이 발생했습니다.",
+   "occurred_at": "2026-10-22T01:35:00.000Z",
+   "expect": [
+    { "label": "오류", "count": 3, "at": "2026-10-22T01:20:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "r2",
+   "group": "repeat",
+   "time": "none",
+   "service": "모의증권",
+   "text": "[모의증권] 주문 지연 2건\n요약: 주문 지연 2건\n상세: 주문 지연 2건이 확인되어 조치 중입니다.",
+   "occurred_at": "2026-10-22T03:00:00.000Z",
+   "expect": [
+    { "label": "주문 지연", "count": 2, "at": "2026-10-22T03:00:00.000Z", "at_body": false }
+   ]
+  },
+  {
+   "id": "k1",
+   "group": "cumulative_mixed",
+   "time": "range",
+   "service": "TestPG",
+   "text": "[TestPG] 14:00~14:10 타임아웃 6건 (오늘 누적 14건)",
+   "occurred_at": "2026-10-22T05:12:00.000Z",
+   "expect": [
+    { "label": "타임아웃", "count": 6, "at": "2026-10-22T05:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "x1",
+   "group": "counter",
+   "time": "none",
+   "service": "MockMail",
+   "text": "[MockMail] 타임아웃 발생, 재시도 20건",
+   "occurred_at": "2026-10-22T07:00:00.000Z",
+   "expect": [
+    { "label": "재시도", "count": 20, "at": "2026-10-22T07:00:00.000Z", "at_body": false }
+   ]
+  },
+  {
+   "id": "x2",
+   "group": "counter",
+   "time": "none",
+   "service": "다라택배",
+   "text": "[다라택배] 타임아웃 0건, 오류 20건",
+   "occurred_at": "2026-10-22T08:00:00.000Z",
+   "expect": [
+    { "label": "오류", "count": 20, "at": "2026-10-22T08:00:00.000Z", "at_body": false }
+   ]
+  },
+  {
+   "id": "z1",
+   "group": "tz",
+   "time": "tz",
+   "service": "SynthGate",
+   "text": "[SynthGate] 2026-10-22 05:00 UTC 오류 6건",
+   "occurred_at": "2026-10-22T05:03:00.000Z",
+   "expect": [
+    { "label": "오류", "count": 6, "at": "2026-10-22T05:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "z2",
+   "group": "tz",
+   "time": "tz",
+   "service": "zetaAPI",
+   "text": "[zetaAPI] 05:00 GMT 오류 3건",
+   "occurred_at": "2026-10-22T05:02:00.000Z",
+   "expect": [
+    { "label": "오류", "count": 3, "at": "2026-10-22T05:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "z3",
+   "group": "tz",
+   "time": "tz",
+   "service": "OmegaLink",
+   "text": "[OmegaLink] 2026-10-21 15:30 UTC 타임아웃 3건",
+   "occurred_at": "2026-10-21T15:40:00.000Z",
+   "expect": [
+    { "label": "타임아웃", "count": 3, "at": "2026-10-21T15:30:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "z4",
+   "group": "tz",
+   "time": "tz",
+   "service": "QuuxPay",
+   "text": "[QuuxPay] 10/21 23:50 타임아웃 6건",
+   "occurred_at": "2026-10-21T15:05:00.000Z",
+   "expect": [
+    { "label": "타임아웃", "count": 6, "at": "2026-10-21T14:50:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "n1",
+   "group": "none_plain",
+   "service": "바사페이",
+   "text": "[바사페이] 결제 서버 장애가 발생해 복구 중입니다. 이용에 불편을 드려 죄송합니다.",
+   "occurred_at": "2026-10-22T03:10:00.000Z",
+   "expect": []
+  },
+  {
+   "id": "n2",
+   "group": "none_plain",
+   "service": "예시콜센터",
+   "text": "[예시콜센터] 14:05부터 일부 상담 연결이 지연되고 있습니다. 원인을 확인 중입니다.",
+   "occurred_at": "2026-10-22T05:10:00.000Z",
+   "expect": []
+  },
+  {
+   "id": "n3",
+   "group": "none_money",
+   "service": "합성PAY",
+   "text": "[합성PAY] 카드 결제 승인 12,500원(일시불), 이번 달 사용 금액 340,200원",
+   "occurred_at": "2026-10-22T03:30:00.000Z",
+   "expect": []
+  },
+  {
+   "id": "n4",
+   "group": "none_money",
+   "service": "DemoBank",
+   "text": "[DemoBank] 입금 1,000,000원 잔액 2,345,678원",
+   "occurred_at": "2026-10-22T00:12:00.000Z",
+   "expect": []
+  },
+  {
+   "id": "n5",
+   "group": "none_ratio",
+   "service": "LambdaOps",
+   "text": "[LambdaOps] 결제 성공률 98% (기준 99.5%) 미달",
+   "occurred_at": "2026-10-22T04:40:00.000Z",
+   "expect": []
+  },
+  {
+   "id": "n6",
+   "group": "none_ratio",
+   "service": "합성배치",
+   "text": "[합성배치] 응답 지연 3초 이상 발생, 평균 응답 2.4초",
+   "occurred_at": "2026-10-22T04:50:00.000Z",
+   "expect": []
+  },
+  {
+   "id": "n7",
+   "group": "none_cumulative",
+   "service": "합성정산",
+   "text": "[합성정산] 오늘 누적 타임아웃 14건",
+   "occurred_at": "2026-10-22T09:00:00.000Z",
+   "expect": []
+  },
+  {
+   "id": "m1",
+   "group": "mixed_max",
+   "service": "LambdaOps",
+   "text": "[LambdaOps] 정기 점검 일정과 지난주 장애 집계를 안내드립니다.\n■ 점검 일정\n1) 10월 24일(토) 02:00~04:00 결제 DB 정기 점검\n2) 10월 25일(일) 03:00~05:00 인증 서버 보안 패치\n3) 10월 28일(수) 01:00~02:00 네트워크 장비 교체\n4) 10월 31일(토) 02:00~06:00 데이터센터 전원 점검\n5) 11월 1일(일) 04:00~05:00 백업 시스템 점검\n■ 장애 집계\n1) 2026-10-19 09:00~09:20 결제 승인 게이트웨이 응답 타임아웃 6건\n2) 2026-10-19 13:10~13:40 정산 배치 데이터베이스 연결 실패 3건\n3) 2026-10-20 08:00~08:30 회원 인증 토큰 갱신 요청 거부 오류 11건\n4) 2026-10-20 11:15~11:45 주문 내역 동기화 메시지 큐 적체 경고 4건\n5) 2026-10-20 19:00~19:20 푸시 알림 발송 서버 전송 지연 경고 7건\n6) 2026-10-21 07:40~08:00 카드사 승인 응답 전문 형식 오류 2건\n7) 2026-10-21 10:00~10:30 환불 처리 외부 연동 호출 시간 초과 5건\n8) 2026-10-21 14:20~14:50 상품 재고 캐시 서버 읽기 실패 오류 9건\n9) 2026-10-21 18:05~18:25 모바일 앱 로그인 세션 만료 강제 종료 14건\n10) 2026-10-21 22:10~22:40 관리자 콘솔 접근 권한 검증 거부 8건",
+   "occurred_at": "2026-10-22T00:00:00.000Z",
+   "expect": [
+    { "label": "응답 타임아웃", "count": 6, "at": "2026-10-19T00:00:00.000Z", "at_body": true },
+    { "label": "연결 실패", "count": 3, "at": "2026-10-19T04:10:00.000Z", "at_body": true },
+    { "label": "거부 오류", "count": 11, "at": "2026-10-19T23:00:00.000Z", "at_body": true },
+    { "label": "적체 경고", "count": 4, "at": "2026-10-20T02:15:00.000Z", "at_body": true },
+    { "label": "지연 경고", "count": 7, "at": "2026-10-20T10:00:00.000Z", "at_body": true },
+    { "label": "형식 오류", "count": 2, "at": "2026-10-20T22:40:00.000Z", "at_body": true },
+    { "label": "시간 초과", "count": 5, "at": "2026-10-21T01:00:00.000Z", "at_body": true },
+    { "label": "실패 오류", "count": 9, "at": "2026-10-21T05:20:00.000Z", "at_body": true },
+    { "label": "강제 종료", "count": 14, "at": "2026-10-21T09:05:00.000Z", "at_body": true },
+    { "label": "검증 거부", "count": 8, "at": "2026-10-21T13:10:00.000Z", "at_body": true }
+   ],
+   "events": [
+    { "starts": "2026-10-24T02:00" },
+    { "starts": "2026-10-25T03:00" },
+    { "starts": "2026-10-28T01:00" },
+    { "starts": "2026-10-31T02:00" },
+    { "starts": "2026-11-01T04:00" }
+   ]
+  },
+  {
+   "id": "m2",
+   "group": "mixed_max",
+   "service": "합성배치",
+   "text": "[합성배치] 운영팀 일정과 지난 일주일 배치 이상 집계입니다.\n■ 일정\n1) 10월 23일(금) 15:00 장애 회고 회의 (3층 회의실)\n2) 10월 26일(월) 10:00 배치 스케줄러 교육\n3) 10월 27일(화) 14:00 재해 복구 모의 훈련\n4) 10월 29일(목) 16:00 분기 운영 리뷰\n5) 11월 2일(월) 09:30 신규 모니터링 도입 설명회\n■ 이상 집계\n1) 2026-10-16 02:00~02:30 야간 정산 배치 작업 중복 실행 경고 3건\n2) 2026-10-16 23:00~23:40 고객 등급 재계산 작업 메모리 초과 오류 2건\n3) 2026-10-17 03:10~03:20 외부 파일 수신 서버 접속 거부 오류 6건\n4) 2026-10-18 01:00~01:45 거래 내역 압축 보관 작업 지연 경고 4건\n5) 2026-10-18 05:30~05:50 포인트 소멸 예정 안내 발송 누락 12건\n6) 2026-10-19 00:20~00:40 통계 리포트 생성 쿼리 시간 초과 7건\n7) 2026-10-19 04:00~04:30 해외 결제 환율 정보 갱신 실패 5건\n8) 2026-10-20 02:15~02:35 휴면 계정 전환 대상 추출 오류 10건\n9) 2026-10-21 00:10~00:40 매출 집계 테이블 잠금 대기 초과 3건\n10) 2026-10-21 03:00~03:25 이메일 수신 거부 목록 동기화 실패 8건",
+   "occurred_at": "2026-10-22T00:30:00.000Z",
+   "expect": [
+    { "label": "실행 경고", "count": 3, "at": "2026-10-15T17:00:00.000Z", "at_body": true },
+    { "label": "초과 오류", "count": 2, "at": "2026-10-16T14:00:00.000Z", "at_body": true },
+    { "label": "거부 오류", "count": 6, "at": "2026-10-16T18:10:00.000Z", "at_body": true },
+    { "label": "지연 경고", "count": 4, "at": "2026-10-17T16:00:00.000Z", "at_body": true },
+    { "label": "발송 누락", "count": 12, "at": "2026-10-17T20:30:00.000Z", "at_body": true },
+    { "label": "시간 초과", "count": 7, "at": "2026-10-18T15:20:00.000Z", "at_body": true },
+    { "label": "갱신 실패", "count": 5, "at": "2026-10-18T19:00:00.000Z", "at_body": true },
+    { "label": "추출 오류", "count": 10, "at": "2026-10-19T17:15:00.000Z", "at_body": true },
+    { "label": "대기 초과", "count": 3, "at": "2026-10-20T15:10:00.000Z", "at_body": true },
+    { "label": "동기화 실패", "count": 8, "at": "2026-10-20T18:00:00.000Z", "at_body": true }
+   ],
+   "events": [
+    { "starts": "2026-10-23T15:00" },
+    { "starts": "2026-10-26T10:00" },
+    { "starts": "2026-10-27T14:00" },
+    { "starts": "2026-10-29T16:00" },
+    { "starts": "2026-11-02T09:30" }
+   ]
+  }
+ ]
+}
