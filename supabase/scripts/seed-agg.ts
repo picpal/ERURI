@@ -7,6 +7,8 @@
 //   bank      합성은행 문자 2건(⑨ 규칙 전)                         notice  합성은행 안내형 3건(⑨ 보강 — Jev 폐기 → 복구 경로)                         bank-rule  /chat/rule add keyword 합성은행 — 응답을 버린다(⑨ 응답 유실)
 //   rules20   있는 규칙을 세어 합계 20개까지만 r<run8>-<n> 로 채운다(⑧, K25)
 //   status    이 실행 항목의 상태·gate_label·청크·gate_feedback 건수   cleanup  이 실행 항목·그 잡·사용자 23 규칙(·--since 뒤 감사·진단·알림 잡)
+//   metrics   (0.18.0 METRIC-sim, 서울 16:25 뒤) 키워드 규칙 "합성결제"가 없으면 /chat/rule add → 스펙 §15 A~E 5건을 오늘 받은 시각으로 /ingest, 처리 대기 후 상태 수
+//   metrics-status  A~E 별 item_metrics 행 수·at_body 수(기대 A 2/2·B 1/0·C 1/1·D 0/0·E 1/0)   metrics-rpc --keywords <k,…>  오늘 hour aggregate_items 숫자만
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { SERVER_AUTH } from "../functions/_shared/crypto.ts";
 import { service as sb, testUserId } from "../tests/_testenv.ts";
@@ -62,13 +64,25 @@ async function runItems(group?: string): Promise<Row[]> {
   if (error) throw new Error("items " + error.code);
   return data as Row[];
 }
-const groupOf = (r: Row) => ({ b: "before", a: "after", k: "bank", n: "notice" } as Record<string, string>)[r.idempotency_key.slice(KEY.length)[0]] ?? "?";
+const groupOf = (r: Row) => ({ b: "before", a: "after", k: "bank", n: "notice", m: "metrics" } as Record<string, string>)[r.idempotency_key.slice(KEY.length)[0]] ?? "?";
 async function chunked(ids: string[]) {
   if (!ids.length) return 0;
   const { data } = await sb.from("item_chunks").select("item_id").eq("user_id", USER).in("item_id", ids);
   return new Set((data ?? []).map((r) => r.item_id as string)).size;
 }
 const settled = (s: string) => s !== "queued" && s !== "processing";
+
+// METRIC-sim(스펙 §15) 합성 알림 A~E — 받은 시각 = 서울 오늘. 기대 item_metrics 행/at_body 는 metrics-status 가 비교한다
+const MKW = "합성결제";
+const today = nowSeoul.toISOString().slice(0, 10);
+const METRIC_SEEDS = [
+  { tag: "mA", h: 14, m: 12, rows: 2, body: 2, text: "[합성결제] 14:00~14:10 타임아웃 6건, 오류 2건" },
+  { tag: "mB", h: 15, m: 5, rows: 1, body: 0, text: "[합성결제] 타임아웃 3건 발생" },
+  { tag: "mC", h: 10, m: 1, rows: 1, body: 1, text: "[합성결제] 09:30 타임아웃 4건" },
+  { tag: "mD", h: 16, m: 20, rows: 0, body: 0, text: "[합성결제] 결제 타임아웃 발생" },
+  { tag: "mE", h: 11, m: 40, rows: 1, body: 0, text: "[합성결제] 타임아웃 발생, 재시도 20건" },
+];
+const atToday = (h: number, m: number) => new Date(`${today}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00+09:00`);
 
 if (phase === "before" || phase === "after" || phase === "bank" || phase === "notice") {
   const seeds = PLAN[phase], now = Date.now();
@@ -93,6 +107,51 @@ if (phase === "before" || phase === "after" || phase === "bank" || phase === "no
   console.log(JSON.stringify({ phase, ingest: ing, wait_s: Math.round((Date.now() - t0) / 1000), n: items.length, status: count(items, (i) => i.status),
     gate_label: count(items, (i) => i.gate_label ?? "null"), confidence_null: items.filter((i) => i.gate_confidence === null).length,
     hours: count(seeds, (s) => String(s.h).padStart(2, "0")), days: count(seeds, (s) => at(s.d, 12, 0).toISOString().slice(0, 10)) }));
+} else if (phase === "metrics") {
+  if (atToday(16, 25).getTime() > Date.now()) { console.error("before 16:25 Seoul — seeds would be in the future (K18)"); Deno.exit(2); }
+  const token = await userSession();
+  const { data: have } = await sb.from("save_rules").select("value").eq("user_id", USER).eq("kind", "keyword");
+  const exists = (have ?? []).some((r) => r.value === MKW);
+  const rule = exists ? 0 : await call(token, "chat/rule", { op: "add", kind: "keyword", value: MKW });
+  const ing: number[] = [];
+  for (const s of METRIC_SEEDS) {
+    ing.push(await call(token, "ingest", { id: `${RUN}:agg-${s.tag}`, source: "MESSAGES", sender: MKW, title: null, text: s.text,
+      capturedAt: atToday(s.h, s.m).toISOString(), deviceFilter: "rules" }));
+  }
+  const t0 = Date.now();
+  let items: Row[] = [];
+  while (Date.now() - t0 < 600_000) {
+    items = await runItems("m");
+    if (items.length === METRIC_SEEDS.length && items.every((i) => settled(i.status))) break;
+    await new Promise((r) => setTimeout(r, 10_000));
+  }
+  console.log(JSON.stringify({ phase, rule_existed: exists, rule_http: rule, ingest: ing, wait_s: Math.round((Date.now() - t0) / 1000), n: items.length,
+    status: count(items, (i) => i.status), gate_label: count(items, (i) => i.gate_label ?? "null"), chunked: await chunked(items.map((i) => i.id)) }));
+} else if (phase === "metrics-status") {
+  const items = await runItems("m");
+  const out: Record<string, unknown> = { phase };
+  let ok = items.length === METRIC_SEEDS.length;
+  for (const s of METRIC_SEEDS) {
+    const it = items.find((i) => i.idempotency_key === `${KEY}${s.tag}`);
+    const { data, error } = it ? await sb.from("item_metrics").select("at_body").eq("item_id", it.id) : { data: null, error: null };
+    if (error) throw new Error("item_metrics " + error.code);
+    const rows = (data ?? []) as { at_body: boolean }[], body = rows.filter((r) => r.at_body).length;
+    const match = !!it && rows.length === s.rows && body === s.body;
+    ok &&= match;
+    out[s.tag.slice(1)] = { status: it?.status ?? null, rows: rows.length, at_body: body, expect: `${s.rows}/${s.body}`, match };
+  }
+  out.all_match = ok;
+  console.log(JSON.stringify(out));
+  if (!ok) Deno.exitCode = 1;
+} else if (phase === "metrics-rpc") {
+  const kws = (arg("--keywords") ?? "").split(",").map((k) => k.trim()).filter(Boolean);
+  if (!kws.length) { console.error("--keywords <k,…>"); Deno.exit(2); }
+  const { data, error } = await sb.rpc("aggregate_items", { p_user: USER, p_keywords: kws, p_sender: null, p_sources: null,
+    p_from: today, p_to: today, p_bucket: "hour", p_bucket_key: null });
+  if (error) throw new Error("aggregate_items " + error.code);
+  const d = data as { total: number; body_total?: number | null; metric_items?: number; metric_unmatched?: number; buckets?: { key: string; count: number; body?: number }[] };
+  console.log(JSON.stringify({ phase, keywords: kws.length, total: d.total, body_total: d.body_total ?? null, metric_items: d.metric_items ?? null,
+    metric_unmatched: d.metric_unmatched ?? null, buckets: (d.buckets ?? []).filter((b) => b.count || b.body).map((b) => `${b.key}:${b.count}/${b.body ?? "-"}`) }));
 } else if (phase === "bank-rule") {
   const token = await userSession();
   const http = await call(token, "chat/rule", { op: "add", kind: "keyword", value: "합성은행" });   // 응답 본문은 읽지 않고 버린다(응답 유실 재현)
@@ -112,7 +171,7 @@ if (phase === "before" || phase === "after" || phase === "bank" || phase === "no
   const verdict = new Map((fb ?? []).map((f) => [f.item_id as string, f.verdict as string]));
   const { count: rules } = await sb.from("save_rules").select("id", { count: "exact", head: true }).eq("user_id", USER);
   const out: Record<string, unknown> = { phase, rules };
-  for (const g of ["before", "after", "bank", "notice"]) {
+  for (const g of ["before", "after", "bank", "notice", "metrics"]) {
     const xs = items.filter((i) => groupOf(i) === g);
     if (!xs.length) continue;
     out[g] = { n: xs.length, status: count(xs, (i) => i.status), gate_label: count(xs, (i) => i.gate_label ?? "null"),
