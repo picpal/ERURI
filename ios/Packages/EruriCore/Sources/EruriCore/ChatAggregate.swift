@@ -21,13 +21,15 @@ public enum ChatAggregate {
     public let key: String; public let label: String; public let count: Int
     public init(key: String, label: String, count: Int) { self.key = key; self.label = label; self.count = count }
   }
-  /// status = ok·bad_condition·failed. buckets 는 0건 칸까지 전체, top 은 많은 칸 최대 3(0건 제외). 관대한 디코드 — status 밖 칸은 없으면 기본값
+  /// status = ok·bad_condition·failed. buckets 는 0건 칸까지 전체, top 은 많은 칸 최대 3(0건 제외). 관대한 디코드 — status 밖 칸은 없으면 기본값.
+  /// body_total(0.18.0) = 본문 기준 합(본문 건수가 없으면 nil). 0.17.0 서버 응답·저장 턴엔 없다
   public struct Response: Codable, Sendable {
     public let status: String; public let conditions: Conditions?; public let total: Int
     public let buckets: [Bucket]; public let top: [Bucket]; public let sentence: String; public let notes: [String]
-    public init(status: String, conditions: Conditions?, total: Int, buckets: [Bucket], top: [Bucket], sentence: String, notes: [String]) {
+    public let body_total: Int?
+    public init(status: String, conditions: Conditions?, total: Int, buckets: [Bucket], top: [Bucket], sentence: String, notes: [String], body_total: Int? = nil) {
       self.status = status; self.conditions = conditions; self.total = total; self.buckets = buckets; self.top = top
-      self.sentence = sentence; self.notes = notes
+      self.sentence = sentence; self.notes = notes; self.body_total = body_total
     }
     public init(from d: Decoder) throws {
       let c = try d.container(keyedBy: CodingKeys.self)
@@ -38,6 +40,7 @@ public enum ChatAggregate {
       top = (try? c.decodeIfPresent([Bucket].self, forKey: .top)) ?? []
       sentence = (try? c.decodeIfPresent(String.self, forKey: .sentence)) ?? ""
       notes = (try? c.decodeIfPresent([String].self, forKey: .notes)) ?? []
+      body_total = try? c.decodeIfPresent(Int.self, forKey: .body_total)
     }
   }
 
@@ -98,14 +101,15 @@ public enum ChatAggregate {
 
   // MARK: 칸 목록(POST /chat/aggregate)
 
+  /// count(0.18.0) = 그 메시지의 본문 건수(없으면 nil — 0.17.0 서버·본문 건수 없는 메시지)
   public struct ListItem: Decodable, Sendable, Identifiable {
     public let item_id: String; public let title: String?; public let sender: String?; public let source: String
-    public let app_name: String?; public let occurred_at: String
+    public let app_name: String?; public let occurred_at: String; public let count: Int?
     public var id: String { item_id }
   }
-  /// truncated = total > 50(최근 50건만 실린다)
+  /// truncated = total > 50(최근 50건만 실린다). total = 메시지 수, value(0.18.0) = 본문 기준 칸 값(0.17.0 서버엔 없다)
   public struct ListResponse: Decodable, Sendable {
-    public let status: String; public let bucket_key: String; public let label: String; public let total: Int
+    public let status: String; public let bucket_key: String; public let label: String; public let total: Int; public let value: Int?
     public let items: [ListItem]; public let truncated: Bool
     public init(from d: Decoder) throws {
       let c = try d.container(keyedBy: CodingKeys.self)
@@ -113,12 +117,16 @@ public enum ChatAggregate {
       bucket_key = (try? c.decodeIfPresent(String.self, forKey: .bucket_key)) ?? ""
       label = (try? c.decodeIfPresent(String.self, forKey: .label)) ?? ""
       total = (try? c.decodeIfPresent(Int.self, forKey: .total)) ?? 0
+      value = try? c.decodeIfPresent(Int.self, forKey: .value)
       items = (try? c.decodeIfPresent([ListItem].self, forKey: .items)) ?? []
       truncated = (try? c.decodeIfPresent(Bool.self, forKey: .truncated)) ?? false
     }
-    private enum CodingKeys: String, CodingKey { case status, bucket_key, label, total, items, truncated }
+    private enum CodingKeys: String, CodingKey { case status, bucket_key, label, total, value, items, truncated }
   }
   public static func decodeList(_ data: Data) -> ListResponse? { try? JSONDecoder().decode(ListResponse.self, from: data) }
+
+  /// 목록 머리 건수: 본문 기준 value, 없으면(0.17.0 서버) 메시지 수
+  public static func headerCount(_ r: ListResponse) -> Int { r.value ?? r.total }
 
   /// 목록 머리: "14시대 9건"·"10/15(목) 9건"·"수요일 9건"(label 은 서버 칸 라벨)
   public static func listHeader(bucket: String, label: String, total: Int) -> String {
@@ -131,10 +139,12 @@ public enum ChatAggregate {
   /// 끝 줄: 50건을 넘으면 "최근 50건만 보여요"
   public static func listFooter(_ r: ListResponse) -> String? { r.truncated ? Text.truncated : nil }
 
-  /// 줄: 제목(없으면 발신자) · 출처 라벨(보관함과 같다) · 서울 M/D HH:mm — 칸·문장과 같은 서울 기준(기기 시간대와 무관)
+  /// 줄: 제목(없으면 발신자) · 출처 라벨(보관함과 같다) · 서울 M/D HH:mm — 칸·문장과 같은 서울 기준(기기 시간대와 무관).
+  /// 본문 건수가 있으면 끝에 " · 6건"(0.18.0 K21)
   public static func line(_ i: ListItem) -> (title: String, meta: String) {
     let t = [i.title, i.sender].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty } ?? "(제목 없음)"
-    return (t, "\(SourceLabel.label(source: i.source, appName: i.app_name)) · \(seoulTime(i.occurred_at))")
+    let meta = "\(SourceLabel.label(source: i.source, appName: i.app_name)) · \(seoulTime(i.occurred_at))"
+    return (t, i.count.map { "\(meta) · \($0)건" } ?? meta)
   }
   private static func seoulTime(_ iso: String) -> String {
     let trimmed = iso.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)   // Postgres 소수 초

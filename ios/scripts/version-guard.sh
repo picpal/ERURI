@@ -32,4 +32,9 @@ if [ -f Packages/EruriCore/Sources/EruriCore/ChatAggregate.swift ] && [ "$NUM" -
   echo "저장 규칙·집계 코드가 있는데 MARKETING_VERSION=$VER (< 0.17.0) — AGG-sim 통과 전 업로드 금지(0.17.0 계획 K18). 이 코드 전 커밋 worktree 에서 올리거나 TF_ALLOW_PRE_AGG=1"
   exit 1
 fi
+# 0.18.0 계획 K22: 본문 건수 코드(ChatAggregate 의 body_total)가 있는데 0.18.0 전 이름이면 멈춘다 — METRIC-sim 전 빌드가 0.17.x 이름으로 나가지 않게
+if grep -q "body_total" Packages/EruriCore/Sources/EruriCore/ChatAggregate.swift && [ "$NUM" -lt 18000 ] && [ "${TF_ALLOW_PRE_METRIC:-0}" != 1 ]; then
+  echo "본문 건수 코드가 있는데 MARKETING_VERSION=$VER (< 0.18.0) — METRIC-sim 통과 전 업로드 금지(0.18.0 계획 K22). 162281f worktree 에서 올리거나 TF_ALLOW_PRE_METRIC=1"
+  exit 1
+fi
 echo "version-guard ok ($VER)"

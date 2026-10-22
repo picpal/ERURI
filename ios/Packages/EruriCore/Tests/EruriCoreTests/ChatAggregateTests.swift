@@ -144,4 +144,32 @@ final class ChatAggregateTests: XCTestCase {
     XCTAssertEqual(ChatAggregate.Text.failed, "집계하지 못했어요 — 잠시 뒤 다시 물어봐 주세요")
     XCTAssertEqual(ChatAggregate.Text.emptyBucket, "이 칸에는 없어요")
   }
+
+  // MARK: 0.18.0 본문 건수(P1)
+
+  /// Review Focus 4 — 0.17.0 서버 응답·저장 턴은 새 칸 없이도 디코드된다
+  func testDecodesWithoutNewFields() throws {
+    let r = try JSONDecoder().decode(ChatAggregate.Response.self, from: Data(#"{"status":"ok","total":3,"buckets":[],"top":[],"sentence":"s","notes":[]}"#.utf8))
+    XCTAssertNil(r.body_total)
+    let l = try XCTUnwrap(ChatAggregate.decodeList(Data(#"{"status":"ok","bucket_key":"14","label":"14시","total":2,"items":[{"item_id":"a","title":"t","sender":null,"source":"MESSAGES","app_name":null,"occurred_at":"2026-10-22T05:12:00Z"}],"truncated":false}"#.utf8)))
+    XCTAssertEqual(ChatAggregate.headerCount(l), 2); XCTAssertNil(l.items[0].count)
+  }
+
+  func testHistoryRoundTripKeepsBodyTotal() throws {
+    let r = ChatAggregate.Response(status: "ok", conditions: nil, total: 12, buckets: [], top: [], sentence: "s", notes: [], body_total: 37)
+    XCTAssertEqual(try JSONDecoder().decode(ChatAggregate.Response.self, from: JSONEncoder().encode(r)).body_total, 37)
+  }
+
+  func testListHeaderUsesValue() throws {
+    let l = try XCTUnwrap(ChatAggregate.decodeList(Data(#"{"status":"ok","bucket_key":"14","label":"14시","total":2,"value":7,"items":[],"truncated":false}"#.utf8)))
+    XCTAssertEqual(ChatAggregate.listHeader(bucket: "hour", label: l.label, total: ChatAggregate.headerCount(l)), "14시대 7건")
+  }
+
+  /// K21: 줄 끝 " · 6건"은 count 가 있을 때만
+  func testLineAppendsCountOnlyWhenPresent() throws {
+    let json = #"{"status":"ok","bucket_key":"14","label":"14시","total":2,"value":7,"truncated":false,"items":[{"item_id":"a","title":"합성 알림","sender":null,"source":"MESSAGES","app_name":null,"occurred_at":"2026-10-22T05:12:00Z","count":6},{"item_id":"b","title":"합성 알림2","sender":null,"source":"MESSAGES","app_name":null,"occurred_at":"2026-10-22T05:40:00Z","count":null}]}"#
+    let r = try XCTUnwrap(ChatAggregate.decodeList(Data(json.utf8)))
+    XCTAssertEqual(ChatAggregate.line(r.items[0]).meta, "문자 · 10/22 14:12 · 6건")
+    XCTAssertEqual(ChatAggregate.line(r.items[1]).meta, "문자 · 10/22 14:40")
+  }
 }

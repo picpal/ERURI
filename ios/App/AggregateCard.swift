@@ -108,7 +108,7 @@ struct AggregateCard: View {
     case .empty?: Text(ChatAggregate.Text.emptyBucket).font(.subheadline).foregroundStyle(.secondary)
     case .failed?, nil: Text(ChatAggregate.Text.failed).font(.subheadline).foregroundStyle(.secondary)
     case .loaded(let r)?:
-      Text(ChatAggregate.listHeader(bucket: response.conditions?.bucket ?? "", label: r.label, total: r.total)).font(.subheadline.weight(.semibold))
+      Text(ChatAggregate.listHeader(bucket: response.conditions?.bucket ?? "", label: r.label, total: ChatAggregate.headerCount(r))).font(.subheadline.weight(.semibold))
       ForEach(r.items) { item in
         let l = ChatAggregate.line(item)
         Button { onOpenItem(item.item_id) } label: {
