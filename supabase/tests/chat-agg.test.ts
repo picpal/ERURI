@@ -222,13 +222,54 @@ Deno.test("notes: always savedOnly; zero and no keyword rule (and no sender rule
 
 Deno.test("okAggregate / failedAggregate / BAD_CONDITION: response shape", () => {
   const c = cond({ bucket: "weekday" });
-  const r = okAggregate(c, [{ key: "3", count: 2 }], 2, [], TODAY);
+  const r = okAggregate(c, { total: 2, body_total: 2, metric_items: 0, metric_unmatched: 0, buckets: [{ key: "3", count: 2 }] }, [], TODAY);
   assertEquals(r.status, "ok");
   assertEquals(r.conditions, c);
   assertEquals([r.total, r.buckets.length, r.top], [2, 7, [{ key: "3", label: "수", count: 2 }]]);
   assertEquals(r.sentence, "최근 7일 '합성PAY' 메시지 2건 — 수요일이 2건으로 가장 많았어요");
   assertEquals(r.notes, [AGG_TEXT.savedOnly]);
-  assertEquals(failedAggregate(c), { status: "failed", conditions: c, total: 0, buckets: [], top: [], sentence: AGG_TEXT.failed, notes: [] });
-  assertEquals(BAD_CONDITION, { status: "bad_condition", conditions: null, total: 0, buckets: [], top: [], sentence: AGG_TEXT.bad, notes: [] });
+  assertEquals(r.body_total, null);
+  assertEquals(failedAggregate(c), { status: "failed", conditions: c, total: 0, body_total: null, buckets: [], top: [], sentence: AGG_TEXT.failed, notes: [] });
+  assertEquals(BAD_CONDITION, { status: "bad_condition", conditions: null, total: 0, body_total: null, buckets: [], top: [], sentence: AGG_TEXT.bad, notes: [] });
   assert(Object.isFrozen(BAD_CONDITION));
+});
+
+// 0.18.0 본문 건수(스펙 §9 "본문 건수") — 문장 "· 본문 기준 M건"·꼬리 줄 ③·body_total·공백 무시 중복 제거(H2). 오늘 = 2026-10-22(목)
+const C: AggConditions = { keywords: ["ABC결제", "타임아웃"], sender: null, sources: [], from: "2026-10-16", to: "2026-10-22", bucket: "hour", defaulted: true, clamped: false };
+
+Deno.test("keywords: ['abc pay', 'ABCPAY', ' abc  pay '] → ['abc pay'] (spaces and case ignored, first spelling kept)", () => {
+  const r = revalidateAggregate({ keywords: ["abc pay", "ABCPAY", " abc  pay "] }, "2026-10-22", null);
+  assertEquals(r.kind === "ok" && r.conditions.keywords, ["abc pay"]);
+});
+Deno.test("body sentence: '… 메시지 12건 · 본문 기준 37건 — 14시대가 15건으로 가장 많았어요'", () => {
+  const b = fillBuckets(C, [{ key: "14", count: 15 }, { key: "09", count: 10 }, { key: "15", count: 12 }]);
+  assertEquals(aggregateSentence(C, 12, b, "2026-10-22", 37), "최근 7일 'ABC결제·타임아웃' 메시지 12건 · 본문 기준 37건 — 14시대가 15건으로 가장 많았어요");
+});
+Deno.test("body sentence for day and weekday, ties of 2 and 4", () => {
+  const D = { ...C, bucket: "day" as const }, W = { ...C, bucket: "weekday" as const };
+  assertEquals(aggregateSentence(D, 3, fillBuckets(D, [{ key: "2026-10-21", count: 9 }]), "2026-10-22", 9), "최근 7일 'ABC결제·타임아웃' 메시지 3건 · 본문 기준 9건 — 10/21(수)가 9건으로 가장 많았어요");
+  assertEquals(aggregateSentence(W, 2, fillBuckets(W, [{ key: "3", count: 6 }, { key: "5", count: 6 }]), "2026-10-22", 12), "최근 7일 'ABC결제·타임아웃' 메시지 2건 · 본문 기준 12건 — 수요일·금요일이 각각 6건으로 가장 많았어요");
+  assertEquals(aggregateSentence(C, 4, fillBuckets(C, ["01", "02", "03", "04"].map((key) => ({ key, count: 5 }))), "2026-10-22", 20), "최근 7일 'ABC결제·타임아웃' 메시지 4건 · 본문 기준 20건 — 4개 칸이 각각 5건으로 가장 많았어요");
+});
+Deno.test("bodyTotal null → byte-identical 0.17.0 sentence", () => {
+  const b = fillBuckets(C, [{ key: "14", count: 3 }]);
+  assertEquals(aggregateSentence(C, 3, b, "2026-10-22", null), aggregateSentence(C, 3, b, "2026-10-22"));
+  assertEquals(aggregateSentence(C, 3, b, "2026-10-22"), "최근 7일 'ABC결제·타임아웃' 메시지 3건 — 14시대가 3건으로 가장 많았어요");
+});
+Deno.test("okAggregate: body_total only when metric_items > 0; buckets/top are body values; note ③ only when body null and unmatched > 0", () => {
+  const withBody = okAggregate(C, { total: 2, body_total: 8, metric_items: 1, metric_unmatched: 1, buckets: [{ key: "14", count: 7 }, { key: "16", count: 1 }] }, [], "2026-10-22");   // body 있음 → ③ 없음
+  assertEquals([withBody.body_total, withBody.top.map((t) => t.count), withBody.notes], [8, [7, 1], [AGG_TEXT.savedOnly]]);
+  const svc = okAggregate({ ...C, keywords: ["ABC결제"] }, { total: 5, body_total: 5, metric_items: 0, metric_unmatched: 4, buckets: [{ key: "10", count: 5 }] }, [], "2026-10-22");
+  assertEquals([svc.body_total, svc.notes], [null, [AGG_TEXT.savedOnly, AGG_TEXT.countedMessages]]);
+  assertEquals(svc.sentence, "최근 7일 'ABC결제' 메시지 5건 — 10시대가 5건으로 가장 많았어요");
+  const none = okAggregate(C, { total: 3, body_total: 3, metric_items: 0, metric_unmatched: 0, buckets: [{ key: "10", count: 3 }] }, [], "2026-10-22");
+  assertEquals([none.body_total, none.notes], [null, [AGG_TEXT.savedOnly]]);
+  const zero = okAggregate(C, { total: 0, body_total: 0, metric_items: 0, metric_unmatched: 0, buckets: [] }, [], "2026-10-22");
+  assertEquals(zero.notes.includes(AGG_TEXT.countedMessages), false);
+});
+Deno.test("AGG_TEXT.countedMessages is the fixed spec text", () => {
+  assertEquals(AGG_TEXT.countedMessages, "메시지 수로 셌어요 — 무슨 일인지(예: 타임아웃) 함께 물으면 본문에 적힌 건수로 세요.");
+});
+Deno.test("failedAggregate and BAD_CONDITION carry body_total null", () => {
+  assertEquals([failedAggregate(C).body_total, BAD_CONDITION.body_total], [null, null]);
 });

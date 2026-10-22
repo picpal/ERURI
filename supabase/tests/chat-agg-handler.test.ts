@@ -176,7 +176,7 @@ Deno.test("aggregate: bad_condition → no RPC, conditions null, sentence = AGG_
     const { d, seen } = adeps({ intent: "aggregate", aggregate: agg });
     const { status, j } = await call(d, { question: "합성PAY 몇 건", intents: AGG });
     assertEquals([status, j.intent, seen.aggregate.length, seen.search], [200, "aggregate", 0, 0]);
-    assertEquals(j.aggregate, { status: "bad_condition", conditions: null, total: 0, buckets: [], top: [], sentence: AGG_TEXT.bad, notes: [] });
+    assertEquals(j.aggregate, { status: "bad_condition", conditions: null, total: 0, body_total: null, buckets: [], top: [], sentence: AGG_TEXT.bad, notes: [] });
   }
 });
 

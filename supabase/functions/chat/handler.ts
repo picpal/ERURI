@@ -237,7 +237,8 @@ async function runAggregate(userId: string, deps: ChatDeps, raw: AggRaw | null, 
   // 규칙 읽기 실패는 집계 실패가 아니다(Ruling A9-hint) — 0건 문장은 그대로, 꼬리 줄 ②(힌트)만 뺀다
   let rules: SaveRule[] | null = [];
   if (r.total === 0) rules = await deps.saveRules(userId).catch(() => null);
-  let aggregate = okAggregate(c, r.buckets ?? [], r.total, rules ?? [], today);
+  // N6 임시: 0035 모양(메시지 수 = 값). N7 이 RPC 새 칸(body_total·metric_items·metric_unmatched·칸 body)으로 바꾼다
+  let aggregate = okAggregate(c, { total: r.total, body_total: r.total, metric_items: 0, metric_unmatched: 0, buckets: r.buckets ?? [] }, rules ?? [], today);
   if (rules === null) aggregate = { ...aggregate, notes: [AGG_TEXT.savedOnly] };
   return { aggregate, log: { status: aggregate.status, total: aggregate.total, bucket: c.bucket, clamped: c.clamped, defaulted: c.defaulted, inherited: v.inherited } };
 }

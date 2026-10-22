@@ -11,12 +11,15 @@ export type AggRaw = { keywords?: unknown; sender?: unknown; sources?: unknown; 
 export type AggConditions = { keywords: string[]; sender: string | null; sources: AggSource[]; from: string; to: string; bucket: AggBucket; defaulted: boolean; clamped: boolean };
 export type Revalidated = { kind: "ok"; conditions: AggConditions; inherited: boolean } | { kind: "bad_condition" } | { kind: "question" };
 export type BucketCount = { key: string; count: number };
+// 0.18.0 정규화된 RPC 숫자: total = 메시지 수, body_total = 본문 기준 값 합, buckets = 칸별 본문 기준 값(handler 가 칸 body 를 count 로 옮긴다)
+export type AggCounts = { total: number; body_total: number; metric_items: number; metric_unmatched: number; buckets: BucketCount[] };
 export type Bucket = { key: string; label: string; count: number };
-export type AggregateResult = { status: "ok" | "bad_condition" | "failed"; conditions: AggConditions | null; total: number; buckets: Bucket[]; top: Bucket[];
-  sentence: string; notes: string[] };
+// body_total: 키워드에 맞은 metric 이 있었을 때만 숫자(failed·bad_condition·metrics 없음은 null)
+export type AggregateResult = { status: "ok" | "bad_condition" | "failed"; conditions: AggConditions | null; total: number; body_total: number | null;
+  buckets: Bucket[]; top: Bucket[]; sentence: string; notes: string[] };
 
 export const AGG_TEXT = { failed: "집계하지 못했어요 — 잠시 뒤 다시 물어봐 주세요", bad: "조건을 정확히 알아듣지 못했어요 — 키워드·기간을 다시 말해 주세요",
-  savedOnly: "저장된 메시지만 셌어요." } as const;
+  savedOnly: "저장된 메시지만 셌어요.", countedMessages: "메시지 수로 셌어요 — 무슨 일인지(예: 타임아웃) 함께 물으면 본문에 적힌 건수로 세요." } as const;
 
 const BUCKETS: readonly AggBucket[] = ["hour", "day", "weekday"];
 const KEYWORDS_MAX = 3, TEXT_MIN = 2, TEXT_MAX = 30, DEFAULT_DAYS = 7, MAX_DAYS = 90;
@@ -35,14 +38,14 @@ const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00
 const chars = (s: string) => [...s].length;   // 코드 포인트(K8 — SQL char_length 와 같은 수)
 const inRange = (s: string) => chars(s) >= TEXT_MIN && chars(s) <= TEXT_MAX;
 
-// ① 문자열만, 앞뒤 공백 제거·빈 값 제거·대소문자 무시 중복 제거(먼저 나온 것을 남긴다). 배열이 아니면 빈 목록
+// ① 문자열만, 앞뒤 공백 제거·빈 값 제거·공백·대소문자 무시 중복 제거(먼저 나온 표기를 남긴다, 0.18.0 H2). 배열이 아니면 빈 목록
 function keywordList(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   const seen = new Set<string>(), out: string[] = [];
   for (const k of v) {
     if (typeof k !== "string") continue;
-    const t = k.trim(), low = t.toLowerCase();
-    if (t && !seen.has(low)) { seen.add(low); out.push(t); }
+    const t = k.trim(), key = t.toLowerCase().replace(/\s/g, "");
+    if (t && !seen.has(key)) { seen.add(key); out.push(t); }
   }
   return out;
 }
@@ -186,27 +189,33 @@ function periodText(c: AggConditions, today: string): string {
 const leaderWord = (c: AggConditions, b: Bucket) => c.bucket === "hour" ? `${b.label}대` : c.bucket === "weekday" ? `${b.label}요일` : b.label;
 const subject = (c: AggConditions, word: string) => c.bucket === "day" ? "가" : josa(word, "이", "가");
 
-// 서버 템플릿 문장(LLM 이 숫자를 쓰지 않는다): {기간} '{키워드}' {발신자}{출처 말} {total}건 — {최다}
-export function aggregateSentence(c: AggConditions, total: number, buckets: Bucket[], today: string): string {
+// 서버 템플릿 문장(LLM 이 숫자를 쓰지 않는다): {기간} '{키워드}' {발신자}{출처 말} {total}건[ · 본문 기준 {bodyTotal}건] — {최다}.
+// bodyTotal null 이면 0.17.0 문장 그대로. 칸 값(최다)은 호출부가 준 값 — 본문 기준 값이면 그 값
+export function aggregateSentence(c: AggConditions, total: number, buckets: Bucket[], today: string, bodyTotal: number | null = null): string {
   const head = `${periodText(c, today)} '${c.keywords.join("·")}' ${c.sender ? `${c.sender}에서 온 ` : ""}${sourceWord(c)}`;
   const max = Math.max(0, ...buckets.map((b) => b.count));
   if (total === 0 || max === 0) return `${head}${josa(sourceWord(c), "은", "는")} 0건이에요`;
+  const n = bodyTotal === null ? `${total}건` : `${total}건 · 본문 기준 ${bodyTotal}건`;
   const leaders = buckets.filter((b) => b.count === max);
   if (leaders.length === 1) {
     const w = leaderWord(c, leaders[0]);
-    return `${head} ${total}건 — ${w}${subject(c, w)} ${max}건으로 가장 많았어요`;
+    return `${head} ${n} — ${w}${subject(c, w)} ${max}건으로 가장 많았어요`;
   }
   if (leaders.length <= 3) {
     const w = leaders.map((b) => leaderWord(c, b)).join("·");
-    return `${head} ${total}건 — ${w}${subject(c, w)} 각각 ${max}건으로 가장 많았어요`;
+    return `${head} ${n} — ${w}${subject(c, w)} 각각 ${max}건으로 가장 많았어요`;
   }
-  return `${head} ${total}건 — ${leaders.length}개 칸이 각각 ${max}건으로 가장 많았어요`;
+  return `${head} ${n} — ${leaders.length}개 칸이 각각 ${max}건으로 가장 많았어요`;
 }
 
 // 꼬리 줄(이 순서): ① 항상 "저장된 메시지만 셌어요." ② 0건이고 그 키워드의 keyword 규칙이 없고(소문자 비교) 발신자 조건이 있으면 그 sender 규칙도 없을 때 안내
-export function aggregateNotes(c: AggConditions, total: number, rules: SaveRule[]): string[] {
+// ③ 1건 이상이고 본문 기준 값이 없는데(맞은 label 없음) metrics 가 있는 메시지가 있으면 — 서비스명만 물었을 때 "메시지 수로 셌어요"
+export function aggregateNotes(c: AggConditions, total: number, rules: SaveRule[], bodyTotal: number | null = null, metricUnmatched = 0): string[] {
   const notes: string[] = [AGG_TEXT.savedOnly];
-  if (total > 0) return notes;
+  if (total > 0) {
+    if (bodyTotal === null && metricUnmatched > 0) notes.push(AGG_TEXT.countedMessages);
+    return notes;
+  }
   const kws = new Set(c.keywords.map((k) => k.toLowerCase()));
   const has = (kind: SaveRule["kind"], v: string) => rules.some((r) => r.kind === kind && r.value.toLowerCase() === v);
   const keywordRule = [...kws].some((k) => has("keyword", k));
@@ -218,14 +227,16 @@ export function aggregateNotes(c: AggConditions, total: number, rules: SaveRule[
   return notes;
 }
 
-export function okAggregate(c: AggConditions, counts: BucketCount[], total: number, rules: SaveRule[], today: string): AggregateResult {
-  const buckets = fillBuckets(c, counts);
-  return { status: "ok", conditions: c, total, buckets, top: topBuckets(buckets), sentence: aggregateSentence(c, total, buckets, today),
-    notes: aggregateNotes(c, total, rules) };
+// 칸·top = r.buckets(본문 기준 값). body_total 은 키워드에 맞은 metric 행이 있는 메시지가 하나라도 있을 때만
+export function okAggregate(c: AggConditions, r: AggCounts, rules: SaveRule[], today: string): AggregateResult {
+  const buckets = fillBuckets(c, r.buckets);
+  const bodyTotal = r.metric_items > 0 ? r.body_total : null;
+  return { status: "ok", conditions: c, total: r.total, body_total: bodyTotal, buckets, top: topBuckets(buckets),
+    sentence: aggregateSentence(c, r.total, buckets, today, bodyTotal), notes: aggregateNotes(c, r.total, rules, bodyTotal, r.metric_unmatched) };
 }
 
-// ok 가 아니면 숫자 칸은 0·빈 배열, 문장은 오류 문구. failed 는 재검증 뒤 조건을, bad_condition 은 null(무효 조건을 보이지 않고 다시 말하게)
+// ok 가 아니면 숫자 칸은 0·빈 배열·body_total null, 문장은 오류 문구. failed 는 재검증 뒤 조건을, bad_condition 은 null(무효 조건을 보이지 않고 다시 말하게)
 export const failedAggregate = (c: AggConditions): AggregateResult =>
-  ({ status: "failed", conditions: c, total: 0, buckets: [], top: [], sentence: AGG_TEXT.failed, notes: [] });
-export const BAD_CONDITION: AggregateResult = Object.freeze({ status: "bad_condition", conditions: null, total: 0, buckets: [], top: [], sentence: AGG_TEXT.bad,
-  notes: [] }) as AggregateResult;
+  ({ status: "failed", conditions: c, total: 0, body_total: null, buckets: [], top: [], sentence: AGG_TEXT.failed, notes: [] });
+export const BAD_CONDITION: AggregateResult = Object.freeze({ status: "bad_condition", conditions: null, total: 0, body_total: null, buckets: [], top: [],
+  sentence: AGG_TEXT.bad, notes: [] }) as AggregateResult;
