@@ -1,10 +1,12 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
+import { costKrw } from "../functions/_shared/budget.ts";
 import type { ClassifyMeta, ClassifyResult } from "../functions/_shared/classify.ts";
-import type { TextExtraction, TextMeta } from "../functions/_shared/extract-text.ts";
+import type { ExtractOpts, TextExtraction, TextMeta } from "../functions/_shared/extract-text.ts";
 import type { FactsInput } from "../functions/_shared/facts.ts";
 import type { Job } from "../functions/_shared/job.ts";
+import type { Metric } from "../functions/_shared/metrics.ts";
 import type { SaveRule } from "../functions/_shared/save-rules.ts";
-import { processText, type TextDeps, type TextItem } from "../functions/worker/text.ts";
+import { processText, reserveOutputTokens, type TextDeps, type TextItem } from "../functions/worker/text.ts";
 
 // 문구는 합성. 모델·DB 없이 파이프라인 분기만 본다
 const EVENT_X: TextExtraction = { kind: "event", events: [{ evidence: "합성 근거",
@@ -12,37 +14,47 @@ const EVENT_X: TextExtraction = { kind: "event", events: [{ evidence: "합성 �
 const BUY_X: TextExtraction = { kind: "purchase", evidence: null,
   purchase: { merchant: "합성커피", products: [], ordered_at: null, amount: 32000, currency: "KRW", order_no: null, status: "paid" } };
 function fake(o: { item?: Partial<TextItem> | null; text?: string; verdict?: ClassifyResult | null | Error; result?: TextExtraction;
-  failEnqueue?: number; pushed?: boolean; budget?: "ok" | "degraded" | "refused"; extractThrows?: boolean; rules?: SaveRule[] } = {}) {
+  failEnqueue?: number; pushed?: boolean; budget?: "ok" | "degraded" | "refused"; extractThrows?: boolean; rules?: SaveRule[];
+  metrics?: unknown[]; saveMetricsThrows?: boolean; saveFactsThrowsOnce?: boolean } = {}) {
   const calls = { decrypt: 0, classify: [] as string[], extract: [] as { text: string; today: string }[], saved: [] as FactsInput[],
     status: [] as [string, boolean][], tokens: 0, notify: [] as string[], classifyMeta: [] as ClassifyMeta[], extractMeta: [] as TextMeta[],
     backfill: [] as boolean[], gate: [] as [string, number | null][], ruleCalls: 0, quarantine: [] as string[], embed: [] as [string, boolean][],
-    reserved: [] as string[], settled: [] as { k: string; m: string; lines: unknown[][] }[] };
+    reserved: [] as string[], settled: [] as { k: string; m: string; lines: unknown[][] }[],
+    metrics: [] as Metric[][], extractOpts: [] as (ExtractOpts | undefined)[], seq: [] as string[], est: [] as number[] };
   const base: TextItem = { contentEnc: "enc", source: "NOTIFICATION", appName: "Slack", sender: null, title: null,
     occurredAt: "2026-09-28T15:30:00Z", capturedAt: "2026-09-28T15:30:05Z", status: "queued" };
   // save_facts 처럼 status 를 extracted 로 바꾸고 제안을 기억한다 → 같은 fake 로 processText 를 다시 부르면 실제 재시도가 된다
-  const state = { status: o.item?.status ?? base.status, proposals: [] as string[], failEnqueue: o.failEnqueue ?? 0 };
+  const state = { status: o.item?.status ?? base.status, proposals: [] as string[], failEnqueue: o.failEnqueue ?? 0,
+    saveFactsThrows: o.saveFactsThrowsOnce ? 1 : 0 };
   const d: TextDeps = {
     getItem: async () => (o.item === null ? null : { ...base, ...o.item, status: state.status }),
     decrypt: async () => { calls.decrypt++; return o.text ?? "[합성의원] 내일 오후 3시 진료 예약"; },
     classifier: { provider: "jev", classify: async (t, m) => { calls.classify.push(t); calls.classifyMeta.push(m); if (o.verdict instanceof Error) throw o.verdict; return o.verdict ?? null; } },
     threshold: 0.8,
-    extract: async (text, m, today, onUsage) => { calls.extract.push({ text, today }); calls.extractMeta.push(m);
+    // metrics 키는 opts.metrics 일 때만(K24 — 실제 extractTextDetailed 와 같다)
+    extract: async (text, m, today, onUsage, opts) => { calls.extract.push({ text, today }); calls.extractMeta.push(m); calls.extractOpts.push(opts);
       onUsage?.({ input: 900, cached: 0, output: 60 });
       if (o.extractThrows) throw new Error("openai incomplete max_output_tokens");
-      return { result: o.result ?? EVENT_X, usage: { input_tokens: 900, output_tokens: 60 } }; },
+      return { result: o.result ?? EVENT_X, usage: { input_tokens: 900, output_tokens: 60 }, ...(opts?.metrics && o.metrics ? { metrics: o.metrics } : {}) }; },
     addTokens: async (_u, n, bf) => { calls.tokens += n; calls.backfill.push(bf); },
-    saveFacts: async (f) => { calls.saved.push(f); state.status = "extracted";
+    // 던지기는 status 변경 전(PF-F14) — 재시도가 already_processed 가 아니라 다시 추출로 간다
+    saveFacts: async (f) => { calls.seq.push("saveFacts");
+      if (state.saveFactsThrows > 0) { state.saveFactsThrows--; throw new Error("save_facts XX000"); }
+      calls.saved.push(f); state.status = "extracted";
       return f.entries.map((_, i) => { const proposalId = f.kind === "purchase" ? null : `p${i + 1}`;
         if (proposalId && !state.proposals.includes(proposalId)) state.proposals.push(proposalId);
         return { factId: `f${i + 1}`, proposalId, created: calls.saved.length === 1 }; }); },
-    setStatus: async (_u, _i, s, w) => { calls.status.push([s, w]); },
+    setStatus: async (_u, _i, s, w) => { calls.seq.push(`setStatus:${s}`); calls.status.push([s, w]); },
     recordGate: async (_u, _i, l, c) => { calls.gate.push([l, c]); },
     quarantine: async (_u, _i, s) => { calls.quarantine.push(s); state.status = s; },
     enqueueNotify: async (_u, p) => { if (state.failEnqueue > 0) { state.failEnqueue--; throw new Error("enqueue_job XX000"); } calls.notify.push(p); },
     unpushedProposals: async () => (o.pushed ? [] : state.proposals.slice(0, 1)),
-    enqueueEmbed: async (_u, i, bf) => { calls.embed.push([i, bf]); },
+    enqueueEmbed: async (_u, i, bf) => { calls.seq.push("enqueueEmbed"); calls.embed.push([i, bf]); },
+    saveMetrics: async (_u, _i, ms) => { calls.seq.push("saveMetrics");
+      if (o.saveMetricsThrows) throw new Error("worker_save_metrics P0001");
+      calls.metrics.push(ms); return ms.length; },
     saveRules: async () => { calls.ruleCalls++; return o.rules ?? []; },
-    budget: { reserve: async (_u, k) => { calls.reserved.push(k); return { level: o.budget ?? "ok", month: "2026-10-01" }; },
+    budget: { reserve: async (_u, k, est) => { calls.reserved.push(k); calls.est.push(est); return { level: o.budget ?? "ok", month: "2026-10-01" }; },
       settle: async (_u, k, _e, m, lines) => { calls.settled.push({ k, m, lines: lines.map((l) => [l.kind, l.model, l.input, l.output]) }); },
       acquire: async () => 1, release: async () => {}, now: () => new Date("2026-10-15T00:00:00Z") },
   };
@@ -368,7 +380,8 @@ Deno.test("save rule: already kept item on retry → embed only (no decrypt, cla
   assertEquals(bf.calls.embed, [["i1", true]]);
 });
 
-Deno.test("save rule: extract request is identical with or without a matching rule", async () => {
+// 0.18.0: 규칙 항목은 metrics 를 함께 묻는다(K24) — 앞 세 인자(text·meta·today)는 같고 opts 만 다르다
+Deno.test("save rule: extract text/meta/today are identical with or without a matching rule (only opts differ)", async () => {
   const item: Partial<TextItem> = { source: "MESSAGES", appName: "SMS", sender: "합성PAY", title: "합성PAY 알림" };
   const ruled = fake({ item, rules: [PAY], text: PAY_TEXT });
   const plain = fake({ item, text: PAY_TEXT });
@@ -376,6 +389,7 @@ Deno.test("save rule: extract request is identical with or without a matching ru
   await processText(plain.d, job());
   assertEquals([ruled.calls.gate, plain.calls.classify.length], [[["rule", null]], 1]);
   assertEquals([ruled.calls.extract, ruled.calls.extractMeta], [plain.calls.extract, plain.calls.extractMeta]);
+  assertEquals([ruled.calls.extractOpts, plain.calls.extractOpts], [[{ metrics: true }], [undefined]]);
 });
 
 Deno.test("save rule: log line has rule:true and no rule value/title/body", async () => {
@@ -396,4 +410,97 @@ Deno.test("save rule: log line has rule:true and no rule value/title/body", asyn
   assertEquals(logs.map((l) => [l.checkpoint, l.rule]), [["kept", true], ["proposed", true], ["proposed", false]]);
   assertEquals([logs[0].why, logs[0].raw_events], ["model_none", 0]);
   for (const l of lines) for (const w of ["합성PAY", "PAY", "타임아웃", "알림", "r-"]) assertEquals(l.includes(w), false, w);
+});
+
+// 본문 건수(0.18.0, 스펙 §7 "본문 건수"): 저장 규칙 항목만 추출 호출이 metrics 를 함께 뽑고, 정규화해 save_facts·kept 전에 덮어쓴다. 문구는 합성
+const RULE: SaveRule[] = [{ id: "r1", kind: "keyword", value: "합성결제", created_at: "2026-10-21T00:00:00Z" }];
+const BODY = "[합성결제] 14:00~14:10 타임아웃 6건";
+function captureLogs(): { lines: string[]; stop(): void } {
+  const lines: string[] = [];
+  const orig = console.log;
+  console.log = (...a: unknown[]) => { lines.push(a.map(String).join(" ")); };
+  return { lines, stop: () => { console.log = orig; } };
+}
+
+Deno.test("metrics: rule item asks extract with {metrics:true}; non-rule item passes no 5th argument", async () => {
+  const a = fake({ rules: RULE, text: BODY, result: { kind: "none" } }); await processText(a.d, job());
+  const b = fake({ text: BODY, result: { kind: "none" } }); await processText(b.d, job());
+  assertEquals([a.calls.extractOpts, b.calls.extractOpts], [[{ metrics: true }], [undefined]]);
+});
+
+Deno.test("metrics: rule item 0 facts → saveMetrics(normalized) before setStatus kept; log metrics/metric_body counts only", async () => {
+  const { d, calls } = fake({ rules: RULE, text: BODY, result: { kind: "none" },
+    metrics: [{ label: "타임아웃", count: 6, start: "14:00", end: "14:10" }, { label: "", count: 1, start: null, end: null }] });
+  const logs = captureLogs();
+  try { assertEquals(await processText(d, job()), "kept"); } finally { logs.stop(); }
+  assertEquals(calls.metrics, [[{ label: "타임아웃", count: 6, at: "2026-09-29T05:00:00.000Z", at_body: true }]]);
+  assertEquals(calls.seq.slice(0, 2), ["saveMetrics", "setStatus:kept"]);
+  const line = JSON.parse(logs.lines.find((l) => l.includes('"kept"'))!);
+  assertEquals([line.metrics, line.metric_body], [1, 1]);
+  assert(!logs.lines.join("").includes("타임아웃"));
+});
+
+Deno.test("metrics: rule item with an event → saveMetrics before saveFacts, both saved", async () => {
+  const { d, calls } = fake({ rules: RULE, text: BODY, result: EVENT_X, metrics: [{ label: "오류", count: 2, start: null, end: null }] });
+  assertEquals(await processText(d, job()), "proposed");
+  assertEquals([calls.seq.indexOf("saveMetrics") < calls.seq.indexOf("saveFacts"), calls.saved.length, calls.metrics[0][0].at_body], [true, 1, false]);
+});
+
+Deno.test("metrics: rule item with no metrics key / [] still calls saveMetrics([]) (retry overwrite)", async () => {
+  const a = fake({ rules: RULE, text: BODY, result: { kind: "none" } }); await processText(a.d, job());
+  const b = fake({ rules: RULE, text: BODY, result: { kind: "none" }, metrics: [] }); await processText(b.d, job());   // PF-F11
+  assertEquals([a.calls.metrics, b.calls.metrics], [[[]], [[]]]);
+});
+
+Deno.test("metrics: skip_gate restored rule item also saves metrics", async () => {
+  const { d, calls } = fake({ rules: RULE, text: BODY, result: { kind: "none" }, metrics: [{ label: "타임아웃", count: 3, start: null, end: null }] });
+  await processText(d, job({ payload: { item_id: "i1", skip_gate: true } }));
+  assertEquals([calls.gate.length, calls.metrics[0].length], [0, 1]);
+});
+
+Deno.test("metrics: non-rule item and SHARE never call saveMetrics; log lines have no metrics key", async () => {
+  for (const o of [{ text: BODY }, { text: BODY, item: { source: "SHARE" } }]) {
+    const { d, calls } = fake({ ...o, result: { kind: "none" } });
+    const logs = captureLogs();
+    try { await processText(d, job()); } finally { logs.stop(); }
+    assertEquals(calls.metrics.length, 0);
+    assert(logs.lines.length > 0 && logs.lines.every((l) => !("metrics" in JSON.parse(l))));
+  }
+});
+
+Deno.test("metrics: already processed (kept/extracted) retry → no extract, no saveMetrics", async () => {
+  for (const status of ["kept", "extracted"]) {
+    const { d, calls } = fake({ rules: RULE, item: { status } }); await processText(d, job());
+    assertEquals([calls.extract.length, calls.metrics.length], [0, 0]);
+  }
+});
+
+Deno.test("retry after saveFacts throws re-extracts and overwrites metrics (no growth)", async () => {   // Review Focus 5
+  const { d, calls } = fake({ rules: RULE, text: BODY, result: EVENT_X, saveFactsThrowsOnce: true,
+    metrics: [{ label: "타임아웃", count: 6, start: null, end: null }] });
+  await assertRejects(() => processText(d, job()));
+  assertEquals(await processText(d, job()), "proposed");
+  assertEquals([calls.extract.length, calls.metrics.length, calls.metrics[1].length], [2, 2, 1]);   // 두 번째 호출도 같은 1행 — DB 덮어쓰기는 N1 사례
+});
+
+Deno.test("metrics: saveMetrics throws → job throws, status untouched (no kept, no saveFacts)", async () => {
+  const { d, calls } = fake({ rules: RULE, text: BODY, result: { kind: "none" }, saveMetricsThrows: true });
+  await assertRejects(() => processText(d, job()), Error, "worker_save_metrics");
+  assertEquals([calls.status.length, calls.saved.length], [0, 0]);
+});
+
+Deno.test("reserveOutputTokens: general always 700; rule 700 at cap 2048 and the cap itself above 2048 (modes split, K25)", () => {
+  assertEquals([reserveOutputTokens(false, 2048), reserveOutputTokens(false, 3072), reserveOutputTokens(true, 2048), reserveOutputTokens(true, 3072)],
+    [700, 700, 700, 3072]);
+});
+
+Deno.test("reservation estimate: general item costKrw(len+1200, 700) whatever RULE_MAX_OUTPUT_TOKENS is; rule item uses reserveOutputTokens(true)", async () => {
+  const a = fake({ rules: RULE, text: BODY, result: { kind: "none" } }); await processText(a.d, job());
+  const b = fake({ text: BODY, result: { kind: "none" } }); await processText(b.d, job());
+  const est = (output: number) => costKrw("gpt-6-luna", { input: a.calls.extract[0].text.length + 1200, output });
+  assertEquals([a.calls.est, b.calls.est], [[est(reserveOutputTokens(true))], [est(700)]]);   // N8 이 상한을 올려도 이 테스트는 그대로 통과한다
+});
+
+Deno.test("metrics code has no real service name (worker/text.ts, _shared/metrics.ts)", async () => {
+  for (const p of ["../functions/worker/text.ts", "../functions/_shared/metrics.ts"]) assert(!/pinpay/i.test(await Deno.readTextFile(new URL(p, import.meta.url))), p);
 });

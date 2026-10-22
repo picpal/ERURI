@@ -5,6 +5,7 @@ import type { Classifier } from "../_shared/classify.ts";
 import { decrypt } from "../_shared/crypto.ts";
 import { extractTextDetailed } from "../_shared/extract-text.ts";
 import { enqueueNotify, saveFacts } from "../_shared/facts.ts";
+import type { Metric } from "../_shared/metrics.ts";
 import type { SaveRule } from "../_shared/save-rules.ts";
 import { addExtractTokens } from "./media-deps.ts";
 import type { TextDeps, TextItem } from "./text.ts";
@@ -26,7 +27,7 @@ export function textDeps(sb: SupabaseClient, o: { classifier: Classifier; thresh
     decrypt: (userId, enc) => decrypt(userId, enc),
     classifier: o.classifier,
     threshold: o.threshold,
-    extract: o.extract ?? ((text, meta, today, onUsage) => extractTextDetailed(text, meta, today, onUsage)),
+    extract: o.extract ?? ((text, meta, today, onUsage, opts) => extractTextDetailed(text, meta, today, onUsage, opts)),
     addTokens: (userId, tokens, backfill) => addExtractTokens(sb, userId, tokens, backfill),
     saveFacts: (f) => saveFacts(sb, f),
     enqueueNotify: (userId, proposalId) => enqueueNotify(sb, userId, proposalId, o.leasePrefix ?? ""),
@@ -59,6 +60,12 @@ export function textDeps(sb: SupabaseClient, o: { classifier: Classifier; thresh
       const { data, error } = await sb.rpc("save_rules_of", { p_user: userId });
       if (error) throw new Error("save_rules_of " + error.code);
       return data as SaveRule[];
+    },
+    // 본문 건수(0036): 항목의 item_metrics 를 이 배열로 덮어쓴다(빈 배열이면 지운다). 값은 로그에 남기지 않는다
+    async saveMetrics(userId, itemId, metrics: Metric[]) {
+      const { data, error } = await sb.rpc("worker_save_metrics", { p_user: userId, p_item: itemId, p_metrics: metrics });
+      if (error) throw new Error("worker_save_metrics " + error.code);
+      return data as number;
     },
     budget: o.budget ?? budgetDeps(sb),
   };

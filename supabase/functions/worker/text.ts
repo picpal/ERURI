@@ -1,14 +1,16 @@
 import { type BudgetDeps, costKrw, guarded, type TokenUsage } from "../_shared/budget.ts";
 import { type Classifier, classifierMeta, type ClassifyResult, gateDecision } from "../_shared/classify.ts";
 import { EXTRACT_MODEL, type ExtractUsage } from "../_shared/extract.ts";
-import type { TextExtraction, TextMeta } from "../_shared/extract-text.ts";
+import { type ExtractOpts, RULE_MAX_OUTPUT_TOKENS, type TextExtraction, type TextMeta } from "../_shared/extract-text.ts";
 import { type FactsInput, type SavedFact, textFacts } from "../_shared/facts.ts";
 import type { Job } from "../_shared/job.ts";
+import { type Metric, normalizeMetrics } from "../_shared/metrics.ts";
 import { applyRules } from "../_shared/rules.ts";
 import { matchSaveRules, type SaveRule } from "../_shared/save-rules.ts";
 import { receivedDay } from "../_shared/time.ts";
 
-// process 잡(스펙 §7 "0단계 예외" 0b): 규칙 재적용 → 저장 규칙(0.17.0) → 분류 게이트(Jev, SHARE·저장 규칙 일치 제외) → 텍스트 추출 → save_facts → embed 잡(1b).
+// process 잡(스펙 §7 "0단계 예외" 0b): 규칙 재적용 → 저장 규칙(0.17.0) → 분류 게이트(Jev, SHARE·저장 규칙 일치 제외) → 텍스트 추출
+// (저장 규칙 항목은 본문 건수 metrics 를 함께, 0.18.0) → save_facts → embed 잡(1b).
 // 로그에는 id·코드·개수만(본문·추출값 금지)
 export type TextItem = { contentEnc: string | null; source: string; appName: string | null; sender: string | null; title: string | null;
   occurredAt: string; capturedAt: string; status: string };
@@ -18,7 +20,9 @@ export type TextDeps = {
   decrypt(userId: string, enc: string): Promise<string>;
   classifier: Classifier;
   threshold: number;
-  extract(text: string, meta: TextMeta, today: string, onUsage?: (u: TokenUsage | null) => void): Promise<{ result: TextExtraction; usage: ExtractUsage }>;
+  // opts 는 저장 규칙 항목만 넘긴다. metrics 키는 opts.metrics 일 때만 있다(K24)
+  extract(text: string, meta: TextMeta, today: string, onUsage?: (u: TokenUsage | null) => void, opts?: ExtractOpts):
+    Promise<{ result: TextExtraction; usage: ExtractUsage; metrics?: unknown[] }>;
   addTokens(userId: string, tokens: number, backfill: boolean): Promise<void>;
   saveFacts(f: FactsInput): Promise<SavedFact[]>;
   enqueueNotify(userId: string, proposalId: string): Promise<void>;
@@ -28,8 +32,14 @@ export type TextDeps = {
   quarantine(userId: string, itemId: string, status: string): Promise<void>;
   enqueueEmbed(userId: string, itemId: string, backfill: boolean): Promise<void>;
   saveRules(userId: string): Promise<SaveRule[]>;
+  saveMetrics(userId: string, itemId: string, metrics: Metric[]): Promise<number>;   // 0036 worker_save_metrics — 항목의 행을 덮어쓴다
   budget: BudgetDeps;
 };
+
+// 추출 예약의 출력 토큰 추정(K7·K25): 규칙 항목이고 상한이 2048 보다 크면 그 상한, 아니면(일반 항목은 상한과 무관하게 항상) 700
+export function reserveOutputTokens(ruled: boolean, cap = RULE_MAX_OUTPUT_TOKENS): number {
+  return ruled && cap > 2048 ? cap : 700;
+}
 
 export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metrics) => void): Promise<string> {
   if (!job.user_id) throw new Error("process job without user_id");
@@ -63,7 +73,7 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   const meta: TextMeta = { source: item.source, appName: item.appName, title: item.title };
 
   // 1b) 저장 규칙(0.17.0): 서버 규칙 폐기(OTP·(광고)) 뒤, 마스킹된 글로 판정(K6). SHARE 는 이미 게이트를 건너뛰므로 조회하지 않는다(K7).
-  //     맞으면 게이트를 건너뛰고 라벨 'rule'·confidence null 로 남긴다(복구 항목 skip_gate 는 원래 라벨 유지). 추출 요청은 규칙과 무관하게 같다
+  //     맞으면 게이트를 건너뛰고 라벨 'rule'·confidence null 로 남긴다(복구 항목 skip_gate 는 원래 라벨 유지). 추출 요청은 규칙 항목만 metrics 를 함께 묻는다(0.18.0)
   const ruled = item.source !== "SHARE" && matchSaveRules(await deps.saveRules(user),
     { title: v.maskedTitle ?? item.title, text: v.masked, sender: item.sender, source: item.source, appName: item.appName });
   if (ruled && job.payload.skip_gate !== true) await deps.recordGate(user, itemId, "rule", null);
@@ -88,19 +98,31 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
 
   // 3) 추출. 비용 예약(§13): 백필 항목은 1회 예산, 그 외는 월 예산. 소진이면 Deferred(다음 달) — 잡은 queued 로 남는다
   const kind = job.payload.backfill === true ? "backfill" : "extract";
-  const est = costKrw("gpt-6-luna", { input: v.masked.length + 1200, output: 700 });
-  // 원소는 추출 응답 직후(파싱 전) — 예약 kind 와 같은 집계 kind(extract·backfill, 스펙 §13 표)
-  const { value: { result, usage } } = await guarded(deps.budget, user, kind, est, job.id, (_lv, bill) =>
-    deps.extract(v.masked, meta, receivedDay(item.occurredAt), (u) => bill(kind, EXTRACT_MODEL, u)));   // 상대 날짜 기준일 = 받은 날(서울)
+  const est = costKrw("gpt-6-luna", { input: v.masked.length + 1200, output: reserveOutputTokens(ruled) });
+  // 원소는 추출 응답 직후(파싱 전) — 예약 kind 와 같은 집계 kind(extract·backfill, 스펙 §13 표). 상대 날짜 기준일 = 받은 날(서울)
+  // 규칙 아닌 항목은 0.17.0 과 같은 4인자 호출(요청 바이트 동일, PF-F5)
+  const day = receivedDay(item.occurredAt);
+  const { value: out } = await guarded(deps.budget, user, kind, est, job.id, (_lv, bill) => {
+    const cb = (u: TokenUsage | null) => bill(kind, EXTRACT_MODEL, u);
+    return ruled ? deps.extract(v.masked, meta, day, cb, { metrics: true }) : deps.extract(v.masked, meta, day, cb);
+  });
+  const { result, usage } = out;
   await deps.addTokens(user, usage.input_tokens + usage.output_tokens, job.payload.backfill === true);   // 0.16.0 에서 정리(D12)
   const facts = textFacts(user, itemId, result);
+  // 본문 건수(0.18.0): 규칙 항목은 save_facts·kept 전에 덮어쓴다 — 빈 배열도 보내 재시도가 이전 행을 지운다. 로그는 개수만(K6)
+  let mlog = {};
+  if (ruled) {
+    const ms = normalizeMetrics(out.metrics ?? [], item.occurredAt);
+    await deps.saveMetrics(user, itemId, ms);
+    mlog = { metrics: ms.length, metric_body: ms.filter((m) => m.at_body).length };
+  }
   if (facts === null) {                                              // 남길 것 없음: 원문 유지(1b 검색 대상, §7)
     // R1(2026-10-03): 0건 사유 코드·모델이 낸 원래 일정 후보 수만 로그에(본문·값 없음) — model_none 과 no_start 를 가른다
     const why = result.kind === "none" ? { why: result.why ?? null, raw_events: result.raw_events ?? null } : {};
     if (ruled) {                                                     // 저장 규칙에 맞으면 폐기가 아니라 kept(원문 유지·검색·집계 대상, §7)
       await deps.setStatus(user, itemId, "kept", false);
       await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);
-      return log(job, "kept", { rule: true, ...why });
+      return log(job, "kept", { rule: true, ...why, ...mlog });
     }
     const st = await discard(deps, job, user, itemId, "empty", false, why);
     await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);
@@ -113,7 +135,7 @@ export async function processText(deps: TextDeps, job: Job, onMetrics?: (m: Metr
   if (lead) await deps.enqueueNotify(user, lead);
   await deps.enqueueEmbed(user, itemId, job.payload.backfill === true);   // 청크·임베딩(백필 항목은 백필 레인)
   return log(job, lead ? "proposed" : "extracted", { kind: facts.kind, facts: saved.length, created: saved.some((s) => s.created),
-    label: verdict?.label ?? null, confidence: verdict?.confidence ?? null, rule: ruled, tokens: usage.input_tokens + usage.output_tokens });
+    label: verdict?.label ?? null, confidence: verdict?.confidence ?? null, rule: ruled, tokens: usage.input_tokens + usage.output_tokens, ...mlog });
 }
 
 async function discard(deps: TextDeps, job: Job, user: string, itemId: string, reason: string, wipe: boolean,
