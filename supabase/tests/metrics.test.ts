@@ -12,9 +12,15 @@ Deno.test("label: trims and collapses spaces; '' and 31 code points dropped; 30 
   assertEquals(r.map((x) => x.label), ["타임 아웃", "가".repeat(30)]);
 });
 
-Deno.test("count: 0, -1, 1.5, 100001, '6' dropped; 1 and 100000 kept", () => {
+Deno.test("count: -1, 1.5, 100001, '6' dropped; 0, 1 and 100000 kept (final-I2 — '오류 0건' is a 0 metric)", () => {
   assertEquals(normalizeMetrics([0, -1, 1.5, 100001, "6", 1, 100000].map((n) => ({ label: "오류", count: n, start: null, end: null })), R,
-    "오류 0건, 오류 -1건, 오류 1.5건, 오류 100001건, 오류 6건, 오류 1건, 오류 100000건").map((x) => x.count), [1, 100000]);
+    "오류 0건, 오류 -1건, 오류 1.5건, 오류 100001건, 오류 6건, 오류 1건, 오류 100000건").map((x) => x.count), [0, 1, 100000]);
+  // 0 도 근접·단위 검증을 같이 받는다
+  const one = (label: string, text: string) => normalizeMetrics([{ label, count: 0, start: null, end: null }], R, text).map((m) => [m.label, m.count]);
+  assertEquals(one("오류", "[합성PAY] 14:00~14:10 타임아웃 6건, 오류 0건"), [["오류", 0]]);
+  assertEquals(one("타임아웃", "타임아웃 발생, 오류 0건"), []);
+  assertEquals(one("오류", "오류율 0%"), []);
+  assertEquals(one("오류", "오류 6건"), []);
 });
 
 Deno.test("not an array → []; 11 valid → first 10 (after drops)", () => {
@@ -39,6 +45,48 @@ Deno.test("proximity (Ruling N8-prox): label must be in the same clause within t
   assertEquals(one("타임아웃", 6, "14:00~14:10 타임아웃 6건 (오늘 누적 14건)"), [["타임아웃", 6]]);
   assertEquals(one("타임아웃", 6, "타임아웃이 오늘 오후 결제 화면에서 계속 6건"), []);     // 20자 밖
   assertEquals(one("결제 승인 게이트웨이 응답 타임아웃", 6, "1) 결제 승인 게이트웨이 응답 타임아웃 6건"), [["결제 승인 게이트웨이 응답 타임아웃", 6]]); // 긴 label 은 그 길이까지
+});
+
+Deno.test("brackets and table bars (final-I1): a paired group before the count and one opening bracket / '|' / glued comma right before it are skipped", () => {
+  const got = (raw: [string, number][], text: string) =>
+    normalizeMetrics(raw.map(([label, count]) => ({ label, count, start: null, end: null })), R, text).map((m) => [m.label, m.count]);
+  assertEquals(got([["타임아웃", 6]], "[합성PAY] 결제 타임아웃 발생 (6건)"), [["타임아웃", 6]]);
+  assertEquals(got([["타임아웃", 6], ["오류", 2]], "타임아웃(6건), 오류(2건)"), [["타임아웃", 6], ["오류", 2]]);
+  assertEquals(got([["승인 실패", 3]], "승인 실패(E101) 3건"), [["승인 실패", 3]]);
+  assertEquals(got([["타임아웃", 6]], "타임아웃(PG) 6건"), [["타임아웃", 6]]);
+  assertEquals(got([["타임아웃", 6]], "타임아웃 [6건]"), [["타임아웃", 6]]);
+  assertEquals(got([["타임아웃", 6]], "합성PAY | 타임아웃 | 6건"), [["타임아웃", 6]]);
+  assertEquals(got([["timeout", 6]], "timeout,6"), [["timeout", 6]]);
+  assertEquals(got([["타임아웃", 6]], "타임아웃（6건）"), [["타임아웃", 6]]);                       // 전각 괄호
+  // 그대로 막는 것: 짝 없는 여는 괄호(누적 k1), 쉼표 뒤 다른 사건 낱말(반례), 공백 있는 쉼표, 괄호 안 다른 label
+  assertEquals(got([["타임아웃", 14]], "14:00~14:10 타임아웃 6건 (오늘 누적 14건)"), []);
+  assertEquals(got([["타임아웃", 20]], "타임아웃 발생, 재시도 20건"), []);
+  assertEquals(got([["타임아웃", 20]], "타임아웃 발생, 20건"), []);
+  assertEquals(got([["타임아웃", 20]], "타임아웃 발생(재시도 20건)"), []);
+  assertEquals(got([["오류", 3]], "결제 오류,\n3건"), []);                                       // 줄바꿈은 건너뛰지 않는다
+  // 천 단위·소수의 일부는 여전히 숫자가 아니다
+  assertEquals(got([["오류", 234]], "오류 1,234건"), []);
+  assertEquals(got([["오류", 5]], "오류 1.5건"), []);
+});
+
+Deno.test("occurrences one-to-one (final-I3): title repeat of a body count is one metric; two body occurrences are two; title-only stays; one occurrence, two labels → first", () => {
+  const raw = (...xs: [string, number][]) => xs.map(([label, count]) => ({ label, count, start: null, end: null }));
+  const pick = (ms: { label: string; count: number }[]) => ms.map((m) => [m.label, m.count]);
+  const tb = metricCheckText("[합성PAY] 타임아웃 6건", "14:00~14:10 타임아웃 6건 발생");
+  assertEquals(pick(normalizeMetrics(raw(["타임아웃", 6], ["타임아웃", 6]), R, tb)), [["타임아웃", 6]]);
+  assertEquals(pick(normalizeMetrics(raw(["타임아웃", 6]), R, tb)), [["타임아웃", 6]]);
+  assertEquals(pick(normalizeMetrics(raw(["타임아웃", 6], ["타임아웃", 6]), R, "A서버 타임아웃 6건, B서버 타임아웃 6건")), [["타임아웃", 6], ["타임아웃", 6]]);
+  assertEquals(pick(normalizeMetrics(raw(["타임아웃", 6], ["타임아웃", 6], ["타임아웃", 6]), R, "A서버 타임아웃 6건, B서버 타임아웃 6건")), [["타임아웃", 6], ["타임아웃", 6]]);
+  assertEquals(pick(normalizeMetrics(raw(["타임아웃", 6]), R, metricCheckText("[합성PAY] 결제 타임아웃 6건", "14:00~14:10 발생"))), [["타임아웃", 6]]);
+  assertEquals(pick(normalizeMetrics(raw(["타임아웃", 6], ["타임아웃", 6]), R, metricCheckText("[합성PAY] 결제 타임아웃 6건", "14:00~14:10 발생"))), [["타임아웃", 6]]);
+  assertEquals(pick(normalizeMetrics(raw(["타임아웃", 6], ["결제 타임아웃", 6]), R, "결제 타임아웃 6건")), [["타임아웃", 6]]);
+  // 제목 출현은 그 metric 을 만족하는 본문 출현이 없을 때만 — 제목과 본문의 건수가 다르면 각각 받는다
+  assertEquals(pick(normalizeMetrics(raw(["타임아웃", 6], ["오류", 2]), R, metricCheckText("[합성PAY] 타임아웃 6건", "오류 2건 발생"))), [["타임아웃", 6], ["오류", 2]]);
+  // 최대 짝짓기: 앞 metric 이 두 출현을 다 만족해도 뒤 metric 의 유일한 출현을 빼앗아 버리게 하지 않는다
+  assertEquals(pick(normalizeMetrics(raw(["재시도", 3], ["타임아웃", 3]), R, "재시도 3건 후 타임아웃 3건")), [["재시도", 3], ["타임아웃", 3]]);
+  assertEquals(pick(normalizeMetrics(raw(["타임아웃", 3], ["재시도", 3]), R, "재시도 3건 후 타임아웃 3건")), [["타임아웃", 3], ["재시도", 3]]);
+  // 앞 '타임아웃'이 첫 출현(둘 다 만족)을 먼저 잡아도 뒤 '결제 타임아웃'(첫 출현만 만족)을 위해 둘째 출현으로 옮긴다
+  assertEquals(pick(normalizeMetrics(raw(["타임아웃", 6], ["결제 타임아웃", 6]), R, "결제 타임아웃 6건, 타임아웃 6건")), [["타임아웃", 6], ["결제 타임아웃", 6]]);
 });
 
 Deno.test("unit (Ruling N8-unit): right after the count number a count unit or no unit → kept; a measurement unit → dropped", () => {
@@ -104,7 +152,7 @@ Deno.test("window: +24h exactly → body; +24h 1m → received; −168h exactly 
 
 Deno.test("metricCheckText (N8-title): no title → body unchanged; title + newline + body; title-only count kept; title word never joins a body number", () => {
   assertEquals([metricCheckText(null, "타임아웃 6건"), metricCheckText("  ", "타임아웃 6건"), metricCheckText("[합성PAY] 결제", "타임아웃 6건")],
-    ["타임아웃 6건", "타임아웃 6건", "[합성PAY] 결제\n타임아웃 6건"]);
+    [{ text: "타임아웃 6건", bodyStart: 0 }, { text: "타임아웃 6건", bodyStart: 0 }, { text: "[합성PAY] 결제\n타임아웃 6건", bodyStart: 11 }]);
   const raw = [{ label: "타임아웃", count: 6, start: "14:00", end: "14:10" }];
   assertEquals(normalizeMetrics(raw, R, "14:00~14:10 발생").length, 0);                                   // 본문만: 6 없음
   assertEquals(normalizeMetrics(raw, R, metricCheckText("[합성PAY] 결제 타임아웃 6건", "14:00~14:10 발생")).map((m) => [m.count, m.at_body]), [[6, true]]);

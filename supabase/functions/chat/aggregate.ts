@@ -190,9 +190,11 @@ const leaderWord = (c: AggConditions, b: Bucket) => c.bucket === "hour" ? `${b.l
 const subject = (c: AggConditions, word: string) => c.bucket === "day" ? "가" : josa(word, "이", "가");
 
 // 서버 템플릿 문장(LLM 이 숫자를 쓰지 않는다): {기간} '{키워드}' {발신자}{출처 말} {total}건[ · 본문 기준 {bodyTotal}건] — {최다}.
-// bodyTotal null 이면 0.17.0 문장 그대로. 칸 값(최다)은 호출부가 준 값 — 본문 기준 값이면 그 값
+// bodyTotal null 이면 0.17.0 문장 그대로. 칸 값(최다)은 호출부가 준 값 — 본문 기준 값이면 그 값.
+// 메시지는 있는데 맞은 행이 모두 0건(bodyTotal 0)이면 최다 없이 "… N건 · 본문 기준 0건이에요"(final-I2)
 export function aggregateSentence(c: AggConditions, total: number, buckets: Bucket[], today: string, bodyTotal: number | null = null): string {
   const head = `${periodText(c, today)} '${c.keywords.join("·")}' ${c.sender ? `${c.sender}에서 온 ` : ""}${sourceWord(c)}`;
+  if (total > 0 && bodyTotal === 0) return `${head} ${total}건 · 본문 기준 0건이에요`;
   const max = Math.max(0, ...buckets.map((b) => b.count));
   if (total === 0 || max === 0) return `${head}${josa(sourceWord(c), "은", "는")} 0건이에요`;
   const n = bodyTotal === null ? `${total}건` : `${total}건 · 본문 기준 ${bodyTotal}건`;

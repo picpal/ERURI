@@ -267,6 +267,17 @@ Deno.test("okAggregate: body_total only when metric_items > 0; buckets/top are b
   const zero = okAggregate(C, { total: 0, body_total: 0, metric_items: 0, metric_unmatched: 0, buckets: [] }, [], "2026-10-22");
   assertEquals(zero.notes.includes(AGG_TEXT.countedMessages), false);
 });
+Deno.test("body total 0 (final-I2): matched rows all 0건 → '… 알림 6건 · 본문 기준 0건이에요', no leader, top empty, no note ③ (bucket count 0 from RPC body)", () => {
+  const E: AggConditions = { ...C, keywords: ["합성PAY", "오류"], sources: ["NOTIFICATION"], from: "2026-10-22", to: "2026-10-22", defaulted: false };
+  const r = okAggregate(E, { total: 6, body_total: 0, metric_items: 6, metric_unmatched: 0, buckets: [{ key: "13", count: 0 }, { key: "14", count: 0 }] }, [], "2026-10-22");
+  assertEquals(r.sentence, "10/22 '합성PAY·오류' 알림 6건 · 본문 기준 0건이에요");
+  assertEquals([r.total, r.body_total, r.top, r.buckets.every((b) => b.count === 0), r.notes], [6, 0, [], true, [AGG_TEXT.savedOnly]]);
+  // total 0 은 0.17.0 0건 문장 그대로
+  assertEquals(aggregateSentence(E, 0, fillBuckets(E, []), "2026-10-22", null), "10/22 '합성PAY·오류' 알림은 0건이에요");
+  // 일부만 0 이면 보통 본문 기준 문장
+  const part = okAggregate(E, { total: 2, body_total: 3, metric_items: 2, metric_unmatched: 0, buckets: [{ key: "13", count: 0 }, { key: "14", count: 3 }] }, [], "2026-10-22");
+  assertEquals(part.sentence, "10/22 '합성PAY·오류' 알림 2건 · 본문 기준 3건 — 14시대가 3건으로 가장 많았어요");
+});
 Deno.test("AGG_TEXT.countedMessages is the fixed spec text", () => {
   assertEquals(AGG_TEXT.countedMessages, "메시지 수로 셌어요 — 무슨 일인지(예: 타임아웃) 함께 물으면 본문에 적힌 건수로 세요.");
 });

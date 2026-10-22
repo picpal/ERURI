@@ -91,7 +91,8 @@ for (let run = 1; run <= runs; run++) {
     const row = judgeMetricCase(c, { metrics: r.out ? normalizeMetrics(r.out.metrics, c.occurred_at, metricCheckText(c.title, c.text)) : [], events: evs, status: r.status,
       output_tokens: r.output_tokens });
     rows.push(row);
-    console.log(JSON.stringify({ run, ...row, ...(r.err ? { err: r.err } : {}), cap: effectiveCap }));
+    // raw_metrics = 정규화 전 모델 metric 수(개수만) — 서버 검증·일대일 짝짓기가 버린 수를 got 과 비교해 본다(final-I3 t2)
+    console.log(JSON.stringify({ run, ...row, raw_metrics: Array.isArray(r.out?.metrics) ? r.out.metrics.length : 0, ...(r.err ? { err: r.err } : {}), cap: effectiveCap }));
   }
 }
 const s = summarizeMetric(rows, effectiveCap);

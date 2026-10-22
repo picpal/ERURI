@@ -13,7 +13,7 @@ create table item_metrics (
   item_id uuid not null references items(id) on delete cascade,
   ordinal smallint not null check (ordinal between 0 and 9),
   label text not null check (char_length(label) between 1 and 30),
-  count int not null check (count between 1 and 100000),
+  count int not null check (count between 0 and 100000),   -- 0 = 본문 "오류 0건"(최종 리뷰 메인 판정 final-I2 — 맞은 0 은 메시지 값 0)
   at timestamptz not null,
   at_body boolean not null,
   created_at timestamptz not null default now(),
@@ -25,7 +25,7 @@ revoke all on item_metrics from anon, authenticated;
 -- 워커가 정규화(_shared/metrics.ts normalizeMetrics)한 배열을 save_facts·kept 전환 전에 넣는다(§7 "저장"). 빈 배열도 부른다 — 이전 행을 지우고 다시 넣어 재시도가 덮어쓴다.
 -- 항목 행을 for update 로 잡은 뒤 지우고 넣는다 — 같은 항목 재시도가 겹쳐도 ordinal unique 충돌 없이 마지막 호출이 남는다(K15).
 -- 없거나 남의 항목 → not_found. 정규화를 지난 값만 오므로 범위 밖은 고치지 않고 거절(bad_metrics) — 배열 아님·11개 이상·원소가 객체 아님·label 문자열 아님/1~30자 밖·
--- count 정수 아님/1~100000 밖·at null(문자열 아님)·at_body 불리언 아님. 반환 = 넣은 행 수
+-- count 정수 아님/0~100000 밖·at null(문자열 아님)·at_body 불리언 아님. 반환 = 넣은 행 수
 create or replace function worker_save_metrics(p_user uuid, p_item uuid, p_metrics jsonb) returns int language plpgsql as $$
 declare n int;
 begin
@@ -39,7 +39,7 @@ begin
              where case when jsonb_typeof(e) <> 'object' then true
                         when jsonb_typeof(e->'label') is distinct from 'string' or char_length(e->>'label') not between 1 and 30 then true
                         when jsonb_typeof(e->'count') is distinct from 'number' then true
-                        when (e->>'count')::numeric <> trunc((e->>'count')::numeric) or (e->>'count')::numeric not between 1 and 100000 then true
+                        when (e->>'count')::numeric <> trunc((e->>'count')::numeric) or (e->>'count')::numeric not between 0 and 100000 then true
                         when jsonb_typeof(e->'at') is distinct from 'string' then true
                         else jsonb_typeof(e->'at_body') is distinct from 'boolean' end) then
     raise exception 'bad_metrics';
@@ -57,7 +57,7 @@ end $$;
 -- strpos 라 % _ \ 는 글자 그대로(이스케이프 불필요). 한 metric 행 label 판정도 같은 식으로, 낱말 중 하나라도 들어 있으면 한 번만 맞는다(K10).
 -- 공백을 지운 낱말이 빈 글이면 bad_args(K11 — strpos(x, '') = 1 이라 모든 항목이 맞는다. chat 재검증 ①이 막지만 RPC 도 막는다)
 -- 메시지 선택(상태·출처·발신자·키워드 AND)은 0.17.0 그대로, 받은 시각은 후보 창 [서울 p_from 0시 − 1일, p_to 다음 날 0시 + 7일)(K2 — 본문 시각은 받은 시각 −168h~+24h).
--- 값 단위 = 키워드에 맞은 metric 행(그 at·count) 또는, 맞은 행이 없으면 메시지 1(받은 시각) — 사용자 결정 A. 기간·칸은 값 단위의 발생 시각(서울)으로 가른다.
+-- 값 단위 = 키워드에 맞은 metric 행(그 at·count — count 0 이면 0, final-I2) 또는, 맞은 행이 없으면 메시지 1(받은 시각) — 사용자 결정 A. 기간·칸은 값 단위의 발생 시각(서울)으로 가른다.
 -- 반환(K26 — 기존 칸 뜻 유지, 구 chat 은 total·칸 count·목록 total 만 읽는다):
 --   집계 {total = 기간 안 값 단위가 있는 메시지 수, body_total = 값 합, metric_items = 맞은 행이 쓰인 메시지 수, metric_unmatched = metrics 가 있지만 맞은 행 없이 1로 센 메시지 수,
 --         buckets: [{key, count = 그 칸에 값 단위가 있는 메시지 수, body = 그 칸 값 합}] 값이 있는 칸만 키 순}

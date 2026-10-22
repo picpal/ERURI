@@ -6,30 +6,31 @@ import { judge } from "../eval/run-multi-event-eval.ts";
 export type MetricGroup = "single" | "multi" | "sum_detail" | "repeat" | "cumulative_mixed" | "counter" | "tz" | "none_plain" | "none_money"
   | "none_ratio" | "none_cumulative" | "mixed_max" | "title";
 export type MetricTime = "range" | "point" | "datetime" | "none" | "out_of_window" | "tz";
-// title = 알림 제목(보충 그룹 title 만 — 러너가 meta.title 로 보내고 검증 글은 metricCheckText(title, text), N8-title)
+// title = 알림 제목(보충 그룹 title 만 — 러너가 meta.title 로 보내고 검증 글은 metricCheckText(title, text), N8-title). t1 = 제목에만 건수, t2 = 제목·본문에 같은 건수(final-I3)
 export type MetricCase = { id: string; group: MetricGroup; time?: MetricTime; service: string; text: string; occurred_at: string; expect: Metric[];
   events?: { starts: string }[]; title?: string };
 export type MetricCaseFile = { _note?: string; cases: MetricCase[] };
 export type MetricStatus = "ok" | "incomplete" | "error";
 export type MetricGot = { metrics: Metric[]; events: string[]; status: MetricStatus; output_tokens: number };
 // expected = 기대 metric 수, got = 정규화 뒤 모델 metric 수, matched = label·count 둘 다(K19 일대일), extra = 짝 없는 모델 metric,
-// time_ok = 짝(label)의 at 분·at_body 일치 수, sum_ok = count 합 일치, timeout = label 에 '타임아웃'이 든 모델 metric 수(⑤), events_ok = 혼합 일정(⑧)
+// time_ok = 짝(label)의 at 분·at_body 일치 수, sum_ok = count 합 일치, timeout = label 에 '타임아웃'이 들고 count ≥ 1 인 모델 metric 수(⑤ — '타임아웃 0건'의 0 은 대체가 아니다, final-I2),
+// events_ok = 혼합 일정(⑧)
 export type MetricRow = { id: string; group: MetricGroup; time: MetricTime | null; expected: number; got: number; matched: number; extra: number;
   time_ok: number; sum_ok: boolean; timeout: number; events_ok: boolean | null; status: MetricStatus; output_tokens: number };
 
-// 스펙 §15 구성(42) — 보충 그룹 title 은 따로 센다(TITLE_CASES, 2026-10-22 메인 판정 N8-title)
+// 스펙 §15 구성(42) — 보충 그룹 title 은 따로 센다(TITLE_CASES, 2026-10-22 메인 판정 N8-title·final-I3)
 export const GROUP_COUNTS: Record<Exclude<MetricGroup, "title">, number> = { single: 12, multi: 10, sum_detail: 2, repeat: 2, cumulative_mixed: 1, counter: 2, tz: 4,
   none_plain: 2, none_money: 2, none_ratio: 2, none_cumulative: 1, mixed_max: 2 };
 export const TIME_COUNTS: Record<MetricTime, number> = { range: 12, point: 4, datetime: 4, none: 7, out_of_window: 2, tz: 4 };
 const METRIC_GROUPS: MetricGroup[] = ["single", "multi", "sum_detail", "repeat", "cumulative_mixed", "counter", "tz"];
 const NONE_GROUPS: MetricGroup[] = ["none_plain", "none_money", "none_ratio", "none_cumulative"];
-const EXPECT_TOTAL = 49;
+const EXPECT_TOTAL = 50;   // 반례 x2 의 {타임아웃, 0} 포함(final-I2)
 const MIXED_EVENTS = 5, MIXED_METRICS = 10, MIXED_LABEL_MIN = 15;
 const SERVICES_MIN = 12, SERVICE_MAX_USES = 4;
-const TITLE_CASES = 1;
+const TITLE_CASES = 2;
 // 그룹별 기대 metric 수 [최소, 최대]
 const EXPECT_RANGE: Partial<Record<MetricGroup, [number, number]>> = { single: [1, 1], multi: [2, 3], sum_detail: [2, 3], repeat: [1, 1],
-  cumulative_mixed: [1, 1], counter: [1, 1], tz: [1, 1] };
+  cumulative_mixed: [1, 1], counter: [1, 2], tz: [1, 1] };
 // 스펙 §15에 글이 적힌 사례 — 그 그룹 사례의 글에 그대로 들어 있어야 하고, 시간대 사례는 받은 시각(서울)도 스펙 그대로
 export const SPEC_TEXTS: { group: MetricGroup; text: string; received?: string }[] = [
   { group: "counter", text: "타임아웃 발생, 재시도 20건" },
@@ -49,20 +50,26 @@ export function validateMetricCases(f: MetricCaseFile): string[] {
   const all = Array.isArray(f?.cases) ? f.cases : [];
   const ids = new Set(all.map((c) => c.id));
   if (ids.size !== all.length) p.push("duplicate id");
-  // 보충: 제목에만 건수가 있는 사례 — 본문에는 그 count 숫자가 없고, 기대는 1개
+  // 보충: 제목 건수 사례 — 기대 1개, 제목에 그 count. 본문에 그 count 가 없는 것(t1, N8-title) 하나와 본문에 같은 label·count 가 되풀이된 것(t2, final-I3) 하나
   const titled = all.filter((c) => c.group === "title");
   if (titled.length !== TITLE_CASES) p.push(`title cases ${titled.length} != ${TITLE_CASES}`);
+  let titleOnly = 0, titleRepeat = 0;
   for (const c of titled) {
     if (typeof c.title !== "string" || !c.title.includes(c.service)) p.push(`${c.id} title missing or service not in title`);
     if (!Array.isArray(c.expect) || c.expect.length !== 1) { p.push(`${c.id} title expect != 1`); continue; }
     const m = c.expect[0];
     if (typeof c.title === "string" && !c.title.includes(`${m.count}`)) p.push(`${c.id} count not in title`);
-    if (typeof c.text === "string" && c.text.includes(`${m.count}`)) p.push(`${c.id} count also in body`);
+    const said = `${m.label} ${m.count}건`;
+    if (typeof c.text === "string" && !c.text.includes(`${m.count}`)) titleOnly++;
+    else if (typeof c.text === "string" && typeof c.title === "string" && c.text.includes(said) && c.title.includes(said)) titleRepeat++;
+    else p.push(`${c.id} body has the count but not the title's 'label count건'`);
     const bodyTime = c.time === "range" || c.time === "point" || c.time === "datetime";
     if (c.time === undefined || m.at_body !== bodyTime) p.push(`${c.id} at_body vs time ${c.time}`);
     if (!m.at_body && Date.parse(m.at) !== Date.parse(c.occurred_at)) p.push(`${c.id} at_body false but at != occurred_at`);
     if (c.events !== undefined) p.push(`${c.id} events outside mixed_max`);
   }
+  if (titleOnly !== 1) p.push(`title-only cases ${titleOnly} != 1 (count also in body)`);
+  if (titleRepeat !== 1) p.push(`title repeat cases ${titleRepeat} != 1`);
   const cases = all.filter((c) => c.group !== "title");
   if (cases.length !== 42) p.push(`cases ${cases.length} != 42`);
   for (const c of cases) if (c.title !== undefined) p.push(`${c.id} title outside title group`);
@@ -88,7 +95,7 @@ export function validateMetricCases(f: MetricCaseFile): string[] {
     if (!Array.isArray(c.expect)) { p.push(`${c.id} expect not array`); continue; }
     for (const m of c.expect) {
       if (typeof m?.label !== "string" || m.label.trim() === "" || [...m.label].length > 30) p.push(`${c.id} expect label`);
-      if (!Number.isInteger(m?.count) || m.count < 1 || m.count > 100000) p.push(`${c.id} expect count`);
+      if (!Number.isInteger(m?.count) || m.count < 0 || m.count > 100000) p.push(`${c.id} expect count`);   // 0 = 본문 "0건"(final-I2)
       if (typeof m?.at !== "string" || !ISO_Z.test(m.at)) p.push(`${c.id} expect at`);
       if (typeof m?.at_body !== "boolean") p.push(`${c.id} expect at_body`);
       // 본문 시각을 쓰지 않으면 받은 시각 그대로
@@ -154,7 +161,7 @@ export function judgeMetricCase(c: MetricCase, got: MetricGot): MetricRow {
     eventsOk = judge({ id: c.id, kind: "event", text: "", starts }, { kind: evs.length ? "event" : "none", starts: evs, ends: [] }) === "ok";
   }
   return { id: c.id, group: c.group, time: c.time ?? null, expected: c.expect.length, got: ms.length, matched, extra: ms.length - used.size,
-    time_ok: timeOk, sum_ok: sum(ms) === sum(c.expect), timeout: ms.filter((m) => norm(m.label).includes("타임아웃")).length, events_ok: eventsOk,
+    time_ok: timeOk, sum_ok: sum(ms) === sum(c.expect), timeout: ms.filter((m) => m.count > 0 && norm(m.label).includes("타임아웃")).length, events_ok: eventsOk,
     status: got.status, output_tokens: got.output_tokens };
 }
 
@@ -192,7 +199,7 @@ function runChecks(rows: MetricRow[]): Record<CheckKey, { text: string; ok: bool
     c8_done: frac(mixed, (r) => r.status === "ok" ? 1 : 0, () => 1, 0),
     c8_events: frac(mixed, (r) => r.events_ok ? 1 : 0, () => 1, 0),
     c8_metrics: frac(mixed, (r) => r.matched, (r) => r.expected, 1),
-    // ⑨ 보충(N8-title): 제목 건수 사례 — label·count, 여분 0(시각은 ⑦이 잰다 — N8-t1)
+    // ⑨ 보충(N8-title·final-I3): 제목 건수 사례 t1·t2 — label·count, 여분 0(t2 는 제목·본문 반복을 두 번 받으면 여분 1). 시각은 ⑦이 잰다(N8-t1)
     c9_title: frac(of(["title"]), (r) => r.matched === r.expected && r.extra === 0 ? 1 : 0, () => 1, 0),
   };
 }

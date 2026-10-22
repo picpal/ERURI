@@ -49,11 +49,15 @@ function bodyMs(start: unknown, occurredAt: string, received: number): number | 
 }
 
 // 근접 검증(Ruling N8-prox): count 숫자가 본문에 나오는 자리 바로 앞 20자(label 이 더 길면 그 길이 + 1) 안, 같은 구절(마지막 구분 기호 뒤)에
-// label 이 있어야(공백·대소문자 무시) 받는다. 숫자가 여러 번 나오면 하나라도 만족하면 된다. 구절을 끊어야 "타임아웃 발생, 재시도 20건"의
-// {타임아웃, 20}을 버린다. 숫자는 천 단위 쉼표를 받고, 더 긴 숫자·소수의 일부는 아니다
+// label 이 있어야(공백·대소문자 무시) 받는다. 구절을 끊어야 "타임아웃 발생, 재시도 20건"의 {타임아웃, 20}을 버린다. 숫자는 천 단위 쉼표를 받고,
+// 더 긴 숫자·소수의 일부는 아니다(앞이 숫자나 '숫자+쉼표/점'이면 아님 — 글자 뒤 쉼표 'timeout,6'은 경계가 아니다)
 const NEAR = 20;
-const NUM = /(?<![\d.,])\d{1,3}(?:,\d{3})+(?![\d]|[.,]\d)|(?<![\d.,])\d+(?![\d]|[.,]\d)/g;
+const NUM = /(?<!\d|\d[.,])\d{1,3}(?:,\d{3})+(?![\d]|[.,]\d)|(?<!\d|\d[.,])\d+(?![\d]|[.,]\d)/g;
 const CLAUSE = /[,，.。;；/|·\n()（）\[\]{}]/;
+// 괄호·표 표기(final-I1): 숫자 바로 앞 구분 기호 하나 — 공백만 사이에 둔 여는 괄호·표의 '|', 앞뒤 공백 없이 붙은 쉼표 — 는 건너뛰고,
+// 그 앞의 짝 맞는 괄호 묶음(줄바꿈 없이)을 지운 뒤 창·구절을 본다. 짝 없는 여는 괄호는 경계로 남는다("(오늘 누적 14건)"의 14는 계속 버림)
+const LEAD = /(?:[(\[（|][ \t]*|(?<=\S)[,，])$/;
+const PAIRED = /\([^()\n]*\)|\[[^\[\]\n]*\]|（[^（）\n]*）/g;
 const squash = (s: string) => s.replace(/\s/g, "").toLowerCase();
 // 단위 검증(Ruling N8-unit): 숫자 바로 뒤(공백 건너뜀)가 건수 단위면 받고, 측정 단위(시간 길이·비율·금액·용량·배수)면 버리고, 아무것도 없거나
 // 문장부호면 받는다. 공백 뒤의 다른 낱말("3 발생")은 단위 없음, 붙은 다른 글자("3x")는 버림. 서수(회차·번째)·기간(개월)은 건수가 아니다
@@ -66,29 +70,57 @@ function unitOk(after: string): boolean {
   return rest.length < after.length || /^[\p{P}\p{S}]/u.test(rest);
 }
 
+// 짝 맞는 괄호 묶음을 안쪽부터 지운다("(a(b)c)"도 한 번에 남지 않게)
+function dropPaired(s: string): string {
+  for (let prev = ""; prev !== s;) { prev = s; s = s.replace(PAIRED, ""); }
+  return s;
+}
+
+// 출현 = 본문에 나온 숫자 하나: [위치, 값, 단위 통과, 근접 검증 글(구절)]
+type Occurrence = { at: number; value: number; unit: boolean; clause: string };
+function occurrences(text: string): Occurrence[] {
+  return [...text.matchAll(NUM)].map((m) => {
+    const prefix = dropPaired(text.slice(0, m.index).replace(LEAD, ""));
+    return { at: m.index, value: Number(m[0].replace(/,/g, "")), unit: unitOk(text.slice(m.index + m[0].length)), clause: prefix };
+  });
+}
 // 근접·단위 검증: 같은 출현에서 둘 다 만족해야 한다
-function nearLabel(text: string, label: string, count: number): boolean {
-  const want = squash(label), size = Math.max(NEAR, [...label].length + 1);
-  for (const m of text.matchAll(NUM)) {
-    if (Number(m[0].replace(/,/g, "")) !== count) continue;
-    if (!unitOk(text.slice(m.index + m[0].length))) continue;
-    const before = [...text.slice(0, m.index)].slice(-size).join("");
-    const cut = before.split(CLAUSE).at(-1) ?? "";
-    if (squash(cut).includes(want)) return true;
-  }
-  return false;
+function satisfies(o: Occurrence, label: string, count: number): boolean {
+  if (o.value !== count || !o.unit) return false;
+  const size = Math.max(NEAR, [...label].length + 1);
+  const cut = [...o.clause].slice(-size).join("").split(CLAUSE).at(-1) ?? "";
+  return squash(cut).includes(squash(label));
 }
 
-// 근접·단위 검증 글 = 모델이 본 가린 제목 + 가린 본문(N8-title — 제목에만 있는 건수도 받는다). 줄바꿈이 구절을 갈라 제목 낱말이 본문 숫자에 붙지 않는다
-export function metricCheckText(title: string | null | undefined, body: string): string {
-  return [title, body].filter((s): s is string => !!s && s.trim() !== "").join("\n");
+// 근접·단위 검증 글 = 모델이 본 가린 제목 + 가린 본문(N8-title — 제목에만 있는 건수도 받는다). 줄바꿈이 구절을 갈라 제목 낱말이 본문 숫자에 붙지 않는다.
+// bodyStart = 본문이 시작하는 위치(그 앞은 제목 출현 — final-I3)
+export type CheckText = { text: string; bodyStart: number };
+export function metricCheckText(title: string | null | undefined, body: string): CheckText {
+  const t = title && title.trim() !== "" ? title : null;
+  if (t === null || body.trim() === "") return { text: t ?? body, bodyStart: t === null ? 0 : t.length + 1 };
+  return { text: `${t}\n${body}`, bodyStart: t.length + 1 };
 }
 
-// text = metricCheckText(가린 제목, 가린 본문) — 근접 검증용
-export function normalizeMetrics(raw: unknown, occurredAt: string, text: string): Metric[] {
+// check = metricCheckText(가린 제목, 가린 본문) — 근접 검증용. 글만 주면 모두 본문이다.
+// 출현 일대일(final-I3): 받는 metric 마다 서로 다른 출현을 짝짓는다(모델 순서, 앞 metric 을 다른 출현으로 옮길 수 있으면 옮김 — 최대 짝짓기).
+// 제목 출현은 그 metric 을 만족하는 본문 출현이 없을 때만 — 제목·본문에 되풀이된 같은 건수를 두 번 받지 않는다
+export function normalizeMetrics(raw: unknown, occurredAt: string, check: string | CheckText): Metric[] {
   if (!Array.isArray(raw)) return [];
+  const { text, bodyStart } = typeof check === "string" ? { text: check, bodyStart: 0 } : check;
   const parsed = Date.parse(occurredAt);
   const received = Number.isFinite(parsed) ? parsed : Date.now(); // receivedDay와 같은 대체
+  const occ = occurrences(text);
+  const owner = new Map<number, number>();                         // 출현 색인 → 짝지은 metric(out 색인)
+  const cands: number[][] = [];                                    // out 색인 → 만족하는 출현 색인
+  const take = (k: number, seen: Set<number>): boolean => {
+    for (const o of cands[k]) {
+      if (seen.has(o)) continue;
+      seen.add(o);
+      const cur = owner.get(o);
+      if (cur === undefined || take(cur, seen)) { owner.set(o, k); return true; }
+    }
+    return false;
+  };
   const out: Metric[] = [];
   for (const m of raw) {
     if (out.length >= METRICS_MAX) break;
@@ -98,11 +130,14 @@ export function normalizeMetrics(raw: unknown, occurredAt: string, text: string)
     const label = rawLabel.trim().replace(/\s+/g, " ");
     const len = [...label].length;
     if (len < 1 || len > LABEL_MAX) continue;
-    if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > COUNT_MAX) continue;
-    if (!nearLabel(text, label, count)) continue;
-    const body = bodyMs(start, occurredAt, received);
-    const atBody = body !== null && body - received <= AHEAD_MS && received - body <= BEHIND_MS;
-    out.push({ label, count, at: new Date(atBody ? body : received).toISOString(), at_body: atBody });
+    if (typeof count !== "number" || !Number.isInteger(count) || count < 0 || count > COUNT_MAX) continue;
+    const ok = occ.flatMap((o, i) => satisfies(o, label, count) ? [i] : []);
+    const body = ok.filter((i) => occ[i].at >= bodyStart);
+    cands[out.length] = body.length > 0 ? body : ok;
+    if (!take(out.length, new Set())) continue;
+    const bodyAt = bodyMs(start, occurredAt, received);
+    const atBody = bodyAt !== null && bodyAt - received <= AHEAD_MS && received - bodyAt <= BEHIND_MS;
+    out.push({ label, count, at: new Date(atBody ? bodyAt : received).toISOString(), at_body: atBody });
   }
   return out;
 }
