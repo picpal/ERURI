@@ -3,8 +3,8 @@ import { isOpenAiError, llmUnavailable } from "../_shared/llm-errors.ts";
 import { ampmMarked, confirmedCodes, type EditApplied, type EditRaw, type EditResult, type EditTargetRead, type EventValues, parseEditTarget, revalidate } from "./edit.ts";
 import { type ActionIntent, ACTION_INTENTS, type AggMode, aggModeFor, type ContextTurn, type EditMode, escTags, type FilterOutput, type Filters, formatContext,
   type Intent, type MailFields, type MailReadFields, type Schedule, scheduleOf } from "./filters.ts";
-import { AGG_TEXT, type AggConditions, type AggRaw, type AggregateResult, BAD_CONDITION, bucketLabel, type BucketCount, failedAggregate, okAggregate, parseAggregateContext,
-  revalidateAggregate, revalidateListRequest } from "./aggregate.ts";
+import { AGG_TEXT, type AggConditions, type AggCounts, type AggRaw, type AggregateResult, BAD_CONDITION, bucketLabel, type BucketCount, failedAggregate, okAggregate,
+  parseAggregateContext, revalidateAggregate, revalidateListRequest } from "./aggregate.ts";
 import { type Candidate, judgeSaveRule, matchingCandidates, ruleButton, type RuleOp, type SaveRuleJudgment } from "./save-rule.ts";
 import type { RuleKind, SaveRule } from "../_shared/save-rules.ts";
 export type { ActionIntent, ContextTurn, Filters, Intent, MailFields, MailReadFields, Schedule } from "./filters.ts";
@@ -25,6 +25,11 @@ export type SearchResult = { docs: ChatHit[]; candidates: string[] };
 export type ScoredRow = { item_id: string; sem_sim: number | null; kw_score: number | null };
 // aggregate_items 목록 모드 행(0035, 최신순 50)
 export type AggItem = { item_id: string; title: string | null; sender: string | null; source: string; app_name: string | null; occurred_at: string };
+// aggregate_items 반환(0036 — 계획 K26·K28). 0.18.0 새 칸은 전부 optional(0035 모양·기존 가짜 deps 그대로 통과) — 쓰기 전에 toAggCounts·목록 처리가 채운다.
+// total·칸 count·목록 total = 메시지 수, body_total·칸 body·목록 value = 본문 기준 값, 줄 count = 그 메시지가 이 칸에 더한 metric 값(아니면 null)
+export type AggRpcItem = AggItem & { count?: number | null };
+export type AggRpc = { total: number; body_total?: number; metric_items?: number; metric_unmatched?: number; buckets?: (BucketCount & { body?: number })[];
+  value?: number; items?: AggRpcItem[] };
 export type AnswerInput = { question: string; today: string; documents: ChatHit[]; context?: ContextTurn[]; query?: string };
 export type ChatDeps = {
   authUser(token: string): Promise<string | null>;
@@ -54,14 +59,14 @@ export type ChatDeps = {
   /** 격리 중 게이트 폐기 후보를 복호화(최대 500) — 복호화한 id 가 있으면 감사 read 한 행 */
   ruleCandidates(userId: string): Promise<Candidate[]>;
   ruleRestore(userId: string, itemIds: string[]): Promise<number>;
-  /** 0.17.0 집계(0035 aggregate_items) — bucketKey null 이면 칸별 건수, 있으면 그 칸 목록. 6초에 끊는다(K5) */
-  aggregate(userId: string, c: AggConditions, bucketKey: string | null): Promise<{ total: number; buckets?: BucketCount[]; items?: AggItem[] }>;
+  /** 0.17.0 집계(0035·0036 aggregate_items) — bucketKey null 이면 칸별 건수, 있으면 그 칸 목록. 6초에 끊는다(K5). 형 변환만(채우지 않는다 — K28) */
+  aggregate(userId: string, c: AggConditions, bucketKey: string | null): Promise<AggRpc>;
 };
 export type ChatResult = RawAnswer & { forced_refusal: boolean; dropped_ids: number; hits: string[]; candidates: string[]; citations: Meta[];
   proposals: ProposalCard[]; model: string | null; schedule: Schedule | null; intent: Intent; mail: MailFields | null;
   mail_read: MailReadFields | null; edit: EditResult | null; aggregate: AggregateResult | null; save_rule: SaveRuleJudgment | null };
 export type ChatOutcome = ChatResult & { rewritten: boolean; raw_intent?: Intent; edit_log?: { fields: string[]; marker: boolean };
-  agg_log?: { status: string; total: number; bucket: string | null; clamped: boolean; defaulted: boolean; inherited: boolean };
+  agg_log?: { status: string; total: number; bucket: string | null; clamped: boolean; defaulted: boolean; inherited: boolean; metric_items: number; metric_unmatched: number };
   rule_log?: { op: string; status: string; rules: number; matched: number } };
 
 export const REFUSAL = "저장된 정보에서 확인되지 않음";
@@ -219,28 +224,37 @@ export async function runEdit(userId: string, message: string, deps: ChatDeps, t
 // 집계(스펙 §9 재검증 ①~⑥·RPC·응답): 키워드 0개이고 이어받을 직전 조건도 없으면 null → 호출부가 질문 흐름으로. 무효 조건은 RPC 없이 bad_condition,
 // RPC 오류·6초 abort(K5)는 failed(재검증 뒤 조건은 싣는다). 0건이면 꼬리 줄 ②를 위해 규칙을 읽는다. 로그 칸에 키워드·발신자 없음(§9 "로그")
 type AggLog = NonNullable<ChatOutcome["agg_log"]>;
+// RPC 반환 → 정규화된 숫자(K8·K26): 막대 값은 칸 body(없으면 칸 count). 0035 모양이면 body_total = total·metric 0 — 0.17.0 숫자·문장 그대로
+export function toAggCounts(r: AggRpc): AggCounts {
+  return { total: r.total, body_total: r.body_total ?? r.total, metric_items: r.metric_items ?? 0, metric_unmatched: r.metric_unmatched ?? 0,
+    buckets: (r.buckets ?? []).map((b) => ({ key: b.key, count: b.body ?? b.count })) };
+}
 async function runAggregate(userId: string, deps: ChatDeps, raw: AggRaw | null, today: string, previous: AggConditions | null):
   Promise<{ aggregate: AggregateResult; log: AggLog } | null> {
   const v = revalidateAggregate(raw, today, previous);
   if (v.kind === "question") return null;
   if (v.kind === "bad_condition") {
-    return { aggregate: BAD_CONDITION, log: { status: "bad_condition", total: 0, bucket: null, clamped: false, defaulted: false, inherited: false } };
+    return { aggregate: BAD_CONDITION, log: { status: "bad_condition", total: 0, bucket: null, clamped: false, defaulted: false, inherited: false, metric_items: 0,
+      metric_unmatched: 0 } };
   }
   const c = v.conditions;
-  let r: Awaited<ReturnType<ChatDeps["aggregate"]>>;
+  let r: AggRpc;
   try {
     r = await deps.aggregate(userId, c, null);
   } catch {
     const aggregate = failedAggregate(c);
-    return { aggregate, log: { status: aggregate.status, total: 0, bucket: c.bucket, clamped: c.clamped, defaulted: c.defaulted, inherited: v.inherited } };
+    return { aggregate, log: { status: aggregate.status, total: 0, bucket: c.bucket, clamped: c.clamped, defaulted: c.defaulted, inherited: v.inherited,
+      metric_items: 0, metric_unmatched: 0 } };
   }
   // 규칙 읽기 실패는 집계 실패가 아니다(Ruling A9-hint) — 0건 문장은 그대로, 꼬리 줄 ②(힌트)만 뺀다
   let rules: SaveRule[] | null = [];
   if (r.total === 0) rules = await deps.saveRules(userId).catch(() => null);
-  // N6 임시: 0035 모양(메시지 수 = 값). N7 이 RPC 새 칸(body_total·metric_items·metric_unmatched·칸 body)으로 바꾼다
-  let aggregate = okAggregate(c, { total: r.total, body_total: r.total, metric_items: 0, metric_unmatched: 0, buckets: r.buckets ?? [] }, rules ?? [], today);
+  const n = toAggCounts(r);
+  let aggregate = okAggregate(c, n, rules ?? [], today);
   if (rules === null) aggregate = { ...aggregate, notes: [AGG_TEXT.savedOnly] };
-  return { aggregate, log: { status: aggregate.status, total: aggregate.total, bucket: c.bucket, clamped: c.clamped, defaulted: c.defaulted, inherited: v.inherited } };
+  // metric 은 개수만(§9 "로그") — label·키워드 없음
+  return { aggregate, log: { status: aggregate.status, total: aggregate.total, bucket: c.bucket, clamped: c.clamped, defaulted: c.defaulted, inherited: v.inherited,
+    metric_items: n.metric_items, metric_unmatched: n.metric_unmatched } };
 }
 
 // 저장 규칙 판정(스펙 §9 "저장 규칙 응답"): 쓰지 않는다(카드를 누르기 전에는 바뀌지 않는다). duplicate 면 그 규칙에 맞는 격리 중 폐기 수(복호화·감사는 deps)
@@ -326,6 +340,7 @@ export async function answerQuestion(userId: string, question: string, deps: Cha
 }
 
 // 집계 칸 목록(스펙 §9 "목록"): 응답 conditions 를 ①~⑤로 다시(이어받기 없음) → 그 칸의 최신순 50. 모델·예산 없음. 로그는 칸 종류·건수만
+// 0.18.0: value = 그 칸 본문 기준 값, 줄 count = 그 메시지가 이 칸에 더한 metric 값(0035 모양이면 value = total, count null — K8)
 export async function handleAggregateList(userId: string, body: unknown, deps: ChatDeps): Promise<Response> {
   const b = (typeof body === "object" && body !== null ? body : {}) as { conditions?: unknown; bucket_key?: unknown };
   const v = revalidateListRequest(b.conditions, b.bucket_key, deps.today());
@@ -333,8 +348,9 @@ export async function handleAggregateList(userId: string, body: unknown, deps: C
   try {
     const r = await deps.aggregate(userId, v.conditions, v.bucketKey);
     console.log(JSON.stringify({ chat: "aggregate_list", bucket: v.conditions.bucket, total: r.total }));
-    return Response.json({ status: "ok", bucket_key: v.bucketKey, label: bucketLabel(v.conditions.bucket, v.bucketKey), total: r.total, items: r.items ?? [],
-      truncated: r.total > 50 });
+    const items = (r.items ?? []).map((x) => ({ ...x, count: x.count ?? null }));
+    return Response.json({ status: "ok", bucket_key: v.bucketKey, label: bucketLabel(v.conditions.bucket, v.bucketKey), total: r.total, value: r.value ?? r.total,
+      items, truncated: r.total > 50 });
   } catch {
     console.log(JSON.stringify({ chat: "aggregate_list", bucket: v.conditions.bucket, status: "failed" }));
     return Response.json({ error: "aggregate_failed" }, { status: 500 });

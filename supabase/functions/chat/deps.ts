@@ -5,8 +5,7 @@ import { decrypt } from "../_shared/crypto.ts";
 import { embedWithUsage, toPgVector } from "../_shared/embeddings.ts";
 import { openai } from "../_shared/openai.ts";
 import type { SaveRule } from "../_shared/save-rules.ts";
-import type { BucketCount } from "./aggregate.ts";
-import { type AggItem, ANSWER_SCHEMA, answerUserMessage, type ChatDeps, type Meta, type ProposalCard, type RawAnswer, relevantItems, type ScoredRow,
+import { type AggRpc, ANSWER_SCHEMA, answerUserMessage, type ChatDeps, type Meta, type ProposalCard, type RawAnswer, relevantItems, type ScoredRow,
   type SearchResult, systemPrompt } from "./handler.ts";
 import { parseApplyRow, parseTargetRow } from "./edit.ts";
 import { extractFilters, type Filters, FILTER_MODEL } from "./filters.ts";
@@ -139,7 +138,7 @@ export function chatDeps(sb: SupabaseClient): ChatDeps {
         const { data, error } = await sb.rpc("aggregate_items", { p_user: u, p_keywords: c.keywords, p_sender: c.sender, p_sources: c.sources,
           p_from: c.from, p_to: c.to, p_bucket: c.bucket, p_bucket_key: bucketKey }).abortSignal(ac.signal);
         if (error) throw new Error("aggregate_items " + (ac.signal.aborted ? "timeout" : error.code));
-        return data as { total: number; buckets?: BucketCount[]; items?: AggItem[] };
+        return data as AggRpc;
       } finally {
         clearTimeout(timer);
       }

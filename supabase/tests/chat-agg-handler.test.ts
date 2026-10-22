@@ -2,8 +2,8 @@ import { assert, assertEquals } from "jsr:@std/assert";
 import OpenAI from "npm:openai@7";
 import type { BudgetDeps } from "../functions/_shared/budget.ts";
 import type { SaveRule } from "../functions/_shared/save-rules.ts";
-import { AGG_TEXT, type AggConditions, type AggRaw, type BucketCount } from "../functions/chat/aggregate.ts";
-import { type AggItem, type ChatDeps, handleChat } from "../functions/chat/handler.ts";
+import { AGG_TEXT, type AggConditions, type AggRaw } from "../functions/chat/aggregate.ts";
+import { type AggItem, type AggRpc, type ChatDeps, handleChat } from "../functions/chat/handler.ts";
 import type { Candidate } from "../functions/chat/save-rule.ts";
 
 // chat handler 0.17.0 라우팅(스펙 §9 "채팅 저장 규칙·집계 질문") — 가짜 deps, 오늘 2026-10-21. 값은 합성 문구만
@@ -18,7 +18,7 @@ const raw = (o: AggRaw = {}): AggRaw => ({ keywords: ["합성PAY"], sender: null
 const CTX: AggConditions = { keywords: ["합성PAY"], sender: null, sources: [], from: "2026-10-15", to: "2026-10-21", bucket: "hour", defaulted: true, clamped: false };
 
 type Opts = { intent?: string; aggregate?: AggRaw | null; saveRule?: { kind: unknown; value: unknown } | null; sources?: string[];
-  rpc?: { total: number; buckets?: BucketCount[]; items?: AggItem[] } | Error; rules?: SaveRule[] | Error; cands?: Candidate[] };
+  rpc?: AggRpc | Error; rules?: SaveRule[] | Error; cands?: Candidate[] };
 function adeps(o: Opts = {}) {
   const seen = { agg: [] as unknown[], withIntent: [] as boolean[], aggregate: [] as { c: AggConditions; key: string | null }[], saveRules: 0, cands: 0,
     search: 0, answer: 0, audit: 0, remove: [] as string[], add: [] as string[][], lines: [] as string[][] };
@@ -287,10 +287,11 @@ Deno.test("logs: intent, context count, inherited, status, total, bucket, clampe
   const a = adeps({ intent: "aggregate", aggregate: raw({ sender: "합성은행", bucket: "hour" }), rpc: { total: 5, buckets: [{ key: "14", count: 5 }] } });
   const one = await call(a.d, { question: "합성은행 합성PAY 몇 시에 많았어", intents: AGG, context: [{ question: "합성 앞 질문", answer: "합성 앞 답" }] });
   assertEquals(one.lines.map((l) => JSON.parse(l)), [{ chat: "intent", intent: "aggregate", context: 1, inherited: false, status: "ok", total: 5, bucket: "hour",
-    clamped: false, defaulted: true }]);
+    clamped: false, defaulted: true, metric_items: 0, metric_unmatched: 0 }]);
   const b = adeps({ intent: "aggregate", aggregate: raw({ keywords: ["A", "합성PAY"] }) });
   assertEquals(JSON.parse((await call(b.d, { question: "합성PAY 몇 건", intents: AGG })).lines[0]),
-    { chat: "intent", intent: "aggregate", context: 0, inherited: false, status: "bad_condition", total: 0, bucket: null, clamped: false, defaulted: false });
+    { chat: "intent", intent: "aggregate", context: 0, inherited: false, status: "bad_condition", total: 0, bucket: null, clamped: false, defaulted: false,
+      metric_items: 0, metric_unmatched: 0 });
   const s = adeps({ intent: "save_rule_add", saveRule: { kind: "sender", value: "합성PAY" }, rules: [rule("r-3", "sender", "합성PAY")],
     cands: [cand("i-1", { sender: "합성PAY" })] });
   const two = await call(s.d, { question: "앞으로 합성PAY에서 온 문자는 저장해", intents: AGG });
@@ -313,4 +314,75 @@ Deno.test("llm_unavailable on the filter call → 503 llm_unavailable (same as q
   const r = await call(d, { question: "합성PAY 몇 건", intents: AGG, aggregate_context: CTX });
   assertEquals([r.status, r.j, seen.aggregate.length, seen.lines.length], [503, { error: "llm_unavailable" }, 0, 1]);
   assertEquals(r.lines.map((l) => JSON.parse(l)), [{ chat: "llm_unavailable", reason: "llm_auth" }]);
+});
+
+// 0.18.0 본문 건수(스펙 §9 "본문 건수" — RPC 반환·응답·문장·꼬리 줄 ③·목록·로그, 계획 K8·K26·K28). 막대 값은 칸 body(없으면 칸 count)
+const hourOf = (o: AggRaw = {}) => raw({ bucket: "hour", ...o });
+Deno.test("aggregate with metrics: RPC body fields → response body_total 37, buckets/top body values, sentence with '· 본문 기준 37건', log metric_items/metric_unmatched only", async () => {
+  const { d } = adeps({ intent: "aggregate", aggregate: hourOf({ keywords: ["합성PAY", "타임아웃"] }),
+    rpc: { total: 12, body_total: 37, metric_items: 9, metric_unmatched: 1, buckets: [{ key: "14", count: 5, body: 15 }, { key: "09", count: 4, body: 10 }, { key: "15", count: 3, body: 12 }] } });
+  const { status, j, lines } = await call(d, { question: "합성PAY 타임아웃 몇 시에 많았어", intents: AGG });
+  const a = j.aggregate;
+  assertEquals([status, a.status, a.total, a.body_total], [200, "ok", 12, 37]);
+  assertEquals(a.top, [{ key: "14", label: "14시", count: 15 }, { key: "15", label: "15시", count: 12 }, { key: "09", label: "9시", count: 10 }]);   // 칸 body — 메시지 수 5·3·4 가 아니다(K26)
+  assertEquals(a.buckets.find((b: { key: string }) => b.key === "14").count, 15);
+  assert((a.sentence as string).includes("메시지 12건 · 본문 기준 37건 — 14시대가 15건"), a.sentence);
+  assertEquals(a.sentence, "최근 7일 '합성PAY·타임아웃' 메시지 12건 · 본문 기준 37건 — 14시대가 15건으로 가장 많았어요");
+  assertEquals(a.notes, [AGG_TEXT.savedOnly]);
+  assertEquals(lines.map((l) => JSON.parse(l)), [{ chat: "intent", intent: "aggregate", context: 0, inherited: false, status: "ok", total: 12, bucket: "hour",
+    clamped: false, defaulted: true, metric_items: 9, metric_unmatched: 1 }]);
+  for (const l of lines) assert(!l.includes("합성") && !l.includes("타임아웃") && !l.includes("body"), l);
+});
+
+Deno.test("aggregate ['타임아웃','오류'] with one message (6 + 2) → total 1, body_total 8, top {14, 8}, sentence '메시지 1건 · 본문 기준 8건 — 14시대가 8건'", async () => {
+  const { d } = adeps({ intent: "aggregate", aggregate: hourOf({ keywords: ["타임아웃", "오류"] }),
+    rpc: { total: 1, body_total: 8, metric_items: 1, metric_unmatched: 0, buckets: [{ key: "14", count: 1, body: 8 }] } });
+  const a = (await call(d, { question: "타임아웃 오류 몇 시에 많았어", intents: AGG })).j.aggregate;
+  assertEquals([a.total, a.body_total, a.top], [1, 8, [{ key: "14", label: "14시", count: 8 }]]);
+  assertEquals(a.sentence, "최근 7일 '타임아웃·오류' 메시지 1건 · 본문 기준 8건 — 14시대가 8건으로 가장 많았어요");
+});
+
+Deno.test("aggregate service name only: metric_items 0, metric_unmatched 4 → body_total null, 0.17.0 sentence, notes end with countedMessages", async () => {
+  const m = adeps({ intent: "aggregate", aggregate: hourOf(), rpc: { total: 5, body_total: 5, metric_items: 0, metric_unmatched: 4, buckets: [{ key: "10", count: 5, body: 5 }] } });
+  const old = adeps({ intent: "aggregate", aggregate: hourOf(), rpc: { total: 5, buckets: [{ key: "10", count: 5 }] } });
+  const one = await call(m.d, { question: "합성PAY 몇 시에 많았어", intents: AGG });
+  const two = await call(old.d, { question: "합성PAY 몇 시에 많았어", intents: AGG });
+  const a = one.j.aggregate;
+  assertEquals([a.status, a.total, a.body_total, a.top], ["ok", 5, null, [{ key: "10", label: "10시", count: 5 }]]);
+  assertEquals(a.sentence, two.j.aggregate.sentence);
+  assertEquals(a.sentence, "최근 7일 '합성PAY' 메시지 5건 — 10시대가 5건으로 가장 많았어요");
+  assertEquals(a.notes, [AGG_TEXT.savedOnly, AGG_TEXT.countedMessages]);
+  assertEquals(two.j.aggregate.notes, [AGG_TEXT.savedOnly]);
+  assertEquals([JSON.parse(one.lines[0]).metric_items, JSON.parse(one.lines[0]).metric_unmatched], [0, 4]);
+});
+
+Deno.test("aggregate on a 0035-shaped RPC result (no new fields) → body_total null, sentence byte-identical to 0.17.0", async () => {
+  const { d } = adeps({ intent: "aggregate", aggregate: hourOf(), rpc: { total: 3, buckets: [{ key: "14", count: 3 }] } });
+  const { j, lines } = await call(d, { question: "합성PAY 몇 시에 많았어", intents: AGG });
+  const a = j.aggregate;
+  assertEquals([a.status, a.total, a.body_total, a.top, a.notes], ["ok", 3, null, [{ key: "14", label: "14시", count: 3 }], [AGG_TEXT.savedOnly]]);
+  assertEquals(a.sentence, "최근 7일 '합성PAY' 메시지 3건 — 14시대가 3건으로 가장 많았어요");
+  assertEquals([JSON.parse(lines[0]).metric_items, JSON.parse(lines[0]).metric_unmatched], [0, 0]);
+});
+
+Deno.test("aggregate failed → log metric_items 0, metric_unmatched 0", async () => {
+  const { d } = adeps({ intent: "aggregate", aggregate: hourOf(), rpc: new Error("aggregate_items timeout") });
+  const { j, lines } = await call(d, { question: "합성PAY 몇 시에 많았어", intents: AGG });
+  assertEquals([j.aggregate.status, j.aggregate.body_total], ["failed", null]);
+  const l = JSON.parse(lines[0]);
+  assertEquals([l.status, l.metric_items, l.metric_unmatched], ["failed", 0, 0]);
+});
+
+Deno.test("/chat/aggregate: value and per-line count passed through; 0035 shape → value = total, count null", async () => {
+  const a: AggItem = { item_id: "i-a", title: "합성PAY 안내", sender: null, source: "MESSAGES", app_name: null, occurred_at: "2026-10-20T05:00:00Z" };
+  const b: AggItem = { ...a, item_id: "i-b", occurred_at: "2026-10-20T05:30:00Z" };
+  const m = adeps({ rpc: { total: 2, value: 7, items: [{ ...b, count: null }, { ...a, count: 6 }] } });
+  const one = await call(m.d, { conditions: CTX, bucket_key: "14" }, "chat/aggregate");
+  assertEquals([one.status, one.j.status, one.j.total, one.j.value, one.j.truncated], [200, "ok", 2, 7, false]);
+  assertEquals(one.j.items, [{ ...b, count: null }, { ...a, count: 6 }]);
+  assertEquals(one.lines.map((l) => JSON.parse(l)), [{ chat: "aggregate_list", bucket: "hour", total: 2 }]);   // 로그 그대로 — value·count 없음
+  const o = adeps({ rpc: { total: 2, items: [b, a] } });
+  const two = await call(o.d, { conditions: CTX, bucket_key: "14" }, "chat/aggregate");
+  assertEquals([two.j.total, two.j.value, two.j.items.map((x: { count: unknown }) => x.count), two.j.truncated], [2, 2, [null, null], false]);
+  assertEquals(two.j.items.map((x: { item_id: string }) => x.item_id), ["i-b", "i-a"]);
 });

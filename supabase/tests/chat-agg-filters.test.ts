@@ -25,6 +25,11 @@ Deno.test("filterRequest without agg is byte-identical to 0.16.x (fixed hashes)"
   assertEquals(await sha(filterRequest("q", "2026-10-04", [], true, null, null)), "cfd4768ad2dd6241c0869296ba1d1176e7dbc7f09a3fbeeb6ce8e42b51af2f82");
 });
 
+Deno.test("0.17.0 agg filter requests unchanged in 0.18.0 (fixed hashes)", async () => {
+  assertEquals(await sha(filterRequest("q", "2026-10-21", [], true, null, { previous: null })), "e53044ad14ea0035bb3afecdfaf9fd224ceb77679b48ee92f379b0c0bfa76900");
+  assertEquals(await sha(filterRequest("날짜별로는?", "2026-10-21", ctx1, true, null, { previous: prev })), "392b46285c4bb39532250961e20dd75001c491c003e3f5460df8cbe80da53ea2");
+});
+
 Deno.test("filterRequest with agg: 8-value enum (9 with edit), aggregate/save_rule nullable and required, AGG_RULE last in system", () => {
   const agg = { previous: null };
   const cases: [Req, string, string, Schema, readonly string[]][] = [
