@@ -3,7 +3,7 @@ import { type ACtx, agg, asUser, attempt, chunk, kw, legacy, listIds, one, pick,
 
 // 0036 SQL 사례(0.18.0 본문 건수 — 스펙 §8 item_metrics·0036, §9 RPC, §15 METRIC-db): PGlite(로컬, metric-sql.test.ts)와 호스팅 롤백 트랜잭션(metric-db.test.ts)이 같은 사례를 돈다.
 // 사례마다 실행자가 롤백한다. 값은 합성 글·키만(멱등 키 = `<tag>:<source>-<k>`, 낱말 = kw(c) 사례 고유)
-export const MIGRATION_0036 = new URL("../migrations-pending/0036_item_metrics.sql", import.meta.url);
+export const MIGRATION_0036 = new URL("../migrations/0036_item_metrics.sql", import.meta.url);   // D1 에서 migrations-pending/ 에서 옮김
 
 // 배열은 JSON 글로 넘겨 SQL 에서 jsonb 로(PGlite·postgres.js 직렬화 차이를 피한다). 반환 = 넣은 행 수
 export const saveMetrics = async (c: ACtx, item: string, metrics: unknown, user = c.user) =>

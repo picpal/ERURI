@@ -2,7 +2,7 @@ import { AGG_CASES, type Q } from "./_agg-sql.ts";
 import { noVector, pglite0035 } from "./_agg-pglite.ts";
 import { METRIC_CASES, MIGRATION_0036 } from "./_metric-sql.ts";
 
-// 0036(0.18.0 본문 건수)을 로컬 PGlite 에서: 0035 기반(_agg-pglite.ts, K13) + 0036(migrations-pending — 호스팅에는 적용하지 않는다).
+// 0036(0.18.0 본문 건수)을 로컬 PGlite 에서: 0035 기반(_agg-pglite.ts, K13) + 0036(D1 에서 migrations/ 로 옮겨 호스팅에 적용).
 // 0035 사례 전부(AGG_CASES)를 0036 위에서 다시 돈다(배포 조합 회귀, K12). 호스팅은 metric-db.test.ts. hostedOnly 사례는 건너뛴다
 const db = await pglite0035();
 await db.exec(noVector(await Deno.readTextFile(MIGRATION_0036)));
