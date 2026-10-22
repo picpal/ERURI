@@ -41,6 +41,25 @@ Deno.test("proximity (Ruling N8-prox): label must be in the same clause within t
   assertEquals(one("결제 승인 게이트웨이 응답 타임아웃", 6, "1) 결제 승인 게이트웨이 응답 타임아웃 6건"), [["결제 승인 게이트웨이 응답 타임아웃", 6]]); // 긴 label 은 그 길이까지
 });
 
+Deno.test("unit (Ruling N8-unit): right after the count number a count unit or no unit → kept; a measurement unit → dropped", () => {
+  const one = (label: string, count: number, text: string) => normalizeMetrics([{ label, count, start: null, end: null }], R, text).map((m) => [m.label, m.count]);
+  assertEquals(one("응답 지연", 3, "[합성배치] 응답 지연 3초 이상 발생"), []);
+  assertEquals(one("타임아웃", 6, "타임아웃 6건"), [["타임아웃", 6]]);
+  assertEquals(one("오류", 2, "오류 2 회"), [["오류", 2]]);
+  assertEquals(one("실패", 5, "실패 5"), [["실패", 5]]);
+  assertEquals(one("지연", 120, "지연 120ms"), []);
+  assertEquals(one("타임아웃", 1234, "타임아웃 1,234건"), [["타임아웃", 1234]]);
+  // 그 밖 건수 단위·단위 없음(문장부호)·측정 단위(공백 뒤도)·서수·기간
+  for (const t of ["재시도 3번", "경고 3개", "접속 3차례", "실패 3명", "retry 3 times", "エラー 3件", "오류 3, 경고 1", "오류 3)", "오류 3 발생"]) {
+    assertEquals(one(t.split(" ")[0], 3, t).length, 1, t);
+  }
+  for (const t of ["지연 3 초", "지연 3분", "지연 3시간", "점검 3일", "오류 3%", "환불 3원", "용량 3KB", "지연 3 ms", "지연 3s", "오류 3회차", "오류 3번째", "보관 3개월", "증가 3배"]) {
+    assertEquals(one(t.split(" ")[0], 3, t), [], t);
+  }
+  // 한 출현이라도 근접·단위 둘 다 만족하면 받음
+  assertEquals(one("지연", 3, "지연 3초, 지연 3건"), [["지연", 3]]);
+});
+
 Deno.test("HH:MM → received Seoul day; received 00:30 KST uses that Seoul date", () => {
   assertEquals(at1("14:00"), { label: "타임아웃", count: 6, at: "2026-10-22T05:00:00.000Z", at_body: true });
   assertEquals(at1("00:10", "2026-10-21T15:30:00Z").at, "2026-10-21T15:10:00.000Z"); // 받음 10/22 00:30 KST → 10/22 00:10 KST

@@ -55,10 +55,23 @@ const NEAR = 20;
 const NUM = /(?<![\d.,])\d{1,3}(?:,\d{3})+(?![\d]|[.,]\d)|(?<![\d.,])\d+(?![\d]|[.,]\d)/g;
 const CLAUSE = /[,，.。;；/|·\n()（）\[\]{}]/;
 const squash = (s: string) => s.replace(/\s/g, "").toLowerCase();
+// 단위 검증(Ruling N8-unit): 숫자 바로 뒤(공백 건너뜀)가 건수 단위면 받고, 측정 단위(시간 길이·비율·금액·용량·배수)면 버리고, 아무것도 없거나
+// 문장부호면 받는다. 공백 뒤의 다른 낱말("3 발생")은 단위 없음, 붙은 다른 글자("3x")는 버림. 서수(회차·번째)·기간(개월)은 건수가 아니다
+const COUNT_UNIT = /^(?:건|회(?!차)|번(?!째)|개(?!월)|차례|명|件|times?(?![a-z]))/i;
+const MEASURE = /^(?:초|분|시간|시|일|주|개월|달|년|원|달러|퍼센트|배|%|(?:ms|s|sec|secs|seconds?|min|mins|minutes?|h|hr|hrs|hours?|kb|mb|gb|tb|bytes?)(?![a-z]))/i;
+function unitOk(after: string): boolean {
+  const rest = after.replace(/^\s+/, "");
+  if (rest === "" || COUNT_UNIT.test(rest)) return true;
+  if (MEASURE.test(rest)) return false;
+  return rest.length < after.length || /^[\p{P}\p{S}]/u.test(rest);
+}
+
+// 근접·단위 검증: 같은 출현에서 둘 다 만족해야 한다
 function nearLabel(text: string, label: string, count: number): boolean {
   const want = squash(label), size = Math.max(NEAR, [...label].length + 1);
   for (const m of text.matchAll(NUM)) {
     if (Number(m[0].replace(/,/g, "")) !== count) continue;
+    if (!unitOk(text.slice(m.index + m[0].length))) continue;
     const before = [...text.slice(0, m.index)].slice(-size).join("");
     const cut = before.split(CLAUSE).at(-1) ?? "";
     if (squash(cut).includes(want)) return true;
