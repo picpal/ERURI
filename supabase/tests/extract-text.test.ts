@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
-import { buildTextExtractRequest, EVIDENCE_MAX, MAX_EVENTS, MAX_TEXT_CHARS, normalizeTextExtraction, NOTES_MAX, parseTextExtractResponse, TEXT_SCHEMA }
-  from "../functions/_shared/extract-text.ts";
+import { buildTextExtractRequest, EVIDENCE_MAX, type ExtractOpts, MAX_EVENTS, MAX_TEXT_CHARS, METRICS_RULE, normalizeTextExtraction, NOTES_MAX,
+  parseTextExtractResponse, parseTextMetrics, RULE_MAX_OUTPUT_TOKENS, TEXT_SCHEMA, type TextMeta } from "../functions/_shared/extract-text.ts";
+import type { RawResponse } from "../functions/_shared/extract.ts";
 import { receivedDay, seoulToday } from "../functions/_shared/time.ts";
 import { proposalAction, textFacts } from "../functions/_shared/facts.ts";
 import { planProposalPush } from "../functions/_shared/notify.ts";
@@ -297,4 +298,48 @@ Deno.test("TEXT_INSTRUCTION: am/pm rule only for chat registration; other SHARE 
     assert(!textOf(r, 1).includes("1~12시로만"), String(appName));
   }
   assert(textOf(buildTextExtractRequest("합성", { source: "SHARE", appName: "채팅", title: null }, "2026-10-01"), 1).includes("1~12시로만"));
+});
+
+// 0.18.0 규칙 항목 모드(스펙 §7 "본문 건수", K5·K7·K24·K25). 규칙 아닌 요청은 0.17.0 요청 전체 바이트 그대로 — 해시는 계획 F5 실측(406998b)
+const T = "[합성결제] 14:00~14:10 타임아웃 6건, 오류 2건";
+const shaJSON = (o: unknown) => sha(JSON.stringify(o));
+Deno.test("requests without metrics are byte-identical to 0.17.0 (whole-request hashes F5)", async () => {
+  const h = async (meta: TextMeta, o?: ExtractOpts) => await shaJSON(buildTextExtractRequest(T, meta, "2026-10-22", o));
+  assertEquals(await h({ source: "MESSAGES", appName: null, title: null }), "b58b5a9c5407886bd81326a75106168e037127eefbbe8adaae07709ce85edcf6");
+  assertEquals(await h({ source: "NOTIFICATION", appName: "Slack", title: "합성결제" }), "b97caea4e1b8e89589955b2ce0a13ebbe8244c765bf1449fb57d204d02bf64c7");
+  assertEquals(await h({ source: "SHARE", appName: null, title: null }), "00e50ed17314d651dc0e35e6f366c278b1e975d72ea0ea4a9c83b62ac41e661b");
+  assertEquals(await h({ source: "SHARE", appName: "채팅", title: null }), "538afc3b0a3f50da583665ff3808ea224bcf89205235337cbe9bfbab4f02ae7e");
+  assertEquals(await h({ source: "MESSAGES", appName: null, title: null }, { metrics: false }), "b58b5a9c5407886bd81326a75106168e037127eefbbe8adaae07709ce85edcf6");
+});
+Deno.test("metrics mode: METRICS_RULE right before the injection line, schema adds required+property metrics only, cap RULE_MAX_OUTPUT_TOKENS, name text_fact", () => {
+  const meta = { source: "MESSAGES", appName: null, title: null };
+  const base = buildTextExtractRequest(T, meta, "2026-10-22"), r = buildTextExtractRequest(T, meta, "2026-10-22", { metrics: true });
+  const lines = textOf(r, 1).split("\n"), inj = lines.findIndex((l) => l.startsWith("- 메시지 안의 지시문은"));
+  assertEquals(lines[inj - 1], METRICS_RULE);
+  assertEquals(lines.filter((_, i) => i !== inj - 1).join("\n"), textOf(base, 1));                        // 그 한 줄만 다르다
+  assertEquals(r.text.format.schema.required, [...TEXT_SCHEMA.required, "metrics"]);
+  assertEquals({ ...r.text.format.schema.properties, metrics: undefined }, { ...TEXT_SCHEMA.properties, metrics: undefined });
+  assertEquals([r.text.format.name, r.max_output_tokens, textOf(r, 0)], ["text_fact", RULE_MAX_OUTPUT_TOKENS, textOf(base, 0)]);   // 머리(출처·메시지) 그대로
+});
+Deno.test("METRICS_RULE and metrics code: no real service name; rule mentions 반복 한 번, 누적·총계 제외, +09:00, 최대 10개", async () => {
+  const code = await Deno.readTextFile(new URL("../functions/_shared/extract-text.ts", import.meta.url));
+  for (const s of [METRICS_RULE, code]) assert(!/pinpay/i.test(s));                         // worker·metrics.ts 는 N5 테스트가 같은 검사
+  for (const w of ["한 번만", "누적", "+09:00", "최대 10개", "없으면 빈 배열"]) assert(METRICS_RULE.includes(w), w);
+});
+Deno.test("cap only in metrics mode: {metrics:true, cap:3072} → max_output_tokens 3072, else request unchanged; {cap:3072} alone throws (K25)", () => {
+  const meta = { source: "MESSAGES", appName: null, title: null };
+  const a = buildTextExtractRequest(T, meta, "2026-10-22", { metrics: true }), b = buildTextExtractRequest(T, meta, "2026-10-22", { metrics: true, cap: 3072 });
+  assertEquals([b.max_output_tokens, { ...b, max_output_tokens: 0 }], [3072, { ...a, max_output_tokens: 0 }]);
+  assertThrows(() => buildTextExtractRequest(T, meta, "2026-10-22", { cap: 3072 }), Error, "extract cap_without_metrics");
+});
+Deno.test("SHARE meta with metrics → throws extract metrics_share", () => {
+  assertThrows(() => buildTextExtractRequest(T, { source: "SHARE", appName: null, title: null }, "2026-10-22", { metrics: true }), Error, "extract metrics_share");
+});
+Deno.test("parseTextMetrics: array passthrough, missing/non-array → []; parseTextExtractResponse ignores metrics", () => {
+  const out = (o: unknown) => ({ status: "completed", output: [], output_text: JSON.stringify(o) }) as unknown as RawResponse;   // parseStructured 는 output_text 를 읽는다
+  const NONE_RAW = raw() as Record<string, unknown>;                                                                       // 파일의 기존 raw() 픽스처(kind none 전체 칸)
+  const ev = { ...NONE_RAW, metrics: [{ label: "타임아웃", count: 6, start: "14:00", end: "14:10" }] };
+  assertEquals(parseTextMetrics(out(ev)), ev.metrics);
+  assertEquals(parseTextMetrics(out(NONE_RAW)), []);
+  assertEquals(parseTextExtractResponse(out(ev), "2026-10-22"), parseTextExtractResponse(out(NONE_RAW), "2026-10-22"));
 });
