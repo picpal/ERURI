@@ -387,3 +387,9 @@ r1(U2 지시 수정 1회 — "날짜도 적혀 있으면" 뒤에 연도 없는 �
 | n_ambiguous | 1/3 | 일치 1회 = 모델 sender null → 새 가드가 비움. 실패 2회 = 모델이 두 이름 중 하나("합성상점")를 sender 로 채우고 `count` 3 → 지금 글이 그 이름을 말하므로 가드가 첫 검사에서 돌아감(탐침 호출 2회로 확인) |
 
 **② 22/27 — 미달**. 추가 수정 없이 멈춤(메인 판정). INTENT 회귀(`--mode both --base 0.18 --runs 4`, 22:08~22:51 KST): new_wrong 0 · pass true, 0.19.0 쪽 gate pass·gate_cases true(gates.md INTENT-0190 행).
+
+**수정 라운드 2**(`79ff3d1`·`866500e`, 메인 판정 E2 Ruling 79·80행): `guardContextSender`가 (a) 두 이름 판정을 "지금 글이 sender 를 말하면 그대로" 검사보다 먼저 한다 — 모델 sender 가 두 이름 중 하나여도 대상 칸·`count` 비움. (b) 숫자 `count`가 있고 지금 글이 맥락 발신자(띄어쓰기 무시)도 지시어·위치말(그·이·저·요·해당 + 띄어쓰기, 그거·그것·거기·그쪽·아까·방금·위에·앞에·같은 등)도 말하지 않으면 맥락에서 채운 sender 와 지금 글에 없는 제목 단어를 비운다. 맥락이 없거나 `count` 칸이 없는 출력은 그대로.
+
+- ② `--part count --runs 3`(23:41 KST, `866500e`): **27/27 — 통과**(9사례 모두 3/3).
+- INTENT 회귀(23:42~00:28 KST, `866500e`): **new_wrong 0 · pass true**, 기준선·0.19.0 둘 다 gate pass·gate_cases true. 0.19.0 쪽 read·target 1.
+- 무효 실행 한 번: `79ff3d1`로 돌린 INTENT 회귀는 pass 였으나 기준선(`stripCount` 요청)의 출력에는 `count` 칸이 없어 `undefined !== null`로 (b)가 켜져 s15("번역해줘")·s28("요약한 거 번역해줘")의 맥락 발신자를 지웠다(기준선 12/12 틀림). `866500e`에서 (b)를 숫자 `count`일 때만으로 고치고 다시 쟀다.
