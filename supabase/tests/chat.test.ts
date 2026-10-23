@@ -716,6 +716,9 @@ Deno.test("guardContextSender: a context sender the current message does not nam
   assertEquals(g("그 메일 세 통 요약해줘", { count: 3 }), mr({ count: 3 }));
   // 'X랑' 표지가 지시어·시간 말을 이름으로 잡지 않는다
   for (const q of ["그거랑 요약해줘", "오늘이랑 어제 거 요약해줘"]) assertEquals(g(q), mr(), q);
+  // S7 리뷰 I1: 'X랑' 으로만 잡은 이름은 다른 표지 이름과 함께일 때만 센다 — 혼자서는 sender 를 바꾸지 않는다("번역이랑·내용이랑"은 이름이 아니다)
+  for (const q of ["그 메일 번역이랑 요약해줘", "그 메일 요약이랑 번역해줘", "그거 내용이랑 첨부 요약해줘", "그 메일 본문이랑 첨부파일 읽어줘",
+    "거기서 온 거 제목이랑 내용 요약해줘", "그 메일 원문이랑 같이 번역해줘"]) assertEquals(g(q), mr(), q);
 });
 Deno.test("parseFilterOutput: mail_summary runs guardContextSender with the context; other intents and requests without context are untouched", () => {
   const ctx = [{ question: "합성은행에서 온 메일 뭐 있어?", answer: "합성은행에서 보안 안내 메일이 왔어요." }];

@@ -337,7 +337,7 @@ function aggFilterRequest(question: string, today: string, weekday: string, cont
 // 맥락 발신자 가드(스펙 §7 "지목", 2026-10-11 G1 r2): 맥락 합성은행 + "합성레터 거 요약해줘" 에 필터가 맥락 발신자를 30회 중 21회 채웠다.
 // sender 가 맥락에는 있고 지금 글에는 없는데 지금 글이 다른 이름('X 거·X 것·X 쪽·X에서 온·X 메일')을 말하면 — 이름 하나면 그 이름, 둘 이상이면 대상 칸을 모두 비워
 // mail-read 의 needs_target 되묻기로 보낸다(틀린 메일을 읽느니 되묻기). 두 경우 모두 지금 글이 대상을 말했으므로 target_in_message 참(앞 요약 토큰을 재사용하지 않게)
-const NAME_BEFORE_MARK = /(?<![가-힣A-Za-z0-9._@+-])([가-힣A-Za-z0-9][가-힣A-Za-z0-9._@+-]*?)(?:\s*(?:거|것|꺼|걸)(?:로|를|을|는|은|도|만|랑|이랑|하고)?(?=$|[\s,.!?])|\s*쪽(?=$|[\s,.!?]|으로|에서)|(?:에서|한테서|에게서|한테|에게)(?=$|[\s,.!?])|\s+이?메일|(?:이랑|랑)(?=\s)|(?<!이)메일)/g;
+const NAME_BEFORE_MARK = /(?<![가-힣A-Za-z0-9._@+-])([가-힣A-Za-z0-9][가-힣A-Za-z0-9._@+-]*?)(?:\s*(?:거|것|꺼|걸)(?:로|를|을|는|은|도|만|랑|이랑|하고)?(?=$|[\s,.!?])|\s*쪽(?=$|[\s,.!?]|으로|에서)|(?:에서|한테서|에게서|한테|에게)(?=$|[\s,.!?])|\s+이?메일|(이랑|랑)(?=\s)|(?<!이)메일)/g;
 const NOT_NAME = new Set(["그거", "이거", "저거", "그것", "이것", "저것", "거기", "여기", "저기", "그쪽", "이쪽", "저쪽", "아까", "방금", "최근", "가장", "제일", "마지막",
   "마지막으로", "처음", "어제", "오늘", "그제", "그저께", "엊그제", "지난주", "이번주", "지난달", "이번달", "이번", "지난", "저번", "다음", "다른", "새로", "같은", "해당",
   "아래", "나머지", "받은", "보낸", "들어간", "들어온", "광고", "프로모션", "안읽은", "읽은", "영어", "영문", "한글", "한국어", "우리말", "전체", "모든", "전부", "그런",
@@ -357,14 +357,16 @@ export function guardContextSender(mr: MailReadFields, question: string, context
   const s = squash(mr.sender);
   if (s === "" || squash(question).includes(s) || !squash(context.map((t) => `${t.question}\n${t.answer}`).join("\n")).includes(s)) return mr;
   const words = new Set(mr.subject_words.map(squash));
-  const names = new Map<string, string>();
+  // 'X랑' 표지(m[2])로만 잡은 이름은 다른 표지로 잡은 이름이 하나 이상 있을 때만 센다 — 두 이름 판정 전용(DP13, S7 리뷰 I1: "번역이랑·내용이랑"이 sender 를 덮어썼다)
+  const names = new Map<string, string>(), marked = new Set<string>();
   for (const m of question.matchAll(NAME_BEFORE_MARK)) {
     const n = m[1], k = squash(n);
     if (n.length < 2 || NOT_NAME.has(n) || NOT_NAME.has(k) || TIME_WORD.test(n) || ADNOMINAL.test(n) || AFTER_DEMONSTRATIVE.test(question.slice(0, m.index)) ||
       words.has(k) || s.includes(k) || k.includes(s)) continue;
     names.set(k, n);
+    if (m[2] === undefined) marked.add(k);
   }
-  if (names.size === 0) return mr;
+  if (marked.size === 0) return mr;
   if (names.size === 1) return { ...mr, sender: [...names.values()][0], target_in_message: true };
   return { ...mr, sender: null, subject_words: [], received_from: null, received_to: null, latest: false, count: null, target_in_message: true };
 }
