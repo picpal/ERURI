@@ -352,24 +352,36 @@ const ADNOMINAL = /[한은는던된준낸온운린진쓴든본간할될을]$/;
 const AFTER_DEMONSTRATIVE = /(?:^|[\s,.!?])(?:그|이|저|요|그런|이런|저런|해당)\s+$/;
 const TIME_WORD = /^(\d+|[일이삼사오육칠팔구십]+)?(년|월|일|주|시|분|통|개|번째)$|요일$|(전|후|째)$/;
 const squash = (s: string) => s.replace(/\s+/g, "").toLowerCase();
-// E2 ②(n_ambiguous): 모델이 sender 를 비워도(s = "") 지금 글이 이름 둘을 말하면 대상 칸·count 를 비운다 — 대상 없는 최근 N통 검색이 되지 않게. 이름 하나면 그대로
+// 맥락을 가리키는 말(지시어·위치말) — 통수만 말한 새 요청과 맥락을 잇는 요청("거기서 온 거 3개")을 가른다(E2 라운드 2)
+const POINTS_TO_CONTEXT = /(?:^|[\s,.!?])(?:(?:그|이|저|요|그런|이런|저런|해당)\s|그거|이거|저거|그것|이것|저것|거기|여기|저기|그쪽|이쪽|저쪽|아까|방금|위에|앞에|같은)/;
+// E2 ②: 이름 둘이면 모델 sender 가 비었거나 그중 하나여도 대상 칸·count 를 비운다(n_ambiguous — 대상 없는 최근 N통 검색·한쪽만 읽기를 막는다).
+// count 가 있고 지금 글이 맥락 발신자도 지시어도 말하지 않으면 맥락에서 채운 sender·subject_words 를 비운다(n_after_detail — 통수만 말한 새 요청)
 export function guardContextSender(mr: MailReadFields, question: string, context: ContextTurn[]): MailReadFields {
   if (context.length === 0) return mr;
-  const s = mr.sender === null ? "" : squash(mr.sender);
-  if (s !== "" && (squash(question).includes(s) || !squash(context.map((t) => `${t.question}\n${t.answer}`).join("\n")).includes(s))) return mr;
+  const s = mr.sender === null ? "" : squash(mr.sender), q = squash(question);
   const words = new Set(mr.subject_words.map(squash));
   // 'X랑' 표지(m[2])로만 잡은 이름은 다른 표지로 잡은 이름이 하나 이상 있을 때만 센다 — 두 이름 판정 전용(DP13, S7 리뷰 I1: "번역이랑·내용이랑"이 sender 를 덮어썼다)
-  const names = new Map<string, string>(), marked = new Set<string>();
+  // names·marked = 지금 글의 모든 이름(두 이름 판정), others·othersMarked = 모델 sender 와 다른 이름(이름 하나로 바꾸기)
+  const names = new Map<string, string>(), marked = new Set<string>(), others = new Map<string, string>(), othersMarked = new Set<string>();
   for (const m of question.matchAll(NAME_BEFORE_MARK)) {
     const n = m[1], k = squash(n);
     if (n.length < 2 || NOT_NAME.has(n) || NOT_NAME.has(k) || TIME_WORD.test(n) || ADNOMINAL.test(n) || AFTER_DEMONSTRATIVE.test(question.slice(0, m.index)) ||
-      words.has(k) || (s !== "" && (s.includes(k) || k.includes(s)))) continue;
+      words.has(k)) continue;
     names.set(k, n);
     if (m[2] === undefined) marked.add(k);
+    if (s !== "" && (s.includes(k) || k.includes(s))) continue;
+    others.set(k, n);
+    if (m[2] === undefined) othersMarked.add(k);
   }
-  if (marked.size === 0 || (s === "" && names.size === 1)) return mr;
-  if (names.size === 1) return { ...mr, sender: [...names.values()][0], target_in_message: true };
-  return { ...mr, sender: null, subject_words: [], received_from: null, received_to: null, latest: false, count: null, target_in_message: true };
+  if (marked.size > 0 && names.size >= 2) {
+    return { ...mr, sender: null, subject_words: [], received_from: null, received_to: null, latest: false, count: null, target_in_message: true };
+  }
+  if (s === "" || q.includes(s) || !squash(context.map((t) => `${t.question}\n${t.answer}`).join("\n")).includes(s)) return mr;
+  if (othersMarked.size > 0 && others.size === 1) return { ...mr, sender: [...others.values()][0], target_in_message: true };
+  if (mr.count !== null && !POINTS_TO_CONTEXT.test(question)) {
+    return { ...mr, sender: null, subject_words: mr.subject_words.filter((w) => q.includes(squash(w))), target_in_message: true };
+  }
+  return mr;
 }
 
 export type FilterOutput = { filters: Filters; query?: string; intent?: Intent; mail?: MailFields | null; mail_read?: MailReadFields | null;

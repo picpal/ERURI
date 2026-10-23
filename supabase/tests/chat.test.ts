@@ -728,6 +728,22 @@ Deno.test("guardContextSender: a context sender the current message does not nam
   for (const q of ["그 메일 번역이랑 요약해줘", "그 메일 요약이랑 번역해줘", "그거 내용이랑 첨부 요약해줘", "그 메일 본문이랑 첨부파일 읽어줘",
     "거기서 온 거 제목이랑 내용 요약해줘", "그 메일 원문이랑 같이 번역해줘"]) assertEquals(g(q, none), mr(none), q);
   assertEquals(g("합성레터랑 합성상점 거 세 통 요약해줘", none, []), mr(none));
+  // E2 라운드 2(a): 모델 sender 가 두 이름 중 하나여도 이름 둘이면 비운다(n_ambiguous — 실호출에서 '합성상점'을 채웠다)
+  const cleared = mr({ sender: null, count: null, target_in_message: true });
+  for (const sender of ["합성상점", "합성레터", "합성은행"]) assertEquals(g("합성레터랑 합성상점 거 세 통 요약해줘", { sender, count: 3 }), cleared, sender);
+  assertEquals(g("합성은행 거랑 합성레터 거 요약해줘"), mr({ sender: null, target_in_message: true }));
+  // E2 라운드 2(b): count 가 있고 맥락 발신자·지시어를 말하지 않으면 맥락에서 채운 sender·제목 단어를 비운다(n_after_detail). 지금 글의 제목 단어는 남긴다
+  const three = { count: 3, target_in_message: true };
+  assertEquals(g("메일 세 통 각각 요약해줘", three), mr({ ...three, sender: null }));
+  assertEquals(g("최근 메일 3개 요약해줘", { ...three, subject_words: ["안내"] }), mr({ ...three, sender: null }));
+  assertEquals(g("보안 메일 세 통 요약해줘", { ...three, subject_words: ["보안"] }), mr({ ...three, sender: null, subject_words: ["보안"] }));
+  // 지시어·위치말로 맥락을 잇거나 지금 글이 맥락 발신자를 말하면, 또는 count 가 없거나 맥락이 없으면 그대로
+  for (const q of ["거기서 온 거 3개 요약해줘", "그 메일 세 통 요약해줘", "그 사람 메일 3개 요약해줘", "이 메일 포함 세 통 요약해줘", "아까 거 3개 더 요약해줘",
+    "합성은행 메일 3개 요약해줘", "합성 은행 거 세 통 요약해줘"]) assertEquals(g(q, three), mr(three), q);
+  assertEquals(g("메일 각각 요약해줘", { target_in_message: true }), mr({ target_in_message: true }));
+  assertEquals(g("메일 세 통 각각 요약해줘", three, []), mr(three));
+  for (const q of ["그 메일 번역이랑 요약해줘", "그 메일 요약이랑 번역해줘", "그거 내용이랑 첨부 요약해줘", "그 메일 본문이랑 첨부파일 읽어줘",
+    "거기서 온 거 제목이랑 내용 요약해줘", "그 메일 원문이랑 같이 번역해줘"]) assertEquals(g(q, three), mr(three), q);
 });
 Deno.test("parseFilterOutput: mail_summary runs guardContextSender with the context; other intents and requests without context are untouched", () => {
   const ctx = [{ question: "합성은행에서 온 메일 뭐 있어?", answer: "합성은행에서 보안 안내 메일이 왔어요." }];
