@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert";
-import { type AggCase, type AggCaseFile, type AggRow, BOUNDARY_TEXTS, DAY_GROUP, judgeAgg, parseEvalMode, summarizeAgg, validateAggCases } from "../scripts/_agg-eval.ts";
+import { type AggCase, type AggCaseFile, type AggRow, BOUNDARY_TEXTS, DAY_GROUP, judgeAgg, parseBase, parseEvalMode, summarizeAgg, validateAggCases } from "../scripts/_agg-eval.ts";
 import { errorRates, excludeIdentical, flakyCases, newlyWrong, newlyWrongByRate, type Row, unsettled } from "../scripts/_intent-eval.ts";
 import type { Intent } from "../functions/chat/filters.ts";
 
@@ -144,6 +144,14 @@ Deno.test("parseEvalMode: default 0.16, --mode both / 0.17 / 0.16, anything else
   assertEquals(parseEvalMode(["--mode", "0.16"]), "0.16");
   assertEquals(parseEvalMode(["--mode"]), null);
   assertEquals(parseEvalMode(["--mode", "all"]), null);
+});
+
+Deno.test("parseBase: absent → null (existing modes), --base 0.18 → \"0.18\", missing or other value → \"bad\"", () => {
+  assertEquals(parseBase([]), null);
+  assertEquals(parseBase(["--runs", "4", "--mode", "both"]), null);
+  assertEquals(parseBase(["--mode", "both", "--base", "0.18", "--runs", "4"]), "0.18");
+  assertEquals(parseBase(["--base"]), "bad");
+  assertEquals(parseBase(["--base", "0.17"]), "bad");
 });
 
 Deno.test("flakyCases: baseline split across runs (some right, some wrong) → listed with right/total ratios for both modes; steady cases not listed", () => {

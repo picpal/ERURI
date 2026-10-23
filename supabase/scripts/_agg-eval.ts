@@ -196,3 +196,11 @@ export function parseEvalMode(args: string[]): EvalMode | null {
   const v = args[i + 1];
   return v === "0.16" || v === "0.17" || v === "both" ? v : null;
 }
+
+// eval-intent --base: 없으면 null(기존 0.16 ↔ 0.17), 0.18 = 0.19.0 회귀(DP15 — 기준선 stripCount 요청 ↔ 0.19.0 요청), 그 밖은 "bad"
+export type EvalBase = "0.18";
+export function parseBase(args: string[]): EvalBase | "bad" | null {
+  const i = args.indexOf("--base");
+  if (i < 0) return null;
+  return args[i + 1] === "0.18" ? "0.18" : "bad";
+}
