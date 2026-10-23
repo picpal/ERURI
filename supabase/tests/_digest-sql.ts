@@ -2,7 +2,7 @@ import { assert, assertEquals } from "jsr:@std/assert";
 import type { UCtx, UsageCase } from "./_usage-sql.ts";
 
 // 0037 사례(계획 S1): PGlite(digest-sql.test.ts)와 호스팅 롤백(digest-db.test.ts, G1)이 같은 사례를 돈다. 합성 숫자·모델 이름만
-export const MIGRATION_0037 = new URL("../migrations-pending/0037_mail_digest_kind.sql", import.meta.url);   // G1 에서 migrations/ 로 옮긴다
+export const MIGRATION_0037 = new URL("../migrations/0037_mail_digest_kind.sql", import.meta.url);   // G1 에서 migrations-pending/ 에서 옮겼다(호스팅 적용)
 const L = (kind: string, krw: number) => ({ kind, model: "gpt-6-luna", input: 9000, cached: 0, output: 600, krw });
 const one = async (c: UCtx, sql: string, p: unknown[] = []) => (await c.q(sql, p))[0];
 async function reserve(c: UCtx, kind: string, est: number) {
