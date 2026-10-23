@@ -773,10 +773,22 @@ Deno.test("guardContextSender: a context sender the current message does not nam
   for (const q of ["어제 온 메일 세 통 요약해줘", "지난주 메일 3개 요약해줘", "10월 6일 메일 3개 요약해줘", "최근 3일 메일 세 통 요약해줘"]) {
     assertEquals(g(q, ranged), mr({ ...ranged, sender: null }), q);
   }
+  // E2 라운드 4(재리뷰 2 N1): 'X랑' 앞 낱말이 일반 명사면 이름이 아니다 — 발신자 이름 앞에 와도 두 이름이 아니다. "A랑 B 거"는 여전히 되묻기
+  for (const q of ["번역이랑 합성은행 거 요약해줘", "원문이랑 합성은행 메일 같이 번역해줘", "제목이랑 합성은행 메일 내용 알려줘", "요약이랑 번역 합성은행 거로 해줘",
+    "요약이랑 번역 합성은행 메일 보여줘"]) {
+    for (const o of [{}, { sender: null }, { count: 3 }, { sender: null, count: 3 }]) assertEquals(g(q, o), mr(o), `${q} ${JSON.stringify(o)}`);
+  }
+  assertEquals(g("합성레터랑 합성상점 거 요약해줘"), mr({ sender: null, target_in_message: true }));
+  // N2: 이틀·사흘·보름·"10/22"·days 도 기간 말 — (b)가 지금 말한 기간을 지우지 않는다
+  for (const q of ["이틀간 온 메일 3개 요약해줘", "사흘 동안 메일 3개 요약해줘", "보름간 온 메일 세 통 요약해줘", "10/22 이후 메일 3개 요약해줘",
+    "10.22 메일 3개 요약해줘", "last 2 days 메일 3개 요약해줘"]) assertEquals(g(q, ranged).received_from, "2026-10-06", q);
+  // 옛 결함('그분'이 sender 로 잡힘): '그분'은 이름이 아니다 — 맥락 발신자 유지
+  for (const q of ["그분 메일 3개 요약해줘", "그분 거 요약해줘"]) for (const o of [{}, three]) assertEquals(g(q, o), mr(o), `${q} ${JSON.stringify(o)}`);
 });
 // E2 재리뷰 1: 가드는 INTENT 회귀의 기준선·0.19.0 양쪽에 같이 걸려 회귀를 원리적으로 못 본다 — 47ae04f 가드와 사례별로 비교해
-// 의도된 차이 둘(① 두 이름이면 모델 sender 가 비었거나 그중 하나여도 되묻기 ② 숫자 count + 통수만 말한 새 요청은 맥락 sender·제목·기간을 비움)만 다르다고 고정한다
-Deno.test("guardContextSender: differs from the 47ae04f guard only on two names (ask back) and count-only new requests", () => {
+// 의도된 차이 셋(① 두 이름이면 모델 sender 가 비었거나 그중 하나여도 되묻기 ② 숫자 count + 통수만 말한 새 요청은 맥락 sender·제목·기간을 비움
+// ③ 지시어 오인식 제거 — '그분'을 이름으로 잡지 않음, 라운드 4)만 다르다고 고정한다
+Deno.test("guardContextSender: differs from the 47ae04f guard only on two names (ask back), count-only new requests and the '그분' fix", () => {
   const ctx = [{ question: "합성은행에서 온 메일 뭐 있어?", answer: "합성은행에서 보안 안내 메일이 왔어요." }];
   const mr = (o: Partial<MailReadFields> = {}): MailReadFields =>
     ({ sender: "합성은행", subject_words: [], received_from: null, received_to: null, latest: false, translate: false, count: null, target_in_message: false, ...o });
@@ -788,31 +800,39 @@ Deno.test("guardContextSender: differs from the 47ae04f guard only on two names 
     "합성은행 메일 번역이랑 요약해줘", "합성은행 메일 제목이랑 내용 요약해줘", "합성은행 메일 본문이랑 첨부 요약해줘", "합성은행 메일 내용이랑 첨부 요약해줘",
     "합성은행 거 원문이랑 같이 번역해줘", "은행 메일 세 통 요약해줘", "은행에서 온 거 3개 요약해줘", "거기서 온 거 3개 요약해줘", "그 메일 세 통 요약해줘",
     "그 사람 메일 3개 요약해줘", "아까 거 3개 더 요약해줘", "저번 거 3개 요약해줘", "해당메일 포함 3개 요약해줘", "위 메일 포함 세 통 요약해줘", "앞서 본 거 3개 요약해줘",
-    "합성은행 메일 3개 요약해줘", "합성레터 거 세 통 요약해줘"];
+    "합성은행 메일 3개 요약해줘", "합성레터 거 세 통 요약해줘",
+    // 라운드 4(재리뷰 2 N1): 'X랑' 일반 명사가 발신자 이름 앞에 오는 어순
+    "번역이랑 합성은행 거 요약해줘", "원문이랑 합성은행 메일 같이 번역해줘", "제목이랑 합성은행 메일 내용 알려줘", "요약이랑 번역 합성은행 거로 해줘",
+    "요약이랑 번역 합성은행 메일 보여줘"];
+  // ③ 옛 결함 고침(라운드 4): '그분'을 이름으로 잡아 sender 를 '그분'으로 바꾸던 것 — 이제 지시어로 보고 모델 출력 그대로
+  const DEMONSTRATIVE_FIX = ["그분 메일 3개 요약해줘", "그분 거 요약해줘"];
   const TWO_NAMES = ["합성레터 거랑 합성학원 거 요약해줘", "합성레터랑 합성상점 거 세 통 요약해줘", "합성은행 거랑 합성레터 거 요약해줘", "합성레터 거랑 합성상점 거 세 통 요약해줘"];
-  const COUNT_ONLY = ["메일 세 통 각각 요약해줘", "최근 메일 3개 요약해줘", "보안 메일 세 통 요약해줘", "어제 온 메일 세 통 요약해줘"];
+  const COUNT_ONLY = ["메일 세 통 각각 요약해줘", "최근 메일 3개 요약해줘", "보안 메일 세 통 요약해줘", "어제 온 메일 세 통 요약해줘", "이틀간 온 메일 3개 요약해줘"];
+  const ALL = [...SAME, ...DEMONSTRATIVE_FIX, ...TWO_NAMES, ...COUNT_ONLY];
   const OUTPUTS: Partial<MailReadFields>[] = [{}, { sender: null }, { count: 3 }, { sender: null, count: 3 }, { count: 3, target_in_message: true },
     { subject_words: ["보안"], received_from: "2026-10-06", received_to: "2026-10-06" }, { count: 3, subject_words: ["안내"], received_from: "2026-10-06", received_to: "2026-10-06" },
     { sender: "합성카드" }, { sender: "합성상점", count: 3 }, { latest: true, translate: true }];
   const twoNameAsk = (o: MailReadFields) => ({ ...o, sender: null, subject_words: [], received_from: null, received_to: null, latest: false, count: null, target_in_message: true });
   let diffs = 0;
-  for (const q of [...SAME, ...TWO_NAMES, ...COUNT_ONLY]) {
+  for (const q of ALL) {
     for (const o of OUTPUTS) {
       if (o.count !== undefined && !/통|개/.test(q)) continue;   // 모델은 지금 글이 통수를 말할 때만 count 를 낸다(MAIL_READ_COUNT_RULES)
       const input = mr(o), now = guardContextSender(input, q, ctx), old = oldGuardContextSender(input, q, ctx), tag = `${q} ${JSON.stringify(o)}`;
       if (JSON.stringify(now) === JSON.stringify(old)) continue;
       diffs++;
       if (TWO_NAMES.includes(q)) { assertEquals(now, twoNameAsk(input), tag); continue; }
+      if (DEMONSTRATIVE_FIX.includes(q)) { assertEquals(now, input, tag); assertEquals(old.sender, "그분", tag); continue; }
       // 통수만 말한 새 요청: 숫자 count·맥락에 있는 모델 sender 일 때만, 옛 결과에서 sender 를 비우고 제목 단어·기간은 지금 글에 있을 때만 남긴다
       assert(COUNT_ONLY.includes(q) && typeof input.count === "number" && input.sender === "합성은행", `unexpected diff: ${tag}`);
-      const period = q.includes("어제");
+      const period = /어제|이틀/.test(q);
       assertEquals(now, { ...old, sender: null, subject_words: old.subject_words.filter((w) => q.includes(w)),
         received_from: period ? old.received_from : null, received_to: period ? old.received_to : null, target_in_message: true }, tag);
     }
   }
   assert(diffs > 0);   // 묶음이 의도된 차이를 실제로 덮는다
+  for (const q of DEMONSTRATIVE_FIX) assertEquals(oldGuardContextSender(mr(), q, ctx).sender, "그분", q);   // ③ 이 실제 차이다
   // 맥락 없음은 옛·새 모두 손대지 않는다
-  for (const q of [...SAME, ...TWO_NAMES, ...COUNT_ONLY]) for (const o of OUTPUTS) assertEquals(guardContextSender(mr(o), q, []), oldGuardContextSender(mr(o), q, []));
+  for (const q of ALL) for (const o of OUTPUTS) assertEquals(guardContextSender(mr(o), q, []), oldGuardContextSender(mr(o), q, []));
 });
 Deno.test("parseFilterOutput: mail_summary runs guardContextSender with the context; other intents and requests without context are untouched", () => {
   const ctx = [{ question: "합성은행에서 온 메일 뭐 있어?", answer: "합성은행에서 보안 안내 메일이 왔어요." }];
