@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert";
 import type { MessagePart } from "../functions/_shared/gmail.ts";
-import { BODY_SCAN_MAX, clipText, decodePartData, extractBody, htmlToText } from "../functions/_shared/mail-body.ts";
+import { BODY_SCAN_MAX, clipText, decodePartData, DIGEST_SCAN_MAX, extractBody, htmlToText } from "../functions/_shared/mail-body.ts";
 
 // 합성 MIME 픽스처(스펙 §15 SUMMARY-server "본문 추출"). 바이트는 base64url 로
 const b64u = (bytes: Uint8Array) => btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join("")).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -88,4 +88,15 @@ Deno.test("base64 is capped before decoding: data past the cap is never decoded"
   assertEquals(t.length, 4_000_002);                                                // 5,333,336 자 → 4,000,002 바이트
   assert(t.length >= BODY_SCAN_MAX);
   assertEquals(extractBody(leaf("text/plain", big)).text?.length, BODY_SCAN_MAX);
+});
+
+// 목록 요약(D-M6) 상한 인자 — 기존 b64u(bytes)(Array.from, 큰 입력에도 스택 안전)를 쓴다(PF-16)
+Deno.test("extractBody scanMax: digest cap 200,000 cuts plain and HTML text; default stays 1,000,000 (read path unchanged)", () => {
+  const plain = "가".repeat(300_000);
+  const p = { mimeType: "text/plain", body: { data: b64u(new TextEncoder().encode(plain)) } };
+  assertEquals(extractBody(p, DIGEST_SCAN_MAX).text!.length, 200_000);
+  assertEquals(extractBody(p).text!.length, 300_000);
+  const html = "<p>" + "나".repeat(250_000) + "</p>";
+  const h = { mimeType: "text/html", body: { data: b64u(new TextEncoder().encode(html)) } };
+  assert(extractBody(h, DIGEST_SCAN_MAX).text!.length <= 200_000);
 });

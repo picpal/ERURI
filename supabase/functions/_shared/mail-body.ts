@@ -6,6 +6,7 @@ import { clip16 } from "./mail-meta.ts";
 export const BODY_SCAN_MAX = 1_000_000;        // 추출 글·HTML 상한(UTF-16) — 가림·변환 정규식 CPU 를 묶는다(모델에 가는 12,000자 훨씬 밖)
 export const SUMMARY_BODY_MAX = 12_000;         // 가림을 마친 본문 → 모델
 export const TRANSLATE_SOURCE_MAX = 4_000;      // 번역 원문
+export const DIGEST_SCAN_MAX = 200_000;   // 목록 요약(D-M6) — 10통이 Edge CPU 2초를 나눈다. G2 측정으로 확인(U5)
 
 // 자르기는 mail-meta.ts clip16(짝 없는 서로게이트를 남기지 않음)을 그대로 쓰고, 잘렸는지만 더한다
 export function clipText(s: string, n: number): { text: string; truncated: boolean } {
@@ -18,16 +19,17 @@ function charsetOf(contentType: string | null): string | null {
   const m = contentType?.match(/charset\s*=\s*["']?([^"';\s]+)["']?/i);   // 작은따옴표(charset='euc-kr')도 — 한국 메일에 있다
   return m ? m[1].toLowerCase() : null;
 }
-// base64 는 디코드 전에 자른다: 4M 바이트(UTF-8 한 글자 최대 3바이트/UTF-16 단위 → 1M 글자 이상)의 base64 길이 — 큰 첨부성 본문을 통째로 풀지 않는다
-const B64_MAX = 4 * Math.ceil((4 * BODY_SCAN_MAX) / 3);
-function b64urlBytes(data: string): Uint8Array {
-  let b = data.slice(0, B64_MAX).replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
-  if (data.length > B64_MAX) b = b.slice(0, b.length - (b.length % 4));   // 자른 끝이 4자 묶음 중간이면 버린다(atob 거절 방지)
+// base64 는 디코드 전에 자른다: 4×scanMax 바이트(UTF-8 한 글자 최대 3바이트/UTF-16 단위 → scanMax 글자 이상)의 base64 길이 — 큰 첨부성 본문을 통째로 풀지 않는다
+const b64Max = (scanMax: number) => 4 * Math.ceil((4 * scanMax) / 3);
+function b64urlBytes(data: string, scanMax: number): Uint8Array {
+  const max = b64Max(scanMax);
+  let b = data.slice(0, max).replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
+  if (data.length > max) b = b.slice(0, b.length - (b.length % 4));   // 자른 끝이 4자 묶음 중간이면 버린다(atob 거절 방지)
   return Uint8Array.from(atob(b + "=".repeat((4 - (b.length % 4)) % 4)), (c) => c.charCodeAt(0));
 }
 // base64url → 바이트 → 파트 charset(WHATWG 라벨, 대소문자·따옴표 무시)로. 라벨이 없거나 모르면 UTF-8(깨진 바이트는 U+FFFD)
-export function decodePartData(data: string, contentType: string | null): string {
-  const bytes = b64urlBytes(data);
+export function decodePartData(data: string, contentType: string | null, scanMax = BODY_SCAN_MAX): string {
+  const bytes = b64urlBytes(data, scanMax);
   const label = charsetOf(contentType);
   if (label) {
     try { return new TextDecoder(label).decode(bytes); } catch { /* 모르는 라벨(RangeError) → UTF-8 */ }
@@ -35,8 +37,8 @@ export function decodePartData(data: string, contentType: string | null): string
   return new TextDecoder("utf-8").decode(bytes);
 }
 const contentTypeOf = (p: MessagePart) => p.headers?.find((h) => h.name.toLowerCase() === "content-type")?.value ?? p.mimeType ?? null;
-function partText(p: MessagePart): string | null {
-  try { return decodePartData(p.body?.data ?? "", contentTypeOf(p)); } catch { return null; }   // 잘못된 base64 — 그 파트는 없는 것으로
+function partText(p: MessagePart, scanMax: number): string | null {
+  try { return decodePartData(p.body?.data ?? "", contentTypeOf(p), scanMax); } catch { return null; }   // 잘못된 base64 — 그 파트는 없는 것으로
 }
 
 // ASCII 만 소문자로(길이 보존 — String.toLowerCase 는 일부 글자에서 길이가 바뀌어 위치가 어긋난다)
@@ -70,13 +72,13 @@ function dropBlocks(html: string): string {
 const BLOCK_END = /<br\b[^<>]*>|<\/(?:p|div|li|tr|h[1-6])\s*>/gi;
 const TAG = /<[^<>]*>/g;                         // 겹친 '<' 에서 되짚기 폭발이 없다(D8)
 // HTML → 글: 블록 제거 → 블록 끝 태그는 줄바꿈 → 나머지 태그 제거(href 넣지 않음) → 엔티티 → 줄마다 공백 정리, 빈 줄이 이어지면 하나로
-export function htmlToText(html: string): string {
-  const s = decodeEntities(dropBlocks(clipText(html, BODY_SCAN_MAX).text).replace(BLOCK_END, "\n").replace(TAG, ""));
+export function htmlToText(html: string, scanMax = BODY_SCAN_MAX): string {
+  const s = decodeEntities(dropBlocks(clipText(html, scanMax).text).replace(BLOCK_END, "\n").replace(TAG, ""));
   return s.split(/\r?\n/).map((l) => l.replace(/[ \t\f\v\u00a0]+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-// 첨부 파트는 세기만 하고 그 안으로 내려가지 않는다(전달된 메일 첨부의 본문을 본문으로 착각하지 않게)
-export function extractBody(payload: MessagePart | undefined): { text: string | null; attachments: number } {
+// 첨부 파트는 세기만 하고 그 안으로 내려가지 않는다(전달된 메일 첨부의 본문을 본문으로 착각하지 않게). scanMax: 목록 요약만 DIGEST_SCAN_MAX
+export function extractBody(payload: MessagePart | undefined, scanMax = BODY_SCAN_MAX): { text: string | null; attachments: number } {
   let attachments = 0;
   const plains: MessagePart[] = [], htmls: MessagePart[] = [];
   const walk = (p: MessagePart | undefined) => {
@@ -89,12 +91,12 @@ export function extractBody(payload: MessagePart | undefined): { text: string | 
   };
   walk(payload);
   for (const p of plains) {
-    const t = partText(p);
-    if (t !== null && t.trim() !== "") return { text: clipText(t.replace(/\r\n/g, "\n").trim(), BODY_SCAN_MAX).text, attachments };
+    const t = partText(p, scanMax);
+    if (t !== null && t.trim() !== "") return { text: clipText(t.replace(/\r\n/g, "\n").trim(), scanMax).text, attachments };
   }
   for (const p of htmls) {
-    const t = partText(p);
-    if (t !== null) { const s = htmlToText(t); if (s !== "") return { text: s, attachments }; }
+    const t = partText(p, scanMax);
+    if (t !== null) { const s = htmlToText(t, scanMax); if (s !== "") return { text: s, attachments }; }
   }
   return { text: null, attachments };
 }

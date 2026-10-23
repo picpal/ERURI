@@ -210,12 +210,14 @@ async function mailError(call: string, r: Response): Promise<GmailHttpError> {
   return new GmailHttpError(call, r.status, reasons);
 }
 // timeoutMs: 기본 15초. 메일 요약 검색만 20초 예산의 남은 시간으로 줄여 넘긴다
-function mailFetch(accessToken: string, url: string | URL, body?: unknown, timeoutMs = MAIL_CALL_TIMEOUT_MS): Promise<Response> {
+// signal: 목록 요약(digest)만 deadline 취소 신호를 넘긴다 — 제한 시간과 둘 중 먼저 오는 쪽으로 끊는다
+function mailFetch(accessToken: string, url: string | URL, body?: unknown, timeoutMs = MAIL_CALL_TIMEOUT_MS, signal?: AbortSignal): Promise<Response> {
+  const t = AbortSignal.timeout(timeoutMs);
   return fetch(url, {
     method: body === undefined ? "GET" : "POST",
     headers: { authorization: `Bearer ${accessToken}`, ...(body === undefined ? {} : { "content-type": "application/json" }) },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: signal ? AbortSignal.any([t, signal]) : t,
   });
 }
 const msgUrl = (id: string, rest = "") => `${G}/messages/${encodeURIComponent(id)}${rest}`;
@@ -278,21 +280,21 @@ export function gmailMailApi(accessToken: string): GmailMailApi {
 }
 
 // ── 메일 요약(스펙 §7 "메일 요약"): 목록·메타는 메일 정리 것 그대로, 고른 한 통만 format=full. 읽기만 — 쓰기 호출 없음 ──
-export async function getMessageFull(accessToken: string, id: string): Promise<GmailMessage> {
+export async function getMessageFull(accessToken: string, id: string, timeoutMs = MAIL_CALL_TIMEOUT_MS, signal?: AbortSignal): Promise<GmailMessage> {
   const u = new URL(msgUrl(id)); u.searchParams.set("format", "full");
-  const r = await mailFetch(accessToken, u);
+  const r = await mailFetch(accessToken, u, undefined, timeoutMs, signal);
   if (!r.ok) throw await mailError("messages.get", r);
   return await r.json() as GmailMessage;
 }
 export interface GmailReadApi {
   list(q: string, maxResults: number, pageToken?: string, timeoutMs?: number): Promise<ListPage>;   // timeoutMs = 검색 예산의 남은 시간(최대 15초)
   headers(id: string, timeoutMs?: number): Promise<GmailMessage>;
-  full(id: string): Promise<GmailMessage>;
+  full(id: string, timeoutMs?: number, signal?: AbortSignal): Promise<GmailMessage>;   // digest 만 제한 시간·취소 신호를 넘긴다(DP8)
 }
 export function gmailReadApi(accessToken: string): GmailReadApi {
   return {
     list: (q, n, p, t) => listMessages(accessToken, q, n, p, t),
     headers: (id, t) => getMessageHeaders(accessToken, id, t),
-    full: (id) => getMessageFull(accessToken, id),
+    full: (id, t, s) => getMessageFull(accessToken, id, t, s),
   };
 }

@@ -5,7 +5,7 @@ import { gmailAccessToken } from "../_shared/gmail-jobs.ts";
 import { importTokenKey } from "../_shared/mail-token.ts";
 import { seoulToday } from "../_shared/time.ts";
 import { type MailReadConnection, type MailReadDeps, RpcError } from "./common.ts";
-import { summarize } from "./summary.ts";
+import { summarize, summarizeDigest } from "./summary.ts";
 
 // service role. 모든 RPC 에 user_id 를 넘긴다(스펙 §12 통제 4). 연결은 그 user_id 로만 찾는다
 export const UNITS_RPC_MS = 1_000;                                       // gmail_take_units 1초 예산(fail-closed — 넘으면 500)
@@ -44,7 +44,7 @@ export function mailReadDeps(sb: SupabaseClient): MailReadDeps {
     tokenKey: () => (key ??= importTokenKey(Deno.env.get("MAIL_READ_KEY") ?? "").catch((e) => { key = null; throw e; })),
     budget: budgetDeps(sb),
     summarize: (i, onUsage) => summarize(i, onUsage),
-    summarizeDigest: () => Promise.reject(new Error("summarize_digest_pending")),   // S5 summary.ts summarizeDigest 로 바꾼다(S4 시점엔 없음 — digest 경로도 아직 없다)
+    summarizeDigest: (i, onUsage, signal, t) => summarizeDigest(i, onUsage, signal, t),
     holds: holdDeps(sb),
     audit: async (u, target) => { await rpc("audit_mail_read", { p_user: u, p_target: target }); },
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),

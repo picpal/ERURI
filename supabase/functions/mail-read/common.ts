@@ -1,12 +1,10 @@
 import type { BudgetDeps, HoldDeps, TokenUsage } from "../_shared/budget.ts";
 import { type GmailReadApi, ReauthRequired } from "../_shared/gmail.ts";
-import type { SummaryInput, SummaryOutput } from "./summary.ts";
+import type { DigestInput, SummaryInput, SummaryOutput } from "./summary.ts";
 
 // 메일 요약 Edge(스펙 §7 "메일 요약"): 공용 타입·오류·응답 도우미. 로그는 request_id·단계·결과 코드·개수·status·잘림·첨부 수·모델·elapsed_ms 만 —
 // Gmail id·검색 칸·발신자·제목·본문·요약·request 없음(§12 통제 4)
 export type MailReadConnection = { connection_id: string; status: string };
-// 목록 요약 한 통의 모델 입력(S5 summary.ts DigestInput 과 같은 모양 — S5 전이라 여기 둔다)
-export type DigestInput = { today: string; from: string; date: string; subject: string; body: string };
 export type MailReadDeps = {
   enabled(): boolean;                                                  // MAIL_READ=on — 꺼지면 검색·읽기 모두 503 disabled
   authUser(token: string): Promise<string | null>;
