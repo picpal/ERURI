@@ -1,8 +1,8 @@
-import { type GmailMessage, GmailHttpError, type GmailReadApi, MAIL_CALL_TIMEOUT_MS } from "../_shared/gmail.ts";
+import { type GmailMessage, GmailHttpError, type GmailReadApi, type ListPage, MAIL_CALL_TIMEOUT_MS } from "../_shared/gmail.ts";
 import { candidateMeta } from "../_shared/mail-meta.ts";
 import { buildReadQuery, checkReadConditions, type ReadConditions, seoulMidnight } from "../_shared/mail-query.ts";
-import { signToken, TOKEN_TTL_S } from "../_shared/mail-token.ts";
-import { accessFor, connectionFor, type Ctx, err, log, type MailReadDeps, RateLimited, SearchTimeout } from "./common.ts";
+import { conditionPrint, SAME_MS_MAX, signCursor, signToken, TOKEN_TTL_S, verifyCursor } from "../_shared/mail-token.ts";
+import { accessFor, connectionFor, type Ctx, CursorStale, err, log, type MailReadDeps, RateLimited, SearchTimeout } from "./common.ts";
 
 // 검색(스펙 §7 "검색"): 칸 검사(연결보다 먼저) → 연결 → 토큰 갱신 → id 모으기(최대 20, list 10회) → 메타(snippet 없음) → 라벨 거르기 → 받은 시각 순 5통 + 후보 토큰.
 // complete = 조건에 맞는 id 를 모두 봤다(이때만 0통 = 없음, 첫 후보 = 가장 최근). LLM 없음
@@ -81,6 +81,74 @@ export async function collect(ctx: SearchCtx, c: ReadConditions, nowS: number): 
   return outcome(st, [], true);                                          // 마지막 창(받은 기간 시작 또는 제한 없음)까지 유효 0 — 완결 0통
 }
 
+// ── 0.19.0 진행 위치 검색(limit 있을 때만) ──
+export const SCAN_PAGE = 20;
+export type Position = { b: number | null; p: string | null; o: number; l: string | null; t: number | null; s: string[] };
+export type ScanOutcome = { candidates: GmailMessage[]; complete: boolean; next: Position | null; lists: number; metas: number; ordered: boolean; fallback: boolean };
+
+// 진행 위치 검색(스펙 §7 "진행 위치 검색과 커서"·"진행 보장 정책", D-M4·DP5·DP6): 목록 순서대로 id 를 소비한다 — SENT·DRAFT·CHAT·그사이 404 는 버리고 나머지가 후보.
+// 후보 limit 통을 채우거나 목록 끝이면 complete, list 10회·메타 20개 상한이면 미완결 — 어느 쪽이든 소비한 만큼 위치가 나아간다(진행 보장).
+// 커서 = 자리 앵커(앵커가 있는 쪽 p·그 다음 오프셋 o·앵커 id l) + 시간 상태(앵커 시각 t·같은 ms 로 본 id s ≤ 20) + 시간 경계 b.
+// 이어 읽기: 쪽 p 에서 l 이 o − 1(또는 쪽 안)에 있으면 그 다음, 없으면 pageToken 을 버리고 before:⌊t/1000⌋+1 로 첫 쪽부터 — b 가 있는 동안 < t 또는 (= t ∧ ∉ s)만.
+// 같은 요청 안에서 이미 소비한 id 는 건너뛴다(쪽 사이 밀림 — Review Focus 5). 순서는 다시 정렬하지 않는다(ordered 는 관측만, DP7)
+export async function scan(ctx: SearchCtx, q0: string, limit: number, start: Position | null): Promise<ScanOutcome> {
+  const st: State = { lists: 0, metas: 0, seen: new Map() };
+  const out: GmailMessage[] = [], consumed = new Set<string>();
+  let b = start?.b ?? null, page = start?.p ?? null, offset = start?.o ?? 0, resume = start?.l ?? null;
+  let pos = { p: start?.p ?? null, o: start?.o ?? 0, l: start?.l ?? null };            // 자리 앵커 — 시간 거르기로 버린 메일도 옮긴다(진행 보장)
+  let time = { t: start?.t ?? null, s: [...(start?.s ?? [])] };                        // 시간 상태 — 받아들인 메일만 옮긴다
+  let ordered = true, fallback = false;
+  const query = () => (b === null ? q0 : `${q0} before:${b}`);
+  const done = (complete: boolean, end = false): ScanOutcome =>
+    ({ candidates: out, complete, next: end ? null : { b, ...pos, ...time }, lists: st.lists, metas: st.metas, ordered, fallback });
+  for (;;) {
+    if (st.lists >= LIST_CALLS_MAX) return done(false);
+    ctx.over();
+    await ctx.take(5);
+    st.lists++;
+    let r: ListPage;
+    try { r = await ctx.api.list(query(), SCAN_PAGE, page ?? undefined, ctx.over()); }
+    catch (e) { if (e instanceof GmailHttpError && e.status === 400 && page !== null) throw new CursorStale(); throw e; }   // 오래된·모르는 pageToken → 410
+    const pageIds = (r.messages ?? []).map((m) => m.id);
+    let i = offset;
+    if (resume !== null) {                                               // 앵커 확인(DP6): o − 1 자리 먼저, 아니면 쪽 안 어디든
+      const k = offset > 0 && pageIds[offset - 1] === resume ? offset - 1 : pageIds.indexOf(resume);
+      resume = null;
+      if (k < 0) {                                                       // 확인 안 됨 — 삭제·이동·쪽 밖으로 밀림: 시간 기준으로 다시 찾는다
+        b = Math.floor(time.t! / 1000) + 1;                              // l 이 있으면 t 도 있다(S3 isCursor, PF-12). 같은 초를 포함하게 ⌊⌋ + 1
+        page = null; offset = 0; fallback = true; pos = { p: null, o: 0, l: null };
+        continue;
+      }
+      i = k + 1;
+    }
+    while (i < pageIds.length) {
+      if (out.length >= limit) return done(true);
+      if (st.metas >= META_MAX) return done(false);
+      const n = Math.min(META_PARALLEL, limit - out.length, META_MAX - st.metas, pageIds.length - i);
+      const slice = pageIds.slice(i, i + n);
+      const group = slice.filter((id) => !consumed.has(id));
+      group.forEach((id) => consumed.add(id));
+      await readMeta(ctx, st, group);
+      for (const [k, id] of slice.entries()) {
+        const m = st.seen.get(id);
+        if (!group.includes(id) || !m) continue;                         // 이 요청에서 이미 소비(쪽 밀림) · 그사이 404
+        pos = { p: page, o: i + k + 1, l: id };
+        const at = receivedAt(m);
+        if (b !== null && time.t !== null && (at > time.t || (at === time.t && time.s.includes(id)))) continue;   // 시간 기준 거르기(이미 본 것·더 새것)
+        time = at === time.t ? { t: at, s: [...time.s, id].slice(-SAME_MS_MAX) } : { t: at, s: [id] };
+        if (!valid(m)) continue;
+        if (out.length && at > receivedAt(out[out.length - 1])) ordered = false;
+        out.push(m);
+      }
+      i += n;
+    }
+    const nextPage = r.nextPageToken ?? null;
+    if (nextPage === null) return done(true, true);                      // 목록 끝 — next_cursor 없음
+    if (out.length >= limit) return done(true);                          // 쪽 끝에서 채움 — 커서는 앵커가 있는 이 쪽(o = 쪽 길이)
+    page = nextPage; offset = 0;                                         // 빈 쪽·거른 결과 0통 쪽도 같은 요청 안에서 계속
+  }
+}
+
 export async function search(ctx: Ctx, body: Record<string, unknown>, d: MailReadDeps): Promise<Response> {
   const chk = checkReadConditions(body);                                 // 앱이 보낸 칸도 믿지 않는다 — 검사·정제는 여기 한 곳(연결보다 먼저, Codex #5)
   if (!chk.ok) {
@@ -90,6 +158,22 @@ export async function search(ctx: Ctx, body: Record<string, unknown>, d: MailRea
   const key = await d.tokenKey();                                        // 키 오류는 Gmail 을 부르기 전에(500 key_invalid)
   const conn = await connectionFor(ctx, d, "search");
   if (conn instanceof Response) return conn;
+  const nowS = Math.floor(d.now() / 1000);
+  const scanMode = chk.limit !== null && !chk.c.latest;                  // limit = 0.19.0 앱. latest 는 limit 이 있어도 시간 창 경로(완결일 때만 바로 읽기)
+  const print = scanMode ? await conditionPrint(chk.c) : "";
+  let start: Position | null = null;
+  if (chk.cursor !== null) {                                             // 칸 검사·연결 뒤, 토큰 갱신·Gmail 전(§7 "cursor 검사")
+    const v = await verifyCursor(key, chk.cursor, nowS);
+    if (!v.ok) {
+      log({ stage: "search", request_id: ctx.request_id, result: v.code, elapsed_ms: Math.round(d.now() - ctx.t0) });
+      return err(v.code === "bad_token" ? 400 : v.code === "not_found" ? 404 : 410, v.code);
+    }
+    if (v.claims.u !== ctx.user || v.claims.c !== conn.connection_id || v.claims.h !== print) {   // 다른 사용자·연결·조건의 커서
+      log({ stage: "search", request_id: ctx.request_id, result: "not_found", elapsed_ms: Math.round(d.now() - ctx.t0) });
+      return err(404, "not_found");
+    }
+    start = { b: v.claims.b, p: v.claims.p, o: v.claims.o, l: v.claims.l, t: v.claims.t, s: v.claims.s };
+  }
   const at = await accessFor(ctx, conn, d, "search");
   if (at instanceof Response) return at;
   const sctx: SearchCtx = {
@@ -101,16 +185,25 @@ export async function search(ctx: Ctx, body: Record<string, unknown>, d: MailRea
       return Math.min(MAIL_CALL_TIMEOUT_MS, left);
     },
   };
-  let o: SearchOutcome;
-  try { o = await collect(sctx, chk.c, Math.floor(d.now() / 1000)); }
-  catch (e) {                                                            // 예산으로 줄인 제한 시간에 끊긴 호출 = 예산 초과(502 search_budget) — 다른 오류는 그대로
+  let candidates: GmailMessage[], complete: boolean, more: boolean, lists: number, metas: number;
+  let next: Position | null = null, ordered: boolean | null = null, fallback = false;
+  try {
+    if (scanMode) {
+      const o = await scan(sctx, buildReadQuery(chk.c), chk.limit!, start);
+      ({ candidates, complete, lists, metas, ordered, fallback } = o);
+      next = o.next; more = next !== null;
+    } else {
+      ({ candidates, complete, more, lists, metas } = await collect(sctx, chk.c, nowS));
+    }
+  } catch (e) {                                                          // 예산으로 줄인 제한 시간에 끊긴 호출 = 예산 초과(502 search_budget) — 다른 오류는 그대로
     if (e instanceof DOMException && e.name === "TimeoutError" && d.now() - ctx.t0 >= SEARCH_BUDGET_MS - 50) throw new SearchTimeout();
     throw e;
   }
-  const e = Math.floor(d.now() / 1000) + TOKEN_TTL_S;
-  const candidates = await Promise.all(o.candidates.map(async (m) =>
+  const e = Math.floor(d.now() / 1000) + TOKEN_TTL_S;                    // 후보 토큰·커서 모두 발급 + 10분
+  const out = await Promise.all(candidates.map(async (m) =>
     ({ token: await signToken(key, { u: ctx.user, c: conn.connection_id, m: m.id, e }), ...candidateMeta(m) })));
-  log({ stage: "search", request_id: ctx.request_id, result: "ok", count: candidates.length, complete: o.complete, lists: o.lists, metas: o.metas,
-    elapsed_ms: Math.round(d.now() - ctx.t0) });
-  return Response.json({ conditions: chk.c, candidates, complete: o.complete, more: o.more });
+  const next_cursor = next === null ? null : await signCursor(key, { u: ctx.user, c: conn.connection_id, h: print, ...next, e });
+  log({ stage: "search", request_id: ctx.request_id, result: "ok", mode: scanMode ? "scan" : "legacy", count: out.length, complete, lists, metas,
+    ...(ordered === null ? {} : { ordered, fallback }), elapsed_ms: Math.round(d.now() - ctx.t0) });
+  return Response.json({ conditions: chk.c, candidates: out, complete, more, next_cursor, count_capped: chk.count_capped });
 }

@@ -1,10 +1,12 @@
-import type { BudgetDeps, TokenUsage } from "../_shared/budget.ts";
+import type { BudgetDeps, HoldDeps, TokenUsage } from "../_shared/budget.ts";
 import { type GmailReadApi, ReauthRequired } from "../_shared/gmail.ts";
 import type { SummaryInput, SummaryOutput } from "./summary.ts";
 
 // 메일 요약 Edge(스펙 §7 "메일 요약"): 공용 타입·오류·응답 도우미. 로그는 request_id·단계·결과 코드·개수·status·잘림·첨부 수·모델·elapsed_ms 만 —
 // Gmail id·검색 칸·발신자·제목·본문·요약·request 없음(§12 통제 4)
 export type MailReadConnection = { connection_id: string; status: string };
+// 목록 요약 한 통의 모델 입력(S5 summary.ts DigestInput 과 같은 모양 — S5 전이라 여기 둔다)
+export type DigestInput = { today: string; from: string; date: string; subject: string; body: string };
 export type MailReadDeps = {
   enabled(): boolean;                                                  // MAIL_READ=on — 꺼지면 검색·읽기 모두 503 disabled
   authUser(token: string): Promise<string | null>;
@@ -15,6 +17,8 @@ export type MailReadDeps = {
   tokenKey(): Promise<CryptoKey>;                                      // MAIL_READ_KEY(형식 오류면 key_invalid 로 거절된 Promise)
   budget: BudgetDeps;
   summarize(i: SummaryInput, onUsage: (u: TokenUsage | null) => void): Promise<SummaryOutput>;
+  summarizeDigest(i: DigestInput, onUsage: (u: TokenUsage | null) => void, signal: AbortSignal, timeoutMs: number): Promise<string[]>;   // 목록 요약 짧은 모드 — digest 만
+  holds: HoldDeps;                                                     // 목록 요약 예약 식별자(0037, DP25) — digest 만
   audit(user: string, targetHex: string): Promise<void>;               // 0032 audit_mail_read
   sleep(ms: number): Promise<void>;
   now(): number;                                                       // 벽시계 ms(토큰 만료·검색 예산·elapsed)
@@ -25,6 +29,7 @@ export type Ctx = { user: string; request_id: string; t0: number };
 export class RpcError extends Error { constructor(fn: string, code: string) { super(fn + " " + code); this.name = "RpcError"; } }
 export class RateLimited extends Error { constructor() { super("units"); this.name = "RateLimited"; } }
 export class SearchTimeout extends Error { constructor() { super("search_budget"); this.name = "SearchTimeout"; } }
+export class CursorStale extends Error { constructor() { super("page_token"); this.name = "CursorStale"; } }   // 커서의 Gmail pageToken 을 Gmail 이 거절 → 410 token_expired
 export class SummaryFailed extends Error { constructor(readonly why: string) { super("summary_failed " + why); this.name = "SummaryFailed"; } }
 
 export const err = (status: number, code: string, extra: Record<string, unknown> = {}) => Response.json({ error: code, ...extra }, { status });

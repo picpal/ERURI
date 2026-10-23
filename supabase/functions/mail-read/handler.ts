@@ -1,7 +1,7 @@
 import { Deferred } from "../_shared/budget.ts";
 import { classifyGmailError, GmailHttpError } from "../_shared/gmail.ts";
 import { llmUnavailable } from "../_shared/llm-errors.ts";
-import { type Ctx, err, log, type MailReadDeps, RateLimited, RpcError, SearchTimeout, SummaryFailed } from "./common.ts";
+import { type Ctx, CursorStale, err, log, type MailReadDeps, RateLimited, RpcError, SearchTimeout, SummaryFailed } from "./common.ts";
 import { read } from "./read.ts";
 import { search } from "./search.ts";
 
@@ -37,6 +37,7 @@ export function failure(e: unknown, stage: string, ctx: Ctx, elapsed: number): R
   if (unavailable) return done(503, "llm_unavailable", { reason: unavailable });
   if (e instanceof RateLimited) return done(429, "gmail_rate_limited", { why: "units" });
   if (e instanceof SearchTimeout) return done(502, "gmail_upstream", { why: "search_budget" });
+  if (e instanceof CursorStale) return done(410, "token_expired", { why: "page_token" });
   if (e instanceof SummaryFailed) return done(502, "summary_failed", { why: e.why });
   if (e instanceof Deferred) return e.message === "budget_exhausted" ? done(429, "budget_exhausted") : done(503, "llm_busy");
   // Gmail HTTP 오류·타임아웃·연결 오류(fetch TypeError) — 모델 쪽 오류는 read.ts 가 SummaryFailed 로 감싸 여기 오지 않는다

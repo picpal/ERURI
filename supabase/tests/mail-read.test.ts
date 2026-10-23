@@ -76,6 +76,8 @@ function fake(o: Opt = {}) {
       if (o.summary instanceof Error) throw o.summary;
       return o.summary ?? OK_SUMMARY;
     },
+    summarizeDigest: () => { throw new Error("no digest"); },
+    holds: { reserve: () => { throw new Error("no hold"); }, settle: () => { throw new Error("no hold"); } },
     audit: async (_u, t) => { if (o.auditFails) throw new Error("audit_mail_read 42883"); seen.audit.push(t); },
     sleep: async (ms) => { seen.sleeps.push(ms); },
     now: () => clock,
@@ -136,7 +138,7 @@ Deno.test("search: SENT/DRAFT/CHAT and vanished (404) metas are dropped; newest 
 });
 Deno.test("search: complete with nothing → 200 [] complete true more false; 20 all-SENT ids with a next page → complete false, more true, [] (not 'none')", async () => {
   assertEquals((await call(fake().d, req("search", F))).j, { conditions: { sender: "합성상점", subject_words: [], received_from: null, received_to: null,
-    latest: false, translate: false, count: null }, candidates: [], complete: true, more: false });
+    latest: false, translate: false, count: null }, candidates: [], complete: true, more: false, next_cursor: null, count_capped: false });
   const msgs = [...Array.from({ length: 20 }, (_, i) => msg(`s${i}`, i + 1, { labels: ["SENT"] })), ...Array.from({ length: 5 }, (_, i) => msg(`r${i}`, 30 + i))];
   const { j } = await call(fake({ msgs }).d, req("search", F));
   assertEquals([j.candidates.length, j.complete, j.more], [0, false, true]);

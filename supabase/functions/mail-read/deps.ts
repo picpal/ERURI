@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { budgetDeps } from "../_shared/budget-deps.ts";
+import { budgetDeps, holdDeps } from "../_shared/budget-deps.ts";
 import { gmailReadApi, MAIL_CALL_TIMEOUT_MS, refreshAccessToken } from "../_shared/gmail.ts";
 import { gmailAccessToken } from "../_shared/gmail-jobs.ts";
 import { importTokenKey } from "../_shared/mail-token.ts";
@@ -44,6 +44,8 @@ export function mailReadDeps(sb: SupabaseClient): MailReadDeps {
     tokenKey: () => (key ??= importTokenKey(Deno.env.get("MAIL_READ_KEY") ?? "").catch((e) => { key = null; throw e; })),
     budget: budgetDeps(sb),
     summarize: (i, onUsage) => summarize(i, onUsage),
+    summarizeDigest: () => Promise.reject(new Error("summarize_digest_pending")),   // S5 summary.ts summarizeDigest 로 바꾼다(S4 시점엔 없음 — digest 경로도 아직 없다)
+    holds: holdDeps(sb),
     audit: async (u, target) => { await rpc("audit_mail_read", { p_user: u, p_target: target }); },
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     now: () => Date.now(),
