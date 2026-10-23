@@ -17,9 +17,9 @@ Deno.test("validateMetricCases: committed file passes; dropping a case, a 5th us
   const five = structuredClone(f); for (const c of five.cases.slice(0, 5)) c.service = "합성같은이름"; assert(validateMetricCases(five).length > 0);
   const extra = structuredClone(f); extra.cases.find((c: { group: string }) => c.group === "single").expect.push({ label: "x", count: 1, at: "2026-10-22T05:00:00.000Z", at_body: false });
   assert(validateMetricCases(extra).length > 0);
-  // 구성 숫자(스펙 §15): 42 = 33 + 7 + 2, 기대 metric 50(반례 x2 의 {타임아웃, 0} 포함 — final-I2), 혼합은 일정 5 + metric 10씩. 보충 title 2개(t1·t2)는 42 밖
-  assertEquals([file.cases.length, byGroup("title").length], [44, 2]);
-  assertEquals(file.cases.filter((c) => c.time !== undefined && c.group !== "title").reduce((s, c) => s + c.expect.length, 0), 50);
+  // 구성 숫자(스펙 §15): 42 = 33 + 7 + 2, 기대 metric 50(반례 x2 의 {타임아웃, 0} 포함 — final-I2), 혼합은 일정 5 + metric 10씩. 보충 title 2개(t1·t2)·slash 2개(sl1·sl2)는 42 밖
+  assertEquals([file.cases.length, byGroup("title").length, byGroup("slash").length], [46, 2, 2]);
+  assertEquals(file.cases.filter((c) => c.time !== undefined && c.group !== "title" && c.group !== "slash").reduce((s, c) => s + c.expect.length, 0), 50);
   for (const m of byGroup("mixed_max")) assertEquals([m.events?.length, m.expect.length], [5, 10]);
   // 혼합 본문의 긴 label 을 15자 밑으로 줄이면 실패(기대 label 은 그 끝 두 낱말)
   const short = structuredClone(f);
@@ -64,6 +64,30 @@ Deno.test("title repeat supplement (final-I3): t2 has the same label·count in t
   assert(validateMetricCases(noRepeat).some((p) => p.includes("title repeat cases 0")), JSON.stringify(validateMetricCases(noRepeat)));
 });
 
+Deno.test("slash supplement (0.18.1): '/' field lines with a YYYYMMDD/HH:MM-HH:MM body time are accepted by the server; ⑩ needs label·count 2/2, its time is recorded only", () => {
+  const sl = byGroup("slash");
+  assertEquals(sl.map((c) => c.id), ["sl1", "sl2"]);
+  for (const c of sl) {
+    // 모델이 본문 시각을 날짜+시각으로 내면 그 시각, 비우면 받은 시각(at_body false)
+    const [, y, mo, d, hm] = /\](\d{4})(\d{2})(\d{2})\/(\d{2}:\d{2})-/.exec(c.text)!;
+    const start = `${y}-${mo}-${d} ${hm}`;
+    const raw = c.expect.map((m) => ({ label: m.label, count: m.count, start, end: null }));
+    assertEquals(normalizeMetrics(raw, c.occurred_at, c.text), c.expect, c.id);
+    assertEquals(normalizeMetrics(raw.map((m) => ({ ...m, start: null })), c.occurred_at, c.text).map((m) => m.at_body), [false], c.id);
+  }
+  const bad = (f: (x: MetricCaseFile) => void) => { const x = structuredClone(file); f(x); return validateMetricCases(x); };
+  assert(bad((x) => { x.cases.find((c) => c.id === "sl1")!.expect[0].count = 9; }).some((p) => p.includes("sl1 slash line")));
+  assert(bad((x) => { x.cases.find((c) => c.id === "sl2")!.expect[0].at = "2026-10-23T00:40:00.000Z"; }).some((p) => p.includes("sl2 slash line")));
+  assert(bad((x) => { x.cases = x.cases.filter((c) => c.id !== "sl2"); }).some((p) => p.includes("slash cases 1")));
+  // ⑩: label·count 놓치면 실패, 시각만 틀리면(받은 시각) 통과하고 기록만 남는다
+  const s1 = sl[0];
+  const miss = summarizeMetric(passRun().map((r) => r.id === "sl1" ? judgeMetricCase(s1, { metrics: [], events: [], status: "ok", output_tokens: 80 }) : r), 2048);
+  assertEquals([miss.pass, miss.checks.c10_slash], [false, "1/2"]);
+  const late = summarizeMetric(passRun().map((r) => r.id === "sl1" ? judgeMetricCase(s1, { metrics: s1.expect.map((m) => ({ ...m, at: s1.occurred_at, at_body: false })),
+    events: [], status: "ok", output_tokens: 80 }) : r), 2048);
+  assertEquals([late.pass, late.checks.c10_slash, late.checks.c10_slash_time], [true, "2/2", "1/2"]);
+});
+
 Deno.test("check text widening keeps every committed case (N8-title): each expected metric of the 42 is still accepted with a title line in front", () => {
   for (const c of file.cases.filter((c) => c.group !== "title")) {
     const raw = c.expect.map((m) => ({ label: m.label, count: m.count, start: null, end: null }));
@@ -102,8 +126,8 @@ Deno.test("summarizeMetric: one run under any threshold → pass false; threshol
   const ok = summarizeMetric(passRun(), 2048);
   assertEquals(ok.pass, true);
   assertEquals([ok.checks.c1, ok.checks.c2, ok.checks.c2_extra, ok.checks.c3, ok.checks.c4, ok.checks.c5, ok.checks.c6, ok.checks.c7, ok.checks.c7_out,
-    ok.checks.c7_tz, ok.checks.c8_done, ok.checks.c8_events, ok.checks.c8_metrics, ok.checks.c9_title],
-    ["0 emitted", "50/50", "0", "0", "2/2", "0", "33/33", "50/50", "2/2", "4/4", "2/2", "2/2", "20/20", "2/2"]);
+    ok.checks.c7_tz, ok.checks.c8_done, ok.checks.c8_events, ok.checks.c8_metrics, ok.checks.c9_title, ok.checks.c10_slash, ok.checks.c10_slash_time],
+    ["0 emitted", "50/50", "0", "0", "2/2", "0", "33/33", "50/50", "2/2", "4/4", "2/2", "2/2", "20/20", "2/2", "2/2", "2/2"]);
   assertEquals(ok.cap, 2048);
   // 사례 하나만 바꾼 줄
   const swap = (id: string, row: MetricRow) => passRun().map((r) => r.id === id ? row : r);

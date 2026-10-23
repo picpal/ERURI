@@ -69,6 +69,28 @@ Deno.test("brackets and table bars (final-I1): a paired group before the count a
   assertEquals(got([["오류", 5]], "오류 1.5건"), []);
 });
 
+Deno.test("slash / colon fields (0.18.1): label then one '/', '|' or ':' (spaces allowed) then the count is one cell; '/' needs the label at the cell's end", () => {
+  const got = (raw: [string, number][], text: string) =>
+    normalizeMetrics(raw.map(([label, count]) => ({ label, count, start: null, end: null })), R, text).map((m) => [m.label, m.count]);
+  assertEquals(got([["타임아웃", 8]], "[합성PAY]20261023/00:10-00:15/카드사/합성카드(인증외)/대외연동/타임아웃/8건"), [["타임아웃", 8]]);
+  assertEquals(got([["오류", 3]], "합성PAY/오류/3건"), [["오류", 3]]);
+  assertEquals(got([["타임아웃", 6]], "타임아웃:6건"), [["타임아웃", 6]]);
+  assertEquals(got([["타임아웃", 8]], "타임아웃 / 8 건"), [["타임아웃", 8]]);
+  assertEquals(got([["타임아웃", 6]], "타임아웃 : 6건"), [["타임아웃", 6]]);
+  assertEquals(got([["오류", 3]], "합성카드(인증외)/오류/3건"), [["오류", 3]]);
+  // label 없는 필드 줄 — 건수 앞 칸이 다른 필드면 버린다
+  assertEquals(got([["타임아웃", 8]], "[합성PAY]20261023/카드사/8건"), []);
+  assertEquals(got([["합성PAY", 8]], "[합성PAY]20261023/카드사/8건"), []);
+  // '/' 앞 칸이 label 로 끝나지 않으면(다른 낱말·다른 건수) 같은 칸이 아니다 — 쉼표 반례와 같다
+  assertEquals(got([["타임아웃", 20]], "타임아웃 발생/20건"), []);
+  assertEquals(got([["타임아웃", 20]], "타임아웃 발생 / 재시도 20건"), []);
+  assertEquals(got([["타임아웃", 20]], "타임아웃 3건/20건"), []);
+  assertEquals(got([["타임아웃", 14]], "타임아웃/6건/누적/14건"), []);
+  assertEquals(got([["타임아웃", 6]], "타임아웃/6건/누적/14건"), [["타임아웃", 6]]);
+  assertEquals(got([["오류", 3]], "결제 오류/\n3건"), []);                                      // 줄바꿈은 건너뛰지 않는다
+  assertEquals(got([["오류", 3]], "오류//3건"), []);                                            // 구분자는 하나만
+});
+
 Deno.test("occurrences one-to-one (final-I3): title repeat of a body count is one metric; two body occurrences are two; title-only stays; one occurrence, two labels → first", () => {
   const raw = (...xs: [string, number][]) => xs.map(([label, count]) => ({ label, count, start: null, end: null }));
   const pick = (ms: { label: string; count: number }[]) => ms.map((m) => [m.label, m.count]);

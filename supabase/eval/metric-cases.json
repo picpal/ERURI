@@ -1,5 +1,5 @@
 {
- "_note": "METRIC-eval(스펙 §15, 0.18.0) 합성 알림 42종 + 보충 2(t1 — 제목에만 건수, 메인 판정 N8-title / t2 — 제목·본문에 같은 건수, 메인 판정 final-I3: 기대 1개(두 배 아님), 42 구성 밖·합격선 ⑨) — 실제 알림·문자 원문 아님, 서비스명도 합성. occurred_at = 받은 시각(UTC), 러너 today = 받은 서울 날짜. expect = normalizeMetrics 뒤 기대 {label(그 끝 낱말 = 핵심 낱말이 모델 label 에 공백·대소문자 무시로 들어 있으면 일치 — Ruling N8-label), count, at(분 단위 비교), at_body}. 혼합 사례 expect label = 본문 긴 label(15자 이상)의 끝 두 낱말, events = 혼합 사례의 일정 시작(run-multi-event-eval judge 와 같은 접두 규칙). 반례·누적·시간대 글은 스펙 §15 그대로. 반례 x2 의 '타임아웃 0건'은 {타임아웃, 0}을 기대한다(final-I2 — count 0 받음, 기대 metric 50)",
+ "_note": "METRIC-eval(스펙 §15, 0.18.0) 합성 알림 42종 + 보충 2(t1 — 제목에만 건수, 메인 판정 N8-title / t2 — 제목·본문에 같은 건수, 메인 판정 final-I3: 기대 1개(두 배 아님), 42 구성 밖·합격선 ⑨ / 보충 slash 2(sl1·sl2, 0.18.1 사용자 승인 2026-10-23 — '/' 구분 필드 줄, 본문 시각 YYYYMMDD/HH:MM-HH:MM, 42 구성 밖·합격선 ⑩ label·count, 시각은 기록만)) — 실제 알림·문자 원문 아님, 서비스명도 합성. occurred_at = 받은 시각(UTC), 러너 today = 받은 서울 날짜. expect = normalizeMetrics 뒤 기대 {label(그 끝 낱말 = 핵심 낱말이 모델 label 에 공백·대소문자 무시로 들어 있으면 일치 — Ruling N8-label), count, at(분 단위 비교), at_body}. 혼합 사례 expect label = 본문 긴 label(15자 이상)의 끝 두 낱말, events = 혼합 사례의 일정 시작(run-multi-event-eval judge 와 같은 접두 규칙). 반례·누적·시간대 글은 스펙 §15 그대로. 반례 x2 의 '타임아웃 0건'은 {타임아웃, 0}을 기대한다(final-I2 — count 0 받음, 기대 metric 50)",
  "cases": [
   {
    "id": "s01",
@@ -516,6 +516,28 @@
    "occurred_at": "2026-10-22T05:12:00.000Z",
    "expect": [
     { "label": "타임아웃", "count": 6, "at": "2026-10-22T05:00:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "sl1",
+   "group": "slash",
+   "time": "range",
+   "service": "합성슬래시PAY",
+   "text": "[합성슬래시PAY]20261023/00:10-00:15/카드사/합성카드(인증외)/대외연동/타임아웃/8건",
+   "occurred_at": "2026-10-22T15:16:00.000Z",
+   "expect": [
+    { "label": "타임아웃", "count": 8, "at": "2026-10-22T15:10:00.000Z", "at_body": true }
+   ]
+  },
+  {
+   "id": "sl2",
+   "group": "slash",
+   "time": "range",
+   "service": "합성연동뱅크",
+   "text": "[합성연동뱅크]20261023/09:30-09:40/펌뱅킹/합성은행/전문오류/3건",
+   "occurred_at": "2026-10-23T00:45:00.000Z",
+   "expect": [
+    { "label": "전문오류", "count": 3, "at": "2026-10-23T00:30:00.000Z", "at_body": true }
    ]
   }
  ]

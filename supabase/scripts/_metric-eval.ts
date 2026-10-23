@@ -4,7 +4,7 @@ import type { Metric } from "../functions/_shared/metrics.ts";
 import { judge } from "../eval/run-multi-event-eval.ts";
 
 export type MetricGroup = "single" | "multi" | "sum_detail" | "repeat" | "cumulative_mixed" | "counter" | "tz" | "none_plain" | "none_money"
-  | "none_ratio" | "none_cumulative" | "mixed_max" | "title";
+  | "none_ratio" | "none_cumulative" | "mixed_max" | "title" | "slash";
 export type MetricTime = "range" | "point" | "datetime" | "none" | "out_of_window" | "tz";
 // title = 알림 제목(보충 그룹 title 만 — 러너가 meta.title 로 보내고 검증 글은 metricCheckText(title, text), N8-title). t1 = 제목에만 건수, t2 = 제목·본문에 같은 건수(final-I3)
 export type MetricCase = { id: string; group: MetricGroup; time?: MetricTime; service: string; text: string; occurred_at: string; expect: Metric[];
@@ -18,8 +18,8 @@ export type MetricGot = { metrics: Metric[]; events: string[]; status: MetricSta
 export type MetricRow = { id: string; group: MetricGroup; time: MetricTime | null; expected: number; got: number; matched: number; extra: number;
   time_ok: number; sum_ok: boolean; timeout: number; events_ok: boolean | null; status: MetricStatus; output_tokens: number };
 
-// 스펙 §15 구성(42) — 보충 그룹 title 은 따로 센다(TITLE_CASES, 2026-10-22 메인 판정 N8-title·final-I3)
-export const GROUP_COUNTS: Record<Exclude<MetricGroup, "title">, number> = { single: 12, multi: 10, sum_detail: 2, repeat: 2, cumulative_mixed: 1, counter: 2, tz: 4,
+// 스펙 §15 구성(42) — 보충 그룹 title 은 따로 센다(TITLE_CASES, 2026-10-22 메인 판정 N8-title·final-I3), slash 도(SLASH_CASES, 0.18.1)
+export const GROUP_COUNTS: Record<Exclude<MetricGroup, "title" | "slash">, number> = { single: 12, multi: 10, sum_detail: 2, repeat: 2, cumulative_mixed: 1, counter: 2, tz: 4,
   none_plain: 2, none_money: 2, none_ratio: 2, none_cumulative: 1, mixed_max: 2 };
 export const TIME_COUNTS: Record<MetricTime, number> = { range: 12, point: 4, datetime: 4, none: 7, out_of_window: 2, tz: 4 };
 const METRIC_GROUPS: MetricGroup[] = ["single", "multi", "sum_detail", "repeat", "cumulative_mixed", "counter", "tz"];
@@ -28,6 +28,10 @@ const EXPECT_TOTAL = 50;   // 반례 x2 의 {타임아웃, 0} 포함(final-I2)
 const MIXED_EVENTS = 5, MIXED_METRICS = 10, MIXED_LABEL_MIN = 15;
 const SERVICES_MIN = 12, SERVICE_MAX_USES = 4;
 const TITLE_CASES = 2;
+// 보충 slash(0.18.1 사용자 승인 2026-10-23): '/' 구분 필드 줄 "[서비스]YYYYMMDD/HH:MM-HH:MM/…/<label>/<count>건" — 기대 1개, 본문 시작 시각(서울)
+const SLASH_CASES = 2;
+const SLASH_LINE = /^\[[^\]]+\](\d{4})(\d{2})(\d{2})\/(\d{2}:\d{2})-\d{2}:\d{2}\/(?:[^/\n]+\/)+([^/\n]+)\/(\d+)건$/;
+const SUPPLEMENT: MetricGroup[] = ["title", "slash"];
 // 그룹별 기대 metric 수 [최소, 최대]
 const EXPECT_RANGE: Partial<Record<MetricGroup, [number, number]>> = { single: [1, 1], multi: [2, 3], sum_detail: [2, 3], repeat: [1, 1],
   cumulative_mixed: [1, 1], counter: [1, 2], tz: [1, 1] };
@@ -70,9 +74,18 @@ export function validateMetricCases(f: MetricCaseFile): string[] {
   }
   if (titleOnly !== 1) p.push(`title-only cases ${titleOnly} != 1 (count also in body)`);
   if (titleRepeat !== 1) p.push(`title repeat cases ${titleRepeat} != 1`);
-  const cases = all.filter((c) => c.group !== "title");
+  const slashed = all.filter((c) => c.group === "slash");
+  if (slashed.length !== SLASH_CASES) p.push(`slash cases ${slashed.length} != ${SLASH_CASES}`);
+  for (const c of slashed) {
+    const l = SLASH_LINE.exec(c.text ?? ""), m = Array.isArray(c.expect) && c.expect.length === 1 ? c.expect[0] : null;
+    if (!m) { p.push(`${c.id} slash expect != 1`); continue; }
+    if (!l || !c.text.includes(c.service) || l[5] !== m.label || Number(l[6]) !== m.count || seoulMinute(m.at) !== `${l[1]}-${l[2]}-${l[3]}T${l[4]}`
+      || !m.at_body || c.time !== "range") p.push(`${c.id} slash line (label/count/time vs text)`);
+    if (c.title !== undefined || c.events !== undefined) p.push(`${c.id} slash title/events`);
+  }
+  const cases = all.filter((c) => !SUPPLEMENT.includes(c.group));
   if (cases.length !== 42) p.push(`cases ${cases.length} != 42`);
-  for (const c of cases) if (c.title !== undefined) p.push(`${c.id} title outside title group`);
+  for (const c of all.filter((c) => c.group !== "title")) if (c.title !== undefined) p.push(`${c.id} title outside title group`);
   for (const [g, n] of Object.entries(GROUP_COUNTS)) {
     const k = cases.filter((c) => c.group === g).length;
     if (k !== n) p.push(`group ${g} ${k} != ${n}`);
@@ -165,8 +178,10 @@ export function judgeMetricCase(c: MetricCase, got: MetricGot): MetricRow {
     status: got.status, output_tokens: got.output_tokens };
 }
 
-type CheckKey = "c1" | "c2" | "c2_extra" | "c3" | "c4" | "c5" | "c6" | "c7" | "c7_out" | "c7_tz" | "c8_done" | "c8_events" | "c8_metrics" | "c9_title";
-const CHECK_KEYS: CheckKey[] = ["c1", "c2", "c2_extra", "c3", "c4", "c5", "c6", "c7", "c7_out", "c7_tz", "c8_done", "c8_events", "c8_metrics", "c9_title"];
+type CheckKey = "c1" | "c2" | "c2_extra" | "c3" | "c4" | "c5" | "c6" | "c7" | "c7_out" | "c7_tz" | "c8_done" | "c8_events" | "c8_metrics" | "c9_title"
+  | "c10_slash" | "c10_slash_time";
+const CHECK_KEYS: CheckKey[] = ["c1", "c2", "c2_extra", "c3", "c4", "c5", "c6", "c7", "c7_out", "c7_tz", "c8_done", "c8_events", "c8_metrics", "c9_title",
+  "c10_slash", "c10_slash_time"];
 
 // 한 실행의 합격선 ①~⑧. 그 그룹 사례가 이 실행에 없으면 n/a(합격에 영향 없음 — --mixed-only·--ids 부분 실행).
 // 허용 틀림(②⑦ 2개, ⑥ 1개, ⑧ metric 1개)은 전체 실행에서 스펙 숫자(≥47/49·≥32/33·≥19/20)와 같다
@@ -201,6 +216,9 @@ function runChecks(rows: MetricRow[]): Record<CheckKey, { text: string; ok: bool
     c8_metrics: frac(mixed, (r) => r.matched, (r) => r.expected, 1),
     // ⑨ 보충(N8-title·final-I3): 제목 건수 사례 t1·t2 — label·count, 여분 0(t2 는 제목·본문 반복을 두 번 받으면 여분 1). 시각은 ⑦이 잰다(N8-t1)
     c9_title: frac(of(["title"]), (r) => r.matched === r.expected && r.extra === 0 ? 1 : 0, () => 1, 0),
+    // ⑩ 보충(0.18.1): '/' 구분 필드 줄 sl1·sl2 — label·count, 여분 0. 본문 시각(YYYYMMDD/HH:MM)은 기록만(합격에 넣지 않는다 — 사용자 승인 범위)
+    c10_slash: frac(of(["slash"]), (r) => r.matched === r.expected && r.extra === 0 ? 1 : 0, () => 1, 0),
+    c10_slash_time: (({ text }) => ({ text, ok: true }))(frac(of(["slash"]), (r) => r.time_ok === r.expected ? 1 : 0, () => 1, 0)),
   };
 }
 

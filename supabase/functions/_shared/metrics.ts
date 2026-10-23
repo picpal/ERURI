@@ -57,6 +57,9 @@ const CLAUSE = /[,，.。;；/|·\n()（）\[\]{}]/;
 // 괄호·표 표기(final-I1): 숫자 바로 앞 구분 기호 하나 — 공백만 사이에 둔 여는 괄호·표의 '|', 앞뒤 공백 없이 붙은 쉼표 — 는 건너뛰고,
 // 그 앞의 짝 맞는 괄호 묶음(줄바꿈 없이)을 지운 뒤 창·구절을 본다. 짝 없는 여는 괄호는 경계로 남는다("(오늘 누적 14건)"의 14는 계속 버림)
 const LEAD = /(?:[(\[（|][ \t]*|(?<=\S)[,，])$/;
+// '/' 필드 줄(0.18.1, "…/대외연동/타임아웃/8건"): 숫자 바로 앞 '/' 하나(앞뒤 공백·탭 허용, 줄바꿈·'//' 아님)도 건너뛴다 — 단 그 앞 칸이 label 로
+// 끝나야 같은 칸이다(tight). 그래서 "타임아웃 발생/20건"·"타임아웃 3건/20건"의 20, label 없는 "…/카드사/8건"은 계속 버린다. ':' 는 구절 경계가 아니라 그대로 받는다
+const SLASH = /(?<!\/)[ \t]*\/[ \t]*$/;
 const PAIRED = /\([^()\n]*\)|\[[^\[\]\n]*\]|（[^（）\n]*）/g;
 const squash = (s: string) => s.replace(/\s/g, "").toLowerCase();
 // 단위 검증(Ruling N8-unit): 숫자 바로 뒤(공백 건너뜀)가 건수 단위면 받고, 측정 단위(시간 길이·비율·금액·용량·배수)면 버리고, 아무것도 없거나
@@ -76,12 +79,14 @@ function dropPaired(s: string): string {
   return s;
 }
 
-// 출현 = 본문에 나온 숫자 하나: [위치, 값, 단위 통과, 근접 검증 글(구절)]
-type Occurrence = { at: number; value: number; unit: boolean; clause: string };
+// 출현 = 본문에 나온 숫자 하나: [위치, 값, 단위 통과, 근접 검증 글(구절), '/' 를 건너뛰었는지]
+type Occurrence = { at: number; value: number; unit: boolean; clause: string; tight: boolean };
 function occurrences(text: string): Occurrence[] {
   return [...text.matchAll(NUM)].map((m) => {
-    const prefix = dropPaired(text.slice(0, m.index).replace(LEAD, ""));
-    return { at: m.index, value: Number(m[0].replace(/,/g, "")), unit: unitOk(text.slice(m.index + m[0].length)), clause: prefix };
+    const before = text.slice(0, m.index);
+    const tight = SLASH.test(before);
+    const prefix = dropPaired(tight ? before.replace(SLASH, "") : before.replace(LEAD, ""));
+    return { at: m.index, value: Number(m[0].replace(/,/g, "")), unit: unitOk(text.slice(m.index + m[0].length)), clause: prefix, tight };
   });
 }
 // 근접·단위 검증: 같은 출현에서 둘 다 만족해야 한다
@@ -89,7 +94,7 @@ function satisfies(o: Occurrence, label: string, count: number): boolean {
   if (o.value !== count || !o.unit) return false;
   const size = Math.max(NEAR, [...label].length + 1);
   const cut = [...o.clause].slice(-size).join("").split(CLAUSE).at(-1) ?? "";
-  return squash(cut).includes(squash(label));
+  return o.tight ? squash(cut).endsWith(squash(label)) : squash(cut).includes(squash(label));
 }
 
 // 근접·단위 검증 글 = 모델이 본 가린 제목 + 가린 본문(N8-title — 제목에만 있는 건수도 받는다). 줄바꿈이 구절을 갈라 제목 낱말이 본문 숫자에 붙지 않는다.
