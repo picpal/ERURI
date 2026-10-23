@@ -159,6 +159,18 @@ Deno.test("one request never yields the same Gmail id twice even when the list s
   const r = await ids(await post(d, { sender: "합성상점", limit: 10, count: 30 }));
   assertEquals(r.ids, idsOf(10));                                                     // 중복 0(m003·m004 한 번씩), 누락 0
 });
+Deno.test("resume at a page end (o 20): new mail on top between the anchor page and the next page in the same request → the anchor and earlier ids are not consumed again (S4 review I1)", async () => {
+  // 셋째 요청: 첫 쪽에서 앵커 m019 를 k = 19 에서 확인(소비 0) → 둘째 list("p20") 직전 새 메일 1통 — 오프셋형 p20 이 m019 부터 시작한다
+  let list: M[] = mails(45);
+  const { d } = fake(() => list, { onList: (n) => { if (n === 4) list = [...mails(1, () => NOW + 1000, "n"), ...list]; } });
+  const { got } = await pageAll(d, B);
+  assertEquals(got, idsOf(45));
+});
+Deno.test("a Gmail 400 on a nextPageToken issued within the same request is a Gmail error (502), not token_expired (S4 review M1)", async () => {
+  const { d } = fake(() => mails(40), { rejectPage: true, pageCap: 5 });
+  const r = await post(d, B);
+  assertEquals([r.status, (await r.json()).error], [502, "gmail_upstream"]);
+});
 Deno.test("cursor errors: other conditions → 404, expired → 410, latest + cursor → 400, a rejected pageToken on a real second Gmail page (p set) → 410", async () => {
   const { d } = fake(() => mails(65));
   const first = await ids(await post(d, B));

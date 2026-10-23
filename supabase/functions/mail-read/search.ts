@@ -95,6 +95,7 @@ export async function scan(ctx: SearchCtx, q0: string, limit: number, start: Pos
   const st: State = { lists: 0, metas: 0, seen: new Map() };
   const out: GmailMessage[] = [], consumed = new Set<string>();
   let b = start?.b ?? null, page = start?.p ?? null, offset = start?.o ?? 0, resume = start?.l ?? null;
+  let fromCursor = page !== null;                                                      // page 가 커서 출신일 때만 400 → 410(같은 요청의 nextPageToken 은 Gmail 오류)
   let pos = { p: start?.p ?? null, o: start?.o ?? 0, l: start?.l ?? null };            // 자리 앵커 — 시간 거르기로 버린 메일도 옮긴다(진행 보장)
   let time = { t: start?.t ?? null, s: [...(start?.s ?? [])] };                        // 시간 상태 — 받아들인 메일만 옮긴다
   let ordered = true, fallback = false;
@@ -108,7 +109,7 @@ export async function scan(ctx: SearchCtx, q0: string, limit: number, start: Pos
     st.lists++;
     let r: ListPage;
     try { r = await ctx.api.list(query(), SCAN_PAGE, page ?? undefined, ctx.over()); }
-    catch (e) { if (e instanceof GmailHttpError && e.status === 400 && page !== null) throw new CursorStale(); throw e; }   // 오래된·모르는 pageToken → 410
+    catch (e) { if (e instanceof GmailHttpError && e.status === 400 && fromCursor) throw new CursorStale(); throw e; }   // 커서의 오래된·모르는 pageToken → 410
     const pageIds = (r.messages ?? []).map((m) => m.id);
     let i = offset;
     if (resume !== null) {                                               // 앵커 확인(DP6): o − 1 자리 먼저, 아니면 쪽 안 어디든
@@ -116,9 +117,10 @@ export async function scan(ctx: SearchCtx, q0: string, limit: number, start: Pos
       resume = null;
       if (k < 0) {                                                       // 확인 안 됨 — 삭제·이동·쪽 밖으로 밀림: 시간 기준으로 다시 찾는다
         b = Math.floor(time.t! / 1000) + 1;                              // l 이 있으면 t 도 있다(S3 isCursor, PF-12). 같은 초를 포함하게 ⌊⌋ + 1
-        page = null; offset = 0; fallback = true; pos = { p: null, o: 0, l: null };
+        page = null; offset = 0; fromCursor = false; fallback = true; pos = { p: null, o: 0, l: null };
         continue;
       }
+      pageIds.slice(0, k + 1).forEach((id) => consumed.add(id));         // 앵커와 그 앞(앞 요청들이 소비) — 다음 쪽이 밀려도 다시 소비하지 않는다(§7 보장 범위). 메타는 읽지 않음
       i = k + 1;
     }
     while (i < pageIds.length) {
@@ -145,7 +147,7 @@ export async function scan(ctx: SearchCtx, q0: string, limit: number, start: Pos
     const nextPage = r.nextPageToken ?? null;
     if (nextPage === null) return done(true, true);                      // 목록 끝 — next_cursor 없음
     if (out.length >= limit) return done(true);                          // 쪽 끝에서 채움 — 커서는 앵커가 있는 이 쪽(o = 쪽 길이)
-    page = nextPage; offset = 0;                                         // 빈 쪽·거른 결과 0통 쪽도 같은 요청 안에서 계속
+    page = nextPage; offset = 0; fromCursor = false;                                   // 빈 쪽·거른 결과 0통 쪽도 같은 요청 안에서 계속
   }
 }
 
