@@ -377,3 +377,13 @@ r1(U2 지시 수정 1회 — "날짜도 적혀 있으면" 뒤에 연도 없는 �
 | n_ambiguous | 0/3 | 모델이 `sender`를 비워(맥락 발신자 아님) 가드가 돌지 않아 `count` 3이 남음(3/3) — S7 Ruling의 측정 대상 |
 
 지시문은 고치지 않았다(E2 지시: 미달이면 수치 그대로 보고). U4 판정은 메인.
+
+**수정 라운드 1**(`727b23a`, 메인 판정 E2 Ruling ②): n_vague 기대에서 `target_in_message` 제거 · `MAIL_READ_COUNT_RULES` 셋째 줄 끝에 "통수만 말하고 발신자·제목을 말하지 않았으면 이전 대화의 발신자·제목 단어를 sender·subject_words 에 채우지 않는다" · `guardContextSender`가 모델 sender null 이어도 두 이름이면('X랑'은 다른 표지 이름과 함께일 때만) 대상 칸·`count`를 비움. 고정 해시 14단언(`stripCount` 뒤 0.18.x 바이트) 그대로.
+
+| 사례 | 일치 | 어긋난 칸 |
+|---|---|---|
+| n_three · n_five_sender · n_twelve · n_forty · n_none · n_latest · n_vague | 3/3 씩 | — |
+| n_after_detail | 0/3 | `sender`에 맥락 발신자를 여전히 채움(3/3) — 지시 한 줄로 바뀌지 않음 |
+| n_ambiguous | 1/3 | 일치 1회 = 모델 sender null → 새 가드가 비움. 실패 2회 = 모델이 두 이름 중 하나("합성상점")를 sender 로 채우고 `count` 3 → 지금 글이 그 이름을 말하므로 가드가 첫 검사에서 돌아감(탐침 호출 2회로 확인) |
+
+**② 22/27 — 미달**. 추가 수정 없이 멈춤(메인 판정). INTENT 회귀(`--mode both --base 0.18 --runs 4`, 22:08~22:51 KST): new_wrong 0 · pass true, 0.19.0 쪽 gate pass·gate_cases true(gates.md INTENT-0190 행).
