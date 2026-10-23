@@ -159,7 +159,7 @@ const NEW_FOUR: readonly string[] = AGG_INTENT_VALUES;
 Deno.test("hasAggCue: every AGG-eval aggregate/save_rule case reaches the 0.17.0 schema (single turns by cue, follow-ups by aggregate_context)", () => {
   const cases = evalCases("agg-cases.json");
   const positive = cases.filter((c) => NEW_FOUR.includes(c.intent));
-  assertEquals(positive.length, 29);                                       // 단발 집계 14·규칙 13 + 연속 턴 집계 2
+  assertEquals(positive.length, 31);                                       // 단발 집계 14·규칙 13 + 연속 턴 집계 2 + 보충 agg_day 2(0.18.1)
   for (const c of positive.filter((c) => !c.previous)) assert(hasAggCue(c.text), c.id);
   for (const c of positive) assert(aggModeFor(c.text, APP_0170, c.previous ?? null) !== null, c.id);
   // 다른 의도 14 중 단서가 있는 것(0.17.0 요청 — 모델이 question 으로 골라야 함): 키워드 없음·종류 낱말·부정·인용·기능 질문. 나머지는 0.16.x 요청이라 새 의도가 나올 수 없다

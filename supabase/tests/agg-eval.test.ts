@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert";
-import { type AggCase, type AggCaseFile, type AggRow, BOUNDARY_TEXTS, judgeAgg, parseEvalMode, summarizeAgg, validateAggCases } from "../scripts/_agg-eval.ts";
+import { type AggCase, type AggCaseFile, type AggRow, BOUNDARY_TEXTS, DAY_GROUP, judgeAgg, parseEvalMode, summarizeAgg, validateAggCases } from "../scripts/_agg-eval.ts";
 import { errorRates, excludeIdentical, flakyCases, newlyWrong, newlyWrongByRate, type Row, unsettled } from "../scripts/_intent-eval.ts";
 import type { Intent } from "../functions/chat/filters.ts";
 
@@ -10,7 +10,7 @@ const echo = (c: AggCase) => ({ intent: c.intent, aggregate: c.agg ? { ...c.agg 
 
 Deno.test("validateAggCases: the committed file passes; removing one case or one boundary text fails", () => {
   assertEquals(file.today, "2026-10-21");
-  assertEquals(file.cases.length, 44);
+  assertEquals([file.cases.length, file.cases.filter((c) => c.group === DAY_GROUP).length], [46, 2]);   // 44 + 보충 agg_day 2(0.18.1)
   assertEquals(validateAggCases(file), []);
   assertEquals(BOUNDARY_TEXTS.length, 20);
   const dropped = validateAggCases({ ...file, cases: file.cases.filter((c) => c.id !== "g07") });
@@ -60,7 +60,7 @@ Deno.test("judgeAgg: revalidates the model's aggregate (and previous) before com
   assertEquals(judgeAgg(r, { intent: "save_rule_add", aggregate: null, save_rule: { kind: "keyword", value: ` ${r.rule!.value.toLowerCase()} ` } }).rule_ok, true);
   assertEquals(judgeAgg(r, { intent: "save_rule_add", aggregate: null, save_rule: { kind: "sender", value: r.rule!.value } }).rule_ok, false);
   assertEquals(judgeAgg(r, { intent: "save_rule_remove", aggregate: null, save_rule: { ...r.rule! } }).rule_ok, false);
-  // 기대값을 그대로 낸 출력은 44개 모두 맞음
+  // 기대값을 그대로 낸 출력은 46개 모두 맞음
   for (const c of file.cases) {
     const row = judgeAgg(c, echo(c));
     assert(row.got === c.intent && row.keywords_ok !== false && row.bucket_ok !== false && row.sources_ok !== false && row.from_ok !== false &&
@@ -68,11 +68,32 @@ Deno.test("judgeAgg: revalidates the model's aggregate (and previous) before com
   }
 });
 
+Deno.test("agg_day supplement (0.18.1): the model's empty or last-7-days period on '오늘'·'어제' is pinned by the server; validator and ⑩ day 2/2 outside the 44", () => {
+  const days = file.cases.filter((c) => c.group === DAY_GROUP);
+  assertEquals(days.map((c) => [c.id, c.agg!.from, c.agg!.to]), [["y01", "2026-10-21", "2026-10-21"], ["y02", "2026-10-20", "2026-10-20"]]);
+  for (const c of days) {
+    for (const [from, to] of [[null, null], ["2026-10-15", "2026-10-21"]]) {
+      const row = judgeAgg(c, { intent: "aggregate", aggregate: { ...c.agg!, from, to }, save_rule: null }, file.today);
+      assertEquals([row.from_ok, row.to_ok], [true, true], `${c.id} ${from}`);
+    }
+  }
+  // 하루 말을 지운 글은 고정되지 않아 검사가 막는다
+  const bad = validateAggCases({ ...file, cases: file.cases.map((c) => c.id === "y01" ? { ...c, text: "합성PAY 타임아웃 몇 건이야?" } : c) });
+  assert(bad.some((p) => p.includes("y01 agg_day")), JSON.stringify(bad));
+  assert(validateAggCases({ ...file, cases: file.cases.filter((c) => c.id !== "y02") }).some((p) => p.includes(`${DAY_GROUP} 1 != 2`)));
+  // 보충이 의도를 놓치면 실패, 44 합격선 숫자에는 들지 않는다
+  const perfect = file.cases.map((c) => judgeAgg(c, echo(c)));
+  const missed = perfect.map((r) => r.id === "y01" ? { ...r, got: "question" as Intent, from_ok: false, to_ok: false } : r);
+  const m = summarizeAgg([missed]);
+  assertEquals([m.pass, m.per_run[0].intent, m.per_run[0].day, m.per_run[0].wrong], [false, 44, 1, ["y01"]]);
+});
+
 Deno.test("summarizeAgg: thresholds per run; one run under → pass false", () => {
   const perfect = file.cases.map((c) => judgeAgg(c, echo(c)));
   const s = summarizeAgg([perfect, perfect]);
   assertEquals(s.pass, true);
-  assertEquals([s.per_run[0].intent, s.per_run[0].aggregate_cases, s.per_run[0].split_cases, s.per_run[0].rule_cases], [44, 16, 7, 10]);
+  assertEquals([s.per_run[0].cases, s.per_run[0].intent, s.per_run[0].aggregate_cases, s.per_run[0].split_cases, s.per_run[0].rule_cases, s.per_run[0].day_cases,
+    s.per_run[0].day], [44, 44, 16, 7, 10, 2, 2]);
   const set = (rows: AggRow[], id: string, o: Partial<AggRow>) => rows.map((r) => r.id === id ? { ...r, ...o } : r);
   const aggIds = perfect.filter((r) => r.expected === "aggregate").map((r) => r.id);
   // 의도 2개 틀림까지는 통과(42/44), 3개면 실패

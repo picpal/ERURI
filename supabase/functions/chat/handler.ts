@@ -229,9 +229,9 @@ export function toAggCounts(r: AggRpc): AggCounts {
   return { total: r.total, body_total: r.body_total ?? r.total, metric_items: r.metric_items ?? 0, metric_unmatched: r.metric_unmatched ?? 0,
     buckets: (r.buckets ?? []).map((b) => ({ key: b.key, count: b.body ?? b.count })) };
 }
-async function runAggregate(userId: string, deps: ChatDeps, raw: AggRaw | null, today: string, previous: AggConditions | null):
+async function runAggregate(userId: string, deps: ChatDeps, question: string, raw: AggRaw | null, today: string, previous: AggConditions | null):
   Promise<{ aggregate: AggregateResult; log: AggLog } | null> {
-  const v = revalidateAggregate(raw, today, previous);
+  const v = revalidateAggregate(raw, today, previous, question);
   if (v.kind === "question") return null;
   if (v.kind === "bad_condition") {
     return { aggregate: BAD_CONDITION, log: { status: "bad_condition", total: 0, bucket: null, clamped: false, defaulted: false, inherited: false, metric_items: 0,
@@ -286,7 +286,7 @@ async function answerOnce(userId: string, question: string, deps: ChatDeps, cont
     }
     // 집계·저장 규칙도 행동 의도처럼 검색·답변 없이(정산은 필터 원소만). 키워드 없는 집계는 아래 질문 흐름(응답 intent question)
     if (intent === "aggregate") {
-      const a = await runAggregate(userId, deps, rawAgg ?? null, today, aggCtx);
+      const a = await runAggregate(userId, deps, question, rawAgg ?? null, today, aggCtx);
       if (a) return { ...actionResult(intent, null, null), aggregate: a.aggregate, rewritten: false, raw_intent: raw, agg_log: a.log } as ChatOutcome;
     }
     const op = RULE_OPS[intent];

@@ -66,6 +66,38 @@ Deno.test("revalidate ④: default last 7 days (defaulted); from only → to tod
   }
 });
 
+Deno.test("revalidate ④ day words (0.18.1): '오늘'·'어제'·'그제/그저께' alone in the message pin from = to = that Seoul day when the model left it empty or chose otherwise", () => {
+  const p = (text: string, o: AggRaw = {}, previous: AggConditions | null = null) => {
+    const c = ok(revalidateAggregate(raw(o), TODAY, previous, text));
+    return [c.from, c.to, c.defaulted];
+  };
+  // 모델이 '오늘'을 최근 7일(빈 칸 또는 7일 범위)로 읽어도 그날 하루
+  assertEquals(p("오늘 합성PAY 타임아웃 몇 건이야?"), ["2026-10-21", "2026-10-21", false]);
+  assertEquals(p("오늘 합성PAY 타임아웃 몇 건이야?", { from: "2026-10-15", to: "2026-10-21" }), ["2026-10-21", "2026-10-21", false]);
+  assertEquals(p("어제 합성PAY 오류 몇 건 왔어?"), ["2026-10-20", "2026-10-20", false]);
+  assertEquals(p("어제 합성PAY 오류 몇 건 왔어?", { from: "2026-10-21", to: "2026-10-21" }), ["2026-10-20", "2026-10-20", false]);
+  assertEquals(p("그제 합성PAY 문자 몇 건?"), ["2026-10-19", "2026-10-19", false]);
+  assertEquals(p("그저께 합성PAY 문자 몇 건?"), ["2026-10-19", "2026-10-19", false]);
+  assertEquals(p("합성PAY 오늘은 몇 건이야", { from: "2026-10-21", to: "2026-10-21" }), ["2026-10-21", "2026-10-21", false]);   // 이미 그날이면 그대로
+  // 직전 집계를 이어받는 후속 말도 지금 글의 하루가 이긴다
+  assertEquals(p("그럼 어제는?", { keywords: [] }, cond({ bucket: "hour" })), ["2026-10-20", "2026-10-20", false]);
+  // 고정하지 않는 것: 하루 말 없음, 범위의 끝·시작·비교, 하루 말 둘, 다른 기간 말과 함께, 키워드·발신자 안의 낱말, 다른 낱말의 일부
+  assertEquals(p("합성PAY 타임아웃 몇 건이야?"), ["2026-10-15", "2026-10-21", true]);
+  assertEquals(p("지난주부터 오늘까지 합성PAY 몇 건?", { from: "2026-10-12", to: "2026-10-21" }), ["2026-10-12", "2026-10-21", false]);
+  assertEquals(p("어제부터 합성PAY 몇 건?", { from: "2026-10-20" }), ["2026-10-20", "2026-10-21", false]);
+  assertEquals(p("어제보다 합성PAY 많아?", { from: "2026-10-20", to: "2026-10-21" }), ["2026-10-20", "2026-10-21", false]);
+  assertEquals(p("어제랑 오늘 합성PAY 몇 건?", { from: "2026-10-20", to: "2026-10-21" }), ["2026-10-20", "2026-10-21", false]);
+  assertEquals(p("이번 주 합성PAY 중 오늘 몇 건?", { from: "2026-10-19", to: "2026-10-21" }), ["2026-10-19", "2026-10-21", false]);
+  assertEquals(p("최근 3일 합성PAY 어제 많았어?", { from: "2026-10-19", to: "2026-10-21" }), ["2026-10-19", "2026-10-21", false]);
+  assertEquals(p("합성오늘마켓 알림 몇 건?", { keywords: ["합성오늘마켓"] }), ["2026-10-15", "2026-10-21", true]);
+  assertEquals(p("합성어제상점에서 온 문자 몇 건?", { keywords: ["문자"], sender: "합성어제상점" }), ["2026-10-15", "2026-10-21", true]);
+  assertEquals(p("오늘날 합성PAY 몇 건?"), ["2026-10-15", "2026-10-21", true]);
+  // 글이 없으면(aggregate_context·목록 재검증) 바꾸지 않는다
+  assertEquals(ok(revalidateAggregate(raw(), TODAY, null)).from, "2026-10-15");
+  // 고정해도 다른 칸 재검증은 그대로 — 무효 키워드는 bad_condition
+  assertEquals(revalidateAggregate(raw({ keywords: ["A"] }), TODAY, null, "오늘 A 몇 건").kind, "bad_condition");
+});
+
 Deno.test("revalidate ⑤: bucket outside the three → day", () => {
   for (const b of ["hour", "day", "weekday"]) assertEquals(ok(revalidateAggregate(raw({ bucket: b }), TODAY, null)).bucket, b);
   for (const b of [null, "month", 3]) assertEquals(ok(revalidateAggregate(raw({ bucket: b }), TODAY, null)).bucket, "day");

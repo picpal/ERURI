@@ -70,8 +70,28 @@ function period(from: unknown, to: unknown, today: string): Period | null {
   return { from: f!, to: t!, defaulted: false, clamped: false };
 }
 
-// 재검증 ①~⑥. previous = 서버가 재검증한 직전 집계 조건(aggregate_context) — 지금 글이 말하지 않아 빈 칸만 채우고(⑥) 그 뒤 ①~⑤
-export function revalidateAggregate(raw: AggRaw | null, today: string, previous: AggConditions | null): Revalidated {
+// ④ 하루 말(0.18.1, 2026-10-23 사용자 승인 — G1 리뷰 백로그 ①: 필터가 '오늘'을 최근 7일로 읽어 과다 집계). 지금 글에 '오늘'·'어제'·'그제/그저께' 중
+// 한 날만 있고 다른 기간 말이 없으면 그 서울 날짜. 범위의 끝·시작·비교('오늘까지'·'어제부터'·'어제보다')와 키워드·발신자 안의 낱말은 하루 말이 아니다
+const DAY_WORDS: [RegExp, number][] = [[/오늘(?!날)/g, 0], [/어제/g, -1], [/그저께|그제(?!야|서야)/g, -2]];
+const NOT_DAY_TAIL = /^\s*(?:까지|부터|이후|이전|보다|대비|빼고|말고|제외)/;
+const OTHER_PERIOD = /이번\s*주|지난\s*주|저번\s*주|이번\s*달|지난\s*달|저번\s*달|올해|작년|지난해|최근|일주일|주말|요일|\d+\s*(?:일|월|주)|\d+\s*\/\s*\d+/;
+function dayWordPin(text: string, words: string[], today: string): string | null {
+  let t = text;
+  for (const w of words) t = t.split(w).join(" ");          // 키워드·발신자(재검증 뒤 표기)를 지운 글에서만 찾는다
+  if (OTHER_PERIOD.test(t)) return null;
+  const days = new Set<number>();
+  for (const [re, offset] of DAY_WORDS) {
+    for (const m of t.matchAll(re)) {
+      if (NOT_DAY_TAIL.test(t.slice(m.index + m[0].length))) return null;
+      days.add(offset);
+    }
+  }
+  return days.size === 1 ? plusDays(today, [...days][0]) : null;
+}
+
+// 재검증 ①~⑥. previous = 서버가 재검증한 직전 집계 조건(aggregate_context) — 지금 글이 말하지 않아 빈 칸만 채우고(⑥) 그 뒤 ①~⑤.
+// text = 지금 글(chat 필터에 보낸 질문) — 있으면 ④ 하루 말로 기간을 고정한다(aggregate_context·목록 요청 재검증은 글 없이 부른다)
+export function revalidateAggregate(raw: AggRaw | null, today: string, previous: AggConditions | null, text: string | null = null): Revalidated {
   const r = raw ?? {};
   let inherited = false;
   let keywords = keywordList(r.keywords);
@@ -92,13 +112,16 @@ export function revalidateAggregate(raw: AggRaw | null, today: string, previous:
   let sources = sourceList(r.sources);
   if (sources.length === 0 && previous && previous.sources.length > 0) { sources = previous.sources; inherited = true; }
 
+  // 하루 말이 있으면 모델 from·to 가 비었거나 그날과 달라도 그 하루 — 이어받기(⑥)보다 앞선다(지금 글이 기간을 말했다)
+  const pin = text === null ? null : dayWordPin(text, [...keywords, ...(sender === null ? [] : [sender])], today);
+  const from = pin ?? r.from, to = pin ?? r.to;
   let p: Period | null;
-  if (previous && isEmpty(r.from) && isEmpty(r.to)) {
+  if (previous && isEmpty(from) && isEmpty(to)) {
     // 기간을 이어받으면 직전 defaulted·clamped 를 그대로(K11) — ④가 그 기간을 바꿨을 때만 새 플래그
     inherited = true;
     const q = period(previous.from, previous.to, today);
     p = q && q.from === previous.from && q.to === previous.to ? { ...q, defaulted: previous.defaulted, clamped: previous.clamped } : q;
-  } else p = period(r.from, r.to, today);
+  } else p = period(from, to, today);
   if (!p) return { kind: "bad_condition" };
 
   let bucket: AggBucket;

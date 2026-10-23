@@ -105,6 +105,15 @@ Deno.test("intents with aggregate: filters called with { previous: null } on a c
   }
 });
 
+Deno.test("aggregate '오늘' (0.18.1): the model's last-7-days period is pinned to today's Seoul day before the RPC; the response conditions and sentence say that day", async () => {
+  const rpc = { total: 1, buckets: [{ key: "2026-10-21", count: 1 }] };
+  const { d, seen } = adeps({ intent: "aggregate", aggregate: raw({ keywords: ["합성PAY", "재시도"], from: "2026-10-15", to: "2026-10-21", bucket: "day" }), rpc });
+  const { status, j } = await call(d, { question: "오늘 합성PAY 재시도 몇 건이야?", intents: AGG });
+  assertEquals([status, seen.aggregate.map((a) => [a.c.from, a.c.to, a.c.defaulted]), j.aggregate.conditions.from, j.aggregate.conditions.to],
+    [200, [["2026-10-21", "2026-10-21", false]], "2026-10-21", "2026-10-21"]);
+  assert(j.aggregate.sentence.startsWith("10/21 '합성PAY·재시도'"), j.aggregate.sentence);
+});
+
 Deno.test("aggregate_context is ignored (even malformed, no 400) when intents lacks aggregate", async () => {
   for (const [intents, agg] of [[["save_rule_add", "add_event"], { previous: null }], [OLD, null]] as const) {
     const { d, seen } = adeps({ intent: "question" });

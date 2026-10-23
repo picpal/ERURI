@@ -1,6 +1,7 @@
 // AGG-eval(스펙 §15, 0.17.0): 합성 문장으로 chat 필터(0.17.0 모드)의 의도·집계 칸·저장 규칙 칸을 잰다 — 판정·집계 순수 함수.
 // 집계 칸은 서버 재검증 ①~⑥(revalidateAggregate, 이어받기 포함) 뒤 값으로 비교한다(배포 chat 과 같은 함수). 문장 글은 출력하지 않는다(id 만)
-import { type AggBucket, type AggConditions, type AggRaw, type AggSource, parseAggregateContext, revalidateAggregate } from "../functions/chat/aggregate.ts";
+import { type AggBucket, type AggConditions, type AggRaw, type AggSource, parseAggregateContext, revalidateAggregate, type Revalidated }
+  from "../functions/chat/aggregate.ts";
 import type { Intent } from "../functions/chat/filters.ts";
 import { normalizeRuleValue, type RuleKind } from "../functions/_shared/save-rules.ts";
 
@@ -55,9 +56,23 @@ const isSplit = (c: AggCase) => !c.previous && c.intent === "aggregate" && !!c.a
 const QUESTION_GROUPS: Record<string, number> = { no_keyword: 2, kind_only: 1, one_time: 2, why: 1, negation: 1, quoted: 1, ability: 1, stored_check: 1 };
 const SEQ: Record<string, Intent> = { seq_a: "aggregate", seq_b: "aggregate", seq_c: "question" };
 const SIX = ["keywords", "sender", "sources", "from", "to", "bucket"] as const;
+// 보충 그룹(0.18.1, 2026-10-23 사용자 승인 — 44 구성 밖): 하루 말('오늘'·'어제') 단발 집계 2 — 서버 ④ 하루 말 고정 뒤 from = to = 그날
+export const DAY_GROUP = "agg_day";
+const DAY_CASES = 2;
 
-export function validateAggCases(f: AggCaseFile): string[] {
+export function validateAggCases(file: AggCaseFile): string[] {
   const p: string[] = [];
+  const days = file.cases.filter((c) => c.group === DAY_GROUP);
+  if (days.length !== DAY_CASES) p.push(`${DAY_GROUP} ${days.length} != ${DAY_CASES}`);
+  for (const c of days) {
+    // 모델이 기간을 비우거나 최근 7일로 읽어도 서버가 기대 하루로 고정해야 한다(글 없이는 기본값 — 고정이 글에서 온다)
+    const pinned = (from: string | null, to: string | null) => revalidateAggregate({ ...c.agg!, from, to }, file.today, null, c.text);
+    const want = (v: Revalidated) => v.kind === "ok" && v.conditions.from === c.agg!.from && v.conditions.to === c.agg!.to;
+    if (c.intent !== "aggregate" || !c.agg || c.previous || c.agg.from !== c.agg.to || !want(pinned(null, null))
+      || !want(pinned(plusDays(file.today, -6), file.today))) p.push(`${c.id} ${DAY_GROUP} not pinned to one day`);
+  }
+  const f: AggCaseFile = { ...file, cases: file.cases.filter((c) => c.group !== DAY_GROUP) };
+  if (new Set(file.cases.map((c) => c.id)).size !== file.cases.length) p.push("duplicate id");
   const count = (label: string, got: number, want: number) => { if (got !== want) p.push(`${label} ${got} != ${want}`); };
   if (f.cases.length !== 44) p.push(`cases ${f.cases.length} != 44`);
   const ids = new Set<string>();
@@ -123,7 +138,7 @@ const squash = (s: string | null) => (s === null ? null : s.toLowerCase().replac
 export function judgeAgg(c: AggCase, got: AggGot, today: string = AGG_TODAY): AggRow {
   let eff: Intent = got.intent, status: AggRow["status"] = null, cond: AggConditions | null = null;
   if (got.intent === "aggregate") {
-    const v = revalidateAggregate(got.aggregate, today, c.previous ?? null);
+    const v = revalidateAggregate(got.aggregate, today, c.previous ?? null, c.text);   // 지금 글 — ④ 하루 말 고정(0.18.1, 배포 chat 과 같다)
     if (v.kind === "question") eff = "question";                    // 서버가 질문 흐름으로 돌린다(재검증 ①)
     else { status = v.kind; cond = v.kind === "ok" ? v.conditions : null; }
   }
@@ -147,9 +162,11 @@ export function judgeAgg(c: AggCase, got: AggGot, today: string = AGG_TODAY): Ag
 }
 
 // 합격선(스펙 §15, 각 실행): 의도 ≥ 42/44 · 다른 의도 15(단발 14 + seq_c) 중 aggregate·save_rule_* 0 · add↔remove 혼동 0 ·
-// aggregate 16 의 bucket ≥ 15 · 키워드 ≥ 14 · sender·sources·from·to 각 ≥ 14 · 출처 구별 7/7(aggregate 로 간 것 기준) · 저장 규칙 10 의 종류·값 ≥ 9. pass = 모든 실행
+// aggregate 16 의 bucket ≥ 15 · 키워드 ≥ 14 · sender·sources·from·to 각 ≥ 14 · 출처 구별 7/7(aggregate 로 간 것 기준) · 저장 규칙 10 의 종류·값 ≥ 9. pass = 모든 실행.
+// 보충 agg_day(0.18.1)는 44 합격선 밖에서 따로: 의도 aggregate·from·to 일치 2/2
 export function summarizeAgg(runs: AggRow[][]) {
-  const per_run = runs.map((rows, i) => {
+  const per_run = runs.map((all, i) => {
+    const rows = all.filter((r) => r.group !== DAY_GROUP), dayRows = all.filter((r) => r.group === DAY_GROUP);
     const n = (f: (r: AggRow) => boolean) => rows.filter(f).length;
     // 출처 구별 분모 = aggregate 로 간 출처 사례만(의도 놓침은 의도 일치에서 센다 — 스펙 §15, 2026-10-21 메인 판정)
     const aggRows = rows.filter((r) => r.expected === "aggregate"), ruleRows = rows.filter((r) => r.rule_ok !== null);
@@ -162,9 +179,10 @@ export function summarizeAgg(runs: AggRow[][]) {
       to: ok("to_ok"), split_cases: splitRows.length, split: splitRows.filter((r) => r.sources_ok === true).length, rule_cases: ruleRows.length,
       rule: n((r) => r.rule_ok === true), bad_condition: n((r) => r.status === "bad_condition"),
       model_misfire: n((r) => !AGG_INTENTS.includes(r.expected) && AGG_INTENTS.includes(r.model)),
-      wrong: rows.filter((r) => r.got !== r.expected).map((r) => r.id) };
+      day_cases: dayRows.length, day: dayRows.filter((r) => r.got === "aggregate" && r.from_ok === true && r.to_ok === true).length,
+      wrong: all.filter((r) => r.got !== r.expected).map((r) => r.id) };
     const pass = s.intent >= 42 && s.other_misfire === 0 && s.add_remove_confusion === 0 && s.bucket >= 15 && s.keywords >= 14 &&
-      [s.sender, s.sources, s.from, s.to].every((x) => x >= 14) && s.split === s.split_cases && s.rule >= 9;
+      [s.sender, s.sources, s.from, s.to].every((x) => x >= 14) && s.split === s.split_cases && s.rule >= 9 && s.day === s.day_cases;
     return { ...s, pass };
   });
   return { pass: per_run.length > 0 && per_run.every((r) => r.pass), runs: per_run.length, per_run };
