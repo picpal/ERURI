@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { BudgetDeps, HoldDeps, HoldReservation, LedgerLine, Reservation } from "./budget.ts";
+import { RpcError } from "./rpc-error.ts";
 
 // service role. 모든 RPC 에 user_id 명시(스펙 §12 통제 4). 0032: 예약은 달을 함께 돌려받고, 정산은 그 달에 원소와 함께(§13 "월 경계")
 export function budgetDeps(sb: SupabaseClient): BudgetDeps {
@@ -24,17 +25,17 @@ export function budgetDeps(sb: SupabaseClient): BudgetDeps {
   };
 }
 
-// 목록 요약 예약 식별자(0037, DP25). 실패는 budgetDeps 와 같은 Error("<함수> <SQLSTATE>") — digest 의 failure 가 500 internal
+// 목록 요약 예약 식별자(0037, DP25). 실패는 RpcError(함수 이름·SQLSTATE) — digest 의 failure 가 500 internal, 로그에 함수 이름·코드(최종 리뷰 N3)
 export function holdDeps(sb: SupabaseClient): HoldDeps {
   const rpc = async (fn: string, args: Record<string, unknown>) => {
     const { data, error } = await sb.rpc(fn, args);
-    if (error) throw new Error(fn + " " + error.code);
+    if (error) throw new RpcError(fn, error.code ?? "error");
     return data;
   };
   return {
     reserve: async (u, hold, kind, est) => {
       const r = ((await rpc("reserve_usage_hold", { p_user: u, p_hold: hold, p_kind: kind, p_est_krw: est })) as { status: HoldReservation["level"]; month: string | null }[] | null)?.[0];
-      if (!r) throw new Error("reserve_usage_hold empty");
+      if (!r) throw new RpcError("reserve_usage_hold", "empty");
       return { level: r.status, month: r.month };
     },
     settle: async (u, hold, lines) => (await rpc("settle_usage_hold", { p_user: u, p_hold: hold, p_lines: lines })) as "settled" | "done" | "absent",

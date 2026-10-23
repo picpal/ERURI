@@ -110,6 +110,8 @@ Deno.test("finishDigest: trims, drops empty, 0 lines → summary_failed, 3 lines
   assertThrows(() => finishDigest(["  ", ""]), SummaryFailed);
   assertEquals(finishDigest(["가".repeat(81)])[0].length, 80);
   assertEquals(finishDigest(["가".repeat(79) + "😀"])[0], "가".repeat(79));
+  assertEquals(finishDigest(["가 \n 나\r\n다", "\n라\n\n마\n", "바"]), ["가 나 다", "라 마"]);   // 줄 안 개행 → 공백 하나(S5 M2) — 카드 줄이 2줄을 넘지 않는다
+  assertThrows(() => finishDigest(["\n \n", "\n"]), SummaryFailed);
 });
 // 응답 픽스처에 output 배열을 둔다 — parseStructured 가 거절 감지로 r.output 을 읽는다(없으면 TypeError → 이유가 incomplete 로 뭉개진다)
 Deno.test("parseDigest: refusal / incomplete / bad shape → SummaryFailed; ok → lines", () => {

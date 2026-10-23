@@ -73,11 +73,17 @@ Deno.test("cursor: tampered → not_found, expired → token_expired, wrong shap
   assertEquals(await verifyCursor(k, `c1.${p}.${sig[0] === "A" ? "B" : "A"}${sig.slice(1)}`, NOW_S), { ok: false, code: "not_found" });
   assertEquals(await verifyCursor(k, s, CUR.e), { ok: false, code: "token_expired" });
   for (const bad of [null, 3, "", "c1..x", "c1." + "A".repeat(1100) + "." + "A".repeat(43)]) assertEquals((await verifyCursor(k, bad, NOW_S)).ok, false);
-  for (const claims of [{ ...CUR, o: 21 }, { ...CUR, o: -1 }, { ...CUR, h: "XYZ" }, { ...CUR, l: "bad id!" }, { ...CUR, p: "a b" },
+  for (const claims of [{ ...CUR, o: 21 }, { ...CUR, o: -1 }, { ...CUR, h: "XYZ" }, { ...CUR, l: "bad id!" },
     { ...CUR, s: Array.from({ length: 21 }, (_, i) => `a${i}`) }, { ...CUR, s: ["bad id!"] }, { ...CUR, l: null, o: 0, t: null }, { ...CUR, t: -1 },
     { ...CUR, b: 0 }, { ...CUR, b: 1.5 }, { ...CUR, l: null, o: 0, b: 1792040401, t: null, s: [] }, { ...CUR, l: null, o: 3 },   // l null·o 0 = l⇒t 규칙에 가리지 않고 t null⇒s []·b⇒t 를 따로 본다
     { ...CUR, t: null, s: [] }]) {                                               // l 있는데 t 없음(PF-12)
     assertEquals(await verifyCursor(k, await signCursor(k, claims as CursorClaims), NOW_S), { ok: false, code: "bad_token" }, JSON.stringify(claims).slice(0, 80));
+  }
+  // PAGE 밖 pageToken 은 서명 때 p null·o 0 으로 — 다음 요청이 bad_token 이 아니라 첫 쪽 앵커 확인·시간 기준 대체로 간다(최종 리뷰 I1 b)
+  for (const p of ["a b", "ab+/=", "x".repeat(513)]) {
+    const v = await verifyCursor(k, await signCursor(k, { ...CUR, p }), NOW_S);
+    assert(v.ok, p.slice(0, 20));
+    assertEquals([v.claims.p, v.claims.o, v.claims.l, v.claims.t], [null, 0, CUR.l, CUR.t]);
   }
   const tok = await signToken(k, { u: USER, c: CONN, m: "18f0a1b2c3d4e5f6", e: NOW_S + 600 });
   assertEquals(await verifyCursor(k, tok, NOW_S), { ok: false, code: "bad_token" });

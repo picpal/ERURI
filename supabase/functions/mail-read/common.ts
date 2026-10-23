@@ -1,5 +1,6 @@
 import type { BudgetDeps, HoldDeps, TokenUsage } from "../_shared/budget.ts";
 import { type GmailReadApi, ReauthRequired } from "../_shared/gmail.ts";
+import { RpcError } from "../_shared/rpc-error.ts";
 import type { DigestInput, SummaryInput, SummaryOutput } from "./summary.ts";
 
 // 메일 요약 Edge(스펙 §7 "메일 요약"): 공용 타입·오류·응답 도우미. 로그는 request_id·단계·결과 코드·개수·status·잘림·첨부 수·모델·elapsed_ms 만 —
@@ -25,8 +26,7 @@ export type MailReadDeps = {
 export type Ctx = { user: string; request_id: string; t0: number };
 // digest 만(DP27): 토큰 갱신 안 RPC = min(rpcMs, 남은 시간), 토큰 엔드포인트 = min(15초, 남은 시간). deadline = epoch ms. 검색·읽기는 넘기지 않는다
 export type AccessLimit = { rpcMs: number; deadline: number };
-// RPC 실패: 메시지는 함수 이름·SQLSTATE 뿐이라 로그에 남긴다
-export class RpcError extends Error { constructor(fn: string, code: string) { super(fn + " " + code); this.name = "RpcError"; } }
+export { RpcError };                                                 // RPC 실패: 메시지는 함수 이름·SQLSTATE 뿐이라 로그에 남긴다(_shared — holdDeps 도 같은 클래스)
 export class RateLimited extends Error { constructor() { super("units"); this.name = "RateLimited"; } }
 export class SearchTimeout extends Error { constructor() { super("search_budget"); this.name = "SearchTimeout"; } }
 export class CursorStale extends Error { constructor() { super("page_token"); this.name = "CursorStale"; } }   // 커서의 Gmail pageToken 을 Gmail 이 거절 → 410 token_expired

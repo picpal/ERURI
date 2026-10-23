@@ -67,9 +67,10 @@ export async function conditionPrint(c: ReadConditions): Promise<string> {
   return Array.from(d.slice(0, 16), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 const cursorPayload = (c: CursorClaims) => b64u(enc.encode(JSON.stringify({ u: c.u, c: c.c, h: c.h, b: c.b, p: c.p, o: c.o, l: c.l, t: c.t, s: c.s, e: c.e })));
-// 1,024자를 넘으면 p 를 먼저 버린다(p null·o 0 = 다음 요청은 첫 쪽에서 앵커를 찾고 없으면 시간 기준 대체 — 안전), 그래도 넘으면 같은 ms id 를 오래된 것부터(DP4)
+// 1,024자를 넘으면 p 를 먼저 버린다(p null·o 0 = 다음 요청은 첫 쪽에서 앵커를 찾고 없으면 시간 기준 대체 — 안전), 그래도 넘으면 같은 ms id 를 오래된 것부터(DP4).
+// p 가 PAGE 모양이 아니어도 같은 경로 — Gmail pageToken 모양은 문서에 없다. 그대로 서명하면 다음 요청 isCursor 가 400 bad_token 을 되풀이한다(최종 리뷰 I1)
 export async function signCursor(key: CryptoKey, c: CursorClaims): Promise<string> {
-  let x = c, payload = cursorPayload(x);
+  let x = c.p !== null && !PAGE.test(c.p) ? { ...c, p: null, o: 0 } : c, payload = cursorPayload(x);
   if (payload.length > CURSOR_PAYLOAD_MAX && x.p !== null) { x = { ...x, p: null, o: 0 }; payload = cursorPayload(x); }
   while (payload.length > CURSOR_PAYLOAD_MAX && x.s.length > 0) { x = { ...x, s: x.s.slice(1) }; payload = cursorPayload(x); }
   if (payload.length > CURSOR_PAYLOAD_MAX) throw new Error("cursor_too_long");   // 도달하지 않는다 — p null·s [] 이면 400자 안

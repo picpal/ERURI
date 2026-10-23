@@ -135,11 +135,11 @@ export async function scan(ctx: SearchCtx, q0: string, limit: number, start: Pos
         const m = st.seen.get(id);
         if (!group.includes(id) || !m) continue;                         // 이 요청에서 이미 소비(쪽 밀림) · 그사이 404
         pos = { p: page, o: i + k + 1, l: id };
-        const at = receivedAt(m);
+        const at = Math.max(0, receivedAt(m));                           // internalDate 없음(−1) → 0: 음수 시각·b 0 을 커서에 넣지 않는다(최종 리뷰 N2 — isCursor 는 t ≥ 0·b > 0)
         if (b !== null && time.t !== null && (at > time.t || (at === time.t && time.s.includes(id)))) continue;   // 시간 기준 거르기(이미 본 것·더 새것)
         time = at === time.t ? { t: at, s: [...time.s, id].slice(-SAME_MS_MAX) } : { t: at, s: [id] };
         if (!valid(m)) continue;
-        if (out.length && at > receivedAt(out[out.length - 1])) ordered = false;
+        if (out.length && at > Math.max(0, receivedAt(out[out.length - 1]))) ordered = false;
         out.push(m);
       }
       i += n;

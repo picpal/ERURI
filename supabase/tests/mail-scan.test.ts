@@ -217,3 +217,44 @@ Deno.test("S3 review checks: echoing the response conditions continues (same pri
   assertEquals(got, idsOf(65));
   assert(withPage > 0, "a cursor carried a Gmail-like page token into the next request");
 });
+Deno.test("a page token outside PAGE ('=+/') is signed as p null · o 0 → the next request goes on (anchor on the first page, else time fallback): never bad_token, duplicates 0, missing 0 (final review I1 b)", async () => {
+  const { d } = fake(() => mails(65));
+  const base = d.api("at");
+  const odd = (p: string) => `${p}+/=`;                                                 // Gmail 문서에 없는 모양 — PAGE 정규식 밖
+  const nd: MailReadDeps = { ...d, api: () => ({ ...base, list: async (q, max, page, t) => {
+    const r = await base.list(q, max, page === undefined ? undefined : page.replace(/\+\/=$/, ""), t);
+    return { ...r, nextPageToken: r.nextPageToken === undefined ? undefined : odd(r.nextPageToken) };
+  } }) };
+  const got: string[] = [];
+  let cursor: string | null = null, n = 0, dropped = 0;
+  do {
+    const r = await ids(await post(nd, { ...B, ...(cursor ? { cursor } : {}) }));
+    assertEquals(r.status, 200, JSON.stringify(r.j));
+    got.push(...r.ids); cursor = r.next; n++;
+    if (cursor) { const c = claimsOf(cursor); assertEquals(c.p, null); if (c.o === 0 && c.l !== null) dropped++; }
+  } while (cursor && n < 20);
+  assertEquals(got, idsOf(65));
+  assert(dropped > 0, "a cursor whose anchor sat on a later Gmail page dropped p");
+});
+Deno.test("an anchor without internalDate (receivedAt −1) puts t 0 in the cursor, not −1 → the next request goes on; after a time fallback b stays > 0 (final review N2)", async () => {
+  const list = mails(25);
+  const { d } = fake(() => list);
+  const base = d.api("at");
+  const nd: MailReadDeps = { ...d, api: () => ({ ...base, headers: async (id, t) => ({ ...(await base.headers(id, t)), ...(id === "m009" ? { internalDate: "" } : {}) }) }) };
+  const first = await ids(await post(nd, B));
+  const c = claimsOf(first.next!);
+  assertEquals([c.l, c.t, c.b], ["m009", 0, null]);
+  const { got } = await pageAll(nd, B);
+  assertEquals(got, idsOf(25));
+  // 앵커가 사라져 시간 기준 대체: before:⌊0/1000⌋ + 1 = 1(b > 0) — 400 되풀이 대신 끝난다(이론 경로, Gmail 은 internalDate 를 늘 준다)
+  let gone = false;
+  const vd: MailReadDeps = { ...nd, api: () => ({ ...nd.api("at"), list: async (q, max, page, t) => {
+    const r = await nd.api("at").list(q, max, page, t);
+    return gone ? { ...r, messages: (r.messages ?? []).filter((m) => m.id !== "m009") } : r;
+  } }) };
+  const a = await ids(await post(vd, B));
+  gone = true;
+  const b = await ids(await post(vd, { ...B, cursor: a.next }));
+  assertEquals(b.status, 200);
+  if (b.next) assert(claimsOf(b.next).b === null || claimsOf(b.next).b! > 0);
+});

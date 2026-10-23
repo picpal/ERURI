@@ -2,6 +2,7 @@ import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { type BudgetDeps, costKrw, Deferred, guarded, LEDGER_PAIRS, type LedgerLine, ledgerLine, LLM_BUSY_DEFER_MS, nextMonthSeoul, responseUsage } from "../functions/_shared/budget.ts";
 import { budgetDeps, holdDeps } from "../functions/_shared/budget-deps.ts";
+import { RpcError } from "../functions/mail-read/common.ts";
 
 function fake(level: "ok" | "degraded" | "refused", slot: number | null = 1, month = "2026-12-01") {
   const calls: string[] = [];
@@ -117,4 +118,13 @@ Deno.test("holdDeps: reserve_usage_hold / settle_usage_hold carry the same hold 
   assertEquals(await d.reserve("u", "h", "chat", 3), { level: "ok", month: "2026-10-01" });
   assertEquals(await d.settle("u", "h", []), "settled");
   assertEquals(calls, [["reserve_usage_hold", { p_user: "u", p_hold: "h", p_kind: "chat", p_est_krw: 3 }], ["settle_usage_hold", { p_user: "u", p_hold: "h", p_lines: [] }]]);
+});
+Deno.test("holdDeps: RPC failure and empty reserve are RpcError(function name · SQLSTATE) — the digest failure log keeps them (final review N3)", async () => {
+  const failing = holdDeps({ rpc: async () => ({ data: null, error: { code: "57014", message: "합성 메시지" } }) } as unknown as SupabaseClient);
+  const e1 = await assertRejects(() => failing.reserve("u", "h", "chat", 3), RpcError);
+  assertEquals(e1.message, "reserve_usage_hold 57014");
+  const e2 = await assertRejects(() => failing.settle("u", "h", []), RpcError);
+  assertEquals(e2.message, "settle_usage_hold 57014");
+  const empty = holdDeps({ rpc: async () => ({ data: [], error: null }) } as unknown as SupabaseClient);
+  assertEquals((await assertRejects(() => empty.reserve("u", "h", "chat", 3), RpcError)).message, "reserve_usage_hold empty");
 });

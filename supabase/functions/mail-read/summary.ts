@@ -146,9 +146,9 @@ export function parseDigest(r: RawResponse): string[] {
   if (!Array.isArray(lines) || !lines.every((s) => typeof s === "string")) throw new SummaryFailed("bad_shape");
   return lines as string[];
 }
-// 후처리(스펙 §7): 앞뒤 공백 지운 빈 줄 버림 → 0줄이면 실패 → 앞 2줄 → 줄마다 80자(clip16 — 상세와 같은 자르기)
+// 후처리(스펙 §7): 줄 안 개행은 공백 하나로(카드가 2줄을 넘지 않게, S5 M2) → 앞뒤 공백 지운 빈 줄 버림 → 0줄이면 실패 → 앞 2줄 → 줄마다 80자(clip16 — 상세와 같은 자르기)
 export function finishDigest(lines: string[]): string[] {
-  const kept = lines.map((s) => s.trim()).filter((s) => s !== "");
+  const kept = lines.map((s) => s.replace(/\s*\n\s*/g, " ").trim()).filter((s) => s !== "");
   if (kept.length === 0) throw new SummaryFailed("empty");
   return kept.slice(0, DIGEST_LINES_MAX).map((s) => clip16(s, DIGEST_LINE_CHARS));
 }
