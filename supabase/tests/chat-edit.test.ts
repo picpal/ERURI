@@ -5,6 +5,7 @@ import { ampmMarked, confirmedCodes, type EditApplied, type EditRaw, type EditTa
 import { answerQuestion, type ChatDeps, handleChat, parseIntents, resolveIntent } from "../functions/chat/handler.ts";
 import { CONTEXT_FILTER_RULE, EDIT_RULE, EDIT_SCHEMA, FILTER_SYSTEM, filterRequest, INTENT_EDIT_CONTEXT_FILTER_SCHEMA, INTENT_EDIT_FILTER_SCHEMA, INTENT_RULE,
   parseFilterOutput, registeredBlock } from "../functions/chat/filters.ts";
+import { stripCount } from "../scripts/_intent-base.ts";
 
 // 방금 등록한 일정 고치기(스펙 §9 B 서버 1·4·6, H3 후속) — 순수 함수. 값은 합성 문구·합성 시각만
 const R1: EventValues = { title: "합성 치과 예약", start: "2026-10-10T11:00:00+09:00", end: "2026-10-10T15:00:00+09:00", location: null };
@@ -158,9 +159,10 @@ const sha = async (o: unknown) => Array.from(new Uint8Array(await crypto.subtle.
 type Req = { input: { content: string }[]; text: { format: { name: string; schema: typeof INTENT_EDIT_FILTER_SCHEMA } } };
 
 Deno.test("filterRequest: without edit the intents request is byte-identical to 0.15.0 (fixed hashes)", async () => {
-  assertEquals(await sha(filterRequest("q", "2026-10-04", [], true)), PRE_E4_PLAIN);
-  assertEquals(await sha(filterRequest("q", "2026-10-04", ctx1, true)), PRE_E4_CTX);
-  assertEquals(await sha(filterRequest("q", "2026-10-04", ctx1, true, null)), PRE_E4_CTX);
+  // 0.19.0(DP15): 의도 요청의 mail_read.count 칸·지시 세 줄을 stripCount 로 빼면 0.15.0 바이트 그대로(상수는 바꾸지 않는다)
+  assertEquals(await sha(stripCount(filterRequest("q", "2026-10-04", [], true))), PRE_E4_PLAIN);
+  assertEquals(await sha(stripCount(filterRequest("q", "2026-10-04", ctx1, true))), PRE_E4_CTX);
+  assertEquals(await sha(stripCount(filterRequest("q", "2026-10-04", ctx1, true, null))), PRE_E4_CTX);
 });
 Deno.test("filterRequest with edit: five-value enum, nullable edit, EDIT_RULE in system; <registered> block before the question only when the target is ok", () => {
   const reg: EventValues = { title: "합성 치과 예약", start: "2026-10-10T11:00:00+09:00", end: "2026-10-10T15:00:00+09:00", location: null };

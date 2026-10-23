@@ -3,8 +3,9 @@ import { AGG_SOURCES, type AggConditions } from "../functions/chat/aggregate.ts"
 import type { EventValues } from "../functions/chat/edit.ts";
 import { ACTION_INTENTS, AGG_CONTEXT_RULE, AGG_EDIT_INTENTS, AGG_INTENT_VALUES, AGG_INTENTS, AGG_RULE, AGGREGATE_SCHEMA, aggModeFor, asIntent, CONTEXT_FILTER_RULE, EDIT_RULE,
   FILTER_SYSTEM, filterRequest, hasAggCue, INTENT_CONTEXT_FILTER_SCHEMA, INTENT_EDIT_CONTEXT_FILTER_SCHEMA, INTENT_EDIT_FILTER_SCHEMA, INTENT_FILTER_SCHEMA, INTENT_RULE,
-  parseFilterOutput, previousAggregateBlock, registeredBlock, SAVE_RULE_SCHEMA } from "../functions/chat/filters.ts";
+  MAIL_READ_COUNT_RULES, parseFilterOutput, previousAggregateBlock, registeredBlock, SAVE_RULE_SCHEMA } from "../functions/chat/filters.ts";
 import { parseIntents } from "../functions/chat/handler.ts";
+import { stripCount } from "../scripts/_intent-base.ts";
 
 // 0.17.0 필터 스키마(스펙 §9 "채팅 저장 규칙·집계 질문" — 앱 → 서버·칸·대화 기록). 새 의도 넷이 없으면 0.16.x 요청과 바이트 동일(계획 F7 고정값)
 const ctx1 = [{ question: "합성치과 예약 언제야?", answer: "10월 13일 오후 3시예요." }];
@@ -16,18 +17,32 @@ type Req = { input: { role: string; content: string }[]; text: { format: { name:
 const prev: AggConditions = { keywords: ["합성PAY", "타임아웃"], sender: null, sources: ["MESSAGES"], from: "2026-10-19", to: "2026-10-21", bucket: "hour",
   defaulted: false, clamped: false };
 
+// 0.19.0(DP15): 의도 요청(withIntent = true)은 mail_read.count 칸과 지시 세 줄이 붙는다 — stripCount 로 뺀 요청이 0.18.x 고정 해시와 같다(상수는 그대로)
 Deno.test("filterRequest without agg is byte-identical to 0.16.x (fixed hashes)", async () => {
-  assertEquals(await sha(filterRequest("q", "2026-10-04", [], true)), "cfd4768ad2dd6241c0869296ba1d1176e7dbc7f09a3fbeeb6ce8e42b51af2f82");
-  assertEquals(await sha(filterRequest("q", "2026-10-04", ctx1, true)), "c7f84e8cb37a07aa37eaa2a0a4e612f2014f4964db39182d020c9210803b2bdc");
-  assertEquals(await sha(filterRequest("q", "2026-10-04", [], true, { registered: reg })), "24931659e5d488ff73d6bb37819783b70a30712ec2663c96cb77302e62d9d9b8");
-  assertEquals(await sha(filterRequest("q", "2026-10-04", ctx1, true, { registered: null })), "88c98dfdaf1ecb62cd0af0f5649c6674de34a42a9b538a4ff16f1ab406b8083f");
+  assertEquals(await sha(stripCount(filterRequest("q", "2026-10-04", [], true))), "cfd4768ad2dd6241c0869296ba1d1176e7dbc7f09a3fbeeb6ce8e42b51af2f82");
+  assertEquals(await sha(stripCount(filterRequest("q", "2026-10-04", ctx1, true))), "c7f84e8cb37a07aa37eaa2a0a4e612f2014f4964db39182d020c9210803b2bdc");
+  assertEquals(await sha(stripCount(filterRequest("q", "2026-10-04", [], true, { registered: reg }))), "24931659e5d488ff73d6bb37819783b70a30712ec2663c96cb77302e62d9d9b8");
+  assertEquals(await sha(stripCount(filterRequest("q", "2026-10-04", ctx1, true, { registered: null }))), "88c98dfdaf1ecb62cd0af0f5649c6674de34a42a9b538a4ff16f1ab406b8083f");
   assertEquals(await sha(filterRequest("q", "2026-10-04", [], false)), "afd4a3b9cb6bb986c81f69b83348929206730a75b00623011f39a63fcf67b22c");
-  assertEquals(await sha(filterRequest("q", "2026-10-04", [], true, null, null)), "cfd4768ad2dd6241c0869296ba1d1176e7dbc7f09a3fbeeb6ce8e42b51af2f82");
+  assertEquals(await sha(stripCount(filterRequest("q", "2026-10-04", [], true, null, null))), "cfd4768ad2dd6241c0869296ba1d1176e7dbc7f09a3fbeeb6ce8e42b51af2f82");
 });
 
 Deno.test("0.17.0 agg filter requests unchanged in 0.18.0 (fixed hashes)", async () => {
-  assertEquals(await sha(filterRequest("q", "2026-10-21", [], true, null, { previous: null })), "e53044ad14ea0035bb3afecdfaf9fd224ceb77679b48ee92f379b0c0bfa76900");
-  assertEquals(await sha(filterRequest("날짜별로는?", "2026-10-21", ctx1, true, null, { previous: prev })), "392b46285c4bb39532250961e20dd75001c491c003e3f5460df8cbe80da53ea2");
+  assertEquals(await sha(stripCount(filterRequest("q", "2026-10-21", [], true, null, { previous: null }))), "e53044ad14ea0035bb3afecdfaf9fd224ceb77679b48ee92f379b0c0bfa76900");
+  assertEquals(await sha(stripCount(filterRequest("날짜별로는?", "2026-10-21", ctx1, true, null, { previous: prev }))), "392b46285c4bb39532250961e20dd75001c491c003e3f5460df8cbe80da53ea2");
+});
+
+Deno.test("0.19.0 intent requests carry mail_read.count (integer|null) after translate and the three count lines at the end of the system text", () => {
+  // deno-lint-ignore no-explicit-any
+  const r = filterRequest("최근 메일 3개 각각 요약", "2026-10-23", [], true) as unknown as { input: { content: string }[]; text: { format: { schema: Record<string, any> } } };
+  const mr = r.text.format.schema.properties.mail_read.anyOf[0];
+  assertEquals(mr.properties.count.type, ["integer", "null"]);
+  assertEquals(mr.required.slice(mr.required.indexOf("translate"), mr.required.indexOf("translate") + 2), ["translate", "count"]);
+  assert(r.input[0].content.endsWith(MAIL_READ_COUNT_RULES.join("\n")));
+  assertEquals(MAIL_READ_COUNT_RULES.length, 3);
+  // stripCount 은 count 만 뺀다 — 다른 칸·글은 그대로
+  const s = JSON.stringify(stripCount(r));
+  assert(!s.includes("\"count\"") && !s.includes(MAIL_READ_COUNT_RULES[0]));
 });
 
 Deno.test("filterRequest with agg: 8-value enum (9 with edit), aggregate/save_rule nullable and required, AGG_RULE last in system", () => {
@@ -189,10 +204,10 @@ Deno.test("aggModeFor: null without the new four in intents; with them only on a
 Deno.test("no cue + 0.17.0 intents → byte-identical to the 0.16.x request (same fixed hashes)", async () => {
   const req = (ctx: typeof ctx1 | [], edit: { registered: EventValues | null } | null) =>
     filterRequest("q", "2026-10-04", ctx, true, edit, aggModeFor("q", APP_0170, null));
-  assertEquals(await sha(req([], null)), "cfd4768ad2dd6241c0869296ba1d1176e7dbc7f09a3fbeeb6ce8e42b51af2f82");
-  assertEquals(await sha(req(ctx1, null)), "c7f84e8cb37a07aa37eaa2a0a4e612f2014f4964db39182d020c9210803b2bdc");
-  assertEquals(await sha(req([], { registered: reg })), "24931659e5d488ff73d6bb37819783b70a30712ec2663c96cb77302e62d9d9b8");
-  assertEquals(await sha(req(ctx1, { registered: null })), "88c98dfdaf1ecb62cd0af0f5649c6674de34a42a9b538a4ff16f1ab406b8083f");
+  assertEquals(await sha(stripCount(req([], null))), "cfd4768ad2dd6241c0869296ba1d1176e7dbc7f09a3fbeeb6ce8e42b51af2f82");
+  assertEquals(await sha(stripCount(req(ctx1, null))), "c7f84e8cb37a07aa37eaa2a0a4e612f2014f4964db39182d020c9210803b2bdc");
+  assertEquals(await sha(stripCount(req([], { registered: reg }))), "24931659e5d488ff73d6bb37819783b70a30712ec2663c96cb77302e62d9d9b8");
+  assertEquals(await sha(stripCount(req(ctx1, { registered: null }))), "88c98dfdaf1ecb62cd0af0f5649c6674de34a42a9b538a4ff16f1ab406b8083f");
   for (const t of ["합성 회의 메모 등록해줘", "오늘 온 메일 뭐라고 왔는지 보여줘", "요약해줘"]) {
     assertEquals(await sha(filterRequest(t, "2026-10-21", [], true, null, aggModeFor(t, APP_0170, null))), await sha(filterRequest(t, "2026-10-21", [], true)), t);
   }

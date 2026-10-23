@@ -633,13 +633,13 @@ Deno.test("chat billing: an action intent settles only the filter line (no searc
 });
 
 // ── 채팅 메일 요약(스펙 §7 "메일 요약"·§9 "채팅 메일 요약", 0.15.0) ──
-const READ: MailReadFields = { sender: "합성상점", subject_words: [], received_from: null, received_to: null, latest: false, translate: false, target_in_message: true };
+const READ: MailReadFields = { sender: "합성상점", subject_words: [], received_from: null, received_to: null, latest: false, translate: false, count: null, target_in_message: true };
 Deno.test("filterRequest with intents: mail_read is a required nullable MAIL_READ_SCHEMA; INTENT_RULE names mail_summary and its boundaries", () => {
   const r = filterRequest("합성상점에서 온 메일 요약해줘", "2026-10-07", [], true) as { text: { format: { schema: typeof INTENT_FILTER_SCHEMA } } };
   const s = r.text.format.schema;
   assert((s.required as readonly string[]).includes("mail_read"));
   assertEquals(s.properties.mail_read.anyOf[0], MAIL_READ_SCHEMA);
-  assertEquals([...MAIL_READ_SCHEMA.required], ["sender", "subject_words", "received_from", "received_to", "latest", "translate", "target_in_message"]);
+  assertEquals([...MAIL_READ_SCHEMA.required], ["sender", "subject_words", "received_from", "received_to", "latest", "translate", "count", "target_in_message"]);
   for (const k of ["mail_summary", "읽음 처리", "읽어줘", "문자·카톡", "target_in_message", "mail_read 는 intent 가 mail_summary 일 때만"]) assert(INTENT_RULE.includes(k), k);
 });
 Deno.test("filterRequest without intents is still byte-identical to 0.12.x (no intent, mail or mail_read)", () => {
@@ -674,7 +674,7 @@ Deno.test("parseFilterOutput with intents: GMAIL source only when the question (
 Deno.test("guardContextSender: a context sender the current message does not name yields to the one name the message gives; two names → every target field empty; context fills stay", () => {
   const ctx = [{ question: "합성은행에서 온 메일 뭐 있어?", answer: "합성은행에서 보안 안내 메일이 왔어요." }];
   const mr = (o: Partial<MailReadFields> = {}): MailReadFields =>
-    ({ sender: "합성은행", subject_words: [], received_from: null, received_to: null, latest: false, translate: false, target_in_message: false, ...o });
+    ({ sender: "합성은행", subject_words: [], received_from: null, received_to: null, latest: false, translate: false, count: null, target_in_message: false, ...o });
   const g = (q: string, o: Partial<MailReadFields> = {}, c = ctx) => guardContextSender(mr(o), q, c);
   // 지금 글의 이름 하나 → sender 를 그 이름으로, 지금 글이 대상을 말했으니 target_in_message 참
   for (const [q, name] of [["합성레터 거 요약해줘", "합성레터"], ["합성레터거 요약해줘", "합성레터"], ["아니, 합성학원에서 온 걸로 요약해줘", "합성학원"],
@@ -709,6 +709,13 @@ Deno.test("guardContextSender: a context sender the current message does not nam
   assertEquals(g("합성레터 거 요약해줘", { sender: "합성카드" }), mr({ sender: "합성카드" }));
   assertEquals(g("합성레터 거 요약해줘", { sender: null }), mr({ sender: null }));
   assertEquals(g("합성레터 거 요약해줘", {}, []), mr());
+  // 0.19.0(Codex #2): 이름 둘이면 count 까지 비운다 — 최근 N통 검색이 되지 않게. 이름 하나·맥락 채움은 count 를 그대로 둔다
+  assertEquals(g("합성레터 거랑 합성상점 거 세 통 요약해줘", { count: 3 }), mr({ sender: null, count: null, target_in_message: true }));
+  assertEquals(g("합성레터랑 합성상점 거 세 통 요약해줘", { count: 3 }), mr({ sender: null, count: null, target_in_message: true }));   // DP13 'X랑'
+  assertEquals(g("합성레터 거 세 통 요약해줘", { count: 3 }), mr({ sender: "합성레터", count: 3, target_in_message: true }));
+  assertEquals(g("그 메일 세 통 요약해줘", { count: 3 }), mr({ count: 3 }));
+  // 'X랑' 표지가 지시어·시간 말을 이름으로 잡지 않는다
+  for (const q of ["그거랑 요약해줘", "오늘이랑 어제 거 요약해줘"]) assertEquals(g(q), mr(), q);
 });
 Deno.test("parseFilterOutput: mail_summary runs guardContextSender with the context; other intents and requests without context are untouched", () => {
   const ctx = [{ question: "합성은행에서 온 메일 뭐 있어?", answer: "합성은행에서 보안 안내 메일이 왔어요." }];

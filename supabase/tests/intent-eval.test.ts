@@ -83,7 +83,7 @@ Deno.test("gateCases: every gate id in every run needs the expected intent and, 
 });
 
 const RD = (o: Partial<MailReadFields> = {}): MailReadFields => ({ sender: "합성상점", subject_words: [], received_from: null, received_to: null, latest: false,
-  translate: false, target_in_message: true, ...o });
+  translate: false, count: null, target_in_message: true, ...o });
 const sCase = (o: Partial<Case> = {}): Case => ({ id: "s99", group: "summary", text: "x", intent: "mail_summary", mail: null, mail_read: RD(), ...o });
 
 Deno.test("validateCases: mail_read only on mail_summary cases; judge only on mail_summary; summary_follow needs context", () => {

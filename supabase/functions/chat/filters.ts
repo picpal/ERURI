@@ -79,10 +79,10 @@ export const MAIL_SCHEMA = {
 // 메일 요약 칸(스펙 §7 "메일 요약"·§9 "채팅 메일 요약", 0.15.0). chat 은 검사·정제하지 않고 모델 출력 그대로 — 검사·검색어 조립은 mail-read 한 곳.
 // target_in_message 는 앱이 직전 요약 뒤 후속 요청을 가르는 데만 쓴다(§9 "이어서 읽기") — 검색은 읽지 않는다
 export type MailReadFields = { sender: string | null; subject_words: string[]; received_from: string | null; received_to: string | null;
-  latest: boolean; translate: boolean; target_in_message: boolean };
+  latest: boolean; translate: boolean; count: number | null; target_in_message: boolean };
 export const MAIL_READ_SCHEMA = {
   type: "object", additionalProperties: false,
-  required: ["sender", "subject_words", "received_from", "received_to", "latest", "translate", "target_in_message"],
+  required: ["sender", "subject_words", "received_from", "received_to", "latest", "translate", "count", "target_in_message"],
   properties: {
     sender: MAIL_SCHEMA.properties.sender,
     subject_words: { ...MAIL_SCHEMA.properties.subject_words,
@@ -91,6 +91,8 @@ export const MAIL_READ_SCHEMA = {
     received_to: MAIL_SCHEMA.properties.received_to,
     latest: { type: "boolean", description: "'가장 최근·마지막으로 온·방금 온' 메일이라고 말했으면 true" },
     translate: { type: "boolean", description: "번역해줘·전문 번역·우리말로 옮겨줘처럼 번역을 시켰으면 true" },
+    count: { type: ["integer", "null"],
+      description: "사용자가 메일 통수를 숫자로 말했을 때만 그 수(최근 메일 3개·세 통·다섯 개·12통 → 3·3·5·12). '들·전부·각각·메일별로'나 통수 말이 없거나 '두어 개·몇 개'처럼 정확한 수가 아니면 null" },
     target_in_message: { type: "boolean",
       description: "지금 보낸 글이 대상(발신자·제목 단어·받은 기간·가장 최근)을 하나라도 직접 말했으면 true. 대상이 없거나 이전 대화로만 채웠으면 false" },
   },
@@ -108,6 +110,12 @@ export const INTENT_FILTER_SCHEMA = {
 export const INTENT_CONTEXT_FILTER_SCHEMA = {
   ...CONTEXT_FILTER_SCHEMA, required: [...CONTEXT_FILTER_SCHEMA.required, "intent", "mail", "mail_read"], properties: { ...CONTEXT_FILTER_SCHEMA.properties, ...INTENT_PROPS },
 } as const;
+// 0.19.0 칸 count(스펙 §9 "칸 count"): 기존 줄은 바꾸지 않고 끝에 세 줄 — stripCount 가 0.18.x 요청을 바이트 그대로 되돌릴 수 있게(DP14·DP15)
+export const MAIL_READ_COUNT_RULES = [
+  "mail_read.count 는 지금 보낸 글이 메일 통수를 숫자로 말했을 때만 그 수다(예: 최근 메일 3개 → 3, 세 통 → 3, 다섯 개 → 5, 12통 → 12, 마흔 통 → 40). '메일들·전부·각각·메일별로'처럼 통수를 말하지 않았거나 '두어 개·몇 개'처럼 정확한 수가 아니면 null 이다.",
+  "mail_read.latest 는 '가장 최근 한 통'일 때만 true 다. '최근 메일 3개'처럼 통수를 말하면 latest 는 false 이고 count 에 그 수를 쓴다.",
+  "지금 보낸 글이 통수를 직접 말했으면 그것도 대상이므로 target_in_message 는 true 다(예: 앞에서 한 메일을 요약한 뒤 '메일 세 통 각각 요약해줘').",
+] as const;
 // 행동은 명시적 요청만, 지금 보낸 글에서만(스펙 §9, 2026-10-06 리뷰 반영). 필터 칸은 의도와 상관없이 위 규칙대로 뽑는다
 export const INTENT_RULE = [
   "intent: 지금 보낸 질문이 행동을 명시적으로 시킬 때만 행동 의도다.",
@@ -122,6 +130,7 @@ export const INTENT_RULE = [
   "이전 대화는 '그 메일·그 약속·그 발신자'가 무엇인지 채우는 데만 쓴다.",
   "mail 은 intent 가 mail_action 일 때만 채우고 그 밖에는 null 이다. 말하지 않은 조건은 채우지 않는다. 필터 칸은 의도와 상관없이 위 규칙대로 뽑는다.",
   "mail_read 는 intent 가 mail_summary 일 때만 채우고 그 밖에는 null 이다. 말하지 않은 조건은 채우지 않는다. 다만 '그 메일·거기서 온 메일'처럼 이전 대화의 메일·발신자를 가리키면 이전 대화에 나온 발신자를 sender 에 채운다(제목 단어·기간은 채우지 않는다). 지금 보낸 글이 발신자를 직접 말하면 이전 대화의 발신자보다 지금 글의 발신자를 sender 에 채운다 — '그 메일 말고 X 메일'·'아니 X 메일'처럼 이전 대화를 가리키는 말이 함께 있어도 sender 는 X 이고 null 로 비우지 않는다. target_in_message 는 지금 보낸 글이 발신자·제목 단어·받은 기간·가장 최근 중 하나를 직접 말했으면 true, 대상을 말하지 않았거나 이전 대화로만 채웠으면 false 다.",
+  ...MAIL_READ_COUNT_RULES,
 ].join("\n");
 
 // ── 0.16.0 고치기(스펙 §9 B 서버 2). INTENT_FILTER_SCHEMA·INTENT_CONTEXT_FILTER_SCHEMA·INTENT_RULE 은 건드리지 않는다(계획 K24) ──
@@ -328,7 +337,7 @@ function aggFilterRequest(question: string, today: string, weekday: string, cont
 // 맥락 발신자 가드(스펙 §7 "지목", 2026-10-11 G1 r2): 맥락 합성은행 + "합성레터 거 요약해줘" 에 필터가 맥락 발신자를 30회 중 21회 채웠다.
 // sender 가 맥락에는 있고 지금 글에는 없는데 지금 글이 다른 이름('X 거·X 것·X 쪽·X에서 온·X 메일')을 말하면 — 이름 하나면 그 이름, 둘 이상이면 대상 칸을 모두 비워
 // mail-read 의 needs_target 되묻기로 보낸다(틀린 메일을 읽느니 되묻기). 두 경우 모두 지금 글이 대상을 말했으므로 target_in_message 참(앞 요약 토큰을 재사용하지 않게)
-const NAME_BEFORE_MARK = /(?<![가-힣A-Za-z0-9._@+-])([가-힣A-Za-z0-9][가-힣A-Za-z0-9._@+-]*?)(?:\s*(?:거|것|꺼|걸)(?:로|를|을|는|은|도|만|랑|이랑|하고)?(?=$|[\s,.!?])|\s*쪽(?=$|[\s,.!?]|으로|에서)|(?:에서|한테서|에게서|한테|에게)(?=$|[\s,.!?])|\s+이?메일|(?<!이)메일)/g;
+const NAME_BEFORE_MARK = /(?<![가-힣A-Za-z0-9._@+-])([가-힣A-Za-z0-9][가-힣A-Za-z0-9._@+-]*?)(?:\s*(?:거|것|꺼|걸)(?:로|를|을|는|은|도|만|랑|이랑|하고)?(?=$|[\s,.!?])|\s*쪽(?=$|[\s,.!?]|으로|에서)|(?:에서|한테서|에게서|한테|에게)(?=$|[\s,.!?])|\s+이?메일|(?:이랑|랑)(?=\s)|(?<!이)메일)/g;
 const NOT_NAME = new Set(["그거", "이거", "저거", "그것", "이것", "저것", "거기", "여기", "저기", "그쪽", "이쪽", "저쪽", "아까", "방금", "최근", "가장", "제일", "마지막",
   "마지막으로", "처음", "어제", "오늘", "그제", "그저께", "엊그제", "지난주", "이번주", "지난달", "이번달", "이번", "지난", "저번", "다음", "다른", "새로", "같은", "해당",
   "아래", "나머지", "받은", "보낸", "들어간", "들어온", "광고", "프로모션", "안읽은", "읽은", "영어", "영문", "한글", "한국어", "우리말", "전체", "모든", "전부", "그런",
@@ -357,7 +366,7 @@ export function guardContextSender(mr: MailReadFields, question: string, context
   }
   if (names.size === 0) return mr;
   if (names.size === 1) return { ...mr, sender: [...names.values()][0], target_in_message: true };
-  return { ...mr, sender: null, subject_words: [], received_from: null, received_to: null, latest: false, target_in_message: true };
+  return { ...mr, sender: null, subject_words: [], received_from: null, received_to: null, latest: false, count: null, target_in_message: true };
 }
 
 export type FilterOutput = { filters: Filters; query?: string; intent?: Intent; mail?: MailFields | null; mail_read?: MailReadFields | null;
@@ -390,9 +399,11 @@ export function parseFilterOutput(outputText: string, hasContext: boolean, withI
 }
 
 export async function extractFilters(question: string, today: string, context: ContextTurn[] = [], withIntent = false,
-  onUsage?: (u: TokenUsage | null) => void, edit: EditMode | null = null, agg: AggMode | null = null): Promise<FilterOutput> {
+  onUsage?: (u: TokenUsage | null) => void, edit: EditMode | null = null, agg: AggMode | null = null,
+  shape?: (req: ReturnType<typeof filterRequest>) => unknown): Promise<FilterOutput> {
+  const req = filterRequest(question, today, context, withIntent, edit, agg);
   // deno-lint-ignore no-explicit-any
-  const r = await openai.responses.create(filterRequest(question, today, context, withIntent, edit, agg) as any);
+  const r = await openai.responses.create((shape ? shape(req) : req) as any);   // shape = INTENT 회귀 기준선 전용(DP16) — 제품 호출은 넘기지 않는다
   onUsage?.(responseUsage(r));                                      // 상태 검사·파싱보다 먼저(스펙 §13 — 응답이 온 실패도 청구된 토큰)
   if (r.status === "incomplete") throw new Error("filters incomplete");
   return { ...parseFilterOutput(r.output_text, context.length > 0, withIntent, question, context, edit !== null, withIntent && agg !== null),
