@@ -74,8 +74,8 @@ Deno.test("cursor: tampered → not_found, expired → token_expired, wrong shap
   assertEquals(await verifyCursor(k, s, CUR.e), { ok: false, code: "token_expired" });
   for (const bad of [null, 3, "", "c1..x", "c1." + "A".repeat(1100) + "." + "A".repeat(43)]) assertEquals((await verifyCursor(k, bad, NOW_S)).ok, false);
   for (const claims of [{ ...CUR, o: 21 }, { ...CUR, o: -1 }, { ...CUR, h: "XYZ" }, { ...CUR, l: "bad id!" }, { ...CUR, p: "a b" },
-    { ...CUR, s: Array.from({ length: 21 }, (_, i) => `a${i}`) }, { ...CUR, s: ["bad id!"] }, { ...CUR, t: null }, { ...CUR, t: -1 },
-    { ...CUR, b: 0 }, { ...CUR, b: 1.5 }, { ...CUR, b: 1792040401, t: null, s: [] }, { ...CUR, l: null, o: 3 },
+    { ...CUR, s: Array.from({ length: 21 }, (_, i) => `a${i}`) }, { ...CUR, s: ["bad id!"] }, { ...CUR, l: null, o: 0, t: null }, { ...CUR, t: -1 },
+    { ...CUR, b: 0 }, { ...CUR, b: 1.5 }, { ...CUR, l: null, o: 0, b: 1792040401, t: null, s: [] }, { ...CUR, l: null, o: 3 },   // l null·o 0 = l⇒t 규칙에 가리지 않고 t null⇒s []·b⇒t 를 따로 본다
     { ...CUR, t: null, s: [] }]) {                                               // l 있는데 t 없음(PF-12)
     assertEquals(await verifyCursor(k, await signCursor(k, claims as CursorClaims), NOW_S), { ok: false, code: "bad_token" }, JSON.stringify(claims).slice(0, 80));
   }

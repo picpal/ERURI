@@ -56,7 +56,7 @@ export async function verifyToken(key: CryptoKey, token: unknown, nowS: number):
 export const CURSOR_MAX = 1024, CURSOR_PAYLOAD_MAX = 960, SAME_MS_MAX = 20;
 export type CursorClaims = { u: string; c: string; h: string; b: number | null; p: string | null; o: number; l: string | null; t: number | null; s: string[]; e: number };
 export type CursorVerified = { ok: true; claims: CursorClaims } | { ok: false; code: "bad_token" | "not_found" | "token_expired" };
-const CURSOR_SHAPE = /^c1\.([A-Za-z0-9_-]{1,960})\.([A-Za-z0-9_-]{43})$/;
+const CURSOR_SHAPE = new RegExp(`^c1\\.([A-Za-z0-9_-]{1,${CURSOR_PAYLOAD_MAX}})\\.([A-Za-z0-9_-]{43})$`);   // payload 상한 = signCursor 와 같은 상수
 const PAGE = /^[A-Za-z0-9_.-]{1,512}$/;
 const PRINT = /^[0-9a-f]{32}$/;
 
@@ -72,7 +72,7 @@ export async function signCursor(key: CryptoKey, c: CursorClaims): Promise<strin
   let x = c, payload = cursorPayload(x);
   if (payload.length > CURSOR_PAYLOAD_MAX && x.p !== null) { x = { ...x, p: null, o: 0 }; payload = cursorPayload(x); }
   while (payload.length > CURSOR_PAYLOAD_MAX && x.s.length > 0) { x = { ...x, s: x.s.slice(1) }; payload = cursorPayload(x); }
-  if (payload.length > CURSOR_PAYLOAD_MAX) throw new Error("cursor_too_long");   // 도달하지 않는다 — p null·s [] 이면 300자 안
+  if (payload.length > CURSOR_PAYLOAD_MAX) throw new Error("cursor_too_long");   // 도달하지 않는다 — p null·s [] 이면 400자 안
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode("c1." + payload)));
   return `c1.${payload}.${b64u(sig)}`;
 }
