@@ -30,8 +30,7 @@
    "expect": {
     "count": null,
     "latest": false,
-    "sender": null,
-    "target_in_message": false
+    "sender": null
    }
   },
   {

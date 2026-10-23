@@ -719,6 +719,15 @@ Deno.test("guardContextSender: a context sender the current message does not nam
   // S7 리뷰 I1: 'X랑' 으로만 잡은 이름은 다른 표지 이름과 함께일 때만 센다 — 혼자서는 sender 를 바꾸지 않는다("번역이랑·내용이랑"은 이름이 아니다)
   for (const q of ["그 메일 번역이랑 요약해줘", "그 메일 요약이랑 번역해줘", "그거 내용이랑 첨부 요약해줘", "그 메일 본문이랑 첨부파일 읽어줘",
     "거기서 온 거 제목이랑 내용 요약해줘", "그 메일 원문이랑 같이 번역해줘"]) assertEquals(g(q), mr(), q);
+  // E2 ②(n_ambiguous): 모델이 sender 를 비워도 이름 둘이면 대상 칸·count 를 비운다. 이름 하나·'X랑' 혼자·통수만·맥락 없음은 그대로
+  const none = { sender: null, count: 3 };
+  assertEquals(g("합성레터랑 합성상점 거 세 통 요약해줘", none), mr({ sender: null, count: null, target_in_message: true }));
+  assertEquals(g("합성레터 거랑 합성학원 거 요약해줘", { sender: null, subject_words: ["안내"], latest: true }), mr({ sender: null, target_in_message: true }));
+  assertEquals(g("합성레터 거 세 통 요약해줘", none), mr(none));
+  assertEquals(g("메일 세 통 각각 요약해줘", { ...none, target_in_message: true }), mr({ ...none, target_in_message: true }));
+  for (const q of ["그 메일 번역이랑 요약해줘", "그 메일 요약이랑 번역해줘", "그거 내용이랑 첨부 요약해줘", "그 메일 본문이랑 첨부파일 읽어줘",
+    "거기서 온 거 제목이랑 내용 요약해줘", "그 메일 원문이랑 같이 번역해줘"]) assertEquals(g(q, none), mr(none), q);
+  assertEquals(g("합성레터랑 합성상점 거 세 통 요약해줘", none, []), mr(none));
 });
 Deno.test("parseFilterOutput: mail_summary runs guardContextSender with the context; other intents and requests without context are untouched", () => {
   const ctx = [{ question: "합성은행에서 온 메일 뭐 있어?", answer: "합성은행에서 보안 안내 메일이 왔어요." }];

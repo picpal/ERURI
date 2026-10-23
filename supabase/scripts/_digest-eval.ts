@@ -9,8 +9,9 @@ import { buildMessage, type Mime } from "./_summary-eval.ts";
 export type DigestCase = { id: string; kind: string; message: { from: string; subject: string; date: string; mime: Mime }; must_facts: string[]; forbidden_facts: string[];
   marker: string };
 export type DigestFile = { today: string; cases: DigestCase[] };
+// target_in_message 가 없으면 비교하지 않는다(n_vague — 스펙 ②는 count null 만 요구, E2 판정)
 export type CountCase = { id: string; text: string; context: ContextTurn[];
-  expect: { count: number | null; latest: boolean; sender: string | null; target_in_message: boolean; empty_targets?: boolean } };
+  expect: { count: number | null; latest: boolean; sender: string | null; target_in_message?: boolean; empty_targets?: boolean } };
 export type CountFile = { today: string; cases: CountCase[] };
 
 export const DIGEST_KINDS = ["ko_deadline", "en_notice", "html_newsletter", "ad_member", "short_one", "injection", "long_13k", "neg_no_pay", "cond_member_free", "ko_amount"];
@@ -110,7 +111,7 @@ export function gradeRun(j: Judge, lines: string[], _marker: string, others: str
 export function countMatches(c: CountCase, out: MailReadFields | null | undefined): boolean {
   if (!out) return false;
   const e = c.expect;
-  if (out.count !== e.count || out.latest !== e.latest || out.target_in_message !== e.target_in_message) return false;
+  if (out.count !== e.count || out.latest !== e.latest || (e.target_in_message !== undefined && out.target_in_message !== e.target_in_message)) return false;
   if (e.empty_targets) return out.sender === null && out.subject_words.length === 0 && out.received_from === null && out.received_to === null && !out.latest;
   return (out.sender?.trim() ?? null) === e.sender;
 }

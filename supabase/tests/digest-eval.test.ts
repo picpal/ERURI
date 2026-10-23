@@ -24,4 +24,7 @@ Deno.test("countMatches: exact count/latest/sender/target_in_message; empty_targ
   assertEquals(countMatches({ id: "x", text: "", context: [], expect: { count: null, latest: false, sender: null, target_in_message: true, empty_targets: true } }, out), true);
   assertEquals(countMatches({ id: "x", text: "", context: [], expect: { count: 3, latest: false, sender: null, target_in_message: true } }, { ...out, count: 3 }), true);
   assertEquals(countMatches({ id: "x", text: "", context: [], expect: { count: 3, latest: false, sender: null, target_in_message: true } }, { ...out, count: 2 }), false);
+  // target_in_message 기대가 없으면(n_vague) 그 칸은 보지 않는다
+  assertEquals(countMatches({ id: "x", text: "", context: [], expect: { count: null, latest: false, sender: null } }, { ...out, target_in_message: false }), true);
+  assertEquals(countMatches({ id: "x", text: "", context: [], expect: { count: null, latest: false, sender: null } }, out), true);
 });

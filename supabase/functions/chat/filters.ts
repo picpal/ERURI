@@ -114,7 +114,7 @@ export const INTENT_CONTEXT_FILTER_SCHEMA = {
 export const MAIL_READ_COUNT_RULES = [
   "mail_read.count 는 지금 보낸 글이 메일 통수를 숫자로 말했을 때만 그 수다(예: 최근 메일 3개 → 3, 세 통 → 3, 다섯 개 → 5, 12통 → 12, 마흔 통 → 40). '메일들·전부·각각·메일별로'처럼 통수를 말하지 않았거나 '두어 개·몇 개'처럼 정확한 수가 아니면 null 이다.",
   "mail_read.latest 는 '가장 최근 한 통'일 때만 true 다. '최근 메일 3개'처럼 통수를 말하면 latest 는 false 이고 count 에 그 수를 쓴다.",
-  "지금 보낸 글이 통수를 직접 말했으면 그것도 대상이므로 target_in_message 는 true 다(예: 앞에서 한 메일을 요약한 뒤 '메일 세 통 각각 요약해줘').",
+  "지금 보낸 글이 통수를 직접 말했으면 그것도 대상이므로 target_in_message 는 true 다(예: 앞에서 한 메일을 요약한 뒤 '메일 세 통 각각 요약해줘'). 통수만 말하고 발신자·제목을 말하지 않았으면 이전 대화의 발신자·제목 단어를 sender·subject_words 에 채우지 않는다.",
 ] as const;
 // 행동은 명시적 요청만, 지금 보낸 글에서만(스펙 §9, 2026-10-06 리뷰 반영). 필터 칸은 의도와 상관없이 위 규칙대로 뽑는다
 export const INTENT_RULE = [
@@ -352,21 +352,22 @@ const ADNOMINAL = /[한은는던된준낸온운린진쓴든본간할될을]$/;
 const AFTER_DEMONSTRATIVE = /(?:^|[\s,.!?])(?:그|이|저|요|그런|이런|저런|해당)\s+$/;
 const TIME_WORD = /^(\d+|[일이삼사오육칠팔구십]+)?(년|월|일|주|시|분|통|개|번째)$|요일$|(전|후|째)$/;
 const squash = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+// E2 ②(n_ambiguous): 모델이 sender 를 비워도(s = "") 지금 글이 이름 둘을 말하면 대상 칸·count 를 비운다 — 대상 없는 최근 N통 검색이 되지 않게. 이름 하나면 그대로
 export function guardContextSender(mr: MailReadFields, question: string, context: ContextTurn[]): MailReadFields {
-  if (mr.sender === null || context.length === 0) return mr;
-  const s = squash(mr.sender);
-  if (s === "" || squash(question).includes(s) || !squash(context.map((t) => `${t.question}\n${t.answer}`).join("\n")).includes(s)) return mr;
+  if (context.length === 0) return mr;
+  const s = mr.sender === null ? "" : squash(mr.sender);
+  if (s !== "" && (squash(question).includes(s) || !squash(context.map((t) => `${t.question}\n${t.answer}`).join("\n")).includes(s))) return mr;
   const words = new Set(mr.subject_words.map(squash));
   // 'X랑' 표지(m[2])로만 잡은 이름은 다른 표지로 잡은 이름이 하나 이상 있을 때만 센다 — 두 이름 판정 전용(DP13, S7 리뷰 I1: "번역이랑·내용이랑"이 sender 를 덮어썼다)
   const names = new Map<string, string>(), marked = new Set<string>();
   for (const m of question.matchAll(NAME_BEFORE_MARK)) {
     const n = m[1], k = squash(n);
     if (n.length < 2 || NOT_NAME.has(n) || NOT_NAME.has(k) || TIME_WORD.test(n) || ADNOMINAL.test(n) || AFTER_DEMONSTRATIVE.test(question.slice(0, m.index)) ||
-      words.has(k) || s.includes(k) || k.includes(s)) continue;
+      words.has(k) || (s !== "" && (s.includes(k) || k.includes(s)))) continue;
     names.set(k, n);
     if (m[2] === undefined) marked.add(k);
   }
-  if (marked.size === 0) return mr;
+  if (marked.size === 0 || (s === "" && names.size === 1)) return mr;
   if (names.size === 1) return { ...mr, sender: [...names.values()][0], target_in_message: true };
   return { ...mr, sender: null, subject_words: [], received_from: null, received_to: null, latest: false, count: null, target_in_message: true };
 }
