@@ -378,7 +378,8 @@ export function guardContextSender(mr: MailReadFields, question: string, context
   }
   if (s === "" || q.includes(s) || !squash(context.map((t) => `${t.question}\n${t.answer}`).join("\n")).includes(s)) return mr;
   if (othersMarked.size > 0 && others.size === 1) return { ...mr, sender: [...others.values()][0], target_in_message: true };
-  if (mr.count !== null && !POINTS_TO_CONTEXT.test(question)) {
+  // count 칸이 없는 출력(0.18.x 요청 = INTENT 기준선)은 통수를 말하지 않은 것으로 본다
+  if (typeof mr.count === "number" && !POINTS_TO_CONTEXT.test(question)) {
     return { ...mr, sender: null, subject_words: mr.subject_words.filter((w) => q.includes(squash(w))), target_in_message: true };
   }
   return mr;

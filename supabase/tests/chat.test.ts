@@ -742,6 +742,9 @@ Deno.test("guardContextSender: a context sender the current message does not nam
     "합성은행 메일 3개 요약해줘", "합성 은행 거 세 통 요약해줘"]) assertEquals(g(q, three), mr(three), q);
   assertEquals(g("메일 각각 요약해줘", { target_in_message: true }), mr({ target_in_message: true }));
   assertEquals(g("메일 세 통 각각 요약해줘", three, []), mr(three));
+  // count 칸이 없는 출력(0.18.x 요청 — INTENT 기준선, E2 라운드 2 회귀에서 s15·s28 맥락 발신자를 지웠다)은 그대로
+  const { count: _c, ...noCount } = mr();
+  for (const q of ["번역해줘", "요약한 거 번역해줘"]) assertEquals(guardContextSender(noCount as MailReadFields, q, ctx), noCount, q);
   for (const q of ["그 메일 번역이랑 요약해줘", "그 메일 요약이랑 번역해줘", "그거 내용이랑 첨부 요약해줘", "그 메일 본문이랑 첨부파일 읽어줘",
     "거기서 온 거 제목이랑 내용 요약해줘", "그 메일 원문이랑 같이 번역해줘"]) assertEquals(g(q, three), mr(three), q);
 });
