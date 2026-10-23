@@ -73,6 +73,7 @@ final class MailDigestTests: XCTestCase {
     XCTAssertEqual(MailDigest.rowHead(cand(0), now: now), "합성상점 · 10/23")
     XCTAssertEqual(MailDigest.rowHead(cand(1, from: "", date: "2025-12-30T23:00:00+09:00"), now: now), "(보낸 사람 없음) · 2025/12/30")
     XCTAssertEqual(MailDigest.rowTitle(cand(2, subject: "")), "(제목 없음)")
+    XCTAssertEqual(MailDigest.rowHead(cand(3, date: "2026-10-22T15:30:00.000Z"), now: now), "합성상점 · 10/23")   // 서버 UTC 소수초 → 서울 날짜(A1 리뷰 M3)
   }
   func testResultsDecodeLengthMustMatch() {
     let d = Data(#"{"results":[{"status":"ok","token":"v1.a","lines":["x"],"note":null,"code":null},{"status":"weird","token":null,"lines":[],"note":null,"code":null}]}"#.utf8)
@@ -204,6 +205,19 @@ final class MailDigestTests: XCTestCase {
     XCTAssertEqual(back.rows.map(\.state), [.failed, .failed]); XCTAssertEqual(back.phase, .idle)
     let blank = ChatHistory.restored([ChatHistory.Record(at: now, kind: .mailDigest, question: "q")])[0].mailDigest
     XCTAssertEqual(blank?.note, MailSummaryText.interrupted)
+    // 첫 검색 응답 전(.finding·줄 없음)에 닫힌 턴은 빈 카드가 아니라 끝난 문구로(A1 리뷰 I1, §9 대화 기록)
+    var pending = ChatHistory.Record(at: now, kind: .mailDigest, question: "q"); pending.mailDigest = MailDigestTurn(question: "q")
+    let ended = ChatHistory.restored([pending])[0].mailDigest!
+    XCTAssertEqual(ended.phase, .ended); XCTAssertEqual(ended.note, MailSummaryText.interrupted)
+  }
+  func testNextKeepsBlocked() {   // A1 리뷰 M1: llm_unavailable·disabled 카드는 [다음] 뒤에도 [다시] 없음
+    var t = MailDigestTurn(question: "q")
+    t.applySearch(search(2, next: "c1.a", count: 5), append: false)
+    t.applyCardError(status: 503, code: "llm_unavailable", rows: [0, 1])
+    t.applySearch(search(2), append: true)
+    XCTAssertTrue(t.blocked); XCTAssertFalse(t.canRetry(t.rows[0]))
+    t.applySearch(search(2), append: false)
+    XCTAssertFalse(t.blocked)
   }
   func testDigestTurnRoundTripAndLenientDecode() throws {
     var t = MailDigestTurn(question: "q"); t.applySearch(search(2, next: "c1.a", count: 5), append: false)

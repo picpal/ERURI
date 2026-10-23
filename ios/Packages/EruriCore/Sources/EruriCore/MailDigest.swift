@@ -137,12 +137,12 @@ public struct MailDigestTurn: Codable, Sendable, Equatable {
     guard nextCursor != nil, let n = MailDigest.nextLimit(count: conditions?.count, rows: rows.count) else { return .none }
     return .more(n)
   }
-  /// 검색 결과로 줄을 그린다(각 줄 "요약 중…"). append = [다음] — 같은 카드 아래 이어 붙이고 조건·count_capped 는 첫 검색 것 그대로
+  /// 검색 결과로 줄을 그린다(각 줄 "요약 중…"). append = [다음] — 같은 카드 아래 이어 붙이고 조건·count_capped·blocked 는 첫 검색 것 그대로(막힌 카드에 [다시]가 되살아나지 않게)
   public mutating func applySearch(_ s: MailSummary.Search, append: Bool) {
     let new = s.candidates.map { Row(candidate: $0, state: .pending, lines: [], note: nil, code: nil) }
     rows = append ? rows + new : new
-    if !append { conditions = s.conditions; countCapped = s.count_capped ?? false }
-    nextCursor = s.next_cursor; complete = s.complete; expired = false; note = nil; settings = false; blocked = false
+    if !append { conditions = s.conditions; countCapped = s.count_capped ?? false; blocked = false }
+    nextCursor = s.next_cursor; complete = s.complete; expired = false; note = nil; settings = false
   }
   /// digest 결과(입력 순서)를 그 줄들에 채운다. 새 토큰으로 바꿔 줄 탭·[다시]가 만료되지 않게
   public mutating func applyDigest(_ rs: [MailDigest.Result], rows idx: [Int]) {
@@ -199,8 +199,9 @@ public struct MailDigestTurn: Codable, Sendable, Equatable {
     rows[i].opening = true; return true
   }
   public mutating func endOpen(_ i: Int) { if rows.indices.contains(i) { rows[i].opening = false } }
-  /// 다시 열 때(§9 "보존"): "요약 중…" 줄은 실패 줄로 끝낸다(다시 보내지 않는다 — 비용)
+  /// 다시 열 때(§9 "보존"): 첫 검색 응답 전(줄 없음)이면 "앱이 닫혀…"로 끝내고, "요약 중…" 줄은 실패 줄로 끝낸다(다시 보내지 않는다 — 비용)
   public mutating func restoredForReopen() {
+    if phase == .finding && rows.isEmpty { phase = .ended; note = MailSummaryText.interrupted; return }
     for i in rows.indices where rows[i].state == .pending { rows[i].state = .failed }
     for i in rows.indices { rows[i].opening = false }
     if phase == .finding || phase == .loading { phase = .idle }
