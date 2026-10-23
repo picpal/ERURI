@@ -6,9 +6,9 @@ export const LLM_BUSY_DEFER_MS = 5_000;
 export type BudgetKind = "extract" | "chat" | "embed" | "backfill";
 export type BudgetLevel = "ok" | "degraded";
 // 기능별 기록(스펙 §13 "기능별 기록", 0.15.0): 예약 kind = 어느 예산에서 빼는가, 집계 kind = 어느 기능이 썼는가. vision 은 예약 없이 record_usage
-export type LedgerKind = "chat" | "mail_summary" | "extract" | "backfill" | "embed" | "vision";
+export type LedgerKind = "chat" | "mail_summary" | "mail_digest" | "extract" | "backfill" | "embed" | "vision";
 export const LEDGER_PAIRS: Record<BudgetKind, readonly LedgerKind[]> = {
-  chat: ["chat", "mail_summary"], extract: ["extract"], backfill: ["backfill"], embed: ["embed"],
+  chat: ["chat", "mail_summary", "mail_digest"], extract: ["extract"], backfill: ["backfill"], embed: ["embed"],
 };
 export type TokenUsage = { input: number; cached: number; output: number };         // cached 는 input 의 일부(따로 더한 값이 아니다)
 export type LedgerLine = { kind: LedgerKind; model: string; input: number; cached: number; output: number; krw: number };
@@ -60,9 +60,16 @@ export type Reservation = { level: "ok" | "degraded" | "refused"; month: string 
 export type BudgetDeps = {
   reserve(userId: string, kind: BudgetKind, estKrw: number): Promise<Reservation>;
   settle(userId: string, kind: BudgetKind, estKrw: number, month: string, lines: LedgerLine[]): Promise<void>;
-  acquire(userId: string, holder: string): Promise<number | null>;
+  acquire(userId: string, holder: string, seconds?: number): Promise<number | null>;   // seconds 없으면 0014 기본 90초(chat·read·워커), digest 만 150(스펙 §7 비용 — 슬롯 임대)
   release(userId: string, slot: number, holder: string): Promise<void>;
   now(): Date;
+};
+// 목록 요약 예약 식별자(0037, DP25 — Codex 0.19.0 계획 리뷰 #2): reserve_usage_month 는 멱등 식별자가 없어 시간 초과 뒤 늦게 성공한 예약을 되돌릴 수 없다.
+// 같은 hold(요청 UUID = 슬롯 holder)로 예약·정산 — 정산은 한 번만, 정산(보상)이 먼저 닿으면 묘비가 늦은 예약을 cancelled 로 만든다
+export type HoldReservation = { level: "ok" | "degraded" | "refused" | "cancelled"; month: string | null };
+export type HoldDeps = {
+  reserve(userId: string, hold: string, kind: BudgetKind, estKrw: number): Promise<HoldReservation>;
+  settle(userId: string, hold: string, lines: LedgerLine[]): Promise<"settled" | "done" | "absent">;
 };
 
 // 예약 → 슬롯 → call(level, bill) → (성공이든 예외든) 쌓인 원소로 예약한 달에 정산 → 슬롯 반납. 원소가 없으면 예약 취소와 같다(actual 0)

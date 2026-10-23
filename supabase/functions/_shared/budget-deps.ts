@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { BudgetDeps, LedgerLine, Reservation } from "./budget.ts";
+import type { BudgetDeps, HoldDeps, HoldReservation, LedgerLine, Reservation } from "./budget.ts";
 
 // service role. 모든 RPC 에 user_id 명시(스펙 §12 통제 4). 0032: 예약은 달을 함께 돌려받고, 정산은 그 달에 원소와 함께(§13 "월 경계")
 export function budgetDeps(sb: SupabaseClient): BudgetDeps {
@@ -17,9 +17,27 @@ export function budgetDeps(sb: SupabaseClient): BudgetDeps {
     settle: async (u, kind, est, month, lines) => {
       await rpc("settle_usage_lines", { p_user: u, p_kind: kind, p_est_krw: est, p_month: month, p_lines: lines });
     },
-    acquire: async (u, holder) => (await rpc("acquire_llm_slot", { p_user: u, p_holder: holder })) as number | null,
+    acquire: async (u, holder, seconds) =>
+      (await rpc("acquire_llm_slot", seconds === undefined ? { p_user: u, p_holder: holder } : { p_user: u, p_holder: holder, p_seconds: seconds })) as number | null,
     release: async (u, slot, holder) => { await rpc("release_llm_slot", { p_user: u, p_slot: slot, p_holder: holder }); },
     now: () => new Date(),
+  };
+}
+
+// 목록 요약 예약 식별자(0037, DP25). 실패는 budgetDeps 와 같은 Error("<함수> <SQLSTATE>") — digest 의 failure 가 500 internal
+export function holdDeps(sb: SupabaseClient): HoldDeps {
+  const rpc = async (fn: string, args: Record<string, unknown>) => {
+    const { data, error } = await sb.rpc(fn, args);
+    if (error) throw new Error(fn + " " + error.code);
+    return data;
+  };
+  return {
+    reserve: async (u, hold, kind, est) => {
+      const r = ((await rpc("reserve_usage_hold", { p_user: u, p_hold: hold, p_kind: kind, p_est_krw: est })) as { status: HoldReservation["level"]; month: string | null }[] | null)?.[0];
+      if (!r) throw new Error("reserve_usage_hold empty");
+      return { level: r.status, month: r.month };
+    },
+    settle: async (u, hold, lines) => (await rpc("settle_usage_hold", { p_user: u, p_hold: hold, p_lines: lines })) as "settled" | "done" | "absent",
   };
 }
 

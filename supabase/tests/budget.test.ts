@@ -1,5 +1,7 @@
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
-import { type BudgetDeps, costKrw, Deferred, guarded, type LedgerLine, ledgerLine, LLM_BUSY_DEFER_MS, nextMonthSeoul, responseUsage } from "../functions/_shared/budget.ts";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { type BudgetDeps, costKrw, Deferred, guarded, LEDGER_PAIRS, type LedgerLine, ledgerLine, LLM_BUSY_DEFER_MS, nextMonthSeoul, responseUsage } from "../functions/_shared/budget.ts";
+import { budgetDeps, holdDeps } from "../functions/_shared/budget-deps.ts";
 
 function fake(level: "ok" | "degraded" | "refused", slot: number | null = 1, month = "2026-12-01") {
   const calls: string[] = [];
@@ -92,4 +94,27 @@ Deno.test("guarded: a line kind outside the reservation's pairs throws ledger_pa
 });
 Deno.test("costKrw: unknown model still throws price_unknown (bill cannot invent a price)", () => {
   assertThrows(() => ledgerLine("chat", "gpt-9", U(1, 1)), Error, "price_unknown");
+});
+Deno.test("LEDGER_PAIRS: a chat reservation may bill mail_digest (0.19.0); extract may not", () => {
+  assertEquals(LEDGER_PAIRS.chat, ["chat", "mail_summary", "mail_digest"]);
+  assertEquals(LEDGER_PAIRS.extract.includes("mail_digest" as never), false);
+});
+Deno.test("budgetDeps.acquire passes p_seconds only when given (digest leases 150 s; chat/read keep the 90 s default)", async () => {
+  const calls: [string, Record<string, unknown>][] = [];
+  const sb = { rpc: async (fn: string, args: Record<string, unknown>) => { calls.push([fn, args]); return { data: 1, error: null }; } };
+  const d = budgetDeps(sb as unknown as SupabaseClient);
+  await d.acquire("u", "h");
+  await d.acquire("u", "h", 150);
+  assertEquals(calls, [["acquire_llm_slot", { p_user: "u", p_holder: "h" }], ["acquire_llm_slot", { p_user: "u", p_holder: "h", p_seconds: 150 }]]);
+});
+Deno.test("holdDeps: reserve_usage_hold / settle_usage_hold carry the same hold id (0037, DP25)", async () => {
+  const calls: [string, Record<string, unknown>][] = [];
+  const sb = { rpc: async (fn: string, args: Record<string, unknown>) => {
+    calls.push([fn, args]);
+    return { data: fn === "reserve_usage_hold" ? [{ status: "ok", month: "2026-10-01" }] : "settled", error: null };
+  } };
+  const d = holdDeps(sb as unknown as SupabaseClient);
+  assertEquals(await d.reserve("u", "h", "chat", 3), { level: "ok", month: "2026-10-01" });
+  assertEquals(await d.settle("u", "h", []), "settled");
+  assertEquals(calls, [["reserve_usage_hold", { p_user: "u", p_hold: "h", p_kind: "chat", p_est_krw: 3 }], ["settle_usage_hold", { p_user: "u", p_hold: "h", p_lines: [] }]]);
 });
