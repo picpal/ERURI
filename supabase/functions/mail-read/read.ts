@@ -15,10 +15,10 @@ export const REQUEST_MAX = 500;
 export const BUSY_RETRY_MS = [1000, 2000];                               // chat 과 같다 — 그래도 없으면 503 llm_busy
 const GONE = ["SPAM", "TRASH"];
 
-async function sha256Hex(s: string): Promise<string> {
+export async function sha256Hex(s: string): Promise<string> {
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))), (b) => b.toString(16).padStart(2, "0")).join("");
 }
-function seoulIso(internalDate: string | undefined): string {
+export function seoulIso(internalDate: string | undefined): string {
   const t = Number(internalDate || NaN);
   return Number.isFinite(t) ? new Date(t + 9 * 3600_000).toISOString().slice(0, 19) + "+09:00" : "";
 }

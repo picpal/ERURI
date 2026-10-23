@@ -9,7 +9,7 @@ export type MailReadDeps = {
   enabled(): boolean;                                                  // MAIL_READ=on — 꺼지면 검색·읽기 모두 503 disabled
   authUser(token: string): Promise<string | null>;
   connection(user: string): Promise<MailReadConnection | null>;        // 0030 mail_connection(최신 1개)
-  accessToken(user: string, conn: string): Promise<string | null>;    // null = 토큰 없음·invalid_grant(연결은 reauth_required 로), RpcError = RPC/DB 실패, 그 밖의 던짐 = 갱신 일시 오류
+  accessToken(user: string, conn: string, lim?: AccessLimit): Promise<string | null>;   // null = 토큰 없음·invalid_grant(연결은 reauth_required 로), RpcError = RPC/DB 실패, 그 밖의 던짐 = 갱신 일시 오류
   api(accessToken: string): GmailReadApi;
   takeUnits(user: string, units: number): Promise<boolean>;           // 0030 gmail_take_units — 거절 false, RPC 실패·1초 초과는 던짐(fail-closed)
   tokenKey(): Promise<CryptoKey>;                                      // MAIL_READ_KEY(형식 오류면 key_invalid 로 거절된 Promise)
@@ -23,6 +23,8 @@ export type MailReadDeps = {
   today(): string;                                                     // 서울 YYYY-MM-DD
 };
 export type Ctx = { user: string; request_id: string; t0: number };
+// digest 만(DP27): 토큰 갱신 안 RPC = min(rpcMs, 남은 시간), 토큰 엔드포인트 = min(15초, 남은 시간). deadline = epoch ms. 검색·읽기는 넘기지 않는다
+export type AccessLimit = { rpcMs: number; deadline: number };
 // RPC 실패: 메시지는 함수 이름·SQLSTATE 뿐이라 로그에 남긴다
 export class RpcError extends Error { constructor(fn: string, code: string) { super(fn + " " + code); this.name = "RpcError"; } }
 export class RateLimited extends Error { constructor() { super("units"); this.name = "RateLimited"; } }
@@ -40,9 +42,9 @@ export async function connectionFor(ctx: Ctx, d: MailReadDeps, stage: string): P
   if (c.status !== "active") { log({ stage, request_id: ctx.request_id, result: "reauth_required", elapsed_ms: ms(ctx, d) }); return err(409, "reauth_required"); }
   return c;
 }
-export async function accessFor(ctx: Ctx, c: MailReadConnection, d: MailReadDeps, stage: string): Promise<string | Response> {
+export async function accessFor(ctx: Ctx, c: MailReadConnection, d: MailReadDeps, stage: string, lim?: AccessLimit): Promise<string | Response> {
   let at: string | null;
-  try { at = await d.accessToken(ctx.user, c.connection_id); }
+  try { at = await d.accessToken(ctx.user, c.connection_id, lim); }
   catch (e) {
     if (e instanceof RpcError) throw e;                                  // RPC/DB 실패 → failure 의 500 internal(로그 = 함수 이름·SQLSTATE, 스펙 §7)
     if (e instanceof ReauthRequired) { log({ stage, request_id: ctx.request_id, result: "reauth_required", elapsed_ms: ms(ctx, d) }); return err(409, "reauth_required"); }

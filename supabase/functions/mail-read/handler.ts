@@ -2,16 +2,19 @@ import { Deferred } from "../_shared/budget.ts";
 import { classifyGmailError, GmailHttpError } from "../_shared/gmail.ts";
 import { llmUnavailable } from "../_shared/llm-errors.ts";
 import { type Ctx, CursorStale, err, log, type MailReadDeps, RateLimited, RpcError, SearchTimeout, SummaryFailed } from "./common.ts";
+import { digest, DIGEST_LIMITS, type DigestLimits, withTimeout } from "./digest.ts";
 import { read } from "./read.ts";
 import { search } from "./search.ts";
 
-// 메일 요약(스펙 §7 "메일 요약"): POST /mail-read/search·/mail-read/read. 사용자 JWT 로만 user_id 를 정한다(§12 통제 4). Gmail 을 바꾸지 않는다.
-// 검사 순서(계획 D5): 401 → 경로 404 → 405 → 플래그 503 → JSON 400 → 각 단계(search.ts·read.ts)
-export async function handleMailRead(req: Request, d: MailReadDeps): Promise<Response> {
+// 메일 요약(스펙 §7 "메일 요약"): POST /mail-read/search·/mail-read/read·/mail-read/digest. 사용자 JWT 로만 user_id 를 정한다(§12 통제 4). Gmail 을 바꾸지 않는다.
+// 검사 순서(계획 D5): 401 → 경로 404 → 405 → 플래그 503 → JSON 400 → 각 단계(search.ts·read.ts·digest.ts). lim 은 digest 한도(테스트만 작은 값, DP9)
+export async function handleMailRead(req: Request, d: MailReadDeps, lim: DigestLimits = DIGEST_LIMITS): Promise<Response> {
   const ctx0 = { request_id: crypto.randomUUID(), t0: d.now() };
-  const route = new URL(req.url).pathname.match(/\/mail-read\/(search|read)\/?$/)?.[1];
+  const route = new URL(req.url).pathname.match(/\/mail-read\/(search|read|digest)\/?$/)?.[1];
   const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
-  const user = token ? await d.authUser(token) : null;
+  let user: string | null;
+  try { user = token ? await (route === "digest" ? withTimeout(d.authUser(token), lim.rpcMs, "auth_get_user") : d.authUser(token)) : null; }
+  catch (e) { return failure(e, route ?? "auth", { user: "", ...ctx0 }, d.now() - ctx0.t0); }   // digest 인증 5초 초과 → 500 internal(DP10)
   if (!user) return new Response(null, { status: 401 });
   if (!route) return err(404, "not_found");
   if (req.method !== "POST") return new Response(null, { status: 405 });
@@ -21,7 +24,8 @@ export async function handleMailRead(req: Request, d: MailReadDeps): Promise<Res
   if (!body || typeof body !== "object" || Array.isArray(body)) return err(400, "bad_json");
   const ctx: Ctx = { user, ...ctx0 };
   try {
-    return route === "search" ? await search(ctx, body as Record<string, unknown>, d) : await read(ctx, body as Record<string, unknown>, d);
+    const b = body as Record<string, unknown>;
+    return route === "search" ? await search(ctx, b, d) : route === "read" ? await read(ctx, b, d) : await digest(ctx, b, d, lim);
   } catch (e) {
     return failure(e, route, ctx, d.now() - ctx.t0);
   }
