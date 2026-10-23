@@ -71,13 +71,18 @@ function period(from: unknown, to: unknown, today: string): Period | null {
 }
 
 // ④ 하루 말(0.18.1, 2026-10-23 사용자 승인 — G1 리뷰 백로그 ①: 필터가 '오늘'을 최근 7일로 읽어 과다 집계). 지금 글에 '오늘'·'어제'·'그제/그저께' 중
-// 한 날만 있고 다른 기간 말이 없으면 그 서울 날짜. 범위의 끝·시작·비교('오늘까지'·'어제부터'·'어제보다')와 키워드·발신자 안의 낱말은 하루 말이 아니다
+// 한 날만 있고 다른 기간 말이 없으면 그 서울 날짜. 범위 말이 글 어디에든 있으면('어제 밤부터'·'오늘까지'·'지금까지' — 리뷰 I1: 사이에 시간대·시각이 낄 수 있다),
+// 비교·제외('어제보다'·'오늘 빼고')와 키워드·발신자 안의 낱말은 하루 말이 아니다 — 모델 값으로 떨어진다(0.18.0 동작)
 const DAY_WORDS: [RegExp, number][] = [[/오늘(?!날)/g, 0], [/어제/g, -1], [/그저께|그제(?!야|서야)/g, -2]];
-const NOT_DAY_TAIL = /^\s*(?:까지|부터|이후|이전|보다|대비|빼고|말고|제외)/;
+const RANGE_WORDS = /부터|이후|이래|까지|지금|현재/;
+const NOT_DAY_TAIL = /^\s*(?:이전|보다|대비|빼고|말고|제외)/;
 const OTHER_PERIOD = /이번\s*주|지난\s*주|저번\s*주|이번\s*달|지난\s*달|저번\s*달|올해|작년|지난해|최근|일주일|주말|요일|\d+\s*(?:일|월|주)|\d+\s*\/\s*\d+/;
+// 공백 무시 표기 — "합성오늘마켓" 이 글의 "합성오늘 마켓" 에도 맞는다(리뷰 M3, 대소문자도 무시 — keywordList 중복 규칙과 같다)
+const loosely = (w: string) => new RegExp([...w.replace(/\s/g, "")].map((c) => c.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")).join("\\s*"), "gi");
 function dayWordPin(text: string, words: string[], today: string): string | null {
+  if (RANGE_WORDS.test(text)) return null;                    // 원 글 기준 — 키워드 안 낱말이어도 고정하지 않는 쪽(모델 값)이 안전
   let t = text;
-  for (const w of words) t = t.split(w).join(" ");          // 키워드·발신자(재검증 뒤 표기)를 지운 글에서만 찾는다
+  for (const w of words) t = t.replace(loosely(w), " ");     // 키워드·발신자(재검증 뒤 표기)를 지운 글에서만 찾는다
   if (OTHER_PERIOD.test(t)) return null;
   const days = new Set<number>();
   for (const [re, offset] of DAY_WORDS) {

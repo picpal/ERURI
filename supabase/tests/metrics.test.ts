@@ -89,6 +89,8 @@ Deno.test("slash / colon fields (0.18.1): label then one '/', '|' or ':' (spaces
   assertEquals(got([["타임아웃", 6]], "타임아웃/6건/누적/14건"), [["타임아웃", 6]]);
   assertEquals(got([["오류", 3]], "결제 오류/\n3건"), []);                                      // 줄바꿈은 건너뛰지 않는다
   assertEquals(got([["오류", 3]], "오류//3건"), []);                                            // 구분자는 하나만
+  // '|' 는 '/' 와 달리 앞 칸이 label 로 끝나지 않아도 받는다(final-I1 그대로 — 리뷰 M5, 현재 동작 고정)
+  assertEquals(got([["타임아웃", 20]], "타임아웃 발생 | 20건"), [["타임아웃", 20]]);
 });
 
 Deno.test("occurrences one-to-one (final-I3): title repeat of a body count is one metric; two body occurrences are two; title-only stays; one occurrence, two labels → first", () => {
