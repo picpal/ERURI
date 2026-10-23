@@ -2,7 +2,7 @@
 // stdout 에는 사례 id·판정·토큰 수만 — 출력 글은 수동 검토용 로컬 파일(supabase/eval/mail-summary.local.json, gitignore)에만
 import type { GmailMessage, MessagePart } from "../functions/_shared/gmail.ts";
 
-type Mime = { type: string; text?: string; charset?: string; hex?: string; filename?: string; attachment?: boolean; parts?: Mime[]; tail?: { text: string; repeat: number } };
+export type Mime = { type: string; text?: string; charset?: string; hex?: string; filename?: string; attachment?: boolean; parts?: Mime[]; tail?: { text: string; repeat: number } };
 export type Facts = { dates: string[]; amounts: string[] };
 export type EvalCase = { id: string; kind: string; request: string; translate: boolean;
   message: { from: string; subject: string; date: string; mime: Mime };
@@ -38,7 +38,7 @@ function part(m: Mime, n: { i: number }): MessagePart {
     : new TextEncoder().encode((m.text ?? "") + (m.tail ? m.tail.text.repeat(m.tail.repeat) : ""));
   return { mimeType: m.type, headers: [{ name: "Content-Type", value: `${m.type}; charset="${charset}"` }], body: { data: b64u(bytes) } };
 }
-export function buildMessage(c: EvalCase): GmailMessage {
+export function buildMessage(c: Pick<EvalCase, "id" | "message">): GmailMessage {
   const p = part(c.message.mime, { i: 1 });
   return { id: c.id, internalDate: String(Date.parse(c.message.date)), labelIds: ["INBOX"],
     payload: { ...p, headers: [...(p.headers ?? []), { name: "From", value: c.message.from }, { name: "Subject", value: c.message.subject }] } };

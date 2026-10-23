@@ -1,0 +1,115 @@
+{
+ "today": "2026-10-23",
+ "cases": [
+  {
+   "id": "n_three",
+   "text": "최근 메일 세 통 요약해줘",
+   "context": [],
+   "expect": {
+    "count": 3,
+    "latest": false,
+    "sender": null,
+    "target_in_message": true
+   }
+  },
+  {
+   "id": "n_five_sender",
+   "text": "합성상점 메일 다섯 개 각각 요약",
+   "context": [],
+   "expect": {
+    "count": 5,
+    "latest": false,
+    "sender": "합성상점",
+    "target_in_message": true
+   }
+  },
+  {
+   "id": "n_vague",
+   "text": "메일 두어 개 요약해줘",
+   "context": [],
+   "expect": {
+    "count": null,
+    "latest": false,
+    "sender": null,
+    "target_in_message": false
+   }
+  },
+  {
+   "id": "n_twelve",
+   "text": "메일 12통 요약해줘",
+   "context": [],
+   "expect": {
+    "count": 12,
+    "latest": false,
+    "sender": null,
+    "target_in_message": true
+   }
+  },
+  {
+   "id": "n_forty",
+   "text": "최근 메일 마흔 통 요약해줘",
+   "context": [],
+   "expect": {
+    "count": 40,
+    "latest": false,
+    "sender": null,
+    "target_in_message": true
+   }
+  },
+  {
+   "id": "n_none",
+   "text": "오늘 온 메일들 메일별로 요약해줘",
+   "context": [],
+   "expect": {
+    "count": null,
+    "latest": false,
+    "sender": null,
+    "target_in_message": true
+   }
+  },
+  {
+   "id": "n_latest",
+   "text": "가장 최근 메일 읽어줘",
+   "context": [],
+   "expect": {
+    "count": null,
+    "latest": true,
+    "sender": null,
+    "target_in_message": true
+   }
+  },
+  {
+   "id": "n_after_detail",
+   "text": "메일 세 통 각각 요약해줘",
+   "context": [
+    {
+     "question": "합성은행 메일 무슨 내용이야?",
+     "answer": "합성은행에서 보안 안내 메일이 왔어요."
+    }
+   ],
+   "expect": {
+    "count": 3,
+    "latest": false,
+    "sender": null,
+    "target_in_message": true
+   }
+  },
+  {
+   "id": "n_ambiguous",
+   "text": "합성레터랑 합성상점 거 세 통 요약해줘",
+   "context": [
+    {
+     "question": "합성은행 메일 무슨 내용이야?",
+     "answer": "합성은행에서 보안 안내 메일이 왔어요."
+    }
+   ],
+   "expect": {
+    "count": null,
+    "latest": false,
+    "sender": null,
+    "target_in_message": true,
+    "empty_targets": true
+   }
+  }
+ ]
+}

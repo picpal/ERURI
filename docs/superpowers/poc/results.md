@@ -346,3 +346,34 @@ r1(U2 지시 수정 1회 — "날짜도 적혀 있으면" 뒤에 연도 없는 �
 판정: **METRIC-regress 통과** — new_wrong 0, emitted 0/23.
 
 최종 리뷰 수정 뒤 규칙 모드 확인(20:20~20:22, `--regression --runs 1`): 일반 24/24 · 규칙 23/23 · metric 낸 사례 0 · new_wrong 0, 출력 최대 일반 530 · 규칙 505 — 통과(정규화 변경은 0 받음·괄호 처리로 받는 범위가 넓어졌지만 일정 알림 23사례에서 metric 을 낸 사례는 여전히 0).
+
+## DIGEST-eval (0.19.0, 로컬 러너 — 계획 2026-10-23-multi-mail-digest E2)
+
+2026-10-23 KST, HEAD `f806a89` + E2 러너(`supabase/scripts/eval-digest.ts`). DB·사용자 없음(OpenAI 키만). 줄 글·채점 근거는 `supabase/eval/digest.local.json`(gitignore)에만.
+
+**① 품질**(`--part quality --runs 2`, 합성 10통 묶음 = `digest()` 한 요청, 가짜 Gmail·가짜 예산 + 진짜 `gpt-6-luna` 짧은 모드, 채점 `gpt-6-sol` effort medium strict `digest_judge`):
+
+| 지표 | 값 | 합격선 |
+|---|---|---|
+| 필수 사실 보존(메일 × 회차) | 18/20 | ≥ 18/20 |
+| 뒤집힘(contradicted) · 금지 사실 present | 0 · 0 | 0 |
+| 원문에 없는 사실(unsupported) | 0 | 0 |
+| 섞임(다른 메일 표식) | 0 | 0 |
+| 형식(1~2줄·80자·한글, 후처리 뒤 / 원출력) | 20/20 / 20/20 | 100% |
+| 주입 지시 무시(d06) | 2/2 | 전부 |
+| 보조: 자기 표식 포함 | 20/20 | (기록만) |
+
+불일치(수작업 확정 대상): d03(HTML 뉴스레터) 2/2 — 필수 사실 "이번 호 특집 가을 캠핑"을 `missing`, 표식(11/15)은 포함. 짧은 모드 지시의 "광고·뉴스레터는 한 줄" 규칙대로 갱신 혜택만 쓴 결과다. 메인 확정 대기.
+
+**비용·지연(실측)**: 10통 평균 1.63원(회차 2.11·1.15원). 합성 메일이 짧아 통당 평균 입력 1,289·출력 43 토큰이다. 12,000자를 넘는 d07은 입력 7,531 토큰 → 이 크기 10통이면 약 10.9원(§13 예상 10~20원 범위 안). 통당 모델 지연 p50 1,744ms, 10통 `digest` 전체 3.6~5.5초. 채점 호출 합계 92.21원(20회).
+
+**② `count` 실호출**(`--part count --runs 3`, 9사례 × 3, chat `extractFilters` + 가드, 0.19.0 앱 intents): **19/27 — 미달**.
+
+| 사례 | 일치 | 어긋난 칸 |
+|---|---|---|
+| n_three · n_five_sender · n_twelve · n_forty · n_none · n_latest | 3/3 씩 | — |
+| n_vague | 1/3 | `count` null 3/3, `target_in_message` 2회 참(기대 false는 픽스처가 정한 값 — 스펙 ②는 `count` null만 적음) |
+| n_after_detail | 0/3 | `count` 3·`target_in_message` 참은 맞음, `sender`에 맥락 발신자를 채움(3/3) |
+| n_ambiguous | 0/3 | 모델이 `sender`를 비워(맥락 발신자 아님) 가드가 돌지 않아 `count` 3이 남음(3/3) — S7 Ruling의 측정 대상 |
+
+지시문은 고치지 않았다(E2 지시: 미달이면 수치 그대로 보고). U4 판정은 메인.
