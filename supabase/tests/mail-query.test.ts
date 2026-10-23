@@ -159,7 +159,7 @@ Deno.test("checkReadConditions: target floor is sender/subject/date(one end is e
   assertEquals(rbad({ ...rbase, translate: true }), "needs_target");
   assertEquals(rbad({ ...rbase, sender: "   ", subject_words: ["", " "] }), "needs_target");    // 빈 값 = 없음
   assertEquals(rbad({ target_in_message: true }), "needs_target");                                // 검색은 이 칸을 쓰지 않는다
-  assertEquals(rok({ latest: true }), { sender: null, subject_words: [], received_from: null, received_to: null, latest: true, translate: false });
+  assertEquals(rok({ latest: true }), { sender: null, subject_words: [], received_from: null, received_to: null, latest: true, translate: false, count: null });
   assertEquals(rok({ received_to: "2026-10-06" }).received_to, "2026-10-06");
 });
 Deno.test("buildReadQuery: no in:inbox, no negative operators, no is:/category:; quoted values; Seoul day bounds; latest-only is an empty query", () => {
@@ -175,6 +175,40 @@ Deno.test("buildReadQuery: a window start adds after:<epoch> after the received 
   assertEquals(buildReadQuery(c, 1791298800 - 3600), `after:${S(2026, 10, 1)} after:${1791298800 - 3600}`);
   assertThrows(() => buildReadQuery(c, -1));
   assertThrows(() => buildReadQuery(c, 1.5));
+});
+// ── 0.19.0 count·limit·cursor(스펙 §7 "count"·"limit", DP2): limit 이 0.19.0 앱 표식 — 없으면 count 는 없는 것(0.18.x 계약) ──
+const cok = (o: Record<string, unknown>) => { const r = checkReadConditions(o); if (!r.ok) throw new Error(JSON.stringify(r)); return r; };
+const cbad = (o: Record<string, unknown>) => checkReadConditions(o);
+
+Deno.test("checkReadConditions 0.19.0 with limit: count 1–30 kept, 31+ → 30 + count_capped, 0/-1/2.5/'3' → bad_condition count", () => {
+  assertEquals([3, 12, 30].map((n) => cok({ count: n, limit: 10 }).c.count), [3, 12, 30]);
+  for (const n of [31, 40]) { const r = cok({ count: n, limit: 10 }); assertEquals([r.c.count, r.count_capped], [30, true]); }
+  assertEquals(cok({ count: 3, limit: 3 }).count_capped, false);
+  for (const v of [0, -1, 2.5, "3", true]) assertEquals(cbad({ sender: "합성상점", count: v, limit: 10 }), { ok: false, code: "bad_condition", fields: ["count"] });
+  assertEquals(cok({ sender: "합성상점", count: null, limit: 10 }).c.count, null);
+});
+Deno.test("checkReadConditions 0.19.0: count ≥ 2 clears latest; count 1 keeps it; count alone meets the target floor only with limit", () => {
+  assertEquals(cok({ count: 2, latest: true, limit: 2 }).c.latest, false);
+  assertEquals(cok({ count: 1, latest: true, limit: 1 }).c.latest, true);
+  assertEquals(cok({ count: 3, limit: 3 }).c, { sender: null, subject_words: [], received_from: null, received_to: null, latest: false, translate: false, count: 3 });
+  assertEquals(cbad({ count: 3 }), { ok: false, code: "needs_target" });                 // limit 없음 = 0.18.x 앱: count 는 없는 것
+});
+Deno.test("checkReadConditions without limit (0.18.x app contract): count ignored entirely — no 400, conditions.count null, no latest change", () => {
+  for (const v of [3, 40, 0, -1, "3", 2.5]) {
+    const r = cok({ sender: "합성상점", count: v, latest: true });
+    assertEquals([r.c.count, r.c.latest, r.limit, r.count_capped], [null, true, null, false], String(v));
+  }
+  // 구 앱 [다시 찾기]: 서버 conditions 그대로(count: null 키 포함) → 첫 검색과 같은 확정 칸
+  const first = cok({ sender: "합성상점", subject_words: [], received_from: null, received_to: null, latest: false, translate: false, count: 3, target_in_message: true });
+  assertEquals(cok({ ...first.c }).c, first.c);
+});
+Deno.test("checkReadConditions limit: integer 1–10 only; cursor needs limit and no latest", () => {
+  assertEquals(cok({ sender: "합성상점", limit: 1 }).limit, 1);
+  for (const v of [0, 11, 2.5, "10", false]) assertEquals(cbad({ sender: "합성상점", limit: v }), { ok: false, code: "bad_condition", fields: ["limit"] });
+  assertEquals(cbad({ sender: "합성상점", cursor: "c1.x.y" }), { ok: false, code: "bad_condition", fields: ["cursor"] });
+  assertEquals(cbad({ latest: true, limit: 10, cursor: "c1.x.y" }), { ok: false, code: "bad_condition", fields: ["cursor"] });
+  assertEquals(cok({ sender: "합성상점", limit: 10, cursor: "c1.x.y" }).cursor, "c1.x.y");
+  assertEquals(cok({ sender: "합성상점", limit: 10, cursor: null }).cursor, null);
 });
 // 연산자 주입: 따옴표·괄호·콜론·OR 은 정제 뒤 따옴표 안의 글이다. 모델이 쓴 q 등 모르는 키는 읽지 않는다
 Deno.test("checkReadConditions + buildReadQuery: quotes, parens, colons, OR and a model-written q never become operators", () => {

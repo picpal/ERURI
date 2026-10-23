@@ -106,11 +106,14 @@ export function buildQuery(c: MailConditions, starred = false): string {
 // ── 메일 요약 지목(스펙 §7 "메일 요약", 0.15.0): 같은 정제·날짜 규칙, 칸이 다르다(동작·광고·안 읽음 없음, latest·translate 있음).
 // 메일 정리 checkConditions·buildQuery 는 바꾸지 않는다(0.14.0 회귀 없음) — 그래서 칸 읽기를 따로 둔다. target_in_message 는 앱만 쓴다(검색은 읽지 않음) ──
 export type ReadConditions = { sender: string | null; subject_words: string[]; received_from: string | null; received_to: string | null;
-  latest: boolean; translate: boolean };
+  latest: boolean; translate: boolean; count: number | null };
+// cursor 는 모양 검사 전 원값(검사는 mail-token verifyCursor)
 export type ReadCheck =
-  | { ok: true; c: ReadConditions }
+  | { ok: true; c: ReadConditions; limit: number | null; cursor: unknown | null; count_capped: boolean }
   | { ok: false; code: "bad_condition"; fields: string[] }
   | { ok: false; code: "needs_target" };
+export const COUNT_MAX = 30, LIMIT_MAX = 10;
+const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
 
 function readSender(v: unknown, bad: string[]): string | null {
   if (v === null || v === undefined) return null;
@@ -153,11 +156,24 @@ export function checkReadConditions(raw: unknown): ReadCheck {
   const words = readWords(r.subject_words, bad);
   const from = readDay(r, "received_from", bad), to = readDay(r, "received_to", bad);
   if (from && to && from > to) bad.push("received_from", "received_to");
-  const latest = readFlag(r, "latest", bad), translate = readFlag(r, "translate", bad);
+  let latest = readFlag(r, "latest", bad);
+  const translate = readFlag(r, "translate", bad);
+  // limit = 0.19.0 앱 표식(스펙 §7 "limit"). 없으면 0.18.x 계약 그대로 — count 는 읽지도 검사하지도 않는다(Codex 0.19.0 #3)
+  let limit: number | null = null, count: number | null = null, capped = false;
+  if (r.limit !== undefined && r.limit !== null) {
+    if (!isInt(r.limit) || r.limit < 1 || r.limit > LIMIT_MAX) bad.push("limit"); else limit = r.limit;
+  }
+  if (limit !== null && r.count !== undefined && r.count !== null) {
+    if (!isInt(r.count) || r.count < 1) bad.push("count");
+    else { count = Math.min(r.count, COUNT_MAX); capped = r.count > COUNT_MAX; }
+  }
+  if (count !== null && count >= 2) latest = false;                     // "최근 메일 3개"는 한 통이 아니다(D-M1)
+  const cursor = r.cursor === undefined ? null : r.cursor;
+  if (cursor !== null && (limit === null || latest)) bad.push("cursor");
   if (bad.length) return { ok: false, code: "bad_condition", fields: [...new Set(bad)] };
-  // 대상 하한: 발신자·제목 단어·받은 기간(한쪽 끝도 됨)·latest 중 하나. translate 만으로는 채우지 않는다(§7)
-  if (!sender && words.length === 0 && !from && !to && !latest) return { ok: false, code: "needs_target" };
-  return { ok: true, c: { sender, subject_words: words, received_from: from, received_to: to, latest, translate } };
+  // 대상 하한: 발신자·제목 단어·받은 기간(한쪽 끝도 됨)·latest·count(limit 있을 때만) 중 하나. translate 만으로는 채우지 않는다(§7)
+  if (!sender && words.length === 0 && !from && !to && !latest && count === null) return { ok: false, code: "needs_target" };
+  return { ok: true, c: { sender, subject_words: words, received_from: from, received_to: to, latest, translate, count }, limit, cursor, count_capped: capped };
 }
 
 // in:inbox 를 붙이지 않는다(보관된 메일 포함). 스팸·휴지통은 includeSpamTrash 기본값(false)으로 빠지고, 보낸 메일·초안·채팅은 검색어가 아니라

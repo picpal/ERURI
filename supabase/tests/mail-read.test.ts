@@ -132,11 +132,11 @@ Deno.test("search: SENT/DRAFT/CHAT and vanished (404) metas are dropped; newest 
   assertEquals(j.candidates.map((c: { subject: string }) => c.subject), ["합성 안내 m10", "합성 안내 m9", "합성 안내 m8", "합성 안내 m7", "합성 안내 m6"]);
   assertEquals([j.complete, j.more], [true, true]);                                 // 유효 7통 > 5
   assertEquals(seen.headers.length, 11);                                             // 5통을 모았다고 멈추지 않는다
-  assertEquals(j.conditions, { sender: "합성상점", subject_words: [], received_from: null, received_to: null, latest: false, translate: false });
+  assertEquals(j.conditions, { sender: "합성상점", subject_words: [], received_from: null, received_to: null, latest: false, translate: false, count: null });
 });
 Deno.test("search: complete with nothing → 200 [] complete true more false; 20 all-SENT ids with a next page → complete false, more true, [] (not 'none')", async () => {
   assertEquals((await call(fake().d, req("search", F))).j, { conditions: { sender: "합성상점", subject_words: [], received_from: null, received_to: null,
-    latest: false, translate: false }, candidates: [], complete: true, more: false });
+    latest: false, translate: false, count: null }, candidates: [], complete: true, more: false });
   const msgs = [...Array.from({ length: 20 }, (_, i) => msg(`s${i}`, i + 1, { labels: ["SENT"] })), ...Array.from({ length: 5 }, (_, i) => msg(`r${i}`, 30 + i))];
   const { j } = await call(fake({ msgs }).d, req("search", F));
   assertEquals([j.candidates.length, j.complete, j.more], [0, false, true]);
