@@ -408,3 +408,7 @@ r1(U2 지시 수정 1회 — "날짜도 적혀 있으면" 뒤에 연도 없는 �
 ## DIGEST-deploy ③ (0.19.0, 호스팅 부하 — 계획 2026-10-23-multi-mail-digest G2)
 
 - 임시 `digest-bench`(측정 뒤 삭제) × 9회(10-24 01:05~01:15 KST): 최대 크기 합성 MIME 10통 모두 `ok 10`·응답 37.0~37.9초, CPU isolate 당 976~1,366ms(두 요청 isolate 1,907·1,908ms, 종료 사유 `EarlyDrop`만 — CPU·메모리 초과 0), 메모리 15.7~29.3MB(함수 로그), 예약 반환 9/9·`usage_holds` 모두 `settled` — **통과**(`DIGEST_SCAN_MAX` 200,000 유지, gates.md DIGEST-deploy ③).
+
+## DIGEST-real (0.19.0, 실기기 — 계획 2026-10-23-multi-mail-digest G3)
+
+- U1(Gmail `messages.list` 최신순 — 문서 미기재, 관측 가정): **대기** — TestFlight 0.19.0 `202610240127`(VALID) 실기기 세션의 `mail-read` 검색 로그(`mode` scan) `ordered` 참/전체로 판정. 거짓이 하나라도 있으면 통과로 적지 않고 메인 판정(DP7).
