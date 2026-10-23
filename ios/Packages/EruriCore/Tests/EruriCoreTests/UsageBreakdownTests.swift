@@ -20,10 +20,10 @@ final class UsageBreakdownTests: XCTestCase {
   }
   func testOrderMergeAndOutsideLine() {
     let d = rows([("embed", "text-embedding-3-large", 3, 270_000, 0, 49), ("chat", "gpt-6-sol", 4, 400_000, 20_000, 1000.2),
-                  ("chat", "gpt-6-luna", 9, 90_000, 10_000, 20), ("mail_summary", "gpt-6-luna", 2, 30_000, 1_000, 45),
+                  ("chat", "gpt-6-luna", 9, 90_000, 10_000, 20), ("mail_summary", "gpt-6-luna", 2, 30_000, 1_000, 45), ("mail_digest", "gpt-6-luna", 3, 12_000, 600, 8),
                   ("extract", "gpt-6-luna", 60, 700_000, 100_000, 120), ("vision", "gpt-6-luna", 2, 40_000, 2_000, 6), ("backfill", "gpt-6-luna", 900, 1_400_000, 100_000, 300)])
     XCTAssertEqual(UsageStatus.breakdown(d), [
-      "채팅 1,020원 (52만 토큰) · 메일 요약 45원 (3.1만 토큰) · 수집(추출) 120원 (80만 토큰) · 검색 색인(임베딩) 49원 (27만 토큰)",
+      "채팅 1,020원 (52만 토큰) · 메일 요약 45원 (3.1만 토큰) · 메일 목록 요약 8원 (1.3만 토큰) · 수집(추출) 120원 (80만 토큰) · 검색 색인(임베딩) 49원 (27만 토큰)",
       "월 예산 밖: 과거 메일 가져오기 300원 (150만 토큰) · 이미지 읽기 6원 (4.2만 토큰)",
       UsageStatus.footnote])
     XCTAssertEqual(UsageStatus.footnote, "토큰 수 × 공식 단가 × 환율로 계산한 금액이에요(실제 청구와 조금 다를 수 있어요)")

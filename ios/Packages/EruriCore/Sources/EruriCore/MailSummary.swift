@@ -14,14 +14,15 @@ public enum MailSummary {
     public let received_to: String?
     public let latest: Bool
     public let translate: Bool
-    public init(sender: String?, subject_words: [String], received_from: String?, received_to: String?, latest: Bool, translate: Bool) {
+    public let count: Int?                     // 0.19.0 서버가 확정한 통수(1~30). 0.18.x 응답엔 없다 → nil
+    public init(sender: String?, subject_words: [String], received_from: String?, received_to: String?, latest: Bool, translate: Bool, count: Int? = nil) {
       self.sender = sender; self.subject_words = subject_words; self.received_from = received_from; self.received_to = received_to
-      self.latest = latest; self.translate = translate
+      self.latest = latest; self.translate = translate; self.count = count
     }
-    /// [다시 찾기] 요청 본문 — 서버가 확정한 칸 그대로
+    /// [다시 찾기]·[다음] 요청 본문 — 서버가 확정한 칸 그대로(count 는 limit 이 없으면 서버가 무시)
     public var json: [String: Any] {
       ["sender": sender.map { $0 as Any } ?? NSNull(), "subject_words": subject_words, "received_from": received_from.map { $0 as Any } ?? NSNull(),
-       "received_to": received_to.map { $0 as Any } ?? NSNull(), "latest": latest, "translate": translate]
+       "received_to": received_to.map { $0 as Any } ?? NSNull(), "latest": latest, "translate": translate, "count": count.map { $0 as Any } ?? NSNull()]
     }
   }
   public struct Candidate: Codable, Sendable, Equatable {
@@ -30,8 +31,11 @@ public enum MailSummary {
   }
   public struct Search: Codable, Sendable, Equatable {
     public let conditions: Conditions; public let candidates: [Candidate]; public let complete: Bool; public let more: Bool
-    public init(conditions: Conditions, candidates: [Candidate], complete: Bool, more: Bool) {
+    public let next_cursor: String?            // 0.19.0 limit 검색만 — 목록 끝까지 갔을 때만 null(§7 진행 위치 검색). 0.18.x 응답엔 없다
+    public let count_capped: Bool?             // count 가 30을 넘어 30으로 줄였음
+    public init(conditions: Conditions, candidates: [Candidate], complete: Bool, more: Bool, next_cursor: String? = nil, count_capped: Bool? = nil) {
       self.conditions = conditions; self.candidates = candidates; self.complete = complete; self.more = more
+      self.next_cursor = next_cursor; self.count_capped = count_capped
     }
   }
   public struct Summary: Codable, Sendable, Equatable { public let lines: [String]; public let dates: [String]; public let amounts: [String]; public let todos: [String] }
@@ -54,32 +58,39 @@ public enum MailSummary {
   /// 칸이 null·없음이면 "대상 없음"(최종 리뷰 I1 — 모델은 말하지 않은 조건을 채우지 않는다): 직전 요약 뒤엔 이어서 읽기, 아니면 빈 칸 검색 → 서버 needs_target 되묻기
   public struct Fields: Equatable, Sendable {
     public let translate: Bool; public let targetInMessage: Bool
-    public init(translate: Bool, targetInMessage: Bool) { self.translate = translate; self.targetInMessage = targetInMessage }
+    public let count: Int?                     // 0.19.0 칸 count — 정수일 때만(첫 쪽 limit 을 정한다). 검사는 서버
+    public init(translate: Bool, targetInMessage: Bool, count: Int? = nil) { self.translate = translate; self.targetInMessage = targetInMessage; self.count = count }
   }
   public static func fields(_ v: JSONValue?) -> Fields? {
     switch v {
     case nil, .null?: return Fields(translate: false, targetInMessage: false)
     case .object(let o)?:
       func flag(_ k: String, _ fallback: Bool) -> Bool { if case .bool(let b)? = o[k] { return b }; return fallback }
-      return Fields(translate: flag("translate", false), targetInMessage: flag("target_in_message", true))
+      var count: Int? = nil
+      if case .number(let n)? = o["count"] { count = Int(exactly: n) }     // 3.0 → 3, 2.5·범위 밖 → nil
+      return Fields(translate: flag("translate", false), targetInMessage: flag("target_in_message", true), count: count)
     default: return nil
     }
   }
-  /// 검색 요청 본문 — mail_read 칸 그대로, null·없음이면 빈 칸(서버가 needs_target). 객체도 null 도 아니면 nil(요약 실패)
-  public static func searchBody(_ v: JSONValue?) -> [String: Any]? {
+  /// 검색 요청 본문 — mail_read 칸 그대로(count 포함) + limit(0.19.0 앱 표식, §7), null·없음이면 빈 칸 + limit(서버가 needs_target). 객체도 null 도 아니면 nil(요약 실패)
+  public static func searchBody(_ v: JSONValue?, limit: Int) -> [String: Any]? {
+    var b: [String: Any]
     switch v {
-    case nil, .null?: return [:]
-    case .object?: return v?.foundation as? [String: Any]
+    case nil, .null?: b = [:]
+    case .object?: guard let o = v?.foundation as? [String: Any] else { return nil }; b = o
     default: return nil
     }
+    b["limit"] = limit
+    return b
   }
 
-  /// 검색 결과 다음 단계(스펙 §9 턴 흐름): 완결일 때만 0통 = 없음, 1통이거나 latest 면 바로 읽기. 미완결이면 1통이어도 카드
-  public enum Step: Equatable, Sendable { case none(String), readFirst, choose }
+  /// 검색 결과 다음 단계(스펙 §9 턴 흐름): 완결일 때만 0통 = 없음, 1통이거나 latest 면 바로 읽기. 그 밖(2통 이상·미완결)은 목록 카드(0.19.0 — 고르기 후보 카드 없음, Q4 A).
+  /// 0통 + next_cursor 는 줄 없는 목록 카드(DP29) — limit 없는 0.18.x 응답은 next_cursor 가 없어 0통 분기가 지금과 같다
+  public enum Step: Equatable, Sendable { case none(String), readFirst, digest }
   public static func afterSearch(_ s: Search) -> Step {
-    if s.candidates.isEmpty { return .none(s.complete ? MailSummaryText.noneFound : MailSummaryText.notAllChecked) }
+    if s.candidates.isEmpty { return s.next_cursor != nil ? .digest : .none(s.complete ? MailSummaryText.noneFound : MailSummaryText.notAllChecked) }
     if s.complete && (s.candidates.count == 1 || s.conditions.latest) { return .readFirst }
-    return .choose
+    return .digest
   }
 
   /// 문구 + [설정 열기] · retry = "그 밖" 실패(후보 카드에서 고른 읽기면 10분 안 후보를 되살린다 — 읽기는 Gmail 을 바꾸지 않는다)

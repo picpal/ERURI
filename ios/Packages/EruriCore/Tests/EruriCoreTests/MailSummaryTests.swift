@@ -41,9 +41,16 @@ final class MailSummaryTests: XCTestCase {
     XCTAssertEqual(MailSummary.afterSearch(search(0, complete: false)), .none(MailSummaryText.notAllChecked))
     XCTAssertEqual(MailSummary.afterSearch(search(1, complete: true)), .readFirst)
     XCTAssertEqual(MailSummary.afterSearch(search(3, complete: true, latest: true)), .readFirst)
-    XCTAssertEqual(MailSummary.afterSearch(search(1, complete: false)), .choose)
-    XCTAssertEqual(MailSummary.afterSearch(search(1, complete: false, latest: true)), .choose)
-    XCTAssertEqual(MailSummary.afterSearch(search(3, complete: true)), .choose)
+    XCTAssertEqual(MailSummary.afterSearch(search(1, complete: false)), .digest)                // 0.19.0 — 고르기 후보 카드 대신 목록 카드(Q4 A)
+    XCTAssertEqual(MailSummary.afterSearch(search(1, complete: false, latest: true)), .digest)
+    XCTAssertEqual(MailSummary.afterSearch(search(3, complete: true)), .digest)
+  }
+
+  // 0.18.x 서버 응답(next_cursor·count_capped·conditions.count 없음)도 그대로 읽는다 — 커서 없음이라 0통 분기도 지금과 같다
+  func testDecodesSearchWithoutNewKeys() {
+    let v = s(searchJSON)
+    XCTAssertNil(v.next_cursor); XCTAssertNil(v.count_capped); XCTAssertNil(v.conditions.count)
+    XCTAssertTrue(v.conditions.json["count"] is NSNull)
   }
 
   func testCardTexts() {
@@ -171,13 +178,12 @@ final class MailSummaryTests: XCTestCase {
     XCTAssertEqual(MailSummary.fields(a.mail_read), .init(translate: false, targetInMessage: false))
     let cur = ChatHistory.Record(at: t0, kind: .question, question: "요약해줘")
     XCTAssertEqual(MailSummary.followUp([cur], current: cur.id, now: t0, targetInMessage: MailSummary.fields(a.mail_read)!.targetInMessage), .none)
-    let body = try XCTUnwrap(MailSummary.searchBody(a.mail_read))
-    XCTAssertTrue(body.isEmpty)
-    XCTAssertEqual(try JSONSerialization.data(withJSONObject: body), Data("{}".utf8))
-    XCTAssertEqual(MailSummary.searchBody(.null)?.isEmpty, true)
-    XCTAssertNil(MailSummary.searchBody(.string("x")))
+    let body = try XCTUnwrap(MailSummary.searchBody(a.mail_read, limit: 10))
+    XCTAssertEqual(try JSONSerialization.data(withJSONObject: body), Data(#"{"limit":10}"#.utf8))   // 0.19.0 — 빈 칸 + limit
+    XCTAssertEqual(MailSummary.searchBody(.null, limit: 10)?.keys.sorted(), ["limit"])
+    XCTAssertNil(MailSummary.searchBody(.string("x"), limit: 10))
     let obj = try JSONDecoder().decode(JSONValue.self, from: Data(#"{"sender":"합성"}"#.utf8))
-    XCTAssertEqual(MailSummary.searchBody(obj)?["sender"] as? String, "합성")
+    XCTAssertEqual(MailSummary.searchBody(obj, limit: 10)?["sender"] as? String, "합성")
   }
 
   // 최종 리뷰 I1: 요약 뒤 "번역해줘"에 mail_read null 이 와도 앞 토큰으로 이어서 읽기

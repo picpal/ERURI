@@ -18,7 +18,7 @@ public enum UsageStatus {
 extension UsageStatus {
   /// 설정 "이번 달 사용" 기능별 줄(스펙 §9, 0.15.0): rpc/usage_breakdown → [월 예산 줄?, "월 예산 밖: …"?, 각주?]. 한 기능 = 같은 kind 의 모델 행 합(모델 이름은 안 보인다).
   /// 모르는 kind 는 무시, calls 0 인 기능은 뺀다. 모양이 다르면 nil — 화면은 합계 줄만(옛 서버·0032 전). 합계 줄과 합이 맞지 않을 수 있다(반올림·조회 시점, Codex #4)
-  public static let budgetKinds: [(kind: String, name: String)] = [("chat", "채팅"), ("mail_summary", "메일 요약"), ("extract", "수집(추출)"), ("embed", "검색 색인(임베딩)")]
+  public static let budgetKinds: [(kind: String, name: String)] = [("chat", "채팅"), ("mail_summary", "메일 요약"), ("mail_digest", "메일 목록 요약"), ("extract", "수집(추출)"), ("embed", "검색 색인(임베딩)")]
   public static let outsideKinds: [(kind: String, name: String)] = [("backfill", "과거 메일 가져오기"), ("vision", "이미지 읽기")]
   public static let footnote = "토큰 수 × 공식 단가 × 환율로 계산한 금액이에요(실제 청구와 조금 다를 수 있어요)"
 

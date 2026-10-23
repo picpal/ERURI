@@ -3,7 +3,7 @@ import Foundation
 /// 채팅 대화 기록·짧은 맥락(스펙 §9 "대화 기록·짧은 맥락", 2026-10-04 사용자 결정 B): 대화 하나가 이어지고, 기록은 기기에만 30일.
 /// 질문 턴의 서버 응답은 받은 그대로(JSON) 둔다 — 다시 열 때 같은 해석(ChatReply.decode)·카드 계산(기기 캘린더는 다시 읽음)을 거친다
 public enum ChatHistory {
-  public enum Kind: String, Codable, Sendable { case question, link, image, addEvent, mailAction, mailSummary, editEvent, aggregate, saveRule }   // addEvent = 채팅 일정 등록(0.13.0) · mailAction = 채팅 메일 정리(0.14.0) · mailSummary = 채팅 메일 요약(0.15.0) · editEvent = 방금 등록한 일정 고치기(0.16.0) · aggregate = 집계 질문 · saveRule = 저장 규칙(0.17.0)
+  public enum Kind: String, Codable, Sendable { case question, link, image, addEvent, mailAction, mailSummary, editEvent, aggregate, saveRule, mailDigest }   // addEvent = 채팅 일정 등록(0.13.0) · mailAction = 채팅 메일 정리(0.14.0) · mailSummary = 채팅 메일 요약(0.15.0) · editEvent = 방금 등록한 일정 고치기(0.16.0) · aggregate = 집계 질문 · saveRule = 저장 규칙(0.17.0) · mailDigest = 메일 목록 요약(0.19.0)
 
   public struct Record: Codable, Sendable, Equatable, Identifiable {
     public let id: UUID
@@ -23,16 +23,17 @@ public enum ChatHistory {
     public var contextLine: String?              // 등록 턴 "등록함: …"(일정마다 한 줄, proposalIDs 순서)·ok 고치기 턴 "고침: …" — 맥락으로 보내는 줄(스펙 A)
     public var editPid: String?                  // 고치기 턴(0.16.0): 카드가 따라가는 제안 id — 응답의 edit.proposal_id, 같은 카드의 되묻기 성공 때 그 새 버전(Fable 플랜 리뷰 #1)
     public var saveRule: SaveRuleTurn?           // 저장 규칙 턴(0.17.0): 카드 버튼 결과(K23). 판정 응답은 reply 에(집계 턴도 reply 만)
+    public var mailDigest: MailDigestTurn?       // 메일 목록 요약 턴(0.19.0): 조건·줄(후보·상태·요약 줄)·next_cursor·단계 — 이 기기에만
     public var judged: [String: Bool]      // 인용 item_id → 관련 있음(맞아요·틀렸어요 — 서버 eval_judgments 와 같은 값)
 
     public init(id: UUID = UUID(), at: Date, kind: Kind, question: String, reply: Data? = nil, error: String? = nil, link: String? = nil,
                 linkDone: Bool = false, linkSaved: Bool = false, seenItemID: String? = nil, itemID: String? = nil, judged: [String: Bool] = [:],
                 mail: MailTurn? = nil, mailRead: MailSummaryTurn? = nil, proposalIDs: [String]? = nil, contextLine: String? = nil, editPid: String? = nil,
-                saveRule: SaveRuleTurn? = nil) {
+                saveRule: SaveRuleTurn? = nil, mailDigest: MailDigestTurn? = nil) {
       self.id = id; self.at = at; self.kind = kind; self.question = question; self.reply = reply; self.error = error; self.link = link
       self.linkDone = linkDone; self.linkSaved = linkSaved; self.seenItemID = seenItemID; self.itemID = itemID; self.judged = judged
       self.mail = mail; self.mailRead = mailRead; self.proposalIDs = proposalIDs; self.contextLine = contextLine; self.editPid = editPid
-      self.saveRule = saveRule
+      self.saveRule = saveRule; self.mailDigest = mailDigest
     }
   }
 
@@ -78,6 +79,10 @@ public enum ChatHistory {
       case .saveRule:
         // 버튼 요청 중 닫힘(0.17.0 K16): 바뀌었는지 모른다 — 버튼을 다시 켠다(같은 버튼을 다시 눌러도 duplicate·not_found 라 두 번 바뀌지 않는다)
         if x.saveRule?.phase == .working { x.saveRule?.phase = .idle; x.saveRule?.note = SaveRules.Text.buttonFailed }
+      case .mailDigest:
+        // 검색 결과를 받기 전에 닫혔으면 끝난 문구로. "요약 중…" 줄은 실패 줄로 끝낸다(다시 보내지 않는다 — 비용, §9 "보존")
+        if x.mailDigest == nil { var t = MailDigestTurn(question: x.question, phase: .ended); t.note = MailSummaryText.interrupted; x.mailDigest = t }
+        else { x.mailDigest?.restoredForReopen() }
       }
       return x
     }

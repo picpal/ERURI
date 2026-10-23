@@ -340,6 +340,18 @@ final class ChatHistoryTests: XCTestCase {
     try st.save([q("x", at: 0), a])
     XCTAssertEqual(try st.load().map(\.mailRead), [nil, t])
   }
+  // 0.19.0 목록 요약 턴: 기록 파일 왕복(초 단위 날짜 인코딩 포함), mailDigest 없는 옛 레코드는 nil 로 읽힌다
+  func testStoreRoundTripsMailDigestTurns() throws {
+    let st = tempStore(); defer { st.wipe() }
+    var t = MailDigestTurn(question: "오늘 온 메일들 메일별로 요약해줘", phase: .idle)
+    t.conditions = MailSummary.Conditions(sender: nil, subject_words: [], received_from: "2026-10-23", received_to: "2026-10-23", latest: false, translate: false, count: 12)
+    t.rows = [.init(candidate: MailSummary.Candidate(token: "v1.a", from: "합성상점", subject: "합성 안내", date: "2026-10-23T00:00:00.000Z"), state: .ok, lines: ["합성 줄"], note: nil, code: nil)]
+    t.nextCursor = "c1.x"; t.requestGen = 2
+    let a = ChatHistory.Record(at: t0, kind: .mailDigest, question: t.question, mailDigest: t)
+    try st.save([q("x", at: 0), a])
+    XCTAssertEqual(try st.load().map(\.mailDigest), [nil, t])
+    XCTAssertEqual(try st.load().last?.mailDigest?.conditions?.count, 12)
+  }
 
   // ── 0.16.0 채팅 일정 개선(스펙 §9 A·B 앱 → 서버) ──
   func addTurn(at: TimeInterval, ids: [String]? = ["p1"], line: String? = "등록함: 합성 미팅 · 10/10(토) 11:00–15:00") -> R {
