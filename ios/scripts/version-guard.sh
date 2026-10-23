@@ -37,4 +37,9 @@ if grep -q "body_total" Packages/EruriCore/Sources/EruriCore/ChatAggregate.swift
   echo "본문 건수 코드가 있는데 MARKETING_VERSION=$VER (< 0.18.0) — METRIC-sim 통과 전 업로드 금지(0.18.0 계획 K22). 162281f worktree 에서 올리거나 TF_ALLOW_PRE_METRIC=1"
   exit 1
 fi
+# 0.19.0 계획 DP20: 목록 요약 코드(MailDigest.swift)가 있는데 0.19.0 전 이름이면 멈춘다 — DIGEST 게이트 전 빌드가 0.18.x 이름으로 나가지 않게
+if [ -f Packages/EruriCore/Sources/EruriCore/MailDigest.swift ] && [ "$NUM" -lt 19000 ] && [ "${TF_ALLOW_PRE_DIGEST:-0}" != 1 ]; then
+  echo "목록 요약 코드가 있는데 MARKETING_VERSION=$VER (< 0.19.0) — DIGEST 게이트 통과 전 업로드 금지(0.19.0 계획 DP20). 이 코드 전 커밋 worktree 에서 올리거나 TF_ALLOW_PRE_DIGEST=1"
+  exit 1
+fi
 echo "version-guard ok ($VER)"

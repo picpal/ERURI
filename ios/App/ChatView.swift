@@ -94,6 +94,10 @@ struct ChatView: View {
               } else if t.record.kind == .mailSummary {                   // 메일 요약 턴(§9, 0.15.0): 카드 하나. 다시 보내지 않는다(읽기는 비용) — 복원은 ChatHistory.restored
                 MailSummaryCard(turn: t.record.mailRead ?? MailSummaryTurn(phase: .ended, note: MailSummaryText.failed),
                                 onPick: { pickSummary(t.id, $0) }, onResearch: { researchSummary(t.id) }, onSettings: { SettingsRouter.shared.open() })
+              } else if t.record.kind == .mailDigest {                    // 메일 목록 요약 턴(§9 "목록 카드", 0.19.0): 카드 하나. 줄 탭은 새 상세 턴 — 복원은 ChatHistory.restored
+                MailDigestCard(turn: t.record.mailDigest ?? MailDigestTurn(question: t.record.question, phase: .ended), now: Date(),
+                               onOpen: { openDigestRow(t.id, $0) }, onRetry: { retryDigestRow(t.id, $0) }, onMore: { moreDigest(t.id) },
+                               onResearch: { researchDigest(t.id) }, onSettings: { SettingsRouter.shared.open() })
               } else if t.record.kind == .mailAction {             // 메일 정리 턴(§9, 0.14.0): 카드 하나. 상태를 다시 읽어야 하는 턴은 나올 때 서버를 먼저 읽는다
                 MailCleanupCard(turn: t.record.mail ?? MailTurn(phase: .ended, note: MailCleanupText.failed),
                                 onExecute: { executeMail(t.id) }, onCancel: { cancelMail(t.id) }, onUndo: { undoMail(t.id) },
@@ -764,7 +768,7 @@ struct ChatView: View {
           }
           if MailSummary.isMailSummary(a.intent) {
             // 채팅 메일 요약(§9, 0.15.0): 답이 아니다 — reply 를 저장하지 않는다. 바로 앞 요약 턴 + 지금 글이 대상을 말하지 않음이면 앞 토큰으로 읽기(검색 없음),
-            // 아니면 mail_read 칸 그대로 검색(검사는 서버 한 곳 — null 이면 빈 칸으로 needs_target 되묻기). 칸 값·글은 로그에 없다
+            // 아니면 mail_read 칸 그대로 + limit 으로 검색(검사는 서버 한 곳 — null 이면 빈 칸으로 needs_target 되묻기, 2통 이상·미완결이면 목록 카드 — 0.19.0). 칸 값·글은 로그에 없다
             DiagLog.append("CHAT intent mail_summary ctx=\(withContext ? 1 : 0)")
             let f = MailSummary.fields(a.mail_read)
             let translate = f?.translate ?? false
@@ -775,7 +779,7 @@ struct ChatView: View {
             case .expired:
               settle(id, epoch) { $0.record.kind = .mailSummary; $0.record.mailRead = MailSummaryTurn(phase: .ended, translate: translate, note: MailSummaryText.followExpired) }
             case .none:
-              guard let body = MailSummary.searchBody(a.mail_read) else {
+              guard let body = MailSummary.searchBody(a.mail_read, limit: MailDigest.firstLimit(count: f?.count)) else {
                 settle(id, epoch) { $0.record.kind = .mailSummary; $0.record.mailRead = MailSummaryTurn(phase: .ended, note: MailSummaryText.failed) }
                 return
               }
@@ -1120,7 +1124,8 @@ struct ChatView: View {
 
   // ── 채팅 메일 요약(스펙 §9, 0.15.0). 모든 갱신은 id·epoch 로(settle) — await 뒤 색인으로 턴을 고치지 않는다. 후보·요약 글은 기록에만, 로그·trace 는 단계·결과·개수·코드만 ──
 
-  /// 검색: direct = 첫 검색(완결 1통·latest 면 바로 읽기). [다시 찾기]는 direct = false(후보 카드를 바꿀 뿐 — 사용자가 고른다)
+  /// 검색: direct = 첫 검색(완결 1통·latest 면 바로 읽기, 2통 이상·미완결·0통 + next_cursor 면 목록 카드 — 0.19.0).
+  /// [다시 찾기]는 direct = false — 옛 기록(0.18.x 이전)의 후보 카드를 바꿀 뿐(사용자가 고른다, PF-7). 0.19.0 앱은 새 후보 카드를 만들지 않는다
   private func searchSummary(_ id: UUID, body: [String: Any], request: String, epoch: Int, direct: Bool) {
     let t0 = Date()
     Task {
@@ -1134,27 +1139,41 @@ struct ChatView: View {
         return
       }
       Trace.log("chat.mail_read", ["stage": "search", "result": s.complete ? "complete" : "partial", "count": s.candidates.count, "elapsed_ms": ms])
-      let step = direct ? MailSummary.afterSearch(s) : (s.candidates.isEmpty ? MailSummary.afterSearch(s) : .choose)
+      let step = MailSummary.afterSearch(s)
+      if direct, step == .digest {
+        var idx: [Int] = []
+        settle(id, epoch) {
+          $0.record.kind = .mailDigest; $0.record.mailRead = nil
+          var t = MailDigestTurn(question: $0.record.question); idx = t.applyFirst(s)   // 0통 + next_cursor 면 [] — 줄 없는 카드 + [다음](DP29)
+          $0.record.mailDigest = t
+        }
+        if !idx.isEmpty, log.clearCount == epoch, turns.contains(where: { $0.id == id }) { runDigest(id, rows: idx, gen: 0, epoch: epoch) }
+        scroll(to: id)
+        return
+      }
+      // 옛 후보 카드 [다시 찾기](PF-7): 후보가 있으면 고르기 그대로, 0통이면 afterSearch 문구(limit 없는 검색이라 next_cursor 가 없다 — 있으면 다 확인하지 못함)
+      var none: String?
+      if case .none(let text) = step { none = text } else if !direct && s.candidates.isEmpty { none = MailSummaryText.notAllChecked }
+      let read = direct && step == .readFirst
       settle(id, epoch) {
         $0.record.mailRead?.conditions = s.conditions; $0.record.mailRead?.translate = s.conditions.translate
         $0.record.mailRead?.candidates = s.candidates; $0.record.mailRead?.complete = s.complete; $0.record.mailRead?.more = s.more
         $0.record.mailRead?.issuedAt = Date(); $0.record.mailRead?.note = nil; $0.record.mailRead?.settings = false; $0.record.mailRead?.picked = nil
-        switch step {
-        case .none(let text): $0.record.mailRead?.phase = .ended; $0.record.mailRead?.note = text
-        case .readFirst: $0.record.mailRead?.phase = .reading; $0.record.mailRead?.picked = 0
-        case .choose: $0.record.mailRead?.phase = .choosing
-        }
+        if let none { $0.record.mailRead?.phase = .ended; $0.record.mailRead?.note = none }
+        else if read { $0.record.mailRead?.phase = .reading; $0.record.mailRead?.picked = 0 }
+        else { $0.record.mailRead?.phase = .choosing }
       }
       // 지웠거나 정리로 빠진 턴이면 읽지 않는다(읽기는 비용 — settle 이 무시된 턴을 위해 요청하지 않게)
-      if step == .readFirst, log.clearCount == epoch, turns.contains(where: { $0.id == id }) {
+      if read, log.clearCount == epoch, turns.contains(where: { $0.id == id }) {
         readSummary(id, token: s.candidates[0].token, translate: s.conditions.translate, request: request, epoch: epoch, fromCard: false)
       }
       scroll(to: id)
     }
   }
 
-  /// 읽기: 503 llm_busy 만 5초 뒤 한 번 더. 후보 카드에서 고른 읽기가 "그 밖" 실패면 10분 안 후보를 되살리고, 410 이면 만료 카드([다시 찾기])로(다시 누르면 비용은 다시 든다)
-  private func readSummary(_ id: UUID, token: String, translate: Bool, request: String, epoch: Int, fromCard: Bool) {
+  /// 읽기: 503 llm_busy 만 5초 뒤 한 번 더. 후보 카드에서 고른 읽기가 "그 밖" 실패면 10분 안 후보를 되살리고, 410 이면 만료 카드([다시 찾기])로(다시 누르면 비용은 다시 든다).
+  /// onDone = 끝난 상태 코드(성공 200 · 네트워크 실패 -1) — 목록 줄 탭이 줄 잠금을 풀고 410 을 목록 만료로 옮긴다(0.19.0)
+  private func readSummary(_ id: UUID, token: String, translate: Bool, request: String, epoch: Int, fromCard: Bool, onDone: ((Int) -> Void)? = nil) {
     let t0 = Date()
     Task {
       var attempt = 0
@@ -1174,12 +1193,14 @@ struct ChatView: View {
             $0.record.mailRead?.read = x; $0.record.mailRead?.readAt = Date(); $0.record.mailRead?.phase = .ended
             $0.record.mailRead?.note = nil; $0.record.mailRead?.settings = false
           }
+          onDone?(200)
           scroll(to: id)
           return
         }
         Trace.log("chat.mail_read", ["stage": "read", "result": "error", "code": code ?? "http_\(r?.status ?? -1)", "elapsed_ms": ms])
         let n = MailSummary.readError(status: r?.status ?? -1, code: code)
         settle(id, epoch) { $0.record.mailRead?.readFailed(n, status: r?.status ?? -1, fromCard: fromCard, now: Date()) }
+        onDone?(r?.status ?? -1)
         scroll(to: id)
         return
       }
@@ -1201,6 +1222,143 @@ struct ChatView: View {
     guard let t = turns.first(where: { $0.id == id }), let m = t.record.mailRead, m.phase == .choosing, let c = m.conditions else { return }
     settle(id, epoch) { $0.record.mailRead?.phase = .finding; $0.record.mailRead?.note = nil }
     searchSummary(id, body: c.json, request: t.record.question, epoch: epoch, direct: false)
+  }
+
+  // ── 메일 목록 요약(스펙 §9 "목록 카드", 0.19.0). 갱신은 id·epoch(settle)와 요청 세대(isCurrent — 늦은 이전 응답은 버린다, DP30).
+  // [다음]·[다시 찾기]·줄 [다시]는 첫 네트워크 호출 전에 beginRequest 로 잠근다. 줄 글은 기록에만 — trace 는 단계·결과·통수·상태별 수·코드만 ──
+
+  /// 목록 요약 한 번(§9 "목록 카드"): llm_busy 만 5초 뒤 한 번 더. 줄 글은 기록에만 — trace 는 단계·결과·통수·상태별 수·코드만
+  private func runDigest(_ id: UUID, rows idx: [Int], gen: Int, epoch: Int) {
+    guard let t = turns.first(where: { $0.id == id })?.record.mailDigest else { return }
+    let idx = idx.filter { t.rows.indices.contains($0) }                    // 토큰과 줄 색인이 같은 순서·같은 수(응답은 입력 순서)
+    let tokens = idx.map { t.rows[$0].candidate.token }
+    let t0 = Date()
+    Task {
+      var attempt = 0
+      while true {
+        let r = await MailSummaryAPI.digest(tokens: tokens)
+        let code = r.flatMap { MailCleanup.errorCode($0.data) }
+        if let r, let wait = MailDigest.retryDelay(status: r.status, code: code, attempt: attempt) {
+          attempt += 1; try? await Task.sleep(for: .seconds(wait)); guard log.clearCount == epoch else { return }; continue
+        }
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        if let r, r.status == 200, let rs = MailDigest.results(r.data, expected: tokens.count) {
+          Trace.log("chat.mail_read", ["stage": "digest", "result": "ok", "count": rs.count, "ok": rs.filter { $0.status == "ok" }.count,
+                                       "failed": rs.filter { $0.status == "failed" }.count, "elapsed_ms": ms])
+          settle(id, epoch) { if $0.record.mailDigest?.isCurrent(gen) == true { $0.record.mailDigest?.applyDigest(rs, rows: idx) } }   // 늦은 이전 응답은 버린다(DP30)
+        } else {
+          Trace.log("chat.mail_read", ["stage": "digest", "result": "error", "code": code ?? "http_\(r?.status ?? -1)", "elapsed_ms": ms])
+          settle(id, epoch) { if $0.record.mailDigest?.isCurrent(gen) == true { $0.record.mailDigest?.applyCardError(status: r?.status ?? -1, code: code, rows: idx) } }
+        }
+        scroll(to: id); return
+      }
+    }
+  }
+
+  /// 목록 줄 탭(DP17): ok 줄을 한 번만(beginOpen — 연타로 상세 턴·비용이 두 번 생기지 않게) 새 상세 턴으로 읽는다.
+  /// 새 턴 question = 목록 턴 입력 글(= read 의 request), translate = 서버 conditions. 읽기가 410 이면 새 턴 문구를 바꾸고 목록을 만료로([다시 찾기])
+  private func openDigestRow(_ id: UUID, _ i: Int) {
+    let epoch = log.clearCount
+    guard let list = turns.first(where: { $0.id == id })?.record.mailDigest, list.canAct, list.rows.indices.contains(i) else { return }
+    var began = false
+    settle(id, epoch) { began = $0.record.mailDigest?.beginOpen(i) ?? false }
+    guard began else { return }
+    let row = list.rows[i], translate = list.conditions?.translate ?? false
+    var m = MailSummaryTurn(phase: .reading, translate: translate)
+    m.candidates = [row.candidate]; m.picked = 0                                  // 요약 카드 "읽는 중" 머리 줄
+    let nid = append(ChatHistory.Record(at: Date(), kind: .mailSummary, question: list.question, mailRead: m))
+    readSummary(nid, token: row.candidate.token, translate: translate, request: list.question, epoch: epoch, fromCard: false) { status in
+      settle(id, epoch) { $0.record.mailDigest?.endOpen(i); if status == 410 { $0.record.mailDigest?.markExpired() } }
+      if status == 410 { settle(nid, epoch) { $0.record.mailRead?.note = MailDigestText.rowExpiredRead } }
+    }
+  }
+
+  /// 줄 [다시]: failed 줄 하나만 다시 digest. 잠금은 네트워크 전(DP30) — 잠겼거나 연타면 아무것도 보내지 않는다
+  private func retryDigestRow(_ id: UUID, _ i: Int) {
+    let epoch = log.clearCount
+    var g: Int?
+    settle(id, epoch) {
+      guard let t = $0.record.mailDigest, t.rows.indices.contains(i), t.canRetry(t.rows[i]) else { return }
+      g = $0.record.mailDigest?.beginRequest()
+      if g != nil { $0.record.mailDigest?.rows[i].state = .pending }
+    }
+    guard let g else { return }
+    runDigest(id, rows: [i], gen: g, epoch: epoch)
+  }
+
+  /// [다음 N통]: 서버 conditions + next_cursor + limit 로 이어 검색 → 새 줄을 같은 카드 아래에 붙여 digest. 0통 + next_cursor 면 꼬리만 남는다
+  private func moreDigest(_ id: UUID) {
+    let epoch = log.clearCount
+    guard let t = turns.first(where: { $0.id == id })?.record.mailDigest, case .more(let n) = t.tail, let cursor = t.nextCursor, let c = t.conditions else { return }
+    var g: Int?
+    settle(id, epoch) { g = $0.record.mailDigest?.beginRequest() }
+    guard let g else { return }
+    var body = c.json; body["cursor"] = cursor; body["limit"] = n
+    let t0 = Date()
+    Task {
+      let r = await MailSummaryAPI.search(body)
+      let ms = Int(Date().timeIntervalSince(t0) * 1000)
+      guard let r, r.status == 200, let s = MailSummary.search(r.data) else {
+        let code = r.flatMap { MailCleanup.errorCode($0.data) }
+        Trace.log("chat.mail_read", ["stage": "more", "result": "error", "code": code ?? "http_\(r?.status ?? -1)", "elapsed_ms": ms])
+        failDigestSearch(id, epoch: epoch, gen: g, status: r?.status ?? -1, code: code, noteOnExpired: false)
+        scroll(to: id)
+        return
+      }
+      Trace.log("chat.mail_read", ["stage": "more", "result": s.complete ? "complete" : "partial", "count": s.candidates.count, "elapsed_ms": ms])
+      var idx: [Int] = []
+      settle(id, epoch) {
+        guard var d = $0.record.mailDigest, d.isCurrent(g) else { return }
+        let k = d.rows.count
+        d.applySearch(s, append: true)
+        idx = Array(k..<d.rows.count)
+        d.phase = idx.isEmpty ? .idle : .loading
+        $0.record.mailDigest = d
+      }
+      if !idx.isEmpty, log.clearCount == epoch, turns.contains(where: { $0.id == id }) { runDigest(id, rows: idx, gen: g, epoch: epoch) }
+      scroll(to: id)
+    }
+  }
+
+  /// [다시 찾기](목록 만료 꼬리): 서버 conditions + 첫 쪽 limit 로 다시 검색해 같은 카드의 줄을 바꾼다(applyFirst — 0통 + next_cursor 는 줄 없는 카드, 0통·커서 없음은 문구로 끝)
+  private func researchDigest(_ id: UUID) {
+    let epoch = log.clearCount
+    guard let t = turns.first(where: { $0.id == id })?.record.mailDigest, t.tail == .expired, let c = t.conditions else { return }
+    var g: Int?
+    settle(id, epoch) { g = $0.record.mailDigest?.beginRequest() }               // 첫 네트워크 호출 전에 잠근다(Codex 계획 리뷰 #6) — 연타면 nil
+    guard let g else { return }
+    var body = c.json; body["limit"] = MailDigest.firstLimit(count: c.count)
+    let t0 = Date()
+    Task {
+      let r = await MailSummaryAPI.search(body)
+      let ms = Int(Date().timeIntervalSince(t0) * 1000)
+      guard let r, r.status == 200, let s = MailSummary.search(r.data) else {
+        let code = r.flatMap { MailCleanup.errorCode($0.data) }
+        Trace.log("chat.mail_read", ["stage": "research", "result": "error", "code": code ?? "http_\(r?.status ?? -1)", "elapsed_ms": ms])
+        failDigestSearch(id, epoch: epoch, gen: g, status: r?.status ?? -1, code: code, noteOnExpired: true)
+        scroll(to: id)
+        return
+      }
+      Trace.log("chat.mail_read", ["stage": "research", "result": s.complete ? "complete" : "partial", "count": s.candidates.count, "elapsed_ms": ms])
+      var idx: [Int] = []
+      settle(id, epoch) {
+        guard var d = $0.record.mailDigest, d.isCurrent(g) else { return }
+        idx = d.applyFirst(s)
+        $0.record.mailDigest = d
+      }
+      if !idx.isEmpty, log.clearCount == epoch, turns.contains(where: { $0.id == id }) { runDigest(id, rows: idx, gen: g, epoch: epoch) }
+      scroll(to: id)
+    }
+  }
+
+  /// [다음]·[다시 찾기] 검색 오류(이 세대일 때만): 410 이면 만료 꼬리([다시 찾기]), 그 밖은 검색 오류 문구(+ [설정 열기])와 함께 잠금을 푼다
+  private func failDigestSearch(_ id: UUID, epoch: Int, gen g: Int, status: Int, code: String?, noteOnExpired: Bool) {
+    settle(id, epoch) {
+      guard $0.record.mailDigest?.isCurrent(g) == true else { return }
+      if status == 410 { $0.record.mailDigest?.markExpired(); if !noteOnExpired { $0.record.mailDigest?.failRequest(g, note: nil); return } }
+      let n = MailSummary.searchError(status: status, code: code)
+      $0.record.mailDigest?.failRequest(g, note: n.text); $0.record.mailDigest?.settings = n.settings
+    }
   }
 
   /// 링크 수집 턴(§9): 읽기(15초 + OCR) 동안만 보내기를 막고, 서버 결과(최대 60초)는 따로 기다린다
